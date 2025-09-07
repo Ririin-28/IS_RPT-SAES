@@ -8,10 +8,10 @@ export default function Footer() {
         <div className="flex flex-col items-center md:items-start text-center md:text-left">
           <div className="flex items-center gap-4 mb-4">
             <img src="/SAES/SAESLogo.png" alt="SAES Logo" className="w-27 h-27" />
-            <img src="/RPTracker/RPTLogo.png" alt="RPTracker Logo" className="w-25 h-25" />
+            <img src="/RPT-SAES/RPTLogo.png" alt="RPT-SAES Logo" className="w-25 h-25" />
           </div>
           <p className="text-xs">
-            RPTracker was developed in association with <br />
+            RPT-SAES was developed in association with <br />
             San Agustin Elementary School
           </p>
         </div>
@@ -113,7 +113,7 @@ export default function Footer() {
       </div>
 
       {/* Bottom Note */}
-      <div className="text-center text-xs text-gray-600 mt-5">&copy; {new Date().getFullYear()} RPTracker. All rights reserved.</div>
+      <div className="text-center text-xs text-gray-600 mt-5">&copy; {new Date().getFullYear()} RPT-SAES. All rights reserved.</div>
     </footer>
   );
 }

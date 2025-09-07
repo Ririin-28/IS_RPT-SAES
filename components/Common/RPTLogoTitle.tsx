@@ -8,8 +8,8 @@ export default function RPTLogoTitle({ small = false }: RPTLogoTitleProps) {
   return (
     <div className={`flex flex-row items-center ${small ? "" : "mb-6"}`}>
       <img
-        src="/RPTracker/RPTLogo.png"
-        alt="RPTracker Logo"
+        src="/RPT-SAES/RPTLogo.png"
+        alt="RPT-SAES Logo"
         className={`${small ? "h-8 w-8 mr-2" : "h-16 w-16 mr-4"} object-contain drop-shadow-md`}
       />
       <div

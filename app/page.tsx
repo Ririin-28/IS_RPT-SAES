@@ -128,7 +128,7 @@ export default function Home() {
               lg:text-3xl
             "
             >
-              Welcome to RPTracker
+              Welcome to RPT-SAES
             </h2>
             <h1
               className="
@@ -270,7 +270,7 @@ export default function Home() {
             md:text-4xl
           "
           >
-            About RPTracker
+            About RPT-SAES
           </h2>
           
           {/* Our Mission Section */}
@@ -291,7 +291,7 @@ export default function Home() {
               /* Tablet */
               md:text-lg
             ">
-              RPTracker was created to revolutionize how educators track and manage student progress in remedial programs. Our platform simplifies literacy and numeracy program management, empowering teachers to provide personalized support for every student.
+              RPT-SAES was created to revolutionize how educators track and manage student progress in remedial programs. Our platform simplifies literacy and numeracy program management, empowering teachers to provide personalized support for every student.
             </p>
             
             <div className="space-y-4">

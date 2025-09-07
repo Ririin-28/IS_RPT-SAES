@@ -13,15 +13,6 @@ const DashboardIcon = React.memo(() => (
   </svg>
 ));
 
-const ReportIcon = React.memo(() => (
-  <svg width="24" height="24" fill="none" viewBox="0 0 24 24">
-    <rect width="16" height="20" x="4" y="2" rx="2" stroke="#013300" strokeWidth="2" />
-    <path d="M8 6h8" stroke="#013300" strokeWidth="2" />
-    <path d="M8 10h8" stroke="#013300" strokeWidth="2" />
-    <path d="M8 14h5" stroke="#013300" strokeWidth="2" />
-  </svg>
-));
-
 const CalendarIcon = React.memo(() => (
   <svg width="24" height="24" fill="none" viewBox="0 0 24 24">
     <rect x="3" y="5" width="18" height="16" rx="2" stroke="#013300" strokeWidth="2" />
@@ -59,6 +50,15 @@ const RemedialIcon = React.memo(() => (
   </svg>
 ));
 
+const ReportIcon = React.memo(() => (
+  <svg width="24" height="24" fill="none" viewBox="0 0 24 24">
+    <rect width="16" height="20" x="4" y="2" rx="2" stroke="#013300" strokeWidth="2" />
+    <path d="M8 6h8" stroke="#013300" strokeWidth="2" />
+    <path d="M8 10h8" stroke="#013300" strokeWidth="2" />
+    <path d="M8 14h5" stroke="#013300" strokeWidth="2" />
+  </svg>
+));
+
 export default function TeacherSidebar() {
   const [open, setOpen] = React.useState(false);
   const router = useRouter();
@@ -68,11 +68,11 @@ export default function TeacherSidebar() {
   const menuItems = React.useMemo(
     () => [
       { label: "Dashboard", icon: <DashboardIcon />, path: "/Teacher/dashboard" },
-      { label: "Report", icon: <ReportIcon />, path: "/Teacher/report" },
       { label: "Calendar", icon: <CalendarIcon />, path: "/Teacher/calendar" },
       { label: "Students", icon: <StudentsIcon />, path: "/Teacher/students" },
       { label: "Materials", icon: <MaterialsIcon />, path: "/Teacher/materials" },
       { label: "Remedial", icon: <RemedialIcon />, path: "/Teacher/remedial" },
+      { label: "Report", icon: <ReportIcon />, path: "/Teacher/report" },
     ],
     []
   );

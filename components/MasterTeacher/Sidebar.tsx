@@ -58,6 +58,15 @@ const RemedialIcon = React.memo(() => (
   </svg>
 ));
 
+const ReportIcon = React.memo(() => (
+  <svg width="24" height="24" fill="none" viewBox="0 0 24 24">
+    <rect width="16" height="20" x="4" y="2" rx="2" stroke="#013300" strokeWidth="2" />
+    <path d="M8 6h8" stroke="#013300" strokeWidth="2" />
+    <path d="M8 10h8" stroke="#013300" strokeWidth="2" />
+    <path d="M8 14h5" stroke="#013300" strokeWidth="2" />
+  </svg>
+));
+
 const ArchiveIcon = React.memo(() => (
   <svg width="24" height="24" fill="none" viewBox="0 0 24 24">
     <rect x="3" y="4" width="18" height="5" rx="2" stroke="#013300" strokeWidth="2" />
@@ -80,6 +89,7 @@ export default function Sidebar() {
       { label: "Teachers", icon: <TeachersIcon />, path: "/MasterTeacher/teachers" },
       { label: "Materials", icon: <MaterialsIcon />, path: "/MasterTeacher/materials" },
       { label: "Remedial", icon: <RemedialIcon />, path: "/MasterTeacher/remedial" },
+      { label: "Report", icon: <ReportIcon />, path: "/MasterTeacher/report" },
       { label: "Archive", icon: <ArchiveIcon />, path: "/MasterTeacher/archive" },
     ],
     []

@@ -14,7 +14,7 @@ export default function Navbar() {
           {/* Logo */}
           <div className="flex items-center">
             <div className="flex-shrink-0">
-              <h1 className="text-xl font-bold text-gray-900">RPTracker</h1>
+              <h1 className="text-xl font-bold text-gray-900">RPT-SAES</h1>
             </div>
           </div>
 

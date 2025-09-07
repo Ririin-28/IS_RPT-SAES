@@ -13,9 +13,14 @@ const DashboardIcon = React.memo(() => (
   </svg>
 ));
 
-const RemedialIcon = React.memo(() => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-folder-open-icon lucide-folder-open">
-    <path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>
+const CalendarIcon = React.memo(() => (
+  <svg width="24" height="24" fill="none" viewBox="0 0 24 24">
+    <rect x="3" y="5" width="18" height="16" rx="2" stroke="#013300" strokeWidth="2" />
+    <rect x="3" y="8" width="18" height="2" stroke="#013300" strokeWidth="2" />
+    <rect x="7" y="12" width="2" height="2" stroke="#013300" strokeWidth="2" />
+    <rect x="11" y="12" width="2" height="2" stroke="#013300" strokeWidth="2" />
+    <rect x="15" y="12" width="2" height="2" stroke="#013300" strokeWidth="2" />
+  </svg>
 ));
 
 const ReportsIcon = React.memo(() => (
@@ -31,7 +36,7 @@ export default function Sidebar() {
   const menuItems = React.useMemo(
     () => [
       { label: "Dashboard", icon: <DashboardIcon />, path: "/Principal/dashboard" },
-      { label: "Remedial", icon: <RemedialIcon />, path: "/Principal/remedial" },
+      { label: "Calendar", icon: <CalendarIcon />, path: "/Principal/calendar" },
       { label: "Reports", icon: <ReportsIcon />, path: "/Principal/reports" },
     ],
     []
