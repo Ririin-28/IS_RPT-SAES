@@ -228,7 +228,6 @@ export default function StudentTab({ students, setStudents }: StudentTabProps) {
   return (
     <div>
       {/* Top Bar: Total and Actions */}
-      <SecondaryHeader title="Student List Table" />
       <div
         className="
         /* Mobile */

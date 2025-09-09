@@ -30,7 +30,6 @@ export default function WordTab() {
   return (
     <div>
       {/* Student Table Section */}
-      <SecondaryHeader title="Word Modules" />
       <div
         className="
         /* Mobile */

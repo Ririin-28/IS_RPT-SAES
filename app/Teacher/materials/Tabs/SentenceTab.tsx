@@ -95,7 +95,6 @@ export default function SentenceTab() {
 
   return (
     <div>
-      <SecondaryHeader title="Sentence Materials" />
       <div
         className="
         /* Mobile */

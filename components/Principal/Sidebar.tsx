@@ -23,6 +23,21 @@ const CalendarIcon = React.memo(() => (
   </svg>
 ));
 
+const StudentsIcon = React.memo(() => (
+  <svg width="24" height="24" fill="none" viewBox="0 0 24 24">
+    <ellipse cx="12" cy="8" rx="4" ry="4" stroke="#013300" strokeWidth="2" />
+    <path d="M4 18v-2c0-2.66 5.33-4 8-4s8 1.34 8 4v2" stroke="#013300" strokeWidth="2" strokeLinecap="round" />
+  </svg>
+));
+
+const TeachersIcon = React.memo(() => (
+  <svg width="24" height="24" fill="none" viewBox="0 0 24 24">
+    <circle cx="8" cy="8" r="4" stroke="#013300" strokeWidth="2" />
+    <circle cx="16" cy="8" r="4" stroke="#013300" strokeWidth="2" />
+    <rect x="2" y="16" width="20" height="4" rx="2" stroke="#013300" strokeWidth="2" />
+  </svg>
+));
+
 const ReportsIcon = React.memo(() => (
   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-file-chart-line-icon lucide-file-chart-line"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m16 13-3.5 3.5-2-2L8 17"/></svg>
 ));
@@ -37,6 +52,8 @@ export default function Sidebar() {
     () => [
       { label: "Dashboard", icon: <DashboardIcon />, path: "/Principal/dashboard" },
       { label: "Calendar", icon: <CalendarIcon />, path: "/Principal/calendar" },
+      { label: "Students", icon: <StudentsIcon />, path: "/Principal/students" },
+      { label: "Teachers", icon: <TeachersIcon />, path: "/Principal/teachers" },
       { label: "Reports", icon: <ReportsIcon />, path: "/Principal/reports" },
     ],
     []

@@ -1,11 +1,11 @@
 "use client";
 import Sidebar from "@/components/Principal/Sidebar";
 import Header from "@/components/Principal/Header";
-import { useState } from "react";
-// Text Components
-import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
-import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
-import BodyText from "@/components/Common/Texts/BodyText";
+import { useState, useEffect } from "react";
+// Button Component
+import UtilityButton from "@/components/Common/Buttons/UtilityButton";
+// Modal Component
+import AddScheduleModal from "./Modals/AddScheduleModal";
 
 interface Activity {
   id: number;
@@ -18,12 +18,61 @@ interface Activity {
   type: string;
 }
 
+interface RemedialPeriod {
+  id: number;
+  title: string;
+  startDate: Date;
+  endDate: Date;
+  isActive: boolean;
+}
+
 export default function Calendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [view, setView] = useState("month");
+  const [remedialPeriods, setRemedialPeriods] = useState<RemedialPeriod[]>([]);
+  const [showAddScheduleModal, setShowAddScheduleModal] = useState(false);
+  // Recently added schedule activation prompt
+  const [recentlyAddedId, setRecentlyAddedId] = useState<number | null>(null);
+  const [showActivationPrompt, setShowActivationPrompt] = useState(false);
 
-  // Empty activities array for view-only calendar
-  const [activities] = useState<Activity[]>([]);
+  // Activities array for calendar
+  const [activities, setActivities] = useState<Activity[]>([]);
+
+  // Initialize remedial periods
+  useEffect(() => {
+    // Try to load from localStorage if available
+    const savedPeriods = localStorage.getItem('remedialPeriods');
+    if (savedPeriods) {
+      const parsedPeriods = JSON.parse(savedPeriods).map((period: any) => ({
+        ...period,
+        startDate: new Date(period.startDate),
+        endDate: new Date(period.endDate)
+      }));
+      setRemedialPeriods(parsedPeriods);
+    } else {
+      // Default empty array if no saved periods
+      setRemedialPeriods([]);
+    }
+  }, []);
+
+  // Save to localStorage whenever periods change
+  useEffect(() => {
+    localStorage.setItem('remedialPeriods', JSON.stringify(remedialPeriods));
+  }, [remedialPeriods]);
+
+  // Check if current date is within a remedial period
+  const isRemedialPeriodActive = () => {
+    return remedialPeriods.some(period => {
+      const now = new Date();
+      return period.isActive && now >= period.startDate && now <= period.endDate;
+    });
+  };
+
+  // Add new schedule
+  const handleAddSchedule = (schedule: RemedialPeriod) => {
+    setRemedialPeriods(prev => [...prev, schedule]);
+    setRecentlyAddedId(schedule.id);
+    setShowActivationPrompt(true);
+  };
 
   // Get week number for a date
   const getWeekNumber = (date: Date): number => {
@@ -58,21 +107,13 @@ export default function Calendar() {
   // Navigation functions
   const prevPeriod = () => {
     const newDate = new Date(currentDate);
-    if (view === "month") {
-      newDate.setMonth(newDate.getMonth() - 1);
-    } else {
-      newDate.setDate(newDate.getDate() - 7);
-    }
+    newDate.setMonth(newDate.getMonth() - 1);
     setCurrentDate(newDate);
   };
 
   const nextPeriod = () => {
     const newDate = new Date(currentDate);
-    if (view === "month") {
-      newDate.setMonth(newDate.getMonth() + 1);
-    } else {
-      newDate.setDate(newDate.getDate() + 7);
-    }
+    newDate.setMonth(newDate.getMonth() + 1);
     setCurrentDate(newDate);
   };
 
@@ -91,15 +132,17 @@ export default function Calendar() {
     }
   };
 
-  // Render the calendar based on view
+  // Check if a date is within any remedial period
+  const isDateInRemedialPeriod = (date: Date) => {
+    return remedialPeriods.some(period => {
+      if (!period.startDate || !period.endDate || isNaN(period.startDate.getTime()) || isNaN(period.endDate.getTime())) return false;
+      return period.isActive && date >= period.startDate && date <= period.endDate;
+    });
+  };
+
+  // Render the calendar - only month view now
   const renderCalendar = () => {
-    if (view === "month") {
-      return renderMonthView();
-    } else if (view === "week") {
-      return renderWeekView();
-    } else {
-      return renderListView();
-    }
+    return renderMonthView();
   };
 
   // List View
@@ -118,7 +161,7 @@ export default function Calendar() {
                 {activities.map((activity) => (
                   <div
                     key={activity.id}
-                    className="p-3 border-l-4 border-blue-500 bg-white rounded-lg shadow-sm"
+                    className="p-3 border-l-4 border-[#013300] bg-white rounded-lg shadow-sm"
                   >
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
@@ -169,14 +212,19 @@ export default function Calendar() {
             (a) => a.date.getDate() === day && a.date.getMonth() === month && a.date.getFullYear() === year
           );
 
+          // Check if this day is within a remedial period
+          const isRemedialDay = isDateInRemedialPeriod(currentDay);
+
           days.push(
             <div
               key={`day-${day}`}
-              className="h-20 p-1 border border-gray-100 overflow-hidden relative"
+              className={`h-20 p-1 border border-gray-100 overflow-hidden relative ${
+                isRemedialDay ? "bg-green-50" : ""
+              }`}
             >
               <div className="text-right text-sm font-medium text-gray-800 mb-1">
                 {day === new Date().getDate() && month === new Date().getMonth() && year === new Date().getFullYear() ? (
-                  <span className="inline-block w-6 h-6 bg-blue-600 text-white rounded-full text-center leading-6">
+                  <span className="inline-block w-6 h-6 bg-[#013300] text-white rounded-full text-center leading-6">
                     {day}
                   </span>
                 ) : (
@@ -224,75 +272,6 @@ export default function Calendar() {
     );
   };
 
-  const renderWeekView = () => {
-    const startDate = new Date(currentDate);
-    startDate.setDate(startDate.getDate() - startDate.getDay());
-
-    const days = [];
-    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-    for (let i = 0; i < 7; i++) {
-      const dayDate = new Date(startDate);
-      dayDate.setDate(startDate.getDate() + i);
-
-      const dayActivities = activities
-        .filter(
-          (a) =>
-            a.date.getDate() === dayDate.getDate() &&
-            a.date.getMonth() === dayDate.getMonth() &&
-            a.date.getFullYear() === dayDate.getFullYear()
-        )
-        .sort((a, b) => a.date.getTime() - b.date.getTime());
-
-      days.push(
-        <div 
-          key={`weekday-${i}`} 
-          className="border-b border-gray-200"
-        >
-          <div className="p-2 bg-gray-50">
-            <div>
-              <div className="font-medium text-gray-800 text-sm">{dayNames[i]}</div>
-              <div className="text-xs text-gray-600">
-                {dayDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                {dayDate.getDate() === new Date().getDate() &&
-                  dayDate.getMonth() === new Date().getMonth() &&
-                  dayDate.getFullYear() === new Date().getFullYear() && (
-                    <span className="ml-2 text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded-full">Today</span>
-                  )}
-              </div>
-            </div>
-          </div>
-          <div className="p-2 space-y-2">
-            {dayActivities.length > 0 ? (
-              dayActivities.map((activity) => (
-                <div
-                  key={activity.id}
-                  className="p-2 rounded-lg border-l-4 shadow-sm bg-white"
-                  style={{
-                    borderLeftColor: activity.type === "class" ? "#2563EB" : activity.type === "meeting" ? "#059669" : "#7C3AED",
-                  }}
-                >
-                  <div className="flex-1">
-                    <div className="font-medium text-gray-900 text-sm">{activity.title}</div>
-                    <div className="text-xs text-gray-600 mt-1">
-                      {activity.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} -{" "}
-                      {activity.end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                    </div>
-                    <div className="text-xs text-gray-500 mt-1">{activity.roomNo}</div>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="text-center text-gray-400 py-4 text-sm">No activities scheduled</div>
-            )}
-          </div>
-        </div>
-      );
-    }
-
-    return <div className="divide-y">{days}</div>;
-  };
-
   return (
     <div className="flex h-screen bg-white overflow-hidden">
       <Sidebar />
@@ -301,6 +280,51 @@ export default function Calendar() {
         <main className="flex-1 overflow-y-auto">
           <div className="p-4 h-full sm:p-5 md:p-6">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-full min-h-[400px] overflow-y-auto p-4 sm:p-5 md:p-6">
+              {/* Simplified Remedial Period Controls */}
+              <div className="mb-4 p-4 bg-gray-100 rounded-lg">
+                <h3 className="text-lg font-semibold text-black mb-2">Remedial Period Management</h3>
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <p className="text-sm text-black">
+                      Status: {isRemedialPeriodActive() ? (
+                        <span className="font-semibold text-green-600">Active</span>
+                      ) : (
+                        <span className="font-semibold text-gray-600">Inactive</span>
+                      )}
+                    </p>
+                  </div>
+                  <div className="flex space-x-2">
+                    <UtilityButton small onClick={() => setShowAddScheduleModal(true)}>
+                      Add Schedule
+                    </UtilityButton>
+                  </div>
+                </div>
+                {showActivationPrompt && recentlyAddedId && (
+                  <div className="mb-4 p-3 rounded-md border border-blue-200 bg-blue-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="text-sm text-blue-800">
+                      Indicated schedule? Activate it now so it appears highlighted on the calendar.
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setRemedialPeriods(prev => prev.map(p => ({ ...p, isActive: p.id === recentlyAddedId })));
+                          setShowActivationPrompt(false);
+                        }}
+                        className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                      >
+                        Activate Now
+                      </button>
+                      <button
+                        onClick={() => setShowActivationPrompt(false)}
+                        className="px-3 py-1.5 text-xs font-medium rounded-md bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Calendar Controls */}
               <div className="flex flex-col space-y-3 mb-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
                 <div className="flex items-center space-x-2 sm:space-x-3">
@@ -317,43 +341,11 @@ export default function Calendar() {
                     </button>
                   </div>
                   <h2 className="text-lg font-semibold text-gray-800 sm:text-xl">
-                    {view === "month"
-                      ? currentDate.toLocaleDateString("en-US", { month: "long", year: "numeric" })
-                      : view === "week"
-                      ? `Week of ${currentDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
-                      : "Activities by Week"}
+                    {currentDate.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
                   </h2>
                   <button onClick={goToToday} className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-md text-gray-700">
                     Today
                   </button>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <div className="flex bg-gray-100 rounded-md p-1">
-                    <button
-                      onClick={() => setView("month")}
-                      className={`px-3 py-1.5 text-xs rounded-md sm:text-sm ${
-                        view === "month" ? "bg-white text-gray-800 shadow-sm" : "text-gray-600 hover:text-gray-800"
-                      }`}
-                    >
-                      Month
-                    </button>
-                    <button
-                      onClick={() => setView("week")}
-                      className={`px-3 py-1.5 text-xs rounded-md sm:text-sm ${
-                        view === "week" ? "bg-white text-gray-800 shadow-sm" : "text-gray-600 hover:text-gray-800"
-                      }`}
-                    >
-                      Week
-                    </button>
-                    <button
-                      onClick={() => setView("list")}
-                      className={`px-3 py-1.5 text-xs rounded-md sm:text-sm ${
-                        view === "list" ? "bg-white text-gray-800 shadow-sm" : "text-gray-600 hover:text-gray-800"
-                      }`}
-                    >
-                      List
-                    </button>
-                  </div>
                 </div>
               </div>
 
@@ -365,6 +357,13 @@ export default function Calendar() {
           </div>
         </main>
       </div>
+
+      {/* Add Schedule Modal */}
+      <AddScheduleModal
+        show={showAddScheduleModal}
+        onClose={() => setShowAddScheduleModal(false)}
+        onSave={handleAddSchedule}
+      />
     </div>
   );
 }

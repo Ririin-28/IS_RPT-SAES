@@ -225,7 +225,6 @@ export default function TeacherTab({ teachers, setTeachers }: TeacherTabProps) {
   return (
     <div>
       {/* Top Bar: Total and Actions */}
-      <SecondaryHeader title="Teacher List Table" />
       <div
         className="
         /* Mobile */

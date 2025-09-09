@@ -30,7 +30,6 @@ export default function ParagraphTab() {
   return (
     <div>
       {/* Student Table Section */}
-      <SecondaryHeader title="Paragraph Modules" />
       <div
         className="
         /* Mobile */

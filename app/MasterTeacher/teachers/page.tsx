@@ -2,21 +2,14 @@
 import Sidebar from "@/components/MasterTeacher/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
 import { useState } from "react";
-// Button Components
-import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
-import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
-import UtilityButton from "@/components/Common/Buttons/UtilityButton";
-import DangerButton from "@/components/Common/Buttons/DangerButton";
-// Text Components
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
-import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
-import BodyText from "@/components/Common/Texts/BodyText";
+import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 // Tabs
 import TeacherTab from "./Tabs/TeacherTab";
 import AttendanceTab from "./Tabs/AttendanceTab";
 
 export default function Teachers() {
-  const [activeTab, setActiveTab] = useState("Teachers");
+  const [activeTab, setActiveTab] = useState("Information List");
   // Lifted teachers state so both tabs share the same data
   const [teachers, setTeachers] = useState<any[]>([]);
 
@@ -63,44 +56,15 @@ export default function Teachers() {
               md:p-6
             "
             >
-              {/*---------------------------------Tabs Navigation---------------------------------*/}
-              <div
-                className="
-                /* Mobile */
-                flex flex-wrap gap-2 mb-6
-                
-                /* Tablet */
-                sm:flex-nowrap sm:gap-3 sm:mb-8
-                
-                /* Desktop */
-                md:mb-10 md:mt-2
-              "
-              >
-                {["Teachers", "Attendance"].map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => setActiveTab(tab)}
-                    className={`
-                      /* Mobile */
-                      px-3 py-1.5 text-sm rounded-lg font-semibold focus:outline-none 
-                      transition-all duration-150 shadow-sm border border-transparent
-                      flex-grow text-center
-                      
-                      /* Tablet */
-                      sm:px-4 sm:py-2 sm:text-base sm:flex-grow-0
-                      
-                      /* Desktop */
-                      md:px-5
-                      ${
-                        activeTab === tab
-                          ? "bg-[#013300] text-white shadow-md"
-                          : "bg-gray-100 text-[#013300] hover:ring-2 hover:ring-[#013300] hover:scale-[1.03] hover:shadow-md"
-                      }
-                    `}
-                  >
-                    {tab}
-                  </button>
-                ))}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                <div className="flex items-center gap-0">
+                  <SecondaryHeader title="Teachers" />
+                  <HeaderDropdown
+                    options={["Information List", "Attendance List"]}
+                    value={activeTab}
+                    onChange={setActiveTab}
+                  />
+                </div>
               </div>
               {/*---------------------------------Tab Content---------------------------------*/}
               <div
@@ -112,8 +76,8 @@ export default function Teachers() {
                 sm:mt-6
               "
               >
-                {activeTab === "Teachers" && <TeacherTab teachers={teachers} setTeachers={setTeachers} />}
-                {activeTab === "Attendance" && <AttendanceTab teachers={teachers} />}
+                {activeTab === "Information List" && <TeacherTab teachers={teachers} setTeachers={setTeachers} />}
+                {activeTab === "Attendance List" && <AttendanceTab teachers={teachers} />}
               </div>
             </div>
           </div>

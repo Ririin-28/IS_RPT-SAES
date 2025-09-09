@@ -207,7 +207,6 @@ export default function StudentTab({ students, setStudents }: StudentTabProps) {
   return (
     <div>
       {/* Top Bar: Total and Actions */}
-      <SecondaryHeader title="Student List Table" />
       <div className="flex flex-row justify-between items-center mb-4 sm:mb-6 md:mb-2">
         <TertiaryHeader title={`Total: ${students.length}`} />
         <div className="flex items-center gap-2">
