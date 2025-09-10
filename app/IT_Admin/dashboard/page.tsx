@@ -1,3 +1,4 @@
+"use client";
 import Sidebar from "@/components/IT_Admin/Sidebar";
 import Header from "@/components/IT_Admin/Header";
 // Button Components
@@ -8,7 +9,8 @@ import DangerButton from "@/components/Common/Buttons/DangerButton";
 // Text Components
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
-import BodyText from "@/components/Common/Texts/BodyText";
+
+import TableList from "@/components/Common/Tables/TableList";
 
 // OverviewCard component with responsive styles
 function OverviewCard({
@@ -88,69 +90,53 @@ function OverviewCard({
   );
 }
 
+
 export default function Dashboard() {
+  // Sample data for recent logins
+  const recentLogins = [
+    { id: 1, user: "Juan Dela Cruz", role: "Teacher", loginTime: "2025-09-08 08:15", status: "Success" },
+    { id: 2, user: "Maria Santos", role: "Principal", loginTime: "2025-09-08 08:10", status: "Success" },
+    { id: 3, user: "Ana Reyes", role: "Parent", loginTime: "2025-09-08 07:55", status: "Failed" },
+    { id: 4, user: "IT Admin", role: "IT Admin", loginTime: "2025-09-08 07:50", status: "Success" },
+  ];
+  function formatDateTime(dt: string) {
+    const date = new Date(dt.replace(' ', 'T'));
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+  }
+  const columns = [
+    { key: "user", title: "User" },
+    { key: "role", title: "Role" },
+    { key: "loginTime", title: "Login Time", render: (row: any) => formatDateTime(row.loginTime) },
+    { key: "status", title: "Status", render: (row: any) => (
+      <span className={row.status === "Success" ? "text-green-600 font-semibold" : "text-red-600 font-semibold"}>
+        {row.status}
+      </span>
+    ) },
+  ];
+
   return (
-    <div
-      className="
-      /* Mobile */
-      flex h-screen bg-white overflow-hidden
-    "
-    >
+    <div className="flex h-screen bg-white overflow-hidden">
       {/*---------------------------------Sidebar---------------------------------*/}
       <Sidebar />
 
       {/*---------------------------------Main Content---------------------------------*/}
-      <div
-        className="
-        /* Mobile */
-        flex-1 pt-16 flex flex-col overflow-hidden
-
-
-      "
-      >
+      <div className="flex-1 pt-16 flex flex-col overflow-hidden">
         <Header title="Dashboard" />
 
         <main className="flex-1 overflow-y-auto">
-          <div
-            className="
-            /* Mobile */
-            p-4 h-full
-
-            /* Tablet */
-            sm:p-5
-
-            /* Desktop */
-            md:p-6
-          "
-          >
+          <div className="p-4 h-full sm:p-5 md:p-6">
             {/*---------------------------------Main Container---------------------------------*/}
-            <div
-              className="
-              /* Mobile */
-              bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[380px]
-              overflow-y-auto p-4
-
-              /* Tablet */
-              sm:p-5
-
-              /* Desktop */
-              md:p-6
-            "
-            >
+            <div className="bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[380px] overflow-y-auto p-4 sm:p-5 md:p-6">
               {/* Overview Cards Section */}
               <SecondaryHeader title="User Overview" />
-              <div
-                className="
-                /* Mobile */
-                grid grid-cols-1 gap-4 mb-6
-
-                /* Small Tablet */
-                sm:grid-cols-2 sm:gap-5 sm:mb-7
-
-                /* Desktop */
-                lg:grid-cols-4 lg:gap-6 lg:mb-8
-              "
-              >
+              <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2 sm:gap-5 sm:mb-7 lg:grid-cols-4 lg:gap-6 lg:mb-8">
                 <OverviewCard
                   value={128}
                   label="Total Users"
@@ -189,6 +175,7 @@ export default function Dashboard() {
                   }
                 />
                 <OverviewCard
+
                   value={3}
                   label="Disabled Accounts"
                   icon={
@@ -198,6 +185,11 @@ export default function Dashboard() {
                     </svg>
                   }
                 />
+              </div>
+              {/* Recent Logins Table Section */}
+              <div className="mt-8">
+                <TertiaryHeader title="Recent Logins" />
+                <TableList columns={columns} data={recentLogins} pageSize={5} hidePagination={true} />
               </div>
             </div>
           </div>

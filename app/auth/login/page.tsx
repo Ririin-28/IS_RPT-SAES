@@ -2,7 +2,7 @@
 import { useRouter } from "next/navigation";
 import { getSession } from "next-auth/react";
 import { useEffect, useState } from "react";
-import { FaEye, FaEyeSlash } from "react-icons/fa";
+import { FaEye, FaEyeSlash, FaInfoCircle } from "react-icons/fa";
 import RPTLogoTitle from "@/components/Common/RPTLogoTitle";
 import { clearOAuthState } from "@/lib/utils/clear-oauth-state";
 
@@ -16,6 +16,7 @@ export default function Login() {
   const [verifying, setVerifying] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(false);
+  
   // Live credential check
   useEffect(() => {
     let active = true;
@@ -190,7 +191,15 @@ export default function Login() {
         {/* Login Card */}
         <div className="flex flex-col justify-center items-center bg-white rounded-3xl shadow-xl p-6 w-full sm:p-6 sm:max-w-md md:w-96">
           <div className="w-full">
-            <h2 className="text-2xl font-bold text-green-900 mb-6 text-center sm:text-3xl sm:mb-6">Login</h2>
+            <h2 className="text-2xl font-bold text-green-900 mb-2 text-center sm:text-3xl">Login</h2>
+            
+            {/* Platform description - concise version */}
+            <div className="flex items-center justify-center mb-6 bg-green-50 py-2 px-3 rounded-lg border border-green-200">
+              <FaInfoCircle className="text-green-700 mr-2 flex-shrink-0" />
+              <p className="text-xs text-green-800 text-center">
+                For San Agustin Elementary School authorized accounts only.
+              </p>
+            </div>
 
             <form onSubmit={handleLogin}>
               {/* Email Field */}

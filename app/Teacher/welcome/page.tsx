@@ -56,8 +56,33 @@ export default function TeacherWelcomePage() {
           <br />
           Teacher!
         </h2>
-        <h1 className="text-2xl md:text-6xl font-bold text-blue-900 text-center mb-8">Ms. Maria Santos</h1>
-        <div className="text-lg text-blue-800 font-medium text-center">Redirecting to dashboard in {count}...</div>
+  <h1 className="text-2xl md:text-6xl font-bold text-blue-900 text-center mb-8">Maria Santos</h1>
+        <div className="text-xl md:text-2xl text-blue-800 font-semibold text-center flex items-center justify-center">
+          Redirecting to dashboard
+          <span className="ml-2 flex gap-1">
+            <span className="inline-block animate-dot1">.</span>
+            <span className="inline-block animate-dot2">.</span>
+            <span className="inline-block animate-dot3">.</span>
+          </span>
+        </div>
+        <style jsx>{`
+          .animate-dot1 {
+            animation: bounceDot 1.2s infinite;
+            animation-delay: 0s;
+          }
+          .animate-dot2 {
+            animation: bounceDot 1.2s infinite;
+            animation-delay: 0.3s;
+          }
+          .animate-dot3 {
+            animation: bounceDot 1.2s infinite;
+            animation-delay: 0.6s;
+          }
+          @keyframes bounceDot {
+            0%, 80%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-10px); }
+          }
+        `}</style>
       </div>
     </div>
   );

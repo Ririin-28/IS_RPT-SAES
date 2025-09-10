@@ -20,9 +20,10 @@ interface TableListProps {
   selectedItems?: Set<any>;
   onSelectAll?: (checked: boolean) => void;
   onSelectItem?: (id: any, checked: boolean) => void;
+  hidePagination?: boolean;
 }
 
-export default function TableList({ columns, data, actions, pageSize = 10, selectable = false, selectedItems = new Set(), onSelectAll, onSelectItem }: TableListProps) {
+export default function TableList({ columns, data, actions, pageSize = 10, selectable = false, selectedItems = new Set(), onSelectAll, onSelectItem, hidePagination = false }: TableListProps) {
   const [page, setPage] = useState(1);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const totalPages = Math.ceil(data.length / pageSize);
@@ -46,7 +47,7 @@ export default function TableList({ columns, data, actions, pageSize = 10, selec
               )}
               {columns.map((col) => (
                 <th key={col.key} className="px-4 py-0 text-left">
-                  <TertiaryHeader title={col.title} className="mb-0" />
+                  <TertiaryHeader title={typeof col.title === 'string' ? col.title : ''} className="mb-0" />
                 </th>
               ))}
               {actions && (
@@ -107,25 +108,25 @@ export default function TableList({ columns, data, actions, pageSize = 10, selec
         </table>
       </div>
       {/* Pagination Section */}
-      {data.length > 0 && (
+      {!hidePagination && data.length > 0 && (
         <div className="flex flex-row flex-wrap pt-2 items-center gap-2 text-sm sm:text-base justify-center">
-        <UtilityButton small disabled={page === 1} onClick={() => setPage(page - 1)}>
-          <span className="flex items-center gap-1">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-            </svg>
-            Prev
-          </span>
-        </UtilityButton>
-        <span className="text-gray-500 font-semibold px-3 py-1.5 rounded bg-gray-100 cursor-default">{page}</span>
-        <UtilityButton small disabled={page === totalPages || totalPages === 0} onClick={() => setPage(page + 1)}>
-          <span className="flex items-center gap-1">
-            Next
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
-          </span>
-        </UtilityButton>
+          <UtilityButton small disabled={page === 1} onClick={() => setPage(page - 1)}>
+            <span className="flex items-center gap-1">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+              </svg>
+              Prev
+            </span>
+          </UtilityButton>
+          <span className="text-gray-500 font-semibold px-3 py-1.5 rounded bg-gray-100 cursor-default">{page}</span>
+          <UtilityButton small disabled={page === totalPages || totalPages === 0} onClick={() => setPage(page + 1)}>
+            <span className="flex items-center gap-1">
+              Next
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </span>
+          </UtilityButton>
         </div>
       )}
     </div>

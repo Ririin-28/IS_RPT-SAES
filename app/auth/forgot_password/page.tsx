@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { FaEye, FaEyeSlash } from "react-icons/fa";
 import { useRouter } from "next/navigation";
 import RPTLogoTitle from "@/components/Common/RPTLogoTitle";
 
@@ -15,6 +16,8 @@ export default function ForgotPassword() {
 	const [resetError, setResetError] = useState("");
 	const [resetSuccess, setResetSuccess] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
+	const [showNewPassword, setShowNewPassword] = useState(false);
+	const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 	const router = useRouter();
 
 	// Step 1: Send OTP
@@ -171,27 +174,45 @@ export default function ForgotPassword() {
 							<form onSubmit={handleResetPassword}>
 								<div className="mb-3">
 									<label htmlFor="newPassword" className="block text-sm font-medium text-[#013300] mb-1 sm:text-base">New Password</label>
-									<input
-										id="newPassword"
-										type="password"
-										value={newPassword}
-										onChange={e => setNewPassword(e.target.value)}
-										placeholder="Enter new password"
-										className="w-full px-4 py-2 border-2 border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#013300] focus:border-transparent transition placeholder-gray-400 text-[#013300] sm:py-2"
-										required
-									/>
+									<div className="relative">
+										<input
+											id="newPassword"
+											type={showNewPassword ? "text" : "password"}
+											value={newPassword}
+											onChange={e => setNewPassword(e.target.value)}
+											placeholder="Enter new password"
+											className="w-full px-4 py-2 border-2 border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#013300] focus:border-transparent transition placeholder-gray-400 text-[#013300] sm:py-2 pr-10"
+											required
+										/>
+										<button
+											type="button"
+											onClick={() => setShowNewPassword((prev) => !prev)}
+											className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-600 focus:outline-none"
+										>
+											{showNewPassword ? <FaEyeSlash className="h-5 w-5" /> : <FaEye className="h-5 w-5" />}
+										</button>
+									</div>
 								</div>
 								<div className="mb-4">
 									<label htmlFor="confirmPassword" className="block text-sm font-medium text-[#013300] mb-1 sm:text-base">Confirm New Password</label>
-									<input
-										id="confirmPassword"
-										type="password"
-										value={confirmPassword}
-										onChange={e => setConfirmPassword(e.target.value)}
-										placeholder="Confirm new password"
-										className="w-full px-4 py-2 border-2 border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#013300] focus:border-transparent transition placeholder-gray-400 text-[#013300] sm:py-2"
-										required
-									/>
+									<div className="relative">
+										<input
+											id="confirmPassword"
+											type={showConfirmPassword ? "text" : "password"}
+											value={confirmPassword}
+											onChange={e => setConfirmPassword(e.target.value)}
+											placeholder="Confirm new password"
+											className="w-full px-4 py-2 border-2 border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#013300] focus:border-transparent transition placeholder-gray-400 text-[#013300] sm:py-2 pr-10"
+											required
+										/>
+										<button
+											type="button"
+											onClick={() => setShowConfirmPassword((prev) => !prev)}
+											className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-600 focus:outline-none"
+										>
+											{showConfirmPassword ? <FaEyeSlash className="h-5 w-5" /> : <FaEye className="h-5 w-5" />}
+										</button>
+									</div>
 								</div>
 								<button
 									type="submit"
