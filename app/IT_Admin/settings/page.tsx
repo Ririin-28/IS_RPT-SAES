@@ -12,12 +12,7 @@ export default function ITAdminSettings() {
 	const [systemVersion] = useState("v1.0.0");
 	const [adminUsers, setAdminUsers] = useState(["admin@email.com"]);
 	const [newAdmin, setNewAdmin] = useState("");
-	const [passwordPolicy, setPasswordPolicy] = useState({ minLength: 8, requireSpecial: true, expireDays: 90 });
-	const [sessionTimeout, setSessionTimeout] = useState(30);
-	const [twoFactor, setTwoFactor] = useState(false);
-	const [allowedIPs, setAllowedIPs] = useState("");
-	const [notificationEmail, setNotificationEmail] = useState(true);
-	const [notificationSMS, setNotificationSMS] = useState(false);
+// Removed password modification state
 	const [backupMsg, setBackupMsg] = useState("");
 	const [restoreMsg, setRestoreMsg] = useState("");
 	const [maintenanceMsg, setMaintenanceMsg] = useState("");
@@ -48,22 +43,13 @@ export default function ITAdminSettings() {
 	const [logo, setLogo] = useState("");
 	const [contact, setContact] = useState("admin@email.com");
 	const [systemMsg, setSystemMsg] = useState("");
-	const [theme, setTheme] = useState("Default");
-	const [themeMsg, setThemeMsg] = useState("");
-	const [logRetention, setLogRetention] = useState(30);
-	const [logMsg, setLogMsg] = useState("");
+// Removed theme and log settings state
 
 	const handleUpdateSystem = () => {
 		setSystemMsg("System settings updated successfully!");
 	};
 
-	const handleApplyTheme = () => {
-		setThemeMsg(`Theme changed to ${theme}!`);
-	};
-
-	const handleExportLogs = () => {
-		setLogMsg("Logs exported successfully!");
-	};
+// Removed theme and log handlers
 
 		return (
 			<div className="flex h-screen bg-white overflow-hidden">
@@ -93,22 +79,7 @@ export default function ITAdminSettings() {
 								</div>
 							</div>
 
-							{/* Security Settings */}
-						<div className="bg-green-50 rounded-lg shadow-md border border-green-200 p-6">
-								<TertiaryHeader title="Security Settings" />
-								<div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-									<div className="md:col-span-2 grid grid-cols-2 gap-6">
-										<div>
-											<label className="block text-sm font-semibold mb-1 text-green-900">Password Min Length</label>
-											<input type="number" min={6} className="w-full border rounded px-3 py-2 bg-green-100 text-green-900" value={passwordPolicy.minLength} onChange={e => setPasswordPolicy({ ...passwordPolicy, minLength: Number(e.target.value) })} />
-										</div>
-										<div>
-											<label className="block text-sm font-semibold mb-1 text-green-900">Password Expiry (days)</label>
-											<input type="number" min={1} className="w-full border rounded px-3 py-2 bg-green-100 text-green-900" value={passwordPolicy.expireDays} onChange={e => setPasswordPolicy({ ...passwordPolicy, expireDays: Number(e.target.value) })} />
-										</div>
-									</div>
-								</div>
-							</div>
+
 
 								{/* System Configuration */}
 								<div className="bg-green-50 rounded-lg shadow-md border border-green-200 p-6">
@@ -116,7 +87,7 @@ export default function ITAdminSettings() {
 									<div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
 										<div>
 											<label className="block text-sm font-semibold mb-1 text-green-900">Site Name</label>
-											<input type="text" className="w-full border rounded px-3 py-2 bg-green-100 text-green-900" value={siteName} onChange={e => setSiteName(e.target.value)} />
+											<input type="text" className="w-full border rounded px-3 py-2 bg-white text-green-900" value={siteName} onChange={e => setSiteName(e.target.value)} />
 										</div>
 										<div>
 											<label className="block text-sm font-semibold mb-1 text-green-900">Logo</label>
@@ -131,31 +102,50 @@ export default function ITAdminSettings() {
 									{systemMsg && <div className="text-green-700 mt-2 text-sm">{systemMsg}</div>}
 								</div>
 
-								{/* Theme & Appearance */}
-								<div className="bg-green-50 rounded-lg shadow-md border border-green-200 p-6">
-									<TertiaryHeader title="Theme & Appearance" />
-									<div className="mt-4">
-										<label className="block text-sm font-semibold mb-1 text-green-900">Theme</label>
-										<select className="w-full border rounded px-3 py-2 bg-green-100 text-green-900" value={theme} onChange={e => setTheme(e.target.value)}>
-											<option value="Default">Default</option>
-											<option value="Dark">Dark</option>
-											<option value="Light">Light</option>
-										</select>
-									</div>
-									<PrimaryButton className="mt-4 w-auto px-4 py-2" onClick={handleApplyTheme}>Apply Theme</PrimaryButton>
-									{themeMsg && <div className="text-green-700 mt-2 text-sm">{themeMsg}</div>}
-								</div>
 
-								{/* Audit Log Settings */}
-								<div className="bg-green-50 rounded-lg shadow-md border border-green-200 p-6">
-									<TertiaryHeader title="Audit Log Settings" />
-									<div className="mt-4">
-										<label className="block text-sm font-semibold mb-1 text-green-900">Log Retention (days)</label>
-										<input type="number" min={1} className="w-full border rounded px-3 py-2 bg-green-100 text-green-900" value={logRetention} onChange={e => setLogRetention(Number(e.target.value))} />
+
+
+							{/* Landing Page Details & Contacts */}
+							<div className="bg-green-50 rounded-lg shadow-md border border-green-200 p-6">
+								<TertiaryHeader title="Landing Page Details & Contacts" />
+								<div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+									<div>
+										<label className="block text-sm font-semibold mb-1 text-green-900">Landing Page Title</label>
+										<input type="text" className="w-full border rounded px-3 py-2 bg-green-100 text-green-900" value={siteName} onChange={e => setSiteName(e.target.value)} />
 									</div>
-									<UtilityButton className="mt-4 w-auto px-4 py-2" onClick={handleExportLogs}>Export Logs</UtilityButton>
-									{logMsg && <div className="text-green-700 mt-2 text-sm">{logMsg}</div>}
+									<div>
+										<label className="block text-sm font-semibold mb-1 text-green-900">Contact Email</label>
+										<input type="email" className="w-full border rounded px-3 py-2 bg-white text-green-900" value={contact} onChange={e => setContact(e.target.value)} />
+									</div>
+									<div className="md:col-span-2">
+										<label className="block text-sm font-semibold mb-1 text-green-900">Contact Number</label>
+										<input type="text" className="w-full border rounded px-3 py-2 bg-white text-green-900" placeholder="e.g. +63 900 000 0000" />
+									</div>
+									<div className="md:col-span-2">
+										<label className="block text-sm font-semibold mb-1 text-green-900">Landing Page Description</label>
+										<textarea className="w-full border rounded px-3 py-2 bg-white text-green-900" rows={3} placeholder="Enter a short description for the landing page..." />
+									</div>
 								</div>
+								<PrimaryButton className="mt-4 w-auto px-4 py-2">Save Landing Page Details</PrimaryButton>
+							</div>
+
+							{/* Landing Page Picture */}
+							<div className="bg-green-50 rounded-lg shadow-md border border-green-200 p-6">
+								<TertiaryHeader title="Landing Page Picture" />
+								<div className="mt-4">
+									  <input type="file" accept="image/*" className="w-full border rounded px-3 py-2 bg-white text-green-900" />
+								</div>
+								<PrimaryButton className="mt-4 w-auto px-4 py-2">Upload Picture</PrimaryButton>
+							</div>
+
+							{/* Privacy Policy File */}
+							<div className="bg-green-50 rounded-lg shadow-md border border-green-200 p-6">
+								<TertiaryHeader title="Privacy Policy File" />
+								<div className="mt-4">
+									  <input type="file" accept="application/pdf,.doc,.docx,.txt" className="w-full border rounded px-3 py-2 bg-white text-green-900" />
+								</div>
+								<PrimaryButton className="mt-4 w-auto px-4 py-2">Upload Privacy Policy</PrimaryButton>
+							</div>
 							</div>
 						</div>
 					</main>
