@@ -95,7 +95,6 @@ export default function ParagraphTab() {
 
   return (
     <div>
-      <SecondaryHeader title="Paragraph Materials" />
       <div
         className="
         /* Mobile */

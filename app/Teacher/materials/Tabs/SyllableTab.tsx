@@ -95,7 +95,6 @@ export default function SyllableTab() {
 
   return (
     <div>
-      <SecondaryHeader title="Syllable Materials" />
       <div
         className="
         /* Mobile */

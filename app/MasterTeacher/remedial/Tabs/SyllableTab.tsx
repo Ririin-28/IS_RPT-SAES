@@ -30,7 +30,6 @@ export default function SyllableTab() {
   return (
     <div>
       {/* Student Table Section */}
-      <SecondaryHeader title="Syllable Modules" />
       <div
         className="
         /* Mobile */

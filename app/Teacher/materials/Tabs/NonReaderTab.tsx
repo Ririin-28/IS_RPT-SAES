@@ -95,7 +95,6 @@ export default function NonReaderTab() {
 
   return (
     <div>
-      <SecondaryHeader title="Non Reader Materials" />
       <div
         className="
         /* Mobile */

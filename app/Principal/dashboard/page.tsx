@@ -639,7 +639,7 @@ export default function PrincipalDashboard() {
               <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2 sm:gap-5 sm:mb-7 lg:grid-cols-4 lg:gap-6 lg:mb-8">
                 <OverviewCard
                   value={120}
-                  label="Remedial Students"
+                  label="Total Students"
                   icon={
                     <svg width="42" height="42" fill="none" viewBox="0 0 24 24">
                       <ellipse cx="12" cy="8" rx="4" ry="4" stroke="#013300" strokeWidth="2" />
@@ -649,7 +649,7 @@ export default function PrincipalDashboard() {
                 />
                 <OverviewCard
                   value={15}
-                  label="Remedial Teachers"
+                  label="Total Teachers"
                   icon={
                     <svg width="40" height="40" fill="none" viewBox="0 0 24 24">
                       <circle cx="8" cy="8" r="4" stroke="#013300" strokeWidth="2" />

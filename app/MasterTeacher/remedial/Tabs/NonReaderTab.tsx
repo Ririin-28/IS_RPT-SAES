@@ -45,7 +45,6 @@ export default function NonReaderTab() {
   return (
     <div>
       {/* Student Table Section */}
-      <SecondaryHeader title="Non Reader Modules" />
       <div
         className="
         /* Mobile */

@@ -30,7 +30,6 @@ export default function SentenceTab() {
   return (
     <div>
       {/* Student Table Section */}
-      <SecondaryHeader title="Sentence Modules" />
       <div
         className="
         /* Mobile */

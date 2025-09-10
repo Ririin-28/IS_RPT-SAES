@@ -192,7 +192,7 @@ export default function Calendar() {
                 {activities.map((activity) => (
                   <div
                     key={activity.id}
-                    className="p-3 border-l-4 border-blue-500 bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                    className="p-3 border-l-4 border-[#013300] bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-pointer"
                     onClick={() => setSelectedActivity(activity)}
                   >
                     <div className="flex justify-between items-start">
@@ -261,7 +261,7 @@ export default function Calendar() {
             >
               <div className="text-right text-sm font-medium text-gray-800 mb-1">
                 {day === new Date().getDate() && month === new Date().getMonth() && year === new Date().getFullYear() ? (
-                  <span className="inline-block w-6 h-6 bg-blue-600 text-white rounded-full text-center leading-6">
+                  <span className="inline-block w-6 h-6 bg-[#013300] text-white rounded-full text-center leading-6">
                     {day}
                   </span>
                 ) : (
@@ -355,7 +355,7 @@ export default function Calendar() {
                 {dayDate.getDate() === new Date().getDate() &&
                   dayDate.getMonth() === new Date().getMonth() &&
                   dayDate.getFullYear() === new Date().getFullYear() && (
-                    <span className="ml-2 text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded-full">Today</span>
+                    <span className="ml-2 text-xs bg-[#013300] text-white px-1.5 py-0.5 rounded-full">Today</span>
                   )}
               </div>
             </div>

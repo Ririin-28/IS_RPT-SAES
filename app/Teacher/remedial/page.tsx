@@ -1,16 +1,18 @@
+"use client";
 import TeacherSidebar from "@/components/Teacher/Sidebar";
 import TeacherHeader from "@/components/Teacher/Header";
-// Button Components
-import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
-import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
-import UtilityButton from "@/components/Common/Buttons/UtilityButton";
-import DangerButton from "@/components/Common/Buttons/DangerButton";
-// Text Components
+import { useState } from "react";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
-import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
-import BodyText from "@/components/Common/Texts/BodyText";
+import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
+// Tabs
+import NonReaderTab from "./Tabs/NonReaderTab";
+import SyllableTab from "./Tabs/SyllableTab";
+import WordTab from "./Tabs/WordTab";
+import SentenceTab from "./Tabs/SentenceTab";
+import ParagraphTab from "./Tabs/ParagraphTab";
 
-export default function Archive() {
+export default function Remedial() {
+  const [activeTab, setActiveTab] = useState("Non Reader");
   return (
     <div
       className="
@@ -50,8 +52,25 @@ export default function Archive() {
               md:p-6
             "
             >
-              {/* Empty container - will scroll if content exceeds height */}
-              {/* Add your content here - it will scroll when needed */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                <div className="flex items-center gap-0">
+                  <SecondaryHeader title="Remedial for" />
+                  <HeaderDropdown
+                    options={["Non Reader", "Syllable", "Word", "Sentence", "Paragraph"]}
+                    value={activeTab}
+                    onChange={setActiveTab}
+                  />
+                </div>
+              </div>
+              
+              {/*---------------------------------Tab Content---------------------------------*/}
+              <div className="mt-4 sm:mt-6">
+                {activeTab === "Non Reader" && <NonReaderTab />}
+                {activeTab === "Syllable" && <SyllableTab />}
+                {activeTab === "Word" && <WordTab />}
+                {activeTab === "Sentence" && <SentenceTab />}
+                {activeTab === "Paragraph" && <ParagraphTab />}
+              </div>
             </div>
           </div>
         </main>

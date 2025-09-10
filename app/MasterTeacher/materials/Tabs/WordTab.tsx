@@ -19,7 +19,6 @@ export default function WordTab() {
 
   return (
     <div>
-      <SecondaryHeader title="Word Materials" />
       <div
         className="
         /* Mobile */
