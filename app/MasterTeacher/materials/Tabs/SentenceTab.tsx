@@ -29,7 +29,9 @@ export default function SentenceTab() {
         md:mb-2
       "
       >
-        <TertiaryHeader title={`Total: ${materials.length}`} />
+        <p className="text-gray-600 text-md font-medium">
+        Total: {materials.length}
+        </p>
         <div className="flex gap-2">
           <UtilityButton small>
             <span className="flex items-center gap-1">

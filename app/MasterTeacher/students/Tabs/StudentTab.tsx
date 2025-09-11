@@ -17,12 +17,80 @@ import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
 import BodyText from "@/components/Common/Texts/BodyText";
 import BodyLabel from "@/components/Common/Texts/BodyLabel";
 
+const sections = ["All Sections", "A", "B", "C"];
+
+interface CustomDropdownProps {
+  options: string[];
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+}
+
+const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDropdownProps) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleOptionClick = (option: string) => {
+    onChange(option);
+    setIsOpen(false);
+  };
+
+  return (
+    <div className={`relative ${className}`} ref={dropdownRef}>
+      <button
+        type="button"
+        className="flex items-center justify-between pl-3 pr-8 py-1.5 text-sm font-medium text-gray-700 cursor-pointer focus:outline-none border border-gray-300 rounded bg-white"
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        {value}
+        <svg 
+          className={`ml-2 h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          fill="currentColor" 
+          viewBox="0 0 20 20"
+        >
+          <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
+        </svg>
+      </button>
+      
+      {isOpen && (
+        <div className="absolute z-50 mt-1 left-0 bg-white border border-gray-300 rounded-md shadow-lg w-full overflow-hidden">
+          {options.map((option) => (
+            <div
+              key={option}
+              className={`px-4 py-2 cursor-pointer transition-colors ${
+                option === value
+                  ? "bg-[#013300] text-white"
+                  : "text-gray-700 hover:bg-gray-100"
+              }`}
+              onClick={() => handleOptionClick(option)}
+            >
+              {option}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 interface StudentTabProps {
   students: any[];
   setStudents: React.Dispatch<React.SetStateAction<any[]>>;
+  searchTerm: string;
 }
 
-export default function StudentTab({ students, setStudents }: StudentTabProps) {
+export default function StudentTab({ students, setStudents, searchTerm }: StudentTabProps) {
   const [showModal, setShowModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
@@ -32,6 +100,7 @@ export default function StudentTab({ students, setStudents }: StudentTabProps) {
   const [selectedStudents, setSelectedStudents] = useState<Set<number>>(new Set());
   const [showKebabMenu, setShowKebabMenu] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
+  const [filter, setFilter] = useState({ section: "All Sections" });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const kebabRef = useRef<HTMLDivElement>(null);
 
@@ -95,9 +164,21 @@ export default function StudentTab({ students, setStudents }: StudentTabProps) {
     setSelectedStudents(newSelected);
   };
 
+  // Filter students based on search term and section
+  const filteredStudents = students.filter((student) => {
+    const matchSection = filter.section === "All Sections" || student.section === filter.section;
+    const matchSearch = searchTerm === "" || 
+      student.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      student.studentId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      student.grade?.toString().includes(searchTerm.toLowerCase()) ||
+      student.section?.toLowerCase().includes(searchTerm.toLowerCase());
+      
+    return matchSection && matchSearch;
+  });
+
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedStudents(new Set(students.map(s => s.id)));
+      setSelectedStudents(new Set(filteredStudents.map(s => s.id)));
     } else {
       setSelectedStudents(new Set());
     }
@@ -206,10 +287,23 @@ export default function StudentTab({ students, setStudents }: StudentTabProps) {
 
   return (
     <div>
-      {/* Top Bar: Total and Actions */}
-      <div className="flex flex-row justify-between items-center mb-4 sm:mb-6 md:mb-2">
-        <TertiaryHeader title={`Total: ${students.length}`} />
-        <div className="flex items-center gap-2">
+      <div className="flex flex-row justify-between items-center mb-4">
+        <p className="text-gray-600 text-md font-medium">
+          Total: {filteredStudents.length}
+        </p>
+        
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
+            <span className="text-sm text-gray-700 whitespace-nowrap">Section:</span>
+            <CustomDropdown 
+              options={sections}
+              value={filter.section}
+              onChange={(value) => setFilter({ section: value })}
+              className="min-w-[120px]"
+            />
+          </div>
+          
+          <div className="flex items-center gap-2">
           {selectMode ? (
             <>
               <SecondaryButton small onClick={handleCancelSelect}>
@@ -282,6 +376,7 @@ export default function StudentTab({ students, setStudents }: StudentTabProps) {
             onChange={handleFileSelect}
             className="hidden"
           />
+          </div>
         </div>
       </div>
 
@@ -312,7 +407,7 @@ export default function StudentTab({ students, setStudents }: StudentTabProps) {
     { key: "grade", title: "Grade" },
     { key: "section", title: "Section" },
   ]}
-  data={students.map((student, idx) => ({
+  data={filteredStudents.map((student, idx) => ({
     ...student,
     no: idx + 1,
   }))}

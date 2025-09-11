@@ -101,20 +101,19 @@ export default function GradeTwoTab({ students, setStudents, searchTerm }: Grade
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-2">
-        <p className="text-gray-600 mb-2 sm:mb-0">
-          Showing {filteredStudents.length} of {gradeTwoStudents.length} students
+      <div className="flex flex-row justify-between items-center mb-4">
+        <p className="text-gray-700 text-md font-medium">
+          Total: {gradeTwoStudents.length}
         </p>
         
-        <div className="flex items-center gap-3 bg-gray-100 rounded-lg p-2 w-fit">
-          <div className="flex items-center gap-2 text-sm text-gray-700">
-            <span>Section:</span>
-            <CustomDropdown 
-              options={sections}
-              value={filter.section}
-              onChange={(value) => setFilter({ section: value })}
-            />
-          </div>
+        <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
+          <span className="text-sm text-gray-700 whitespace-nowrap">Section:</span>
+          <CustomDropdown 
+            options={sections}
+            value={filter.section}
+            onChange={(value) => setFilter({ section: value })}
+            className="min-w-[120px]"
+          />
         </div>
       </div>
 

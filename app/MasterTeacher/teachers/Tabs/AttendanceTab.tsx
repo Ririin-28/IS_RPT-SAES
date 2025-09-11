@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import TableList from "@/components/Common/Tables/TableList";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
@@ -7,9 +7,10 @@ import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 
 interface AttendanceTabProps {
   teachers: any[];
+  searchTerm: string;
 }
 
-export default function AttendanceTab({ teachers }: AttendanceTabProps) {
+export default function AttendanceTab({ teachers, searchTerm }: AttendanceTabProps) {
   const [view, setView] = useState("Week");
   const [isEditing, setIsEditing] = useState(false);
   const [attendanceData, setAttendanceData] = useState<any[]>([]);
@@ -23,8 +24,8 @@ export default function AttendanceTab({ teachers }: AttendanceTabProps) {
   const currentMonth = monthNames[currentDate.getMonth()];
   const currentYear = currentDate.getFullYear();
 
-  // Generate days for current month
-  const generateMonthDays = () => {
+  // Generate days for current month using useMemo
+  const monthDays = useMemo(() => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -37,10 +38,10 @@ export default function AttendanceTab({ teachers }: AttendanceTabProps) {
     }
 
     return days;
-  };
+  }, [currentDate]);
 
-  // Generate days for current week (Sunday to Saturday)
-  const generateWeekDays = () => {
+  // Generate days for current week using useMemo
+  const weekDays = useMemo(() => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
     const day = currentDate.getDate();
@@ -56,26 +57,37 @@ export default function AttendanceTab({ teachers }: AttendanceTabProps) {
     }
 
     return days;
-  };
-
-  const monthDays = generateMonthDays();
-  const weekDays = generateWeekDays();
+  }, [currentDate]);
 
   const goToPreviousMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
   const goToNextMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
   const goToPreviousWeek = () => { const d = new Date(currentDate); d.setDate(currentDate.getDate() - 7); setCurrentDate(d); };
   const goToNextWeek = () => { const d = new Date(currentDate); d.setDate(currentDate.getDate() + 7); setCurrentDate(d); };
 
-  // Initialize attendance when defaultTeachers, currentDate or view changes
+  // Filter teachers based on search term using useMemo
+  const filteredTeachers = useMemo(() => {
+    return teachers.filter((teacher) => {
+      if (!searchTerm) return true;
+      const searchLower = searchTerm.toLowerCase();
+      return (
+        teacher.name?.toLowerCase().includes(searchLower) ||
+        teacher.teacherId?.toLowerCase().includes(searchLower) ||
+        teacher.email?.toLowerCase().includes(searchLower) ||
+        teacher.contactNumber?.toLowerCase().includes(searchLower)
+      );
+    });
+  }, [teachers, searchTerm]);
+
+  // Initialize attendance when filteredTeachers, currentDate or view changes
   useEffect(() => {
     const daysToUse = view === "Month" ? monthDays : weekDays;
-    const initial = teachers.map((t, idx) => {
+    const initial = filteredTeachers.map((t, idx) => {
       const record: any = { id: t.id, name: t.name, no: idx + 1 };
       daysToUse.forEach(d => { record[d.key] = "unmarked"; });
       return record;
     });
     setAttendanceData(initial);
-  }, [teachers, currentDate, view]);
+  }, [filteredTeachers, currentDate, view, monthDays, weekDays]);
 
   const toggleAttendance = (teacherId: number, day: string) => {
     setAttendanceData(prev => prev.map(row => {
@@ -141,7 +153,8 @@ export default function AttendanceTab({ teachers }: AttendanceTabProps) {
     );
   };
 
-  const columns = [
+  // Use useMemo for columns to prevent unnecessary recalculations
+  const columns = useMemo(() => [
     {
       key: "no",
       title: "No#",
@@ -159,7 +172,13 @@ export default function AttendanceTab({ teachers }: AttendanceTabProps) {
       render: (row: any) => getAttendanceDisplay(row[day.key], row.id, day.key),
       headerClassName: "py-4"
     }))
-  ];
+  ], [view, monthDays, weekDays]);
+
+  // Format week title to show the full week range
+  const weekTitle = useMemo(() => {
+    if (weekDays.length === 0) return `Week of ${currentDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`;
+    return `Week of ${weekDays[0].dayName} ${weekDays[0].day} - ${weekDays[6].dayName} ${weekDays[6].day}, ${currentYear}`;
+  }, [weekDays, currentYear]);
 
   return (
     <div>
@@ -174,7 +193,7 @@ export default function AttendanceTab({ teachers }: AttendanceTabProps) {
             </svg>
           </button>
 
-          <SecondaryHeader title={view === "Month" ? `${currentMonth} ${currentYear}` : `Week of ${currentDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`} />
+          <SecondaryHeader title={view === "Month" ? `${currentMonth} ${currentYear}` : weekTitle} />
 
           <button
             onClick={view === "Month" ? goToNextMonth : goToNextWeek}

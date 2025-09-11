@@ -88,13 +88,13 @@ export default function Home() {
         id="home"
         className="
         /* Mobile */
-        pt-24 px-6 py-8
+        pt-24= px-6 py-8
         
         /* Tablet */
         md:pt-28 md:px-8 md:py-12
         
         /* Desktop */
-        lg:pt-32 lg:px-12
+        lg:pt-20 lg:px-12
       "
       >
         <div
@@ -150,13 +150,13 @@ export default function Home() {
             <p
               className="
               /* Mobile */
-              text-base text-green-900 mb-6 leading-relaxed
+              text-base text-green-900 mb-2
               
               /* Tablet */
-              md:text-lg md:mb-8
+              md:text-lg md:mb-2
               
               /* Desktop */
-              lg:text-xl
+              lg:text-xl lg:mb-2
             "
             >
               An innovative platform designed to support teachers in managing and tracking student progress in remedial programs.
@@ -165,9 +165,6 @@ export default function Home() {
               <Link href="/auth/login" className="inline-block">
                 <UtilityButton>Get Started</UtilityButton>
               </Link>
-              <button className="px-6 py-3 font-medium text-green-700 hover:text-green-800 transition-colors">
-                Learn More →
-              </button>
             </div>
           </div>
 
@@ -305,8 +302,8 @@ export default function Home() {
                   </div>
                 </div>
                 <div className="ml-4">
-                  <h4 className="font-semibold text-green-900">Comprehensive Tracking</h4>
-                  <p className="mt-1 text-green-800">Monitor student progress across all remedial programs</p>
+                  <h4 className="font-semibold text-green-900">Centralized Repository of Remedial</h4>
+                  <p className="mt-1 text-green-800">A unified platform where teachers can upload, organize, and access all remedial materials in one place.</p>
                 </div>
               </div>
               
@@ -319,8 +316,22 @@ export default function Home() {
                   </div>
                 </div>
                 <div className="ml-4">
-                  <h4 className="font-semibold text-green-900">Data-Driven Insights</h4>
-                  <p className="mt-1 text-green-800">Identify learning gaps with actionable analytics</p>
+                  <h4 className="font-semibold text-green-900">Interactive Quiz</h4>
+                  <p className="mt-1 text-green-800">Engaging digital quizzes that make learning of students interactive and dynamic.</p>
+                </div>
+              </div>
+
+              <div className="flex items-start">
+                <div className="flex-shrink-0 mt-1">
+                  <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
+                    <svg className="w-4 h-4 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                </div>
+                <div className="ml-4">
+                  <h4 className="font-semibold text-green-900">AI-generated insights</h4>
+                  <p className="mt-1 text-green-800">Smart recommendations that help teachers identify learning gaps of students.</p>
                 </div>
               </div>
               
@@ -333,8 +344,8 @@ export default function Home() {
                   </div>
                 </div>
                 <div className="ml-4">
-                  <h4 className="font-semibold text-green-900">Time-Saving Tools</h4>
-                  <p className="mt-1 text-green-800">Reduce administrative tasks by 60% on average</p>
+                  <h4 className="font-semibold text-green-900">Tracking Student Performance</h4>
+                  <p className="mt-1 text-green-800">Tracks student progress in literacy and numeracy to record students performance.</p>
                 </div>
               </div>
             </div>
@@ -400,7 +411,7 @@ export default function Home() {
               <Image
                 width={200}
                 height={400}
-                src="/QuizZaur/MobileQuiz.png"
+                src="/RPT-SAES/RPT-SAES Mobile.png"
                 alt="QuizZaur Mobile"
                 className="
                   /* Mobile */
@@ -422,13 +433,13 @@ export default function Home() {
               flex flex-col items-center text-center
               
               /* Tablet */
-              md:items-start md:text-left
+              md:items-start md:text-left 
             "
             >
               <Image
                 width={200}
                 height={200}
-                src="/QuizZaur/QuizZaurMain.png"
+                src="/RPT-SAES/RPT-SAES Full Logo.png"
                 alt="QuizZaur Logo"
                 className="
                   /* Mobile */
@@ -438,7 +449,7 @@ export default function Home() {
                   md:w-56 md:mb-8
                   
                   /* Desktop */
-                  lg:w-64 lg:mb-10
+                  lg:w-90 lg:mb-0
                 "
               />
               <h3
@@ -483,7 +494,7 @@ export default function Home() {
                 <svg className="w-5 h-5 mr-2 md:w-6 md:h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4" />
                 </svg>
-                Download QuizZaur
+                RPT-SAES Mobile
               </a>
             </div>
           </div>

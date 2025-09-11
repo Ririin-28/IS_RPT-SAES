@@ -1,9 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import TableList from "@/components/Common/Tables/TableList";
-import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
 import TeacherDetailModal from "../Modals/TeacherDetailModal";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
-import { FaTimes } from "react-icons/fa";
 
 const sections = ["All Sections", "A", "B", "C"];
 
@@ -13,7 +11,6 @@ interface GradeOneTabProps {
   searchTerm: string;
 }
 
-// Custom Dropdown Component for filters
 interface CustomDropdownProps {
   options: string[];
   value: string;
@@ -84,13 +81,11 @@ export default function GradeOneTab({ teachers, setTeachers, searchTerm }: Grade
   const [selectedTeacher, setSelectedTeacher] = useState<any>(null);
   const [filter, setFilter] = useState({ section: "All Sections" });
 
-  // Filter teachers for grade 1
-  const gradeOneTeachers = teachers.filter(teacher => 
+  const GradeOneTeachers = teachers.filter(teacher => 
     teacher.grade === 1 || teacher.grade === "1"
   );
 
-  // Apply search and section filters
-  const filteredTeachers = gradeOneTeachers.filter((teacher) => {
+  const filteredTeachers = GradeOneTeachers.filter((teacher) => {
     const matchSection = filter.section === "All Sections" || teacher.section === filter.section;
     const matchSearch = searchTerm === "" || 
       teacher.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -100,7 +95,6 @@ export default function GradeOneTab({ teachers, setTeachers, searchTerm }: Grade
     return matchSection && matchSearch;
   });
 
-  // Show teacher details
   const handleShowDetails = (teacher: any) => {
     setSelectedTeacher(teacher);
     setShowDetailModal(true);
@@ -108,33 +102,28 @@ export default function GradeOneTab({ teachers, setTeachers, searchTerm }: Grade
 
   return (
     <div>
-      {/* Filter and Total */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-2">
-        <p className="text-gray-600 mb-2 sm:mb-0">
-          Showing {filteredTeachers.length} of {gradeOneTeachers.length} teachers
+      <div className="flex flex-row justify-between items-center mb-4">
+        <p className="text-gray-600 text-md font-medium">
+          Total: {GradeOneTeachers.length}
         </p>
         
-        {/* Filter Container */}
-        <div className="flex items-center gap-3 bg-gray-100 rounded-lg p-2 w-fit">
-          <div className="flex items-center gap-2 text-sm text-gray-700">
-            <span>Section:</span>
-            <CustomDropdown 
-              options={sections}
-              value={filter.section}
-              onChange={(value) => setFilter({ section: value })}
-            />
-          </div>
+        <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
+          <span className="text-sm text-gray-700 whitespace-nowrap">Section:</span>
+          <CustomDropdown 
+            options={sections}
+            value={filter.section}
+            onChange={(value) => setFilter({ section: value })}
+            className="min-w-[120px]"
+          />
         </div>
       </div>
       
-      {/* Teacher Detail Modal */}
       <TeacherDetailModal
         show={showDetailModal}
         onClose={() => setShowDetailModal(false)}
         teacher={selectedTeacher}
       />
 
-      {/* Table */}
       <TableList
         columns={[
           { key: "no", title: "No#" },

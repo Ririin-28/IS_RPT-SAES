@@ -4,37 +4,38 @@ import TeacherHeader from "@/components/Teacher/Header";
 import { useState } from "react";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
+import { FaTimes } from "react-icons/fa";
 // Tabs
 import StudentTab from "./Tabs/StudentTab";
 import AttendanceTab from "./Tabs/AttendanceTab";
 
 export default function Students() {
   const [activeTab, setActiveTab] = useState("Information List");
+  const [searchTerm, setSearchTerm] = useState("");
   const [students, setStudents] = useState<any[]>([]);
+
   return (
-    <div
-      className="
-      /* Mobile */
-      flex h-screen bg-white overflow-hidden
-    "
-    >
+    <div className="flex h-screen bg-white overflow-hidden">
       {/*---------------------------------Sidebar---------------------------------*/}
       <TeacherSidebar />
+
       {/*---------------------------------Main Content---------------------------------*/}
       <div
         className="
         /* Mobile */
-        flex-1 pt-16 flex flex-col overflow-hidden
+        flex-1 pt-16 flex flex-col overflow-hidden      
       "
       >
         <TeacherHeader title="Student List" />
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1">
           <div
             className="
             /* Mobile */
             p-4 h-full
+            
             /* Tablet */
             sm:p-5
+            
             /* Desktop */
             md:p-6
           "
@@ -62,7 +63,27 @@ export default function Students() {
                     onChange={setActiveTab}
                   />
                 </div>
+                <div className="flex gap-3 w-full sm:w-auto mt-4 sm:mt-0">
+                  <div className="relative flex-1 sm:flex-initial">
+                    <input
+                      type="text"
+                      placeholder="Search students..."
+                      className="w-full border border-gray-300 rounded-lg px-4 py-2 pr-10 text-black"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                    {searchTerm && (
+                      <button
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        onClick={() => setSearchTerm("")}
+                      >
+                        <FaTimes />
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
+              
 
               {/*---------------------------------Tab Content---------------------------------*/}
               <div
@@ -74,8 +95,8 @@ export default function Students() {
                 sm:mt-6
               "
               >
-                {activeTab === "Information List" && <StudentTab students={students} setStudents={setStudents} />}
-                {activeTab === "Attendance List" && <AttendanceTab students={students} setStudents={setStudents} />}
+                {activeTab === "Information List" && <StudentTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
+                {activeTab === "Attendance List" && <AttendanceTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
               </div>
             </div>
           </div>
@@ -84,5 +105,4 @@ export default function Students() {
     </div>
   );
 }
-
 

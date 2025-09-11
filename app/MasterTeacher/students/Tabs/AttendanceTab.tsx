@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import TableList from "@/components/Common/Tables/TableList";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
@@ -8,9 +8,10 @@ import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 interface AttendanceTab {
   students: any[];
   setStudents: React.Dispatch<React.SetStateAction<any[]>>;
+  searchTerm: string;
 }
 
-export default function AttendanceTab({ students }: AttendanceTab) {
+export default function AttendanceTab({ students, searchTerm }: AttendanceTab) {
   const [view, setView] = useState("Week"); // Default to Week view
   const [isEditing, setIsEditing] = useState(false);
   const [attendanceData, setAttendanceData] = useState<any[]>([]);
@@ -25,8 +26,8 @@ export default function AttendanceTab({ students }: AttendanceTab) {
   const currentMonth = monthNames[currentDate.getMonth()];
   const currentYear = currentDate.getFullYear();
 
-  // Generate days for the current month
-  const generateMonthDays = () => {
+  // Generate days for the current month using useMemo to prevent recreation on every render
+  const generateMonthDays = useMemo(() => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -44,10 +45,10 @@ export default function AttendanceTab({ students }: AttendanceTab) {
     }
 
     return days;
-  };
+  }, [currentDate]);
 
-  // Generate days for the current week
-  const generateWeekDays = () => {
+  // Generate days for the current week using useMemo to prevent recreation on every render
+  const generateWeekDays = useMemo(() => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
     const day = currentDate.getDate();
@@ -70,10 +71,10 @@ export default function AttendanceTab({ students }: AttendanceTab) {
     }
 
     return days;
-  };
+  }, [currentDate]);
 
-  const monthDays = generateMonthDays();
-  const weekDays = generateWeekDays();
+  const monthDays = generateMonthDays;
+  const weekDays = generateWeekDays;
 
   // Navigate to previous month
   const goToPreviousMonth = () => {
@@ -99,10 +100,24 @@ export default function AttendanceTab({ students }: AttendanceTab) {
     setCurrentDate(newDate);
   };
 
+  // Filter students based on search term
+  const filteredStudents = useMemo(() => {
+    return students.filter((student) => {
+      if (!searchTerm) return true;
+      const searchLower = searchTerm.toLowerCase();
+      return (
+        student.name?.toLowerCase().includes(searchLower) ||
+        student.studentId?.toLowerCase().includes(searchLower) ||
+        student.grade?.toString().includes(searchLower) ||
+        student.section?.toLowerCase().includes(searchLower)
+      );
+    });
+  }, [students, searchTerm]);
+
   // Initialize attendance data when students, date, or view changes
   useEffect(() => {
     const daysToUse = view === "Month" ? monthDays : weekDays;
-    const initialAttendance = students.map((student, idx) => {
+    const initialAttendance = filteredStudents.map((student, idx) => {
       const attendanceRecord: any = {
         id: student.id,
         name: student.name,
@@ -115,7 +130,7 @@ export default function AttendanceTab({ students }: AttendanceTab) {
       return attendanceRecord;
     });
     setAttendanceData(initialAttendance);
-  }, [students, currentDate, view]);
+  }, [filteredStudents, currentDate, view, monthDays, weekDays]);
 
   const toggleAttendance = (studentId: number, day: string) => {
     setAttendanceData(prev => prev.map(student => {
@@ -192,7 +207,7 @@ export default function AttendanceTab({ students }: AttendanceTab) {
   };
   
   // Generate dynamic columns based on view
-  const columns = [
+  const columns = useMemo(() => [
     { key: "no", title: "No#", render: (row: any) => row.no },
     { key: "name", title: "NAME" },
     ...(view === "Month" ? monthDays : weekDays).map(day => ({
@@ -200,7 +215,7 @@ export default function AttendanceTab({ students }: AttendanceTab) {
       title: `${day.dayName} ${day.day}`,
       render: (row: any) => getAttendanceDisplay(row[day.key], row.id, day.key)
     }))
-  ];
+  ], [view, monthDays, weekDays]);
   
   return (
     <div>
@@ -215,7 +230,7 @@ export default function AttendanceTab({ students }: AttendanceTab) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          <SecondaryHeader title={view === "Month" ? `${currentMonth} ${currentYear}` : `Week of ${currentDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`} />
+          <SecondaryHeader title={view === "Month" ? `${currentMonth} ${currentYear}` : `Week of ${weekDays[0]?.dayName} ${weekDays[0]?.day} - ${weekDays[6]?.dayName} ${weekDays[6]?.day}, ${currentYear}`} />
           <button
             onClick={view === "Month" ? goToNextMonth : goToNextWeek}
             className="p-2 rounded-md bg-white border border-gray-300 hover:bg-gray-50 transition-colors shadow-sm"
@@ -300,9 +315,9 @@ export default function AttendanceTab({ students }: AttendanceTab) {
         </div>
       </div>
       
-    {/* Add custom styling to the table header */}
-    <div className="[&_th]:py-2">
-      <TableList columns={columns} data={attendanceData} pageSize={10} />
+      {/* Add custom styling to the table header */}
+      <div className="[&_th]:py-2">
+        <TableList columns={columns} data={attendanceData} pageSize={10} />
       </div>
     </div>
   );

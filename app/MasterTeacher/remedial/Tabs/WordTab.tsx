@@ -13,23 +13,23 @@ import BodyText from "@/components/Common/Texts/BodyText";
 import BodyLabel from "@/components/Common/Texts/BodyLabel";
 import TableList from "@/components/Common/Tables/TableList";
 
-export default function WordTab() {
+export default function ParagraphTab() {
   // Example data, replace with real data as needed
-  const [students, setStudents] = useState<any[]>([]);
+  const [remedials, setRemedials] = useState<any[]>([]);
 
-  // Delete individual student
+  // Delete individual remedial
   const handleDelete = (id: number) => {
-    setStudents(students.filter((s) => s.id !== id));
+    setRemedials(remedials.filter((s) => s.id !== id));
   };
 
-  // Delete all students
+  // Delete all remedials
   const handleDeleteAll = () => {
-    setStudents([]);
+    setRemedials([]);
   };
 
   return (
     <div>
-      {/* Student Table Section */}
+      {/* Remedial Table Section */}
       <div
         className="
         /* Mobile */
@@ -40,7 +40,9 @@ export default function WordTab() {
         md:mb-2
       "
       >
-        <TertiaryHeader title={`Total: ${students.length}`} />
+        <p className="text-gray-600 text-md font-medium">
+        Total: {remedials.length}
+        </p>
         <div className="flex gap-2"></div>
       </div>
       <TableList
@@ -51,8 +53,8 @@ export default function WordTab() {
           { key: "dateToUse", title: "Date to use" },
           { key: "status", title: "Status" },
         ]}
-        data={students.map((student, idx) => ({
-          ...student,
+        data={remedials.map((remedials, idx) => ({
+          ...remedials,
           no: idx + 1,
         }))}
         actions={(row: any) => (

@@ -4,6 +4,7 @@ import Header from "@/components/MasterTeacher/Header";
 import { useState } from "react";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
+import { FaTimes } from "react-icons/fa";
 // Tabs
 import NonReaderTab from "./Tabs/NonReaderTab";
 import SyllableTab from "./Tabs/SyllableTab";
@@ -13,6 +14,7 @@ import ParagraphTab from "./Tabs/ParagraphTab";
 
 export default function Materials() {
   const [activeTab, setActiveTab] = useState("Non Reader");
+  const [searchTerm, setSearchTerm] = useState("");
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
@@ -63,6 +65,25 @@ export default function Materials() {
                     value={activeTab}
                     onChange={setActiveTab}
                   />
+                </div>
+                <div className="flex gap-3 w-full sm:w-auto mt-4 sm:mt-0">
+                  <div className="relative flex-1 sm:flex-initial">
+                    <input
+                      type="text"
+                      placeholder="Search materials..."
+                      className="w-full border border-gray-300 rounded-lg px-4 py-2 pr-10 text-black"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                    {searchTerm && (
+                      <button
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        onClick={() => setSearchTerm("")}
+                      >
+                        <FaTimes />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 

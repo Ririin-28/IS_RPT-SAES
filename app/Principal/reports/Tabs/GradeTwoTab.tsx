@@ -210,30 +210,31 @@ export default function GradeOneTab({ reports, activeTab = "Grade 2", setActiveT
 
       <div className="flex flex-col lg:flex-row gap-6">
         <div className="flex-1">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-2">
-            <p className="text-gray-600 mb-2 sm:mb-0">
-              Showing {filteredFiles.length} of {files.length} reports
+          <div className="flex flex-row justify-between items-center mb-4">
+            <p className="text-gray-600 text-md font-medium">
+              Total: {filteredFiles.length}
             </p>
             
-            {/* Filter Container */}
             <div className="flex items-center gap-3 bg-gray-100 rounded-lg p-2 w-fit">
-                <div className="flex items-center gap-2 text-sm text-gray-700">
-                <span>Section:</span>
+              <div className="flex items-center gap-2 text-sm text-gray-700">
+                <span className="whitespace-nowrap">Section:</span>
                 <CustomDropdown 
                   options={sections}
                   value={filter.section}
                   onChange={(value) => setFilter({ section: value })}
+                  className="min-w-[120px]"
                 />
               </div>
               
               <div className="h-4 w-px bg-gray-300"></div>
               
-                <div className="flex items-center gap-2 text-sm text-gray-700">
-                <span>Sort by:</span>
+              <div className="flex items-center gap-2 text-sm text-gray-700">
+                <span className="whitespace-nowrap">Sort by:</span>
                 <CustomDropdown 
                   options={sortOptions}
                   value={sortBy}
                   onChange={setSortBy}
+                  className="min-w-[120px]"
                 />
               </div>
             </div>

@@ -15,7 +15,7 @@ import TableList from "@/components/Common/Tables/TableList";
 
 export default function NonReaderTab() {
   // Hardcoded lesson data for remedial flashcards
-  const [students, setStudents] = useState<any[]>([
+  const [remedials, setRemedials] = useState<any[]>([
     {
       id: 1,
       title: "Lesson 1- Consonant",
@@ -34,12 +34,12 @@ export default function NonReaderTab() {
 
   // Delete individual student
   const handleDelete = (id: number) => {
-    setStudents(students.filter((s) => s.id !== id));
+    setRemedials(remedials.filter((s) => s.id !== id));
   };
 
-  // Delete all students
+  // Delete all remedials
   const handleDeleteAll = () => {
-    setStudents([]);
+    setRemedials([]);
   };
 
   return (
@@ -55,7 +55,9 @@ export default function NonReaderTab() {
         md:mb-2
       "
       >
-        <TertiaryHeader title={`Total: ${students.length}`} />
+        <p className="text-gray-600 text-md font-medium">
+        Total: {remedials.length}
+        </p>
         <div className="flex gap-2"></div>
       </div>
       <TableList
@@ -66,8 +68,8 @@ export default function NonReaderTab() {
           { key: "dateToUse", title: "Date to use" },
           { key: "status", title: "Status" },
         ]}
-        data={students.map((student, idx) => ({
-          ...student,
+        data={remedials.map((remedials, idx) => ({
+          ...remedials,
           no: idx + 1,
         }))}
         actions={(row: any) => (

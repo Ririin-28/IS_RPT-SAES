@@ -3,7 +3,6 @@ import { useState, useRef, useEffect } from "react";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
-import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
 import TableList from "@/components/Common/Tables/TableList";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 
@@ -105,7 +104,7 @@ export default function NonReaderTab() {
         md:mb-2
       "
       >
-        <TertiaryHeader title={`Total: ${materials.length}`} />
+  <p className="text-gray-600 text-md font-medium">Total: {materials.length}</p>
         <div className="flex items-center gap-2">
           {selectMode ? (
             <>

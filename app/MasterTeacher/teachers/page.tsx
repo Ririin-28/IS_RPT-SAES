@@ -4,12 +4,14 @@ import Header from "@/components/MasterTeacher/Header";
 import { useState } from "react";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
+import { FaTimes } from "react-icons/fa";
 // Tabs
 import TeacherTab from "./Tabs/TeacherTab";
 import AttendanceTab from "./Tabs/AttendanceTab";
 
 export default function Teachers() {
   const [activeTab, setActiveTab] = useState("Information List");
+  const [searchTerm, setSearchTerm] = useState("");
   // Lifted teachers state so both tabs share the same data
   const [teachers, setTeachers] = useState<any[]>([]);
 
@@ -65,6 +67,25 @@ export default function Teachers() {
                     onChange={setActiveTab}
                   />
                 </div>
+                <div className="flex gap-3 w-full sm:w-auto mt-4 sm:mt-0">
+                  <div className="relative flex-1 sm:flex-initial">
+                    <input
+                      type="text"
+                      placeholder="Search teachers..."
+                      className="w-full border border-gray-300 rounded-lg px-4 py-2 pr-10 text-black"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                    {searchTerm && (
+                      <button
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        onClick={() => setSearchTerm("")}
+                      >
+                        <FaTimes />
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
               {/*---------------------------------Tab Content---------------------------------*/}
               <div
@@ -76,8 +97,8 @@ export default function Teachers() {
                 sm:mt-6
               "
               >
-                {activeTab === "Information List" && <TeacherTab teachers={teachers} setTeachers={setTeachers} />}
-                {activeTab === "Attendance List" && <AttendanceTab teachers={teachers} />}
+                {activeTab === "Information List" && <TeacherTab teachers={teachers} setTeachers={setTeachers} searchTerm={searchTerm} />}
+                {activeTab === "Attendance List" && <AttendanceTab teachers={teachers} searchTerm={searchTerm} />}
               </div>
             </div>
           </div>

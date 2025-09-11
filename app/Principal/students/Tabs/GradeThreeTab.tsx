@@ -81,11 +81,11 @@ export default function GradeThreeTab({ students, setStudents, searchTerm }: Gra
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
   const [filter, setFilter] = useState({ section: "All Sections" });
 
-  const gradeThreeStudents = students.filter(student => 
+  const GradeThreeStudents = students.filter(student => 
     student.grade === 3 || student.grade === "3"
   );
 
-  const filteredStudents = gradeThreeStudents.filter((student) => {
+  const filteredStudents = GradeThreeStudents.filter((student) => {
     const matchSection = filter.section === "All Sections" || student.section === filter.section;
     const matchSearch = searchTerm === "" || 
       student.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -101,20 +101,19 @@ export default function GradeThreeTab({ students, setStudents, searchTerm }: Gra
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-2">
-        <p className="text-gray-600 mb-2 sm:mb-0">
-          Showing {filteredStudents.length} of {gradeThreeStudents.length} students
+      <div className="flex flex-row justify-between items-center mb-4">
+        <p className="text-gray-700 text-md font-medium">
+          Total: {GradeThreeStudents.length}
         </p>
         
-        <div className="flex items-center gap-3 bg-gray-100 rounded-lg p-2 w-fit">
-          <div className="flex items-center gap-2 text-sm text-gray-700">
-            <span>Section:</span>
-            <CustomDropdown 
-              options={sections}
-              value={filter.section}
-              onChange={(value) => setFilter({ section: value })}
-            />
-          </div>
+        <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
+          <span className="text-sm text-gray-700 whitespace-nowrap">Section:</span>
+          <CustomDropdown 
+            options={sections}
+            value={filter.section}
+            onChange={(value) => setFilter({ section: value })}
+            className="min-w-[120px]"
+          />
         </div>
       </div>
 
