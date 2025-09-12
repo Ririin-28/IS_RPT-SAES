@@ -22,13 +22,19 @@ export default function ParentNotifications() {
               <div className="mt-6">
                 {notifications.map((note, idx) => (
                   <div key={idx} className="mb-4 p-4 bg-green-50 rounded shadow flex flex-col gap-2">
-                    <TertiaryHeader title={note.date} />
+                    <TertiaryHeader title={
+                      new Date(note.date).toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                      })
+                    } />
                     <div className="text-green-900 font-semibold">{note.message}</div>
                     <form className="flex gap-2 mt-2">
                       <input
                         type="text"
                         placeholder="Reason for absence..."
-                        className="border-2 border-green-300 rounded-lg px-4 py-3 flex-1 bg-green-50 text-green-900 placeholder-green-700 focus:outline-none focus:border-green-500 transition"
+                        className="border-2 border-gray-300 rounded-lg px-4 py-3 flex-1 bg-white text-black placeholder-green-700 focus:outline-none focus:border-gray-500 transition"
                       />
                       <PrimaryButton type="submit">Send</PrimaryButton>
                     </form>

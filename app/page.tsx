@@ -60,14 +60,14 @@ export default function Home() {
               About
             </Link>
             <Link
-              href="#quizzaur"
+              href="#quiz"
               className="
               font-bold text-[#013300] hover:text-green-700
               md:text-sm
               lg:text-base
             "
             >
-              QuizZaur
+              Quiz
             </Link>
             <Link
               href="#contacts"
@@ -353,9 +353,9 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Quizzaur Section - With two decorative cards */}
+      {/* Quiz Section - With two decorative cards */}
       <section
-        id="quizzaur"
+        id="quiz"
         className="
         /* Mobile */
         px-6 py-12
@@ -412,7 +412,7 @@ export default function Home() {
                 width={200}
                 height={400}
                 src="/RPT-SAES/RPT-SAES Mobile.png"
-                alt="QuizZaur Mobile"
+                alt="Quiz Mobile"
                 className="
                   /* Mobile */
                   w-56 relative
@@ -440,7 +440,7 @@ export default function Home() {
                 width={200}
                 height={200}
                 src="/RPT-SAES/RPT-SAES Full Logo.png"
-                alt="QuizZaur Logo"
+                alt="Quiz Logo"
                 className="
                   /* Mobile */
                   w-48 mb-6

@@ -131,7 +131,6 @@ function CustomDropdown({ value, onChange, options, className = "" }: {
 export default function ParentDashboard() {
   const [selectedChild, setSelectedChild] = useState('John Doe');
   const [selectedSubject, setSelectedSubject] = useState('English');
-  const [selectedMonth, setSelectedMonth] = useState('March');
 
   // Sample data for children
   const children = [
@@ -167,25 +166,6 @@ export default function ParentDashboard() {
   // Get current child data
   const currentChild = children.find(child => child.name === selectedChild) || children[0];
   
-  // Attendance data
-  const attendanceData = {
-    labels: ['Present', 'Absent'],
-    datasets: [
-      {
-        data: [currentChild.attendance, 100 - currentChild.attendance],
-        backgroundColor: [
-          'rgba(34, 197, 94, 0.8)',
-          'rgba(239, 68, 68, 0.8)',
-        ],
-        borderColor: [
-          'rgba(34, 197, 94, 1)',
-          'rgba(239, 68, 68, 1)',
-        ],
-        borderWidth: 1,
-      },
-    ],
-  };
-
   // Progress data by subject
   const progressData = {
     English: {
@@ -301,16 +281,6 @@ export default function ParentDashboard() {
     maintainAspectRatio: false,
   };
 
-  const doughnutOptions = {
-    responsive: true,
-    plugins: {
-      legend: {
-        position: 'top' as const,
-      },
-    },
-    maintainAspectRatio: false,
-  };
-
   return (
     <div className="flex h-screen bg-white overflow-hidden">
       {/*---------------------------------Sidebar---------------------------------*/}
@@ -323,7 +293,7 @@ export default function ParentDashboard() {
         <main className="flex-1 overflow-y-auto">
           <div className="p-4 h-full sm:p-5 md:p-6">
             {/*---------------------------------Main Container---------------------------------*/}
-            <div className="bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[380px] overflow-y-auto p-4 sm:p-5 md:p-6">
+            <div className="bg-white rounded-lg shadow-md border border-gray-200 w-full h-full min-h-[380px] overflow-y-auto p-4 sm:p-5 md:p-6">
               {/* Child Selection */}
               <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
                 <SecondaryHeader title="Parent Dashboard" />
@@ -405,13 +375,6 @@ export default function ParentDashboard() {
                           options={['English', 'Filipino', 'Math']}
                         />
                       </div>
-                      <div className="w-36">
-                        <CustomDropdown
-                          value={selectedMonth}
-                          onChange={(e) => setSelectedMonth(e.target.value)}
-                          options={months}
-                        />
-                      </div>
                     </div>
                   </div>
                   <div className="h-96 mt-4">
@@ -422,18 +385,7 @@ export default function ParentDashboard() {
                   </div>
                   <div className="mt-4 text-sm text-gray-600">
                     <p className="font-medium">Current level: {currentChild.currentLevel[selectedSubject as keyof typeof currentChild.currentLevel]}</p>
-                    <p className="mt-1">Showing progress from {months[0]} to {selectedMonth}</p>
-                  </div>
-                </div>
-
-                {/* Attendance Record */}
-                <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg p-6">
-                  <TertiaryHeader title="Attendance Record" />
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center mt-4">
-                    <div className="h-64 flex justify-center">
-                      <Doughnut options={doughnutOptions} data={attendanceData} />
-                    </div>
-                    {/* Removed Attendance Details section as requested */}
+                    <p className="mt-1">Showing progress from {months[0]} to {months[months.length - 1]}</p>
                   </div>
                 </div>
 
