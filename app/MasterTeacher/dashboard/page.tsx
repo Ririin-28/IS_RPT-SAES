@@ -52,7 +52,7 @@ function CustomDropdown({ value, onChange, options, className = "" }: {
       <select 
         value={value}
         onChange={onChange}
-        className="w-full px-4 py-2.5 bg-white border border-green-400 text-green-900 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-green-600 focus:border-green-600 appearance-none pr-10 cursor-pointer transition-colors duration-150 hover:border-green-600 hover:bg-green-50"
+        className="w-full px-4 py-2.5 bg-white text-green-900 rounded-lg shadow-sm focus:outline-none focus:ring-1 appearance-none pr-10 cursor-pointer transition-colors duration-150 hover:border-[#013300]"
       >
         {options.map(option => (
           <option key={option} value={option}>{option}</option>
