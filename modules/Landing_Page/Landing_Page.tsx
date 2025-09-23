@@ -1,4 +1,4 @@
-
+"use client";
 import Image from "next/image";
 import RPTLogoTitle from "@/components/Common/RPTLogoTitle";
 import Link from "next/link";
