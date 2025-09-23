@@ -60,14 +60,14 @@ export default function Home() {
               About
             </Link>
             <Link
-              href="#quiz"
+              href="#mobile"
               className="
               font-bold text-[#013300] hover:text-green-700
               md:text-sm
               lg:text-base
             "
             >
-              Quiz
+              Mobile
             </Link>
             <Link
               href="#contacts"
@@ -355,7 +355,7 @@ export default function Home() {
 
       {/* Quiz Section - With two decorative cards */}
       <section
-        id="quiz"
+        id="mobile"
         className="
         /* Mobile */
         px-6 py-12
