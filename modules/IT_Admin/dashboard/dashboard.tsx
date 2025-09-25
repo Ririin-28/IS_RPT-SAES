@@ -115,7 +115,7 @@ export default function ITAdminDashboard() {
     { key: "role", title: "Role" },
     { key: "loginTime", title: "Login Time", render: (row: any) => formatDateTime(row.loginTime) },
     { key: "status", title: "Status", render: (row: any) => (
-      <span className={row.status === "Success" ? "text-green-600 font-semibold" : "text-red-600 font-semibold"}>
+      <span className={row.status === "Success" ? "text-[#013300] font-semibold" : "text-red-600 font-semibold"}>
         {row.status}
       </span>
     ) },
