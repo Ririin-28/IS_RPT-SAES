@@ -17,6 +17,8 @@ import {
   Legend,
 } from 'chart.js';
 import { Bar, Pie, Line } from 'react-chartjs-2';
+import PrimaryButton from '@/components/Common/Buttons/PrimaryButton';
+import SecondaryButton from '@/components/Common/Buttons/SecondaryButton';
 
 // Register ChartJS components
 ChartJS.register(
@@ -620,18 +622,18 @@ export default function PrincipalDashboard() {
               <div className="flex flex-col mb-3 md:flex-row md:items-center md:justify-between">
                 <SecondaryHeader title="Principal Overview" />
                 <div className="flex space-x-2 mt-2 md:mt-0">
-                  <button
-                    onClick={() => setViewMode('summary')}
-                    className={`px-4 py-2 rounded-lg font-medium ${viewMode === 'summary' ? 'bg-green-700 text-white' : 'bg-gray-200 text-gray-700'}`}
+                  <PrimaryButton
+                  onClick={() => {}} 
+                    className="text-sm py-1.5 px-3"
                   >
-                    Summary View
-                  </button>
-                  <button
-                    onClick={() => setViewMode('detailed')}
-                    className={`px-4 py-2 rounded-lg font-medium ${viewMode === 'detailed' ? 'bg-green-700 text-white' : 'bg-gray-200 text-gray-700'}`}
+                    Student Progress
+                  </PrimaryButton>
+                  <SecondaryButton  
+                  onClick={() => {}}
+                    className="text-sm py-1.5 px-3"
                   >
-                    Detailed View
-                  </button>
+                    View Materials
+                  </SecondaryButton>
                 </div>
               </div>
 

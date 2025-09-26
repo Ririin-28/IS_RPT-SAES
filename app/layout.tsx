@@ -6,10 +6,12 @@ import "@fontsource/geist-mono/400.css";
 import "@fontsource/geist-mono/700.css";
 import "./globals.css";
 import { Providers } from "./providers";
+import ServiceWorkerRegister from "../components/ServiceWorkerRegister";
 
 export const metadata: Metadata = {
   title: "RPT-SAES",
   description: "Remedial Performance Tracker",
+  manifest: "/manifest.json",
 };
 
 export default function RootLayout({
@@ -23,6 +25,7 @@ export default function RootLayout({
         <Providers>
           {children}
         </Providers>
+        <ServiceWorkerRegister />
       </body>
     </html>
   );

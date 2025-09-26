@@ -306,25 +306,30 @@ export default function ParentDashboard() {
                 </div>
               </div>
 
-              {/* Child Details Section */}
-              <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg p-6 mb-6">
-                <TertiaryHeader title="Child Details" />
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
-                  <div>
-                    <TertiaryHeader title="Name:" className="text-sm text-green-800" />
-                    <BodyText title={currentChild.name} />
+              {/* Child Details Section - styled like Master Teacher dashboard */}
+              <div className="bg-[#E9FDF2] rounded-xl shadow-lg p-4 mb-6 min-w-full min-h-[120px] sm:p-5 sm:mb-7 md:p-6 md:mb-8">
+                <div className="flex flex-col w-full">
+                  <div className="flex flex-col mb-2 md:flex-row md:items-start md:justify-between md:mb-0">
+                    <div className="mb-3 md:mb-0 md:w-1/4">
+                      <span className="block text-xl font-bold text-[#014421] mb-1">Full Name:</span>
+                      <span className="block text-base text-black">{currentChild.name}</span>
+                    </div>
+                    <div className="mb-3 md:mb-0 md:w-1/4">
+                      <span className="block text-xl font-bold text-[#014421] mb-1">Grade:</span>
+                      <span className="block text-base text-black">{currentChild.grade}</span>
+                    </div>
+                    <div className="mb-3 md:mb-0 md:w-1/4">
+                      <span className="block text-xl font-bold text-[#014421] mb-1">Age:</span>
+                      <span className="block text-base text-black">{currentChild.age}</span>
+                    </div>
+                    <div className="mb-3 md:mb-0 md:w-1/4">
+                      <span className="block text-xl font-bold text-[#014421] mb-1">Teacher:</span>
+                      <span className="block text-base text-black">{currentChild.teacher}</span>
+                    </div>
                   </div>
-                  <div>
-                    <TertiaryHeader title="Grade:" className="text-sm text-green-800" />
-                    <BodyText title={currentChild.grade} />
-                  </div>
-                  <div>
-                    <TertiaryHeader title="Age:" className="text-sm text-green-800" />
-                    <BodyText title={String(currentChild.age)} />
-                  </div>
-                  <div>
-                    <TertiaryHeader title="Teacher:" className="text-sm text-green-800" />
-                    <BodyText title={currentChild.teacher} />
+                  <div className="mt-3 md:mt-2">
+                    <span className="block text-xl font-bold text-[#014421] mb-1">Subject Assigned:</span>
+                    <span className="block text-base text-black">English, Filipino, Math</span>
                   </div>
                 </div>
               </div>
