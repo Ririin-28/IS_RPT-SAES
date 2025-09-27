@@ -84,7 +84,6 @@ export default function MasterTeacherStudents() {
                 </div>
               </div>
               
-
               {/*---------------------------------Tab Content---------------------------------*/}
               <div
                 className="

@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from "react";
 import TableList from "@/components/Common/Tables/TableList";
-import TeacherDetailModal from "../Modals/TeacherDetailModal";
+import UserDetailModal from "../Modals/UserDetailsModal";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 
 const sections = ["All Sections", "A", "B", "C"];
 
-interface GradeOneTabProps {
+interface GradeFourTabProps {
   teachers: any[];
   setTeachers: (teachers: any[]) => void;
   searchTerm: string;
@@ -42,7 +42,7 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
     <div className={`relative ${className}`} ref={dropdownRef}>
       <button
         type="button"
-        className="flex items-center justify-between pl-3 pr-8 py-1.5 text-sm font-medium text-gray-700 cursor-pointer focus:outline-none border border-gray-300 rounded bg-white"
+        className="flex items-center justify-between pl-3 pr-0 py-1.5 text-sm font-medium text-gray-700 cursor-pointer focus:outline-none border border-gray-300 rounded bg-white"
         onClick={() => setIsOpen(!isOpen)}
       >
         {value}
@@ -76,16 +76,16 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
   );
 };
 
-export default function GradeOneTab({ teachers, setTeachers, searchTerm }: GradeOneTabProps) {
+export default function TeacherGradeFourTab({ teachers, setTeachers, searchTerm }: GradeFourTabProps) {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedTeacher, setSelectedTeacher] = useState<any>(null);
   const [filter, setFilter] = useState({ section: "All Sections" });
 
-  const GradeOneTeachers = teachers.filter(teacher => 
-    teacher.grade === 1 || teacher.grade === "1"
+  const GradeFourTeachers = teachers.filter(teacher => 
+    teacher.grade === 4 || teacher.grade === "4"
   );
 
-  const filteredTeachers = GradeOneTeachers.filter((teacher) => {
+  const filteredTeachers = GradeFourTeachers.filter((teacher) => {
     const matchSection = filter.section === "All Sections" || teacher.section === filter.section;
     const matchSearch = searchTerm === "" || 
       teacher.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -104,7 +104,7 @@ export default function GradeOneTab({ teachers, setTeachers, searchTerm }: Grade
     <div>
       <div className="flex flex-row justify-between items-center mb-4">
         <p className="text-gray-600 text-md font-medium">
-          Total: {GradeOneTeachers.length}
+          Total: {GradeFourTeachers.length}
         </p>
         
         <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
@@ -118,10 +118,10 @@ export default function GradeOneTab({ teachers, setTeachers, searchTerm }: Grade
         </div>
       </div>
       
-      <TeacherDetailModal
+      <UserDetailModal
         show={showDetailModal}
         onClose={() => setShowDetailModal(false)}
-        teacher={selectedTeacher}
+        user={selectedTeacher}
       />
 
       <TableList

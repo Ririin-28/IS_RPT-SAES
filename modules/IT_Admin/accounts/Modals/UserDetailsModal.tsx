@@ -1,21 +1,21 @@
 import BaseModal, { ModalSection, ModalInfoItem, ModalLabel } from "@/components/Common/Modals/BaseModal";
 
-interface StudentDetailModalProps {
+interface UserDetailModalProps {
   show: boolean;
   onClose: () => void;
-  student: any;
+  user: any;
 }
 
-export default function StudentDetailModal({ show, onClose, student }: StudentDetailModalProps) {
-  if (!show || !student) return null;
+export default function UserDetailModal({ show, onClose, user }: UserDetailModalProps) {
+  if (!show || !user) return null;
 
   // Split subjects and sections into arrays
-  const subjectsList = student.subjects 
-    ? student.subjects.split(',').map((subject: string) => subject.trim()) 
+  const subjectsList = user.subjects
+    ? user.subjects.split(',').map((subject: string) => subject.trim())
     : [];
-  
-  const sectionsList = student.sections 
-    ? student.sections.split(',').map((section: string) => section.trim()) 
+
+  const sectionsList = user.sections
+    ? user.sections.split(',').map((section: string) => section.trim())
     : [];
 
   const footer = (
@@ -31,23 +31,23 @@ export default function StudentDetailModal({ show, onClose, student }: StudentDe
     <BaseModal
       show={show}
       onClose={onClose}
-      title="Teacher Details"
+      title="User Details"
       maxWidth="2xl"
       footer={footer}
     >
       <ModalSection title="Personal Information">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <ModalInfoItem label="Teacher ID" value={student.teacherId} />
-          <ModalInfoItem label="Full Name" value={student.name} />
-          <ModalInfoItem label="Email" value={student.email} />
-          <ModalInfoItem label="Contact Number" value={student.contactNumber} />
+          <ModalInfoItem label="User ID" value={user.userId} />
+          <ModalInfoItem label="Full Name" value={user.name} />
+          <ModalInfoItem label="Email" value={user.email} />
+          <ModalInfoItem label="Contact Number" value={user.contactNumber} />
         </div>
       </ModalSection>
 
       <ModalSection title="Teaching Information">
         <div className="grid grid-cols-3 gap-4">
-          <ModalInfoItem label="Handled Grade" value={student.grade} />
-          
+          <ModalInfoItem label="Handled Grade" value={user.grade} />
+
           {/* Handled Sections with consistent formatting */}
           <div className="space-y-1">
             <ModalLabel>Handled Sections</ModalLabel>
@@ -63,7 +63,7 @@ export default function StudentDetailModal({ show, onClose, student }: StudentDe
               )}
             </div>
           </div>
-          
+
           {/* Handled Subjects with consistent formatting */}
           <div className="space-y-1">
             <ModalLabel>Handled Subjects</ModalLabel>

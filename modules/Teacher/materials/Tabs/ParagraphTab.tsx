@@ -5,14 +5,13 @@ import DangerButton from "@/components/Common/Buttons/DangerButton";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import TableList from "@/components/Common/Tables/TableList";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
+import KebabMenu from "@/components/Common/Menus/KebabMenu";
 
 export default function ParagraphTab() {
   const [materials, setMaterials] = useState<any[]>([]);
   const [selectedMaterials, setSelectedMaterials] = useState<Set<number>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
-  const [showKebabMenu, setShowKebabMenu] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const kebabRef = useRef<HTMLDivElement>(null);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -64,20 +63,10 @@ export default function ParagraphTab() {
     }
   };
 
-  // Close kebab menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (kebabRef.current && !kebabRef.current.contains(event.target as Node)) {
-        setShowKebabMenu(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  // Outside clicks handled by KebabMenu
 
   const handleEnterSelectMode = () => {
     setSelectMode(true);
-    setShowKebabMenu(false);
   };
 
   const handleCancelSelect = () => {
@@ -123,18 +112,15 @@ export default function ParagraphTab() {
               )}
             </>
           ) : (
-            <div className="relative" ref={kebabRef}>
-              <UtilityButton small onClick={() => setShowKebabMenu(!showKebabMenu)}>
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
-                </svg>
-              </UtilityButton>
-              {showKebabMenu && (
-                <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-10">
+            <KebabMenu
+              small
+              align="right"
+              renderItems={(close) => (
+                <div className="py-1">
                   <button
                     onClick={() => {
                       fileInputRef.current?.click();
-                      setShowKebabMenu(false);
+                      close();
                     }}
                     className="w-full px-4 py-2 text-left text-sm text-[#013300] hover:bg-gray-50 flex items-center gap-2"
                   >
@@ -146,7 +132,10 @@ export default function ParagraphTab() {
                     Upload File
                   </button>
                   <button
-                    onClick={handleEnterSelectMode}
+                    onClick={() => {
+                      handleEnterSelectMode();
+                      close();
+                    }}
                     className="w-full px-4 py-2 text-left text-sm text-[#013300] hover:bg-gray-50 flex items-center gap-2"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -157,7 +146,7 @@ export default function ParagraphTab() {
                   </button>
                 </div>
               )}
-            </div>
+            />
           )}
           <input
             ref={fileInputRef}

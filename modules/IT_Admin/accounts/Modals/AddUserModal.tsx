@@ -1,7 +1,9 @@
 "use client";
+import BaseModal, { ModalSection, ModalLabel } from "@/components/Common/Modals/BaseModal";
 import { UseFormReturn } from "react-hook-form";
+import { useState, useEffect } from "react";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
-import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
+import DangerButton from "@/components/Common/Buttons/DangerButton";
 
 interface AddUserModalProps {
   show: boolean;
@@ -11,90 +13,157 @@ interface AddUserModalProps {
 }
 
 export default function AddUserModal({ show, onClose, form, onSubmit }: AddUserModalProps) {
-  const { register, handleSubmit, formState: { errors } } = form;
+  const {
+    register,
+    handleSubmit,
+    reset,
+    setValue,
+    watch,
+    formState: { errors },
+  } = form;
+  
+  const [contactValue, setContactValue] = useState("");
+  
+  const contact = watch("contact");
 
-  if (!show) return null;
+  useEffect(() => {
+    if (contact) {
+      const digits = contact.replace(/\D/g, "");
+      let formatted = digits;
+      
+      if (digits.length > 4 && digits.length <= 7) {
+        formatted = `${digits.slice(0, 4)}-${digits.slice(4, 7)}`;
+      } else if (digits.length > 7) {
+        formatted = `${digits.slice(0, 4)}-${digits.slice(4, 7)}-${digits.slice(7, 11)}`;
+      }
+      
+      setContactValue(formatted);
+      setValue("contact", formatted, { shouldValidate: true });
+    }
+  }, [contact, setValue]);
+
+  const handleClose = () => {
+    onClose();
+    reset();
+    setContactValue("");
+  };
+
+  const footer = (
+    <>
+      <DangerButton
+        type="button"
+        onClick={handleClose}>
+        Cancel
+      </DangerButton>
+      <PrimaryButton 
+        type="submit">
+        Add User
+      </PrimaryButton>
+    </>
+  );
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
-        <h2 className="text-xl font-bold mb-4 text-green-900">Add New User</h2>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-green-900 mb-1">User ID</label>
-            <input
-              {...register("userId", { required: "User ID is required" })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-              placeholder="Enter user ID"
-            />
-            {errors.userId && <span className="text-red-500 text-xs">{String(errors.userId.message)}</span>}
+    <BaseModal
+      show={show}
+      onClose={handleClose}
+      title="Add New User"
+      footer={footer}
+    >
+      <form id="add-user-form" onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        <ModalSection title="Personal Information">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <ModalLabel required>User ID</ModalLabel>
+              <input
+                className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm"
+                placeholder="Enter user ID"
+                {...register("userId", { required: "User ID is required" })}
+              />
+              {errors.userId && <span className="text-red-500 text-xs">{errors.userId.message as string}</span>}
+            </div>
+            <div className="space-y-1">
+              <ModalLabel required>Full Name</ModalLabel>
+              <input
+                className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm"
+                placeholder="Surname, Firstname M.I."
+                {...register("name", { required: "Full name is required" })}
+              />
+              {errors.name && <span className="text-red-500 text-xs">{errors.name.message as string}</span>}
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-green-900 mb-1">Name</label>
-            <input
-              {...register("name", { required: "Name is required" })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-              placeholder="Enter user name"
-            />
-            {errors.name && <span className="text-red-500 text-xs">{String(errors.name.message)}</span>}
+        </ModalSection>
+
+        <ModalSection title="Contact Information">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <ModalLabel required>Email Address</ModalLabel>
+              <input
+                type="email"
+                className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm"
+                placeholder="user@example.com"
+                {...register("email", { 
+                  required: "Email is required",
+                  pattern: {
+                    value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+                    message: "Invalid email format"
+                  }
+                })}
+              />
+              {errors.email && <span className="text-red-500 text-xs">{errors.email.message as string}</span>}
+            </div>
+            <div className="space-y-1">
+              <ModalLabel required>Contact Number</ModalLabel>
+              <input
+                className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm"
+                placeholder="0912-345-6789"
+                value={contactValue}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setContactValue(value);
+                  setValue("contact", value, { shouldValidate: true });
+                }}
+                onKeyDown={(e) => {
+                  if (!/[\d-]|Backspace|Delete|ArrowLeft|ArrowRight|Tab/.test(e.key)) {
+                    e.preventDefault();
+                  }
+                }}
+              />
+              {errors.contact && <span className="text-red-500 text-xs">{errors.contact.message as string}</span>}
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-green-900 mb-1">Contact No.</label>
-            <input
-              {...register("contact", { required: "Contact number is required" })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-              placeholder="Enter contact number"
-            />
-            {errors.contact?.message && <span className="text-red-500 text-xs">{String(errors.contact.message)}</span>}
+        </ModalSection>
+
+        <ModalSection title="Account Information">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <ModalLabel required>Role</ModalLabel>
+              <select
+                className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm"
+                {...register("role", { required: "Role is required" })}
+              >
+                <option value="" disabled>Select role</option>
+                <option value="Admin">Admin</option>
+                <option value="Teacher">Teacher</option>
+                <option value="Parent">Parent</option>
+                <option value="Principal">Principal</option>
+              </select>
+              {errors.role && <span className="text-red-500 text-xs">{errors.role.message as string}</span>}
+            </div>
+            <div className="space-y-1">
+              <ModalLabel required>Status</ModalLabel>
+              <select
+                className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm"
+                {...register("status", { required: "Status is required" })}
+              >
+                <option value="" disabled>Select status</option>
+                <option value="Active">Active</option>
+                <option value="Disabled">Disabled</option>
+              </select>
+              {errors.status && <span className="text-red-500 text-xs">{errors.status.message as string}</span>}
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-green-900 mb-1">Role</label>
-            <select
-              {...register("role", { required: "Role is required" })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-            >
-              <option value="">Select role</option>
-              <option value="Admin">Admin</option>
-              <option value="Teacher">Teacher</option>
-              <option value="Parent">Parent</option>
-              <option value="Principal">Principal</option>
-            </select>
-            {errors.role?.message && <span className="text-red-500 text-xs">{String(errors.role.message)}</span>}
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-green-900 mb-1">Email</label>
-            <input
-              {...register("email", { 
-                required: "Email is required",
-                pattern: {
-                  value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-                  message: "Invalid email format"
-                }
-              })}
-              type="email"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-              placeholder="Enter email address"
-            />
-            {errors.email?.message && <span className="text-red-500 text-xs">{String(errors.email.message)}</span>}
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-green-900 mb-1">Status</label>
-            <select
-              {...register("status", { required: "Status is required" })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-            >
-              <option value="">Select status</option>
-              <option value="Active">Active</option>
-              <option value="Disabled">Disabled</option>
-            </select>
-            {errors.status?.message && <span className="text-red-500 text-xs">{String(errors.status.message)}</span>}
-          </div>
-          <div className="flex gap-2 pt-4">
-            <PrimaryButton type="submit" className="flex-1">Add User</PrimaryButton>
-            <SecondaryButton type="button" onClick={onClose} className="flex-1">Cancel</SecondaryButton>
-          </div>
-        </form>
-      </div>
-    </div>
+        </ModalSection>
+      </form>
+    </BaseModal>
   );
 }

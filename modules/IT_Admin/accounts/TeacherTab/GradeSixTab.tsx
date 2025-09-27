@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from "react";
 import TableList from "@/components/Common/Tables/TableList";
-import TeacherDetailModal from "../Modals/TeacherDetailModal";
+import UserDetailModal from "../Modals/UserDetailsModal";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 
 const sections = ["All Sections", "A", "B", "C"];
 
-interface GradeTwoTabProps {
+interface GradeSixTabProps {
   teachers: any[];
   setTeachers: (teachers: any[]) => void;
   searchTerm: string;
@@ -42,7 +42,7 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
     <div className={`relative ${className}`} ref={dropdownRef}>
       <button
         type="button"
-        className="flex items-center justify-between pl-3 pr-8 py-1.5 text-sm font-medium text-gray-700 cursor-pointer focus:outline-none border border-gray-300 rounded bg-white"
+        className="flex items-center justify-between pl-3 pr-0 py-1.5 text-sm font-medium text-gray-700 cursor-pointer focus:outline-none border border-gray-300 rounded bg-white"
         onClick={() => setIsOpen(!isOpen)}
       >
         {value}
@@ -76,16 +76,16 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
   );
 };
 
-export default function GradeTwoTab({ teachers, setTeachers, searchTerm }: GradeTwoTabProps) {
+export default function TeacherGradeSixTab({ teachers, setTeachers, searchTerm }: GradeSixTabProps) {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedTeacher, setSelectedTeacher] = useState<any>(null);
   const [filter, setFilter] = useState({ section: "All Sections" });
 
-  const gradeTwoTeachers = teachers.filter(teacher => 
-    teacher.grade === 2 || teacher.grade === "2"
+  const GradeSixTeachers = teachers.filter(teacher => 
+    teacher.grade === 6 || teacher.grade === "6"
   );
 
-  const filteredTeachers = gradeTwoTeachers.filter((teacher) => {
+  const filteredTeachers = GradeSixTeachers.filter((teacher) => {
     const matchSection = filter.section === "All Sections" || teacher.section === filter.section;
     const matchSearch = searchTerm === "" || 
       teacher.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -104,7 +104,7 @@ export default function GradeTwoTab({ teachers, setTeachers, searchTerm }: Grade
     <div>
       <div className="flex flex-row justify-between items-center mb-4">
         <p className="text-gray-600 text-md font-medium">
-          Total: {gradeTwoTeachers.length}
+          Total: {GradeSixTeachers.length}
         </p>
         
         <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
@@ -118,10 +118,10 @@ export default function GradeTwoTab({ teachers, setTeachers, searchTerm }: Grade
         </div>
       </div>
       
-      <TeacherDetailModal
+      <UserDetailModal
         show={showDetailModal}
         onClose={() => setShowDetailModal(false)}
-        teacher={selectedTeacher}
+        user={selectedTeacher}
       />
 
       <TableList

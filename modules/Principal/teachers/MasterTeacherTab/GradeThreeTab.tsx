@@ -42,7 +42,7 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
     <div className={`relative ${className}`} ref={dropdownRef}>
       <button
         type="button"
-        className="flex items-center justify-between pl-3 pr-8 py-1.5 text-sm font-medium text-gray-700 cursor-pointer focus:outline-none border border-gray-300 rounded bg-white"
+        className="flex items-center justify-between pl-3 pr-0 py-1.5 text-sm font-medium text-gray-700 cursor-pointer focus:outline-none border border-gray-300 rounded bg-white"
         onClick={() => setIsOpen(!isOpen)}
       >
         {value}
@@ -76,7 +76,7 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
   );
 };
 
-export default function GradeThreeTab({ teachers, setTeachers, searchTerm }: GradeThreeTabProps) {
+export default function MasterTeacherGradeThreeTab({ teachers, setTeachers, searchTerm }: GradeThreeTabProps) {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedTeacher, setSelectedTeacher] = useState<any>(null);
   const [filter, setFilter] = useState({ section: "All Sections" });
