@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Offline | RPT-SAES</title>
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#0a4d8c" />
+  <style>
+    body {font-family: system-ui, Arial, sans-serif; margin:0; padding:2rem; display:flex; min-height:100dvh; flex-direction:column; align-items:center; justify-content:center; background:#f5f7fa; color:#1d2430;}
+    h1 {margin:0 0 1rem; font-size:1.8rem;}
+    p {max-width:480px; text-align:center;}
+    .actions {margin-top:2rem; display:flex; gap:1rem; flex-wrap:wrap;}
+    a, button {background:#0a4d8c; color:#fff; padding:.75rem 1.25rem; border:none; border-radius:8px; cursor:pointer; text-decoration:none; font-size:.95rem; font-weight:600;}
+    a:hover, button:hover {background:#083b6a;}
+    .small {font-size:.75rem; margin-top:2rem; opacity:.7;}
+  </style>
+</head>
+<body>
+  <h1>You are offline</h1>
+  <p>The RPT-SAES app is currently offline. You can continue viewing previously loaded pages. Reconnect to access the latest data.</p>
+  <div class="actions">
+    <button onclick="location.reload()">Retry Connection</button>
+    <a href="/">Go Home</a>
+  </div>
+  <p class="small">RPT-SAES PWA</p>
+</body>
+</html>
