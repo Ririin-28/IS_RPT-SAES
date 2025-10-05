@@ -138,7 +138,6 @@ export default function MasterTeacherFlashcards() {
   </div>
 
   <div className="mt-10 text-center text-md text-gray-500">
-    <p>Click highlighted words to hear them pronounced</p>
   </div>
 </div>
   );
