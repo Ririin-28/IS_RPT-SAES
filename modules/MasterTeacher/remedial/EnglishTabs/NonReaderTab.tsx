@@ -74,7 +74,7 @@ export default function EnglishNonReaderTab() {
         }))}
         actions={(row: any) => (
         <>
-          <a href={`/MasterTeacher/remedial/Flashcards`}>
+          <a href={`/MasterTeacher/remedial/EnglishFlashcards`}>
             <UtilityButton small>See All</UtilityButton>
           </a>
           <DangerButton small onClick={() => handleDelete(row.id)}>
