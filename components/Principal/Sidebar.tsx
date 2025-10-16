@@ -3,6 +3,13 @@ import React, { useCallback } from "react";
 import RPTLogoTitle from "../Common/RPTLogoTitle";
 import { useRouter, usePathname } from "next/navigation";
 
+const MaterialsIcon = React.memo(() => (
+  <svg width="24" height="24" fill="none" viewBox="0 0 24 24">
+    <rect x="3" y="7" width="18" height="14" rx="2" stroke="#013300" strokeWidth="2" />
+    <rect x="7" y="3" width="10" height="4" rx="1" stroke="#013300" strokeWidth="2" />
+  </svg>
+));
+
 // Memoized SVG icons to prevent unnecessary re-renders
 const DashboardIcon = React.memo(() => (
   <svg width="24" height="24" fill="none" viewBox="0 0 24 24">
@@ -54,6 +61,7 @@ export default function Sidebar() {
       { label: "Calendar", icon: <CalendarIcon />, path: "/Principal/calendar" },
       { label: "Students", icon: <StudentsIcon />, path: "/Principal/students" },
       { label: "Teachers", icon: <TeachersIcon />, path: "/Principal/teachers" },
+      { label: "Materials", icon: <MaterialsIcon />, path: "/Principal/materials" },
       { label: "Reports", icon: <ReportsIcon />, path: "/Principal/reports" },
     ],
     []
