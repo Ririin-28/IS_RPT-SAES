@@ -1,4 +1,3 @@
-
 -- Modify parent table
 ALTER TABLE parent 
 ADD COLUMN contact_no VARCHAR(20),
