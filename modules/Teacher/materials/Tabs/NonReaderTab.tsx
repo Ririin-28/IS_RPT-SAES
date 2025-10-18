@@ -159,8 +159,10 @@ export default function NonReaderTab() {
       </div>
       <TableList
         columns={[
-          { key: "no", title: "No#" },
+          { key: "no", title: "No." },
           { key: "title", title: "Title" },
+          { key: "gradeSection", title: "Grade and Section" },
+          { key: "teacher", title: "Teacher" },
           { key: "dateAttached", title: "Date Attached" },
         ]}
         data={materials.map((material, idx) => ({

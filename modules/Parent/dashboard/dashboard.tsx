@@ -505,17 +505,6 @@ export default function ParentDashboard() {
                       />
                     </div>
 
-                    {/* Teacher's Message */}
-                    <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg">
-                      <div className="flex items-start">
-                        <span className="text-2xl mr-3">{commentIcon}</span>
-                        <div>
-                          <h4 className="font-bold text-gray-800 mb-2">Teacher's Note</h4>
-                          <p className="text-gray-700 italic">"{currentProgress.teacherComments}"</p>
-                        </div>
-                      </div>
-                    </div>
-
                     {/* Strengths & Areas for Improvement */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="bg-white p-4 rounded-lg shadow-sm border border-green-100">
@@ -546,22 +535,6 @@ export default function ParentDashboard() {
                             </div>
                           ))}
                         </div>
-                      </div>
-                    </div>
-
-                    {/* Recent Activities */}
-                    <div className="bg-white p-4 rounded-lg shadow-sm border border-purple-100">
-                      <h4 className="font-bold text-purple-800 mb-3 flex items-center">
-                        <span className="text-xl mr-2">{activityIcon}</span>
-                        Recent Learning Activities
-                      </h4>
-                      <div className="space-y-3">
-                        {currentProgress.recentActivities.map((activity, index) => (
-                          <div key={index} className="flex items-start p-3 bg-purple-50 rounded-lg">
-                            <span className="text-purple-500 mr-3 mt-1">•</span>
-                            <span className="text-gray-700">{activity}</span>
-                          </div>
-                        ))}
                       </div>
                     </div>
 

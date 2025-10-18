@@ -56,7 +56,6 @@ export default function ITAdminLogs() {
 					<main className="flex-1 overflow-y-auto pt-16">
 												<div className="p-4 h-full sm:p-5 md:p-6">
 													<div className="bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[400px] overflow-y-auto p-4 sm:p-5 md:p-6">
-											<SecondaryHeader title="Account Login Logs" />
 											<div className="flex flex-row justify-between items-center mb-4 sm:mb-6 md:mb-2">
 												<TertiaryHeader title={`Total: ${logs.length}`} />
 											</div>
