@@ -22,10 +22,7 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
     const matchSearch = searchTerm === "" || 
       admin.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       admin.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      admin.adminId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      admin.department?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      admin.role?.toLowerCase().includes(searchTerm.toLowerCase());
-      
+      admin.adminId?.toLowerCase().includes(searchTerm.toLowerCase());
     return matchSearch;
   });
 
@@ -58,10 +55,6 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
           { key: "adminId", title: "Admin ID" },
           { key: "name", title: "Full Name" },
           { key: "email", title: "Email" },
-          { key: "role", title: "Role" },
-          { key: "department", title: "Department" },
-          { key: "contactNumber", title: "Contact Number" },
-          { key: "status", title: "Status" },
           { key: "lastLogin", title: "Last Login" },
         ]}
         data={filteredITAdmins.map((admin, idx) => ({
