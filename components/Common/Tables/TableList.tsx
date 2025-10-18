@@ -47,7 +47,11 @@ export default function TableList({ columns, data, actions, pageSize = 10, selec
               )}
               {columns.map((col) => (
                 <th key={col.key} className="px-4 py-2 text-left">
-                  <TertiaryHeader title={typeof col.title === 'string' ? col.title : ''} className="mb-0" />
+                  {typeof col.title === "string" ? (
+                    <TertiaryHeader title={col.title} className="mb-0" />
+                  ) : (
+                    col.title
+                  )}
                 </th>
               ))}
               {actions && (

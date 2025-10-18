@@ -40,9 +40,9 @@ export default function MasterTeacherHeader({ title, onSearch }: HeaderProps) {
         <header
           className={`
             /* Mobile */
-            fixed top-2 left-19 right-2 h-16 flex items-center justify-between px-4 bg-green-50 shadow-md z-30 rounded-xl transition-all
+            fixed top-2 left-20 right-4 h-16 flex items-center justify-between px-4 bg-green-50 shadow-md z-30 rounded-xl transition-all
             /* Desktop */
-            md:left-66 md:px-8
+            md:left-70 md:px-8 md:right-6
           `}
         >
           <span className="text-base font-semibold text-[#013300] tracking-wide md:text-lg">{title}</span>

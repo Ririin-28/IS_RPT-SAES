@@ -88,7 +88,7 @@ export default function Home() {
         id="home"
         className="
         /* Mobile */
-        pt-24= px-6 py-8
+        pt-24 px-6 py-8
         
         /* Tablet */
         md:pt-28 md:px-8 md:py-12
