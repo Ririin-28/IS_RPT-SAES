@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, type CSSProperties } from "react";
 import { FiArrowLeft, FiArrowRight } from "react-icons/fi";
 import { useSearchParams, useRouter } from "next/navigation";
 
-/* ---------- Icons ---------- */
+/* ---------- Icons (unchanged) ---------- */
 const Volume2Icon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/>
@@ -22,12 +22,12 @@ const MicIcon = () => (
 
 /* ---------- Helpers ---------- */
 
-// highlight function for English
+// highlight function with Filipino character support
 function highlightSentence(sentence: string, highlights: string[]) {
   const words = sentence.split(/(\s+)/);
   const lowered = highlights.map(h => h.toLowerCase());
   return words.map((word, idx) => {
-    const clean = word.replace(/[^a-zA-Z]/g, "").toLowerCase();
+    const clean = word.replace(/[^a-zA-ZáéíóúñÑäëïöüÁÉÍÓÚÑ]/g, "").toLowerCase();
     const isHighlight = lowered.includes(clean);
     return (
       <span
@@ -60,24 +60,21 @@ function levenshtein(a: string, b: string): number {
   return dp[m][n];
 }
 
-// Normalize text for English
+// Normalize text for Filipino
 function normalizeText(s: string) {
-  return s.replace(/[^a-zA-Z\s']/g, "").toLowerCase().trim();
+  return s.replace(/[^a-zA-ZáéíóúñÑäëïöüÁÉÍÓÚÑ\s']/g, "").toLowerCase().trim();
 }
 
-// English phoneme approximation
+// Filipino phoneme approximation
 function approxPhonemes(word: string) {
   if (!word) return [];
-  const w = word.toLowerCase().replace(/[^a-z']/g, "");
+  const w = word.toLowerCase().replace(/[^a-záéíóúñ']/g, "");
   
-  // English vowel sounds and common patterns
-  const vowels = ['a','e','i','o','u'];
+  // Filipino vowel sounds and common patterns
+  const vowels = ['a','e','i','o','u','á','é','í','ó','ú'];
   const digraphs: {[k:string]:string} = {
-    'th':'TH', 'sh':'SH', 'ch':'CH', 'ph':'F', 'gh':'G', 'wh':'WH',
-    'ck':'K', 'ng':'NG', 'nk':'NK', 'ee':'EE', 'oo':'OO', 'ai':'AY',
-    'ay':'AY', 'ea':'EE', 'oa':'OA', 'ow':'OW', 'ou':'OU', 'oi':'OI',
-    'oy':'OY', 'aw':'AW', 'au':'AW', 'ar':'AR', 'er':'ER', 'ir':'ER',
-    'ur':'ER', 'or':'OR'
+    'ng':'NG','ny':'NY','ts':'TS','dy':'DY','sy':'SY','ly':'LY',
+    'th':'T','sh':'S','ch':'CH','ph':'F','gh':'G'
   };
   
   // replace digraphs first
@@ -121,22 +118,22 @@ function comparePhonemeArrays(expectedArr: string[], actualArr: string[]) {
   return (matches / expectedArr.length) * 100;
 }
 
-/* ---------- English Remedial Flashcards data ---------- */
+/* ---------- Filipino Flashcards data ---------- */
 const flashcardsData = [
-  { sentence: "The cat sat on the mat.", highlights: ["cat", "sat", "mat"] },
-  { sentence: "A big dog ran in the park.", highlights: ["big", "dog", "ran"] },
-  { sentence: "She has a red ball and blue car.", highlights: ["red", "ball", "blue"] },
-  { sentence: "We go to the store for milk.", highlights: ["go", "store", "milk"] },
-  { sentence: "He can see the sun in the sky.", highlights: ["see", "sun", "sky"] },
-  { sentence: "I like to play with my friends.", highlights: ["like", "play", "friends"] },
-  { sentence: "The book is on the small table.", highlights: ["book", "small", "table"] },
-  { sentence: "They eat lunch at twelve o'clock.", highlights: ["eat", "lunch", "twelve"] },
-  { sentence: "My mother reads me a story.", highlights: ["mother", "reads", "story"] },
-  { sentence: "We live in a green house.", highlights: ["live", "green", "house"] },
+  { sentence: "Ang bata ay naglalaro sa parke.", highlights: ["bata", "parke"] },
+  { sentence: "Kumakain ng masarap na pagkain ang pamilya.", highlights: ["masarap", "pamilya"] },
+  { sentence: "Maganda ang bulaklak sa hardin.", highlights: ["bulaklak", "hardin"] },
+  { sentence: "Mabilis tumakbo ang maliit na aso.", highlights: ["mabilis", "aso"] },
+  { sentence: "Malakas ang ulan kanina.", highlights: ["malakas", "ulan"] },
+  { sentence: "Nagluluto ang nanay ng hapunan.", highlights: ["nanay", "hapunan"] },
+  { sentence: "Mabait ang guro sa eskwelahan.", highlights: ["guro", "eskwelahan"] },
+  { sentence: "Maliwanag ang buwan ngayong gabi.", highlights: ["buwan", "gabi"] },
+  { sentence: "Matulungin ang batang lalaki.", highlights: ["matulungin", "batang"] },
+  { sentence: "Masaya ang mga bata sa party.", highlights: ["masaya", "party"] },
 ];
 
 /* ---------- Component ---------- */
-export default function MasterTeacherEnglishRemedialFlashcards() {
+export default function MasterTeacherFilipinoFlashcards() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const startParam = searchParams?.get("start");
@@ -149,7 +146,7 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
 
   // recognition + metrics state
   const [isListening, setIsListening] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false); // NEW STATE FOR SPEAKER
   const [recognizedText, setRecognizedText] = useState("");
   const [feedback, setFeedback] = useState("");
   const [metrics, setMetrics] = useState<any>(null);
@@ -173,7 +170,7 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
       const utter = new window.SpeechSynthesisUtterance(sentence);
       utter.rate = 0.9;
       utter.pitch = 1.1;
-      utter.lang = "en-US"; // English language
+      utter.lang = "fil-PH"; // Filipino language
       
       // Set playing state when speech starts
       setIsPlaying(true);
@@ -259,10 +256,10 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
     speechEndRef.current = null;
     stopAudioAnalyser();
     setIsListening(false);
-    setIsPlaying(false);
+    setIsPlaying(false); // Reset playing state when changing cards
   }, [current]);
 
-  // ---------- Scoring logic for English ----------
+  // ---------- Scoring logic for Filipino ----------
   function computeScores(expectedText: string, spokenText: string, resultConfidence: number | null) {
     const expected = normalizeText(expectedText);
     const spoken = normalizeText(spokenText || "");
@@ -293,7 +290,7 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
 
     const wordAccuracy = ((exactMatches + 0.6 * softMatches) / Math.max(1, expWords.length)) * 100;
 
-    // English phoneme analysis
+    // Filipino phoneme analysis
     const expPhArr = expWords.flatMap(w => approxPhonemes(w));
     const spkPhArr = spkWords.flatMap(w => approxPhonemes(w));
     const phonemeAccuracy = comparePhonemeArrays(expPhArr, spkPhArr);
@@ -311,12 +308,12 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
     const conf = resultConfidence ?? 0.8;
     const pronScore = Math.round((0.5 * wordAccuracy) + (0.35 * phonemeAccuracy) + (0.15 * conf * 100));
 
-    // English remarks
+    // Filipino remarks
     let remarks = "";
-    if (pronScore > 85 && fluencyScore > 80) remarks = "Excellent! Your pronunciation and fluency are outstanding! 🌟";
-    else if (pronScore > 70) remarks = "Great job — keep practicing pronunciation and fluency. 💪";
-    else if (pronScore > 50) remarks = "Good effort — practice sounds and reduce pauses. 🗣️";
-    else remarks = "Needs more practice — focus on clarity and pace. 📚";
+    if (pronScore > 85 && fluencyScore > 80) remarks = "Magaling! Napakagaling ng iyong pagbigkas at fluency! 🌟";
+    else if (pronScore > 70) remarks = "Magaling — kaunting pagsasanay pa sa pagbigkas at fluency. 💪";
+    else if (pronScore > 50) remarks = "Katamtaman — kailangan ng pagsasanay sa mga tunog at bawasan ang paghinto. 🗣️";
+    else remarks = "Kailangan ng mas maraming pagsasanay — pagbutihin ang kalinasan at bilis. 📚";
 
     return {
       expWords, spkWords, perWordDetails,
@@ -334,7 +331,7 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert("Speech recognition is not supported in your browser.");
+      alert("Hindi suportado ang speech recognition sa iyong browser.");
       return;
     }
 
@@ -344,7 +341,7 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
       await startAudioAnalyser(stream);
 
       const recognition = new SpeechRecognition();
-      recognition.lang = "en-US"; // English language
+      recognition.lang = "fil-PH"; // Filipino language
       recognition.interimResults = false;
       recognition.maxAlternatives = 1;
 
@@ -356,7 +353,7 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
 
       setIsListening(true);
       setRecognizedText("");
-      setFeedback("Listening... 🎧");
+      setFeedback("Nakikinig... 🎧");
 
       recognition.onstart = () => {
         speechStartRef.current = performance.now();
@@ -370,7 +367,7 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
         speechEndRef.current = performance.now();
 
         const sc = computeScores(sentence, spoken, conf);
-        setMetrics(sc);
+  setMetrics(sc);
         setFeedback(sc.remarks);
 
         stopAudioAnalyser();
@@ -378,7 +375,7 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
       };
 
       recognition.onerror = (e: any) => {
-        setFeedback("Error in speech recognition. Please try again.");
+        setFeedback("May error sa pagkilala ng pagsasalita. Pakisubukan muli.");
         stopAudioAnalyser();
         setIsListening(false);
       };
@@ -386,7 +383,7 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
       recognition.onend = () => {
         if (!speechEndRef.current) speechEndRef.current = performance.now();
         if (!recognizedText) {
-          setFeedback("No speech detected. Please try again.");
+          setFeedback("Walang narinig na pagsasalita. Pakisubukan muli.");
           stopAudioAnalyser();
           setIsListening(false);
         }
@@ -400,7 +397,7 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
 
     } catch (err) {
       console.error(err);
-      setFeedback("Microphone error or permission not granted.");
+      setFeedback("Error sa mikropono o hindi naibigay ang permiso.");
       setIsListening(false);
       stopAudioAnalyser();
     }
@@ -416,7 +413,7 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <header className="rounded-3xl border border-gray-300 bg-white/70 backdrop-blur px-6 py-8 sm:py-10 flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between shadow-md shadow-gray-200">
           <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">English</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">Filipino</p>
             <h1 className="text-3xl sm:text-4xl font-bold text-[#0d1b16]">Non-Reader Level</h1>
           </div>
           <div className="flex items-center gap-5">
@@ -479,7 +476,7 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
                   >
                     <MicIcon />
                   </span>
-                  {isListening ? "Listening..." : "Pronunciation Check"}
+                  {isListening ? "Listening.." : "Pronunciation Check"}
                 </button>
               </div>
             </div>
@@ -487,7 +484,7 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
 
           <aside className="xl:col-span-4 flex flex-col gap-6">
             <div className="rounded-3xl border border-gray-300 bg-white/80 backdrop-blur px-6 py-7 shadow-md shadow-gray-200">
-              <h2 className="text-lg font-semibold text-[#013300]">Real-time Insights</h2>
+              <h2 className="text-lg font-semibold text-[#013300]">Real-time insights</h2>
               <div className="mt-6 space-y-4">
                 <div className="rounded-2xl border border-gray-300 bg-emerald-50/60 px-4 py-3">
                   <p className="text-xs uppercase tracking-wide text-emerald-800">Transcription:</p>
