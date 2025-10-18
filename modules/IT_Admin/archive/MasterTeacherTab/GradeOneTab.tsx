@@ -1,11 +1,10 @@
 import { useState, useRef, useEffect } from "react";
 import TableList from "@/components/Common/Tables/TableList";
-import UserDetailModal from "../Modals/UserDetailsModal";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 
 const sections = ["All Sections", "A", "B", "C"];
 
-interface AllGradesTabProps {
+interface GradeOneTabProps {
   teachers: any[];
   setTeachers: (teachers: any[]) => void;
   searchTerm: string;
@@ -76,16 +75,14 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
   );
 };
 
-export default function MasterTeacherAllGradesTab({ teachers, setTeachers, searchTerm }: AllGradesTabProps) {
-  const [showDetailModal, setShowDetailModal] = useState(false);
-  const [selectedTeacher, setSelectedTeacher] = useState<any>(null);
+export default function MasterTeacherGradeOneTab({ teachers, setTeachers, searchTerm }: GradeOneTabProps) {
   const [filter, setFilter] = useState({ section: "All Sections" });
 
-  const AllGradesTeachers = teachers.filter(teacher => 
-    teacher.grade === 5 || teacher.grade === "5"
+  const gradeOneTeachers = teachers.filter(teacher => 
+    teacher.grade === 1 || teacher.grade === "1"
   );
 
-  const filteredTeachers = AllGradesTeachers.filter((teacher) => {
+  const filteredTeachers = gradeOneTeachers.filter((teacher) => {
     const matchSection = filter.section === "All Sections" || teacher.section === filter.section;
     const matchSearch = searchTerm === "" || 
       teacher.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -95,17 +92,13 @@ export default function MasterTeacherAllGradesTab({ teachers, setTeachers, searc
     return matchSection && matchSearch;
   });
 
-  const handleShowDetails = (teacher: any) => {
-    setSelectedTeacher(teacher);
-    setShowDetailModal(true);
-  };
-
   return (
     <div>
       <div className="flex flex-row justify-between items-center mb-4">
         <p className="text-gray-600 text-md font-medium">
-          Total: {AllGradesTeachers.length}
+          Total: {gradeOneTeachers.length}
         </p>
+        
         <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
           <span className="text-sm text-gray-700 whitespace-nowrap">Section:</span>
           <CustomDropdown 
@@ -116,12 +109,6 @@ export default function MasterTeacherAllGradesTab({ teachers, setTeachers, searc
           />
         </div>
       </div>
-      
-      <UserDetailModal
-        show={showDetailModal}
-        onClose={() => setShowDetailModal(false)}
-        user={selectedTeacher}
-      />
 
       <TableList
         columns={[
@@ -130,16 +117,13 @@ export default function MasterTeacherAllGradesTab({ teachers, setTeachers, searc
           { key: "name", title: "Full Name" },
           { key: "email", title: "Email" },
           { key: "contactNumber", title: "Contact Number" },
+          { key: "archivedDate", title: "Archived Date" },
         ]}
         data={filteredTeachers.map((teacher, idx) => ({
           ...teacher,
           no: idx + 1,
         }))}
-        actions={(row: any) => (
-          <UtilityButton small onClick={() => handleShowDetails(row)}>
-            View Details
-          </UtilityButton>
-        )}
+        actions={() => <></>}
         pageSize={10}
       />
     </div>
