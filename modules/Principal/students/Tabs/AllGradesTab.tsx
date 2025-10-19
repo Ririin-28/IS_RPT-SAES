@@ -1,13 +1,13 @@
 import { useState, useRef, useEffect } from "react";
-import TableList from "@/components/Common/Tables/TableList";
-import UserDetailModal from "../Modals/UserDetailsModal";
+import StudentDetailModal from "../Modals/StudentDetailModal";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
+import TableList from "@/components/Common/Tables/TableList";
 
 const sections = ["All Sections", "A", "B", "C"];
 
-interface GradeSixTabProps {
-  teachers: any[];
-  setTeachers: (teachers: any[]) => void;
+interface AllGradesTabProps {
+  students: any[];
+  setStudents: (students: any[]) => void;
   searchTerm: string;
 }
 
@@ -37,6 +37,7 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
     onChange(option);
     setIsOpen(false);
   };
+
 
   return (
     <div className={`relative ${className}`} ref={dropdownRef}>
@@ -76,37 +77,34 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
   );
 };
 
-export default function MasterTeacherGradeSixTab({ teachers, setTeachers, searchTerm }: GradeSixTabProps) {
+export default function AllGradesTab({ students, searchTerm }: AllGradesTabProps) {
   const [showDetailModal, setShowDetailModal] = useState(false);
-  const [selectedTeacher, setSelectedTeacher] = useState<any>(null);
+  const [selectedStudent, setSelectedStudent] = useState<any>(null);
   const [filter, setFilter] = useState({ section: "All Sections" });
 
-  const GradeSixTeachers = teachers.filter(teacher => 
-    teacher.grade === 6 || teacher.grade === "6"
-  );
+  const AllGradesStudents = students;
 
-  const filteredTeachers = GradeSixTeachers.filter((teacher) => {
-    const matchSection = filter.section === "All Sections" || teacher.section === filter.section;
+  const filteredStudents = AllGradesStudents.filter((student) => {
+    const matchSection = filter.section === "All Sections" || student.section === filter.section;
     const matchSearch = searchTerm === "" || 
-      teacher.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      teacher.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      teacher.teacherId?.toLowerCase().includes(searchTerm.toLowerCase());
+      student.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      student.studentId?.toLowerCase().includes(searchTerm.toLowerCase());
       
     return matchSection && matchSearch;
   });
 
-  const handleShowDetails = (teacher: any) => {
-    setSelectedTeacher(teacher);
+  const handleViewDetails = (student: any) => {
+    setSelectedStudent(student);
     setShowDetailModal(true);
   };
 
   return (
     <div>
       <div className="flex flex-row justify-between items-center mb-4">
-        <p className="text-gray-600 text-md font-medium">
-          Total: {GradeSixTeachers.length}
+        <p className="text-gray-700 text-md font-medium">
+          Total: {AllGradesStudents.length}
         </p>
-        
+       
         <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
           <span className="text-sm text-gray-700 whitespace-nowrap">Section:</span>
           <CustomDropdown 
@@ -117,27 +115,27 @@ export default function MasterTeacherGradeSixTab({ teachers, setTeachers, search
           />
         </div>
       </div>
-      
-      <UserDetailModal
+
+      <StudentDetailModal
         show={showDetailModal}
         onClose={() => setShowDetailModal(false)}
-        user={selectedTeacher}
+        student={selectedStudent}
       />
 
       <TableList
         columns={[
           { key: "no", title: "No#" },
-          { key: "teacherId", title: "Teacher ID" },
+          { key: "studentId", title: "Student ID" },
           { key: "name", title: "Full Name" },
-          { key: "email", title: "Email" },
-          { key: "contactNumber", title: "Contact Number" },
+          { key: "grade", title: "Grade" },
+          { key: "section", title: "Section" },
         ]}
-        data={filteredTeachers.map((teacher, idx) => ({
-          ...teacher,
+        data={filteredStudents.map((student: any, idx: number) => ({
+          ...student,
           no: idx + 1,
         }))}
         actions={(row: any) => (
-          <UtilityButton small onClick={() => handleShowDetails(row)}>
+          <UtilityButton small onClick={() => handleViewDetails(row)}>
             View Details
           </UtilityButton>
         )}

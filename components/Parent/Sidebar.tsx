@@ -93,7 +93,7 @@ export default function Sidebar() {
       <aside
         className={`
           fixed z-50 top-0 left-0 h-full w-64 bg-green-50 flex flex-col px-6 py-8 font-sans 
-          transition-transform duration-300 shadow-xl border-r border-green-100
+          transition-transform duration-300 shadow-xl 
           ${open ? "translate-x-0" : "-translate-x-full"} rounded-xl
           md:static md:translate-x-0 md:min-h-screen
         `}
