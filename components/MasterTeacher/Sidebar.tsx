@@ -78,6 +78,7 @@ const ArchiveIcon = React.memo(() => (
 export default function MasterTeacherSidebar() {
   const [open, setOpen] = React.useState(false);
   const [openSubmenu, setOpenSubmenu] = React.useState<string | null>(null);
+  const [isDesktop, setIsDesktop] = React.useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -113,6 +114,38 @@ export default function MasterTeacherSidebar() {
   const closeSidebar = useCallback(() => {
     setOpen(false);
     setOpenSubmenu(null);
+  }, []);
+
+  React.useEffect(() => {
+    const updateViewport = () => {
+      setIsDesktop(window.innerWidth >= 768);
+    };
+
+    updateViewport();
+    window.addEventListener("resize", updateViewport);
+    return () => window.removeEventListener("resize", updateViewport);
+  }, []);
+
+  React.useEffect(() => {
+    if (isDesktop) {
+      setOpenSubmenu(null);
+    }
+  }, [isDesktop]);
+
+  const handleMouseEnter = useCallback((label: string) => {
+    if (isDesktop) {
+      setOpenSubmenu(label);
+    }
+  }, [isDesktop]);
+
+  const handleMouseLeave = useCallback(() => {
+    if (isDesktop) {
+      setOpenSubmenu(null);
+    }
+  }, [isDesktop]);
+
+  const handleSubmenuToggle = useCallback((label: string) => {
+    setOpenSubmenu((prev) => (prev === label ? null : label));
   }, []);
 
   // Handle navigation with sidebar close
@@ -160,7 +193,7 @@ export default function MasterTeacherSidebar() {
       <aside
         className={`
           fixed z-50 top-0 left-0 h-full w-64 bg-green-50 flex flex-col px-6 py-8 font-sans 
-          transition-transform duration-300 shadow-xl border-r border-green-100
+          transition-transform duration-300 shadow-xl
           ${open ? "translate-x-0" : "-translate-x-full"} rounded-xl
           md:static md:translate-x-0 md:min-h-screen
         `}
@@ -196,6 +229,7 @@ export default function MasterTeacherSidebar() {
           {menuItems.map((item) => {
             const isActive = pathname === item.path;
             const isSubmenuOpen = openSubmenu === item.label;
+            const submenuHeight = item.children ? item.children.length * 48 + 16 : 0;
             
             // For Remedial tab, check if any child is active
             const isRemedialItemActive = item.label === "Remedial" && isRemedialActive;
@@ -205,22 +239,18 @@ export default function MasterTeacherSidebar() {
                 <div 
                   key={item.label} 
                   className="group relative"
-                  onMouseEnter={() => setOpenSubmenu(item.label)}
-                  onMouseLeave={() => setOpenSubmenu(null)}
+                  onMouseEnter={() => handleMouseEnter(item.label)}
+                  onMouseLeave={handleMouseLeave}
                 >
                   {/* Parent (clickable to toggle submenu on mobile) */}
                   <button
+                    type="button"
                     className={`
                       w-full flex items-center gap-4 font-medium text-base px-3 py-2 rounded-lg transition-all
                       ${isRemedialItemActive ? "bg-[#013300] text-white shadow" : "text-[#013300]"}
                       hover:ring-2 hover:ring-[#013300] hover:scale-[1.02] hover:shadow
                     `}
-                    onClick={() => {
-                      // On mobile, toggle submenu on click
-                      if (window.innerWidth < 768) {
-                        setOpenSubmenu(prev => prev === item.label ? null : item.label);
-                      }
-                    }}
+                    onClick={() => handleSubmenuToggle(item.label)}
                     aria-expanded={isSubmenuOpen}
                     aria-haspopup="true"
                   >
@@ -251,11 +281,14 @@ export default function MasterTeacherSidebar() {
                       ${isSubmenuOpen ? "max-h-48 opacity-100" : "max-h-0 opacity-0"}
                       md:group-hover:max-h-48 md:group-hover:opacity-100
                     `}
+                    style={{
+                      maxHeight: isSubmenuOpen ? submenuHeight : 0,
+                      opacity: isSubmenuOpen ? 1 : 0,
+                    }}
                   >
                     <div
                       className="
                         flex flex-col mt-1 gap-2 rounded-lg bg-green-50 p-2
-                        shadow-md border border-green-100
                       "
                     >
                       {item.children.map((child) => {
@@ -263,6 +296,7 @@ export default function MasterTeacherSidebar() {
                         return (
                           <button
                             key={child.label}
+                            type="button"
                             className={`
                               w-full text-left px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200
                               ${isChildActive ? "bg-[#013300] text-white shadow" : "text-[#013300]"}
@@ -284,6 +318,7 @@ export default function MasterTeacherSidebar() {
             return (
               <button
                 key={item.label}
+                type="button"
                 className={`
                   flex items-center gap-4 font-medium text-base px-3 py-2 rounded-lg transition-all
                   ${isActive ? "bg-[#013300] text-white shadow" : "text-[#013300]"}

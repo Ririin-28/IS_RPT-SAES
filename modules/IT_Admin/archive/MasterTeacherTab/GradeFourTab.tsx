@@ -1,11 +1,19 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type Dispatch, type SetStateAction } from "react";
 import TableList from "@/components/Common/Tables/TableList";
+import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
+import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
+import DangerButton from "@/components/Common/Buttons/DangerButton";
+import KebabMenu from "@/components/Common/Menus/KebabMenu";
+import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
+import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
+import { useArchiveRestoreDelete } from "../Common/useArchiveRestoreDelete";
+import { ensureArchiveRowKey } from "../Common/archiveRowKey";
 
 const sections = ["All Sections", "A", "B", "C"];
 
 interface GradeFourTabProps {
   teachers: any[];
-  setTeachers: (teachers: any[]) => void;
+  setTeachers: Dispatch<SetStateAction<any[]>>;
   searchTerm: string;
 }
 
@@ -40,7 +48,7 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
     <div className={`relative ${className}`} ref={dropdownRef}>
       <button
         type="button"
-        className="flex items-center justify-between pl-3 pr-0 py-1.5 text-sm font-medium text-gray-700 cursor-pointer focus:outline-none border border-gray-300 rounded bg-white"
+        className="flex items-center justify-between px-3 py-1.5 text-sm font-medium text-gray-700 cursor-pointer focus:outline-none border border-gray-300 rounded bg-white"
         onClick={() => setIsOpen(!isOpen)}
       >
         {value}
@@ -81,6 +89,26 @@ export default function MasterTeacherGradeFourTab({ teachers, setTeachers, searc
     teacher.grade === 4 || teacher.grade === "4"
   );
 
+  const keySelector = (item: any) => ensureArchiveRowKey(item);
+
+  const {
+    action,
+    selectMode,
+    selectedKeys,
+    selectedCount,
+    enterAction,
+    cancelSelection,
+    toggleItem,
+    toggleAll,
+    requestConfirmation,
+    restoreModalOpen,
+    deleteModalOpen,
+    setRestoreModalOpen,
+    setDeleteModalOpen,
+    confirmRestore,
+    confirmDelete,
+  } = useArchiveRestoreDelete(setTeachers, { keySelector });
+
   const filteredTeachers = gradeFourTeachers.filter((teacher) => {
     const matchSection = filter.section === "All Sections" || teacher.section === filter.section;
     const matchSearch = searchTerm === "" || 
@@ -91,21 +119,92 @@ export default function MasterTeacherGradeFourTab({ teachers, setTeachers, searc
     return matchSection && matchSearch;
   });
 
+  const tableData = filteredTeachers.map((teacher, idx) => {
+  const archiveKey = ensureArchiveRowKey(teacher);
+    return {
+      ...teacher,
+      id: archiveKey,
+      no: idx + 1,
+    };
+  });
+
   return (
     <div>
-      <div className="flex flex-row justify-between items-center mb-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
         <p className="text-gray-600 text-md font-medium">
           Total: {gradeFourTeachers.length}
         </p>
-        
-        <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
-          <span className="text-sm text-gray-700 whitespace-nowrap">Section:</span>
-          <CustomDropdown 
-            options={sections}
-            value={filter.section}
-            onChange={(value) => setFilter({ section: value })}
-            className="min-w-[120px]"
-          />
+
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
+          <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
+            <span className="text-sm text-gray-700 whitespace-nowrap">Section:</span>
+            <CustomDropdown 
+              options={sections}
+              value={filter.section}
+              onChange={(value) => setFilter({ section: value })}
+              className="min-w-[120px]"
+            />
+          </div>
+
+          <div className="flex items-center gap-2 sm:justify-end">
+            {selectMode ? (
+              <>
+                <SecondaryButton small onClick={cancelSelection}>
+                  Cancel
+                </SecondaryButton>
+                {action === "restore" ? (
+                  <PrimaryButton
+                    small
+                    disabled={selectedCount === 0}
+                    onClick={requestConfirmation}
+                    className="flex items-center gap-2"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-archive-restore-icon lucide-archive-restore"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h2"/><path d="M20 8v11a2 2 0 0 1-2 2h-2"/><path d="m9 15 3-3 3 3"/><path d="M12 12v9"/></svg>
+                    Restore ({selectedCount})
+                  </PrimaryButton>
+                ) : (
+                  <DangerButton
+                    small
+                    disabled={selectedCount === 0}
+                    onClick={requestConfirmation}
+                    className="flex items-center gap-2"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-trash-icon lucide-trash"><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    Delete ({selectedCount})
+                  </DangerButton>
+                )}
+              </>
+            ) : (
+              <KebabMenu
+                small
+                align="right"
+                renderItems={(close) => (
+                  <div className="py-1">
+                    <button
+                      onClick={() => {
+                        enterAction("restore");
+                        close();
+                      }}
+                      className="w-full px-4 py-2 text-left text-sm text-[#013300] hover:bg-gray-50 flex items-center gap-2"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-archive-restore-icon lucide-archive-restore"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h2"/><path d="M20 8v11a2 2 0 0 1-2 2h-2"/><path d="m9 15 3-3 3 3"/><path d="M12 12v9"/></svg>
+                      Restore
+                    </button>
+                    <button
+                      onClick={() => {
+                        enterAction("delete");
+                        close();
+                      }}
+                      className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-gray-50 flex items-center gap-2"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-trash-icon lucide-trash"><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                      Delete
+                    </button>
+                  </div>
+                )}
+              />
+            )}
+          </div>
         </div>
       </div>
 
@@ -118,12 +217,28 @@ export default function MasterTeacherGradeFourTab({ teachers, setTeachers, searc
           { key: "contactNumber", title: "Contact Number" },
           { key: "archivedDate", title: "Archived Date" },
         ]}
-        data={filteredTeachers.map((teacher, idx) => ({
-          ...teacher,
-          no: idx + 1,
-        }))}
+        data={tableData}
         actions={() => <></>}
         pageSize={10}
+        selectable={selectMode}
+        selectedItems={selectedKeys}
+        onSelectAll={(checked) => toggleAll(tableData.map((row) => row.id ?? ""), checked)}
+        onSelectItem={(id, checked) => toggleItem(id, checked)}
+      />
+
+      <ConfirmationModal
+        isOpen={restoreModalOpen}
+        onClose={() => setRestoreModalOpen(false)}
+        onConfirm={confirmRestore}
+        title="Restore Accounts"
+        message={`Restore ${selectedCount} archived account${selectedCount === 1 ? "" : "s"}? They will return to the active list.`}
+      />
+      <DeleteConfirmationModal
+        isOpen={deleteModalOpen}
+        onClose={() => setDeleteModalOpen(false)}
+        onConfirm={confirmDelete}
+        title="Delete Archived Accounts"
+        message={`Permanently delete ${selectedCount} archived account${selectedCount === 1 ? "" : "s"}? This action cannot be undone.`}
       />
     </div>
   );

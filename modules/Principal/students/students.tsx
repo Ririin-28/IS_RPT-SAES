@@ -6,6 +6,7 @@ import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import { FaTimes } from "react-icons/fa";
 // Tabs
+import AllGradesTab from "./Tabs/AllGradesTab";
 import GradeOneTab from "./Tabs/GradeOneTab";
 import GradeTwoTab from "./Tabs/GradeTwoTab";
 import GradeThreeTab from "./Tabs/GradeThreeTab";
@@ -14,7 +15,7 @@ import GradeFiveTab from "./Tabs/GradeFiveTab";
 import GradeSixTab from "./Tabs/GradeSixTab";
 
 export default function PrincipalStudents() {
-  const [activeTab, setActiveTab] = useState("Grade 1");
+  const [activeTab, setActiveTab] = useState("All Grades");
   const [students, setStudents] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -30,7 +31,7 @@ export default function PrincipalStudents() {
                 <div className="flex items-center gap-0">
                   <SecondaryHeader title="Students in" />
                   <HeaderDropdown
-                    options={["Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"]}
+                    options={["All Grades", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"]}
                     value={activeTab}
                     onChange={setActiveTab}
                   />
@@ -57,6 +58,7 @@ export default function PrincipalStudents() {
               </div>
               
               <div className="mt-4 sm:mt-6">
+                {activeTab === "All Grades" && <AllGradesTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
                 {activeTab === "Grade 1" && <GradeOneTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
                 {activeTab === "Grade 2" && <GradeTwoTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
                 {activeTab === "Grade 3" && <GradeThreeTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
