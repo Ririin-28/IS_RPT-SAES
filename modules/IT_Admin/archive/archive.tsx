@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import ITAdminSidebar from "@/components/IT_Admin/Sidebar";
 import ITAdminHeader from "@/components/IT_Admin/Header";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
@@ -23,12 +23,38 @@ import MasterTeacherGradeFiveTab from "./MasterTeacherTab/GradeFiveTab";
 import MasterTeacherGradeSixTab from "./MasterTeacherTab/GradeSixTab";
 // Principal Tab
 import PrincipalTab from "./PrincipalTab/PrincipalTab";
+// IT Admin Tab
+import ITAdminArchiveTab from "./ITAdminTab/ITAdminTab";
+// Student Tab
+import StudentArchiveTab from "./StudentTab/StudentTab";
+
+const GRADE_OPTIONS = ["All Grades", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"] as const;
+const ACCOUNT_OPTIONS = ["IT Admin", "Principal", "Master Teachers", "Teachers", "Students"] as const;
+
+type AccountOption = (typeof ACCOUNT_OPTIONS)[number];
 
 export default function ITAdminArchive() {
-  const [activeTab, setActiveTab] = useState("All Grades");
-  const [accountType, setAccountType] = useState("Master Teachers");
+  const [activeTab, setActiveTab] = useState<string>("All Grades");
+  const [accountType, setAccountType] = useState<AccountOption>("Master Teachers");
   const [accounts, setAccounts] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+
+  const showGradeDropdown = useMemo(() => {
+    return accountType === "Master Teachers" || accountType === "Teachers" || accountType === "Students";
+  }, [accountType]);
+
+  const handleAccountTypeChange = (next: string) => {
+    const selected = ACCOUNT_OPTIONS.find((option) => option === next) ?? ACCOUNT_OPTIONS[0];
+    setAccountType(selected);
+    if (!(selected === "Master Teachers" || selected === "Teachers" || selected === "Students")) {
+      setActiveTab("All Grades");
+    }
+  };
+
+  const handleGradeChange = (next: string) => {
+    const selected = GRADE_OPTIONS.find((option) => option === next) ?? GRADE_OPTIONS[0];
+    setActiveTab(selected);
+  };
 
   return (
 	<div className="flex h-screen bg-white overflow-hidden">
@@ -45,21 +71,21 @@ export default function ITAdminArchive() {
 				<div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                 <div className="flex items-center gap-0">
                   <HeaderDropdown
-                    options={["Principal", "Master Teachers", "Teachers"]}
+                    options={[...ACCOUNT_OPTIONS]}
                     value={accountType}
-                    onChange={setAccountType}
+                    onChange={handleAccountTypeChange}
                   />
-                  {accountType === "Principal" ? (
-                    <SecondaryHeader title="Accounts" />
-                  ) : (
+                  {showGradeDropdown ? (
                     <>
                       <SecondaryHeader title="in" />
                       <HeaderDropdown
-                        options={["All Grades", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"]}
+                        options={[...GRADE_OPTIONS]}
                         value={activeTab}
-                        onChange={setActiveTab}
+                        onChange={handleGradeChange}
                       />
                     </>
+                  ) : (
+                    <SecondaryHeader title="Accounts" />
                   )}
                 </div>
                 <div className="flex gap-3 w-full sm:w-auto mt-4 sm:mt-0">
@@ -85,6 +111,10 @@ export default function ITAdminArchive() {
 
               {/*---------------------------------Tab Content---------------------------------*/}
               <div className="mt-4 sm:mt-6">
+                {accountType === "IT Admin" && (
+                  <ITAdminArchiveTab itAdmins={accounts} searchTerm={searchTerm} />
+                )}
+
                 {accountType === "Principal" && (
                   <PrincipalTab principals={accounts} setPrincipals={setAccounts} searchTerm={searchTerm} />
                 )}
@@ -111,6 +141,10 @@ export default function ITAdminArchive() {
                     {activeTab === "Grade 5" && <TeacherGradeFiveTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
                     {activeTab === "Grade 6" && <TeacherGradeSixTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
                   </>
+                )}
+
+                {accountType === "Students" && (
+                  <StudentArchiveTab students={accounts} searchTerm={searchTerm} selectedGrade={activeTab} />
                 )}
               </div>
 			</div>

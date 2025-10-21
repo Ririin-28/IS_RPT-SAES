@@ -468,8 +468,17 @@ export default function PrincipalDashboard() {
         callbacks: {
           label: function(context: any) {
             const label = context.dataset.label || '';
-            const value = context.parsed._stacks.y[context.parsed._stack]._top;
-            return `${label}: ${value}%`;
+            const rawData = Array.isArray(context.dataset.data) ? context.dataset.data[context.dataIndex] : undefined;
+            const numericValue = typeof rawData === 'number'
+              ? rawData
+              : typeof context.parsed?.y === 'number'
+                ? context.parsed.y
+                : typeof context.parsed === 'number'
+                  ? context.parsed
+                  : typeof rawData?.y === 'number'
+                    ? rawData.y
+                    : 0;
+            return `${label}: ${numericValue}%`;
           }
         }
       }

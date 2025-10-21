@@ -6,12 +6,26 @@ import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import TableList from "@/components/Common/Tables/TableList";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import KebabMenu from "@/components/Common/Menus/KebabMenu";
+import FilterDropdown from "@/components/Common/Inputs/FilterDropdown";
 
-export default function ParagraphTab() {
+interface MaterialsTabProps {
+  filterLabel?: string;
+  filterOptions?: string[];
+}
+
+export default function ParagraphTab({ filterLabel, filterOptions = [] }: MaterialsTabProps) {
   const [materials, setMaterials] = useState<any[]>([]);
   const [selectedMaterials, setSelectedMaterials] = useState<Set<number>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const hasFilter = Boolean(filterLabel && filterOptions.length > 0);
+  const [selectedFilter, setSelectedFilter] = useState<string>(filterOptions.length > 0 ? filterOptions[0] : "All Subjects");
+
+  useEffect(() => {
+    if (filterOptions.length > 0) {
+      setSelectedFilter((prev) => (filterOptions.includes(prev) ? prev : filterOptions[0]));
+    }
+  }, [filterOptions]);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -27,7 +41,8 @@ export default function ParagraphTab() {
     const newMaterial = {
       id: Date.now(),
       title: file.name,
-      dateAttached: new Date().toLocaleDateString()
+      dateAttached: new Date().toLocaleDateString(),
+      subject: filterOptions.length > 1 ? filterOptions[1] : "Unassigned"
     };
 
     setMaterials([...materials, newMaterial]);
@@ -57,7 +72,7 @@ export default function ParagraphTab() {
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedMaterials(new Set(materials.map(m => m.id)));
+      setSelectedMaterials(new Set(filteredMaterials.map(m => m.id)));
     } else {
       setSelectedMaterials(new Set());
     }
@@ -81,6 +96,31 @@ export default function ParagraphTab() {
     setSelectMode(false);
   };
 
+  const allOption = filterOptions.length > 0 ? filterOptions[0] : "All Subjects";
+  const filteredMaterials = hasFilter && selectedFilter !== allOption
+    ? materials.filter((material) => (material.subject ?? "Unassigned") === selectedFilter)
+    : materials;
+
+  useEffect(() => {
+    if (!hasFilter) return;
+    setSelectedMaterials((prev) => {
+      const visibleIds = new Set(filteredMaterials.map((material) => material.id));
+      let changed = false;
+      const next = new Set<number>();
+      prev.forEach((id) => {
+        if (visibleIds.has(id)) {
+          next.add(id);
+        } else {
+          changed = true;
+        }
+      });
+      if (!changed && next.size === prev.size) {
+        return prev;
+      }
+      return next;
+    });
+  }, [hasFilter, filteredMaterials]);
+
   return (
     <div>
       <div
@@ -94,7 +134,18 @@ export default function ParagraphTab() {
       "
       >
   <p className="text-gray-600 text-md font-medium">Total: {materials.length}</p>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          {hasFilter && (
+            <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
+              <span className="text-sm text-gray-700 whitespace-nowrap">{filterLabel}:</span>
+              <FilterDropdown
+                options={filterOptions}
+                value={selectedFilter}
+                onChange={setSelectedFilter}
+                className="min-w-[140px]"
+              />
+            </div>
+          )}
           {selectMode ? (
             <>
               <SecondaryButton small onClick={handleCancelSelect}>
@@ -161,11 +212,11 @@ export default function ParagraphTab() {
         columns={[
           { key: "no", title: "No." },
           { key: "title", title: "Title" },
-          { key: "gradeSection", title: "Grade and Section" },
+          { key: "gradeSection", title: "Grade" },
           { key: "teacher", title: "Teacher" },
           { key: "dateAttached", title: "Date Attached" },
         ]}
-        data={materials.map((material, idx) => ({
+        data={filteredMaterials.map((material, idx) => ({
           ...material,
           no: idx + 1,
         }))}

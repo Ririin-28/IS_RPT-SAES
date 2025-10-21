@@ -3,7 +3,7 @@ import { useState } from 'react';
 import Header from "@/components/Parent/Header";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
-import BodyText from "@/components/Common/Texts/BodyText";
+import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 
 // OverviewCard component with responsive styles
 function OverviewCard({
@@ -74,32 +74,6 @@ function OverviewCard({
   );
 }
 
-// Simplified Subject Button Component
-function SubjectButton({ 
-  subject, 
-  isActive, 
-  onClick 
-}: {
-  subject: string;
-  isActive: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`
-        px-6 py-3 rounded-lg font-semibold transition-all duration-200
-        ${isActive 
-          ? 'bg-[#013300] text-white shadow-lg' 
-          : 'bg-white text-[#013300] border border-[#013300] hover:bg-green-50'
-        }
-      `}
-    >
-      {subject}
-    </button>
-  );
-}
-
 // Simplified Schedule Card Component (without icons)
 function ScheduleCard({ day, subject, time, isToday = false }: {
   day: string;
@@ -110,7 +84,7 @@ function ScheduleCard({ day, subject, time, isToday = false }: {
   return (
     <div className={`
       bg-white p-4 rounded-lg shadow flex justify-between items-center border border-gray-200
-      ${isToday ? 'border-green-400 bg-green-50' : ''}
+      ${isToday ? 'border-gray-300 bg-green-50' : ''}
     `}>
       <div>
         <h4 className={`font-semibold ${isToday ? 'text-green-900' : 'text-green-900'}`}>
@@ -150,7 +124,7 @@ function AttendanceCalendar() {
     return new Date(year, month, 1).getDay();
   };
 
-  const getDayOfWeek = (dayIndex: number) => {
+  const getDayOfWeek = (dayIndex: number, firstDayOfMonth: number) => {
     return (firstDayOfMonth + dayIndex) % 7;
   };
 
@@ -178,7 +152,7 @@ function AttendanceCalendar() {
   const days = [];
   // Add empty cells for days before the first day of the month
   for (let i = 0; i < firstDayOfMonth; i++) {
-    days.push(<div key={`empty-${i}`} className="h-8"></div>);
+  days.push(<div key={`empty-${i}`} className="h-12"></div>);
   }
 
   // Add cells for each day of the month
@@ -188,16 +162,16 @@ function AttendanceCalendar() {
                    new Date().getMonth() === currentMonth && 
                    new Date().getFullYear() === currentYear;
     
-    const dayOfWeek = getDayOfWeek(day - 1);
+    const dayOfWeek = getDayOfWeek(day - 1, firstDayOfMonth);
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6; // Sunday (0) or Saturday (6)
     
     days.push(
       <div
         key={day}
         className={`
-          h-8 flex items-center justify-center rounded text-sm font-medium
-          ${isToday ? 'ring-2 ring-green-400' : ''}
-          ${isWeekend ? 'bg-gray-50 text-gray-400' : ''}
+          h-12 flex items-center justify-center rounded text-sm font-medium border border-gray-100
+          ${isToday ? 'ring-1 ring-gray-300' : ''}
+          ${isWeekend ? 'bg-gray-50 text-gray-400' : 'bg-green-50 text-green-900'}
           ${!isWeekend && isPresent === true ? 'bg-green-100 text-green-800' : ''}
           ${!isWeekend && isPresent === false ? 'bg-red-100 text-red-800' : ''}
           ${!isWeekend && isPresent === undefined ? 'bg-gray-100 text-gray-400' : ''}
@@ -209,8 +183,8 @@ function AttendanceCalendar() {
   }
 
   return (
-    <div className="bg-white rounded-xl p-6 shadow-sm border border-green-200">
-      <div className="flex items-center justify-between mb-4">
+    <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+      <div className="flex items-center justify-between mb-6">
         <h4 className="font-bold text-gray-800">Monthly Attendance</h4>
         <div className="flex items-center space-x-2">
           <button
@@ -231,16 +205,16 @@ function AttendanceCalendar() {
         </div>
       </div>
 
-      <div className="grid grid-cols-7 gap-1 mb-4">
+      <div className="grid grid-cols-7 gap-2 mb-6">
         {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-          <div key={day} className="text-center text-xs font-medium text-gray-500 py-2">
+          <div key={day} className="text-center text-xs font-medium text-gray-600 py-1">
             {day}
           </div>
         ))}
         {days}
       </div>
 
-      <div className="flex items-center justify-center space-x-4 text-xs">
+      <div className="flex flex-wrap items-center justify-center gap-4 text-xs mb-6">
         <div className="flex items-center space-x-1">
           <div className="w-3 h-3 bg-green-100 rounded border border-green-200"></div>
           <span className="text-gray-700 font-medium">Present</span>
@@ -255,14 +229,14 @@ function AttendanceCalendar() {
         </div>
       </div>
 
-      <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+      <div className="p-4 rounded-lg border border-gray-200 bg-white">
         <div className="flex justify-between items-center">
-          <span className="text-sm font-medium text-blue-800">Monthly Attendance Rate</span>
-          <span className="bg-blue-500 text-white px-2 py-1 rounded-full text-sm font-bold">
+          <span className="text-sm font-medium text-gray-800">Monthly Attendance Rate</span>
+          <span className="px-3 py-1 text-base font-bold text-gray-800">
             {currentChild.attendance}%
           </span>
         </div>
-        <p className="text-xs text-blue-600 mt-1">
+        <p className="text-xs text-gray-600 mt-1">
           Based on {Object.values(attendanceData).filter(Boolean).length} out of {daysInMonth} school days.
         </p>
       </div>
@@ -275,19 +249,20 @@ function ProgressCard({ title, value, description, icon, color = "green" }: {
   title: string;
   value: string;
   description: string;
-  icon: React.ReactNode;
-  color?: "green" | "blue" | "orange";
+  icon?: React.ReactNode;
+  color?: "green" | "blue" | "orange" | "yellow";
 }) {
   const colorClasses = {
-    green: "bg-gradient-to-br from-green-50 to-green-100 border-green-200",
-    blue: "bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200",
-    orange: "bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200"
+    green: "bg-gradient-to-br from-green-50 to-green-100 border border-gray-200",
+    blue: "bg-gradient-to-br from-blue-50 to-blue-100 border border-gray-200",
+    orange: "bg-gradient-to-br from-orange-50 to-orange-100 border border-gray-200",
+    yellow: "bg-gradient-to-br from-yellow-50 to-yellow-100 border border-gray-200"
   };
 
   return (
-    <div className={`p-4 rounded-xl border-2 ${colorClasses[color]} shadow-sm`}>
+    <div className={`p-4 rounded-xl ${colorClasses[color]} shadow-sm`}>
       <div className="flex items-center mb-2">
-        <div className="mr-3 text-2xl">{icon}</div>
+        {icon && <div className="mr-3 text-2xl">{icon}</div>}
         <h4 className="font-bold text-gray-800">{title}</h4>
       </div>
       <div className="text-2xl font-bold text-gray-900 mb-1">{value}</div>
@@ -298,8 +273,11 @@ function ProgressCard({ title, value, description, icon, color = "green" }: {
 
 // Sample data for a single child
 const currentChild = {
-  name: "John Doe",
+  firstName: "John",
+  middleName: "Michael",
+  lastName: "Doe",
   grade: "Grade 5",
+  section: "Section A",
   age: 10,
   teacher: "Ms. Johnson",
   attendance: 94,
@@ -321,7 +299,8 @@ const currentChild = {
         "Improved vocabulary quiz from 75% to 88%"
       ],
       teacherComments: "John is making excellent progress in reading. He's becoming more confident with longer texts and his vocabulary is expanding nicely. Let's continue practicing writing skills at home.",
-      nextGoals: "Move to Sentence Reader level by improving writing skills"
+      nextGoals: "Move to Sentence Reader level by improving writing skills",
+      teacher: "Ms. Smith"
     },
     Filipino: {
       currentLevel: "Word Reader", 
@@ -335,7 +314,8 @@ const currentChild = {
         "Improved oral reading confidence"
       ],
       teacherComments: "John has shown great improvement in Filipino. His pronunciation is clear and he's becoming more comfortable with the language. Regular reading practice will help build fluency.",
-      nextGoals: "Achieve Phrase Reader level by end of semester"
+      nextGoals: "Achieve Phrase Reader level by end of semester",
+      teacher: "Ms. Garcia"
     },
     Math: {
       currentLevel: "Developing - Nearly Proficient",
@@ -349,7 +329,8 @@ const currentChild = {
         "Started multiplication with 80% success rate"
       ],
       teacherComments: "John's math skills are developing well. He shows good logical thinking and enjoys math activities. Practice with word problems and multiplication will help him reach the next level.",
-      nextGoals: "Become proficient in multiplication and division"
+      nextGoals: "Become proficient in multiplication and division",
+      teacher: "Mr. Rodriguez"
     }
   }
 };
@@ -377,14 +358,6 @@ export default function ParentDashboard() {
   const subjects = ['English', 'Filipino', 'Math'];
   const currentProgress = currentChild.progressDetails[selectedSubject as keyof typeof currentChild.progressDetails];
 
-  // Icons for different sections
-  const progressIcon = "📈";
-  const strengthIcon = "⭐";
-  const improvementIcon = "🎯";
-  const activityIcon = "📚";
-  const commentIcon = "💬";
-  const goalIcon = "🏆";
-
   return (
     <div className="flex h-screen bg-white overflow-hidden">
       {/*---------------------------------Main Content---------------------------------*/}
@@ -401,30 +374,41 @@ export default function ParentDashboard() {
               </div>
 
               {/* Child Details Section */}
-              <div className="bg-[#E9FDF2] rounded-xl shadow-lg p-4 mb-6 min-w-full min-h-[140px] sm:p-5 sm:mb-7 md:p-6 md:mb-8 flex flex-col md:flex-row md:items-start">
-                <div className="flex-shrink-0 flex justify-center items-center w-full md:w-48 mb-3 md:mb-0 md:mr-12">
+              <div className="bg-[#E9FDF2] rounded-xl shadow-lg p-6 mb-8 min-h-[160px] flex flex-col gap-6 md:flex-row md:items-start md:px-8">
+                <div className="flex-shrink-0 self-center md:ml-15 md:mr-20">
                   <img
                     src="/public/SAES/SAESImg.png"
                     alt="Child profile"
-                    className="w-36 h-36 md:w-40 md:h-40 rounded-full object-cover border-4 border-white shadow-lg bg-white"
+                    className="w-32 h-32 md:w-45 md:h-45 object-cover border-4 border-white shadow-lg bg-white"
                   />
                 </div>
-                <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
-                  <div className="mb-1">
-                    <span className="block text-lg font-bold text-[#014421] mb-0.5">Full Name:</span>
-                    <span className="block text-base text-black">{currentChild.name}</span>
-                  </div>
-                  <div className="mb-1">
-                    <span className="block text-lg font-bold text-[#014421] mb-0.5">Age:</span>
-                    <span className="block text-base text-black">{currentChild.age}</span>
-                  </div>
-                  <div className="mb-1">
-                    <span className="block text-lg font-bold text-[#014421] mb-0.5">Grade &amp; Section:</span>
-                    <span className="block text-base text-black">{currentChild.grade}</span>
-                  </div>
-                  <div className="mb-1">
-                    <span className="block text-lg font-bold text-[#014421] mb-0.5">Teacher:</span>
-                    <span className="block text-base text-black">{currentChild.teacher}</span>
+
+                <div className="flex-1 w-full">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-4">
+                    <div>
+                      <span className="block text-lg font-bold text-[#014421]">First Name:</span>
+                      <span className="block text-base text-black">{currentChild.firstName}</span>
+                    </div>
+                    <div>
+                      <span className="block text-lg font-bold text-[#014421]">Grade:</span>
+                      <span className="block text-base text-black">{currentChild.grade}</span>
+                    </div>
+                    <div>
+                      <span className="block text-lg font-bold text-[#014421]">Middle Name:</span>
+                      <span className="block text-base text-black">{currentChild.middleName}</span>
+                    </div>
+                    <div>
+                      <span className="block text-lg font-bold text-[#014421]">Section:</span>
+                      <span className="block text-base text-black">{currentChild.section}</span>
+                    </div>
+                    <div>
+                      <span className="block text-lg font-bold text-[#014421]">Surname:</span>
+                      <span className="block text-base text-black">{currentChild.lastName}</span>
+                    </div>
+                    <div>
+                      <span className="block text-lg font-bold text-[#014421]">Age:</span>
+                      <span className="block text-base text-black">{currentChild.age}</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -468,14 +452,28 @@ export default function ParentDashboard() {
                   
                   {/* Subject Buttons */}
                   <div className="flex flex-wrap gap-4 mt-6 mb-8">
-                    {subjects.map((subject) => (
-                      <SubjectButton
-                        key={subject}
-                        subject={subject}
-                        isActive={selectedSubject === subject}
-                        onClick={() => setSelectedSubject(subject)}
-                      />
-                    ))}
+                    {subjects.map((subject) => {
+                      const isActive = selectedSubject === subject;
+                      return (
+                        <UtilityButton
+                          key={subject}
+                          onClick={() => setSelectedSubject(subject)}
+                          className={`transition-all duration-200 ${isActive ? 'shadow-lg' : '!bg-white !text-[#013300] border-[#013300] hover:!bg-green-50 hover:!text-[#013300]'}`}
+                        >
+                          {subject}
+                        </UtilityButton>
+                      );
+                    })}
+                  </div>
+
+                  {/* Teacher Information */}
+                  <div className="mb-6 p-4 bg-white rounded-lg shadow-sm border border-gray-200">
+                    <h4 className="font-bold text-green-800 mb-2">
+                      Subject Teacher: {currentProgress.teacher}
+                    </h4>
+                    <p className="text-sm text-gray-600">
+                      Your child's progress in {selectedSubject} is guided by {currentProgress.teacher}
+                    </p>
                   </div>
 
                   {/* Subject Details Container */}
@@ -486,51 +484,46 @@ export default function ParentDashboard() {
                         title="Current Level"
                         value={currentProgress.currentLevel}
                         description="Where your child is now"
-                        icon={progressIcon}
-                        color="green"
+                        color="yellow"
                       />
                       <ProgressCard
                         title="Progress Made"
                         value={currentProgress.improvement}
                         description="Since starting remedial classes"
-                        icon={improvementIcon}
                         color="blue"
                       />
                       <ProgressCard
                         title="Starting Level"
                         value={currentProgress.startingLevel}
                         description="When remedial classes began"
-                        icon={goalIcon}
                         color="orange"
                       />
                     </div>
 
                     {/* Strengths & Areas for Improvement */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="bg-white p-4 rounded-lg shadow-sm border border-green-100">
+                      <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
                         <h4 className="font-bold text-green-800 mb-3 flex items-center">
-                          <span className="text-xl mr-2">{strengthIcon}</span>
                           What's Going Well
                         </h4>
                         <div className="space-y-2">
                           {currentProgress.strengths.map((strength, index) => (
                             <div key={index} className="flex items-start">
-                              <span className="text-green-500 mr-2 mt-1">✓</span>
+                              <span className="mr-2 mt-2 inline-block h-2 w-2 rounded-full bg-green-500" aria-hidden="true"></span>
                               <span className="text-gray-700">{strength}</span>
                             </div>
                           ))}
                         </div>
                       </div>
 
-                      <div className="bg-white p-4 rounded-lg shadow-sm border border-blue-100">
+                      <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
                         <h4 className="font-bold text-blue-800 mb-3 flex items-center">
-                          <span className="text-xl mr-2">{improvementIcon}</span>
                           Areas to Focus On
                         </h4>
                         <div className="space-y-2">
                           {currentProgress.areasForImprovement.map((area, index) => (
                             <div key={index} className="flex items-start">
-                              <span className="text-blue-500 mr-2 mt-1">🎯</span>
+                              <span className="mr-2 mt-2 inline-block h-2 w-2 rounded-full bg-blue-500" aria-hidden="true"></span>
                               <span className="text-gray-700">{area}</span>
                             </div>
                           ))}
@@ -539,9 +532,8 @@ export default function ParentDashboard() {
                     </div>
 
                     {/* Next Goals */}
-                    <div className="bg-gradient-to-r from-green-50 to-blue-50 p-4 rounded-lg border border-green-200">
+                    <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
                       <h4 className="font-bold text-gray-800 mb-2 flex items-center">
-                        <span className="text-xl mr-2">{goalIcon}</span>
                         Next Learning Goals
                       </h4>
                       <p className="text-gray-700">{currentProgress.nextGoals}</p>
@@ -566,8 +558,9 @@ export default function ParentDashboard() {
                           />
                         ))}
                       </div>
-                      <div className="mt-4 text-sm text-gray-600">
-                        <p className="font-medium">Please ensure your child attends all remedial sessions</p>
+                      <div className="mt-4 text-sm text-gray-600 space-y-1">
+                        <p className="font-medium">Please ensure your child attends all remedial sessions.</p>
+                        <p className="italic">Siguraduhin na dumadalo ang inyong anak sa lahat ng remedial sessions.</p>
                       </div>
                     </div>
                     

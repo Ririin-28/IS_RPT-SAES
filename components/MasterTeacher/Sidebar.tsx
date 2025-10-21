@@ -157,14 +157,6 @@ export default function MasterTeacherSidebar() {
     [router, closeSidebar]
   );
 
-  // Check if any child of Remedial is active
-  const isRemedialActive = React.useMemo(() => {
-    const remedialItem = menuItems.find(item => item.label === "Remedial" && item.children);
-    if (!remedialItem?.children) return false;
-    
-    return remedialItem.children.some(child => pathname === child.path);
-  }, [menuItems, pathname]);
-
   return (
     <>
       {/* Mobile Hamburger Button */}
@@ -230,9 +222,7 @@ export default function MasterTeacherSidebar() {
             const isActive = pathname === item.path;
             const isSubmenuOpen = openSubmenu === item.label;
             const submenuHeight = item.children ? item.children.length * 48 + 16 : 0;
-            
-            // For Remedial tab, check if any child is active
-            const isRemedialItemActive = item.label === "Remedial" && isRemedialActive;
+            const isParentActive = item.children ? item.children.some((child) => pathname === child.path) : false;
 
             if (item.children) {
               return (
@@ -247,7 +237,7 @@ export default function MasterTeacherSidebar() {
                     type="button"
                     className={`
                       w-full flex items-center gap-4 font-medium text-base px-3 py-2 rounded-lg transition-all
-                      ${isRemedialItemActive ? "bg-[#013300] text-white shadow" : "text-[#013300]"}
+                      ${isParentActive ? "bg-[#013300] text-white shadow" : "text-[#013300]"}
                       hover:ring-2 hover:ring-[#013300] hover:scale-[1.02] hover:shadow
                     `}
                     onClick={() => handleSubmenuToggle(item.label)}
@@ -255,7 +245,7 @@ export default function MasterTeacherSidebar() {
                     aria-haspopup="true"
                   >
                     <span className={`rounded-lg p-1 flex items-center justify-center shadow-md ${
-                      isRemedialItemActive ? "bg-white text-[#013300]" : "bg-green-50"
+                      isParentActive ? "bg-white text-[#013300]" : "bg-green-50"
                     }`}>
                       {item.icon}
                     </span>
