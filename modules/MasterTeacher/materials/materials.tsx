@@ -1,20 +1,53 @@
 "use client";
 import Sidebar from "@/components/MasterTeacher/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import { FaTimes } from "react-icons/fa";
-// Tabs
-import NonReaderTab from "./Tabs/NonReaderTab";
-import SyllableTab from "./Tabs/SyllableTab";
-import WordTab from "./Tabs/WordTab";
-import SentenceTab from "./Tabs/SentenceTab";
-import ParagraphTab from "./Tabs/ParagraphTab";
+// English Tabs
+import EnglishNonReaderTab from "./Tabs/NonReaderTab";
+import EnglishSyllableTab from "./Tabs/SyllableTab";
+import EnglishWordTab from "./Tabs/WordTab";
+import EnglishPhraseTab from "./Tabs/PhraseTab";
+import EnglishSentenceTab from "./Tabs/SentenceTab";
+import EnglishParagraphTab from "./Tabs/ParagraphTab";
+// Filipino Tabs
+import FilipinoNonReaderTab from "./FilipinoTabs/NonReaderTab";
+import FilipinoSyllableTab from "./FilipinoTabs/SyllableTab";
+import FilipinoWordTab from "./FilipinoTabs/WordTab";
+import FilipinoPhraseTab from "./FilipinoTabs/PhraseTab";
+import FilipinoSentenceTab from "./FilipinoTabs/SentenceTab";
+import FilipinoParagraphTab from "./FilipinoTabs/ParagraphTab";
+// Math Tabs
+import MathNotProficientTab from "./MathTabs/NotProficientTab";
+import MathLowProficientTab from "./MathTabs/LowProficientTab";
+import MathNearlyProficientTab from "./MathTabs/NearlyProficientTab";
+import MathProficientTab from "./MathTabs/ProficientTab";
+import MathHighlyProficientTab from "./MathTabs/HighlyProficientTab";
+
+const SUBJECT_OPTIONS = ["English", "Filipino", "Math"] as const;
 
 export default function MasterTeacherMaterials() {
+  const [subject, setSubject] = useState<(typeof SUBJECT_OPTIONS)[number]>("English");
   const [activeTab, setActiveTab] = useState("Non Reader");
   const [searchTerm, setSearchTerm] = useState("");
+
+  const englishTabs = ["Non Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"] as const;
+  const filipinoTabs = ["Non Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"] as const;
+  const mathTabs = ["Not Proficient", "Low Proficient", "Nearly Proficient", "Proficient", "Highly Proficient"] as const;
+
+  const currentTabOptions = subject === "English" ? englishTabs : subject === "Filipino" ? filipinoTabs : mathTabs;
+
+  useEffect(() => {
+    const defaultTab = subject === "English" ? englishTabs[0] : subject === "Filipino" ? filipinoTabs[0] : mathTabs[0];
+    setActiveTab(defaultTab);
+  }, [subject]);
+
+  const handleSubjectChange = useCallback((nextSubject: string) => {
+    const matchedSubject = SUBJECT_OPTIONS.find((option) => option === nextSubject) ?? SUBJECT_OPTIONS[0];
+    setSubject(matchedSubject);
+  }, []);
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
@@ -58,10 +91,17 @@ export default function MasterTeacherMaterials() {
             "
             >
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                <div className="flex items-center gap-0">
-                  <SecondaryHeader title="Materials for" />
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-2">
+                  <div className="flex items-center gap-2">
+                    <HeaderDropdown
+                      options={[...SUBJECT_OPTIONS]}
+                      value={subject}
+                      onChange={handleSubjectChange}
+                    />
+                    <SecondaryHeader title="Materials" />
+                  </div>
                   <HeaderDropdown
-                    options={["Non Reader", "Syllable", "Word", "Sentence", "Paragraph"]}
+                    options={[...currentTabOptions]}
                     value={activeTab}
                     onChange={setActiveTab}
                   />
@@ -97,11 +137,35 @@ export default function MasterTeacherMaterials() {
                 sm:mt-2
               "
               >
-                {activeTab === "Non Reader" && <NonReaderTab />}
-                {activeTab === "Syllable" && <SyllableTab />}
-                {activeTab === "Word" && <WordTab />}
-                {activeTab === "Sentence" && <SentenceTab />}
-                {activeTab === "Paragraph" && <ParagraphTab />}
+                {subject === "English" && (
+                  <>
+                    {activeTab === "Non Reader" && <EnglishNonReaderTab />}
+                    {activeTab === "Syllable" && <EnglishSyllableTab />}
+                    {activeTab === "Word" && <EnglishWordTab />}
+                    {activeTab === "Phrase" && <EnglishPhraseTab />}
+                    {activeTab === "Sentence" && <EnglishSentenceTab />}
+                    {activeTab === "Paragraph" && <EnglishParagraphTab />}
+                  </>
+                )}
+                {subject === "Filipino" && (
+                  <>
+                    {activeTab === "Non Reader" && <FilipinoNonReaderTab />}
+                    {activeTab === "Syllable" && <FilipinoSyllableTab />}
+                    {activeTab === "Word" && <FilipinoWordTab />}
+                    {activeTab === "Phrase" && <FilipinoPhraseTab />}
+                    {activeTab === "Sentence" && <FilipinoSentenceTab />}
+                    {activeTab === "Paragraph" && <FilipinoParagraphTab />}
+                  </>
+                )}
+                {subject === "Math" && (
+                  <>
+                    {activeTab === "Not Proficient" && <MathNotProficientTab />}
+                    {activeTab === "Low Proficient" && <MathLowProficientTab />}
+                    {activeTab === "Nearly Proficient" && <MathNearlyProficientTab />}
+                    {activeTab === "Proficient" && <MathProficientTab />}
+                    {activeTab === "Highly Proficient" && <MathHighlyProficientTab />}
+                  </>
+                )}
               </div>
             </div>
           </div>

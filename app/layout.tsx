@@ -21,7 +21,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" data-scroll-behavior="smooth">
-      <body className="antialiased font-[Geist]">
+      <body className="antialiased font-[Geist]" suppressHydrationWarning>
         <Providers>
           {children}
         </Providers>

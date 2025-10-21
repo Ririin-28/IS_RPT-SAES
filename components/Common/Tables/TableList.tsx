@@ -3,7 +3,7 @@ import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 interface TableColumn {
   key: string;
@@ -26,8 +26,24 @@ interface TableListProps {
 export default function TableList({ columns, data, actions, pageSize = 10, selectable = false, selectedItems = new Set(), onSelectAll, onSelectItem, hidePagination = false }: TableListProps) {
   const [page, setPage] = useState(1);
   const [isFullScreen, setIsFullScreen] = useState(false);
-  const totalPages = Math.ceil(data.length / pageSize);
-  const paginatedData = data.slice((page - 1) * pageSize, page * pageSize);
+  const effectivePageSize = Math.min(Math.max(Math.floor(pageSize), 1), 10); // Enforce an upper bound of 10 rows.
+  const totalPages = Math.ceil((data.length || 0) / effectivePageSize);
+  const paginatedData = data.slice((page - 1) * effectivePageSize, page * effectivePageSize);
+
+  useEffect(() => {
+    setPage(1);
+  }, [data.length, effectivePageSize]);
+
+  useEffect(() => {
+    if (totalPages === 0 && page !== 1) {
+      setPage(1);
+      return;
+    }
+
+    if (totalPages > 0 && page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   return (
     <div className={`w-full rounded-lg flex flex-col ${isFullScreen ? 'fixed inset-0 z-50 bg-white p-6' : 'relative'}`}>
@@ -55,8 +71,8 @@ export default function TableList({ columns, data, actions, pageSize = 10, selec
                 </th>
               ))}
               {actions && (
-                <th className="px-4 py-2 text-right">
-                  <div className="flex items-center justify-end gap-4">
+                <th className="px-4 py-2 text-center">
+                  <div className="flex items-center justify-center gap-4">
                     <TertiaryHeader title="Actions" className="mb-0" />
                     <button
                       onClick={() => setIsFullScreen(!isFullScreen)}
@@ -99,8 +115,8 @@ export default function TableList({ columns, data, actions, pageSize = 10, selec
                     </td>
                   ))}
                   {actions && (
-                    <td className="px-4 py-2 text-right">
-                      <div className="flex gap-2 justify-end">
+                    <td className="px-4 py-2 text-center">
+                      <div className="flex gap-2 justify-center">
                         {actions(row)}
                       </div>
                     </td>

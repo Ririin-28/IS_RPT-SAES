@@ -1,16 +1,25 @@
 "use client";
-import { useState } from "react";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
 import TableList from "@/components/Common/Tables/TableList";
+import { useMaterialsList } from "../../archive/hooks/useArchiveMaterials";
+
+type MaterialItem = {
+  id: number;
+  title: string;
+  dateAttached: string;
+};
 
 export default function SyllableTab() {
-  const [materials, setMaterials] = useState<any[]>([]);
+  const { materials, setMaterials } = useMaterialsList<MaterialItem>({
+    subject: "English",
+    category: "Syllable",
+  });
 
   const handleDelete = (id: number) => {
-    setMaterials(materials.filter((m) => m.id !== id));
+    setMaterials((prev) => prev.filter((material) => material.id !== id));
   };
 
   const handleDeleteAll = () => {

@@ -38,6 +38,7 @@ export default function PrincipalHeader({ title, onSearch }: PrincipalHeaderProp
       {/* Page Header (for dashboard, etc.) */}
       {title && (
         <header
+          suppressHydrationWarning
           className={`
             /* Mobile */
             fixed top-2 left-20 right-4 h-16 flex items-center justify-between px-4 bg-green-50 shadow-md z-30 rounded-xl transition-all
@@ -50,7 +51,8 @@ export default function PrincipalHeader({ title, onSearch }: PrincipalHeaderProp
           <div className="relative flex items-center">
             {/* Notification Button */}
             <div className="relative">
-              <button 
+              <button
+                suppressHydrationWarning
                 ref={notificationBtnRef}
                 className="relative w-10 h-10 flex items-center justify-center hover:scale-[1.08] transition mr-4" 
                 aria-label="Notifications"
@@ -121,6 +123,7 @@ export default function PrincipalHeader({ title, onSearch }: PrincipalHeaderProp
               )}
             </div>
             <button
+              suppressHydrationWarning
               ref={profileBtnRef}
               className="w-10 h-10 flex items-center justify-center rounded-full border border-[#013300] 
               hover:border-[#013300] hover:border-2 hover:scale-[1.08] hover:shadow transition"

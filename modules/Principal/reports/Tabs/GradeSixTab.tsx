@@ -1,8 +1,6 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
-import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
-import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
-import { FaFileWord, FaTimes } from "react-icons/fa";
+import { useState, useRef, useEffect, useMemo } from "react";
+import { FaFileWord } from "react-icons/fa";
 
 type ReportFile = {
   id: number;
@@ -50,8 +48,9 @@ const sortOptions = ["Newest first", "Oldest first", "Name (A-Z)", "Name (Z-A)"]
 interface Props {
   reports: any[];
   setReports: (reports: any[]) => void;
-  activeTab?: string;
-  setActiveTab?: (tab: string) => void;
+  selectedMonth: string;
+  searchTerm: string;
+  onSearchTermChange: (value: string) => void;
 }
 
 // Custom Dropdown Component for filters
@@ -120,23 +119,33 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
   );
 };
 
-
-
-export default function GradeOneTab({ reports, activeTab = "Grade 6", setActiveTab }: Props) {
+export default function GradeSixTab({
+  reports: _reports,
+  setReports: _setReports,
+  selectedMonth,
+  searchTerm,
+  onSearchTermChange
+}: Props) {
   const [files] = useState(initialFiles);
   const [filter, setFilter] = useState({
     section: "All Sections",
   });
-  const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState("Newest first");
+
+  const normalizedMonth = useMemo(() => selectedMonth.toLowerCase(), [selectedMonth]);
 
   const filteredFiles = files.filter((file) => {
     const matchSection = filter.section === "All Sections" || file.section === filter.section;
     const matchSearch = searchTerm === "" || 
       file.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       file.teacher.toLowerCase().includes(searchTerm.toLowerCase());
+    const parsedDate = new Date(file.uploadedAt);
+    const monthLabel = Number.isNaN(parsedDate.getTime())
+      ? ""
+      : parsedDate.toLocaleString('en-US', { month: 'long' }).toLowerCase();
+    const matchMonth = normalizedMonth === "monthly" || monthLabel === normalizedMonth;
       
-    return matchSection && matchSearch;
+    return matchSection && matchSearch && matchMonth;
   });
 
   const sortedFiles = [...filteredFiles].sort((a, b) => {
@@ -156,7 +165,7 @@ export default function GradeOneTab({ reports, activeTab = "Grade 6", setActiveT
     setFilter({
       section: "All Sections",
     });
-    setSearchTerm("");
+    onSearchTermChange("");
     setSortBy("Newest first");
   };
 
@@ -174,40 +183,6 @@ export default function GradeOneTab({ reports, activeTab = "Grade 6", setActiveT
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-        <div className="flex items-center gap-0">
-          <SecondaryHeader title="Reports for" />
-          {setActiveTab ? (
-            <HeaderDropdown
-              options={["Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"]}
-              value={activeTab}
-              onChange={setActiveTab}
-            />
-          ) : (
-            <span className="text-xl font-semibold text-[#013300] px-3 py-1.5 rounded-lg bg-[#013300]/5">Grade 6</span>
-          )}
-        </div>
-        <div className="flex gap-3 w-full sm:w-auto mt-4 sm:mt-0">
-          <div className="relative flex-1 sm:flex-initial">
-            <input
-              type="text"
-              placeholder="Search reports..."
-              className="w-full border border-gray-300 rounded-lg px-4 py-2 pr-10 text-black"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            {searchTerm && (
-              <button
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                onClick={() => setSearchTerm("")}
-              >
-                <FaTimes />
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
       <div className="flex flex-col lg:flex-row gap-6">
         <div className="flex-1">
           <div className="flex flex-row justify-between items-center mb-4">
@@ -222,7 +197,6 @@ export default function GradeOneTab({ reports, activeTab = "Grade 6", setActiveT
                   options={sections}
                   value={filter.section}
                   onChange={(value) => setFilter({ section: value })}
-                  className="min-w-[120px]"
                 />
               </div>
               
@@ -234,7 +208,6 @@ export default function GradeOneTab({ reports, activeTab = "Grade 6", setActiveT
                   options={sortOptions}
                   value={sortBy}
                   onChange={setSortBy}
-                  className="min-w-[120px]"
                 />
               </div>
             </div>

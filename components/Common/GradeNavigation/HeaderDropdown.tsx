@@ -5,9 +5,11 @@ interface HeaderDropdownProps {
   options: string[];
   value: string;
   onChange: (value: string) => void;
+  className?: string;
+  openOnHover?: boolean;
 }
 
-const HeaderDropdown = ({ options, value, onChange }: HeaderDropdownProps) => {
+const HeaderDropdown = ({ options, value, onChange, className = "", openOnHover = false }: HeaderDropdownProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -27,12 +29,34 @@ const HeaderDropdown = ({ options, value, onChange }: HeaderDropdownProps) => {
     setIsOpen(false);
   };
 
+  const handleMouseEnter = () => {
+    if (openOnHover) {
+      setIsOpen(true);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    if (openOnHover) {
+      setIsOpen(false);
+    }
+  };
+
+  const handleButtonClick = () => {
+    setIsOpen((prev) => !prev);
+  };
+
   return (
-    <div className="relative" ref={dropdownRef}>
+    <div
+      className={`relative ${className}`}
+      ref={dropdownRef}
+      suppressHydrationWarning
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
       <button
         type="button"
         className="flex items-center gap-2 pl-2 pr-1 py-1.5 mb-2 text-xl font-semibold text-[#013300] cursor-pointer focus:outline-none group"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={handleButtonClick}
       >
         {value}
         {/* Arrow wrapper: 0 width by default; expands on hover or when open */}
