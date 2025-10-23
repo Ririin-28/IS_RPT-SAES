@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import TableList from "@/components/Common/Tables/TableList";
 import UserDetailModal from "../Modals/UserDetailsModal";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
+import AccountActionsMenu, { type AccountActionKey } from "../components/AccountActionsMenu";
 
 interface PrincipalTabProps {
   principals: any[];
@@ -75,6 +76,10 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedPrincipal, setSelectedPrincipal] = useState<any>(null);
 
+  const handleMenuAction = useCallback((action: AccountActionKey) => {
+    console.log(`[Principal Tab] Action triggered: ${action}`);
+  }, []);
+
   const filteredPrincipals = principals.filter((principal) => {
     const matchSearch = searchTerm === "" || 
       principal.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -92,12 +97,15 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
 
   return (
     <div>
-      <div className="flex flex-row justify-between items-center mb-4">
+      <div className="flex flex-row justify-between items-center mb-4 gap-4">
         <p className="text-gray-600 text-md font-medium">
           Total: {principals.length}
         </p>
-        
-        {/* Status filter removed from here */}
+        <AccountActionsMenu
+          accountType="Principal"
+          onAction={handleMenuAction}
+          buttonAriaLabel="Open principal actions"
+        />
       </div>
       
       <UserDetailModal

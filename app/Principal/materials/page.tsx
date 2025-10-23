@@ -1,6 +1,6 @@
-import PrincipalMaterials from "@/modules/Principal/materials/materials";
+import { redirect } from "next/navigation";
 
 export default function Materials() {
-  return <PrincipalMaterials />;
+  redirect("/Principal/materials/english");
 }
 

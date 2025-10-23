@@ -78,7 +78,7 @@ export default function Login() {
       if (!isLoggedOut && !wasLoggedOut) {
         const session = await getSession();
         if (session) {
-          router.push("/MasterTeacher");
+          router.push("/MasterTeacher/welcome");
         }
       }
     };

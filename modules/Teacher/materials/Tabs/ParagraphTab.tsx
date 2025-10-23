@@ -9,23 +9,14 @@ import KebabMenu from "@/components/Common/Menus/KebabMenu";
 import FilterDropdown from "@/components/Common/Inputs/FilterDropdown";
 
 interface MaterialsTabProps {
-  filterLabel?: string;
-  filterOptions?: string[];
+  selectedSubject?: string;
 }
 
-export default function ParagraphTab({ filterLabel, filterOptions = [] }: MaterialsTabProps) {
+export default function ParagraphTab({ selectedSubject = "All Subjects" }: MaterialsTabProps) {
   const [materials, setMaterials] = useState<any[]>([]);
   const [selectedMaterials, setSelectedMaterials] = useState<Set<number>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const hasFilter = Boolean(filterLabel && filterOptions.length > 0);
-  const [selectedFilter, setSelectedFilter] = useState<string>(filterOptions.length > 0 ? filterOptions[0] : "All Subjects");
-
-  useEffect(() => {
-    if (filterOptions.length > 0) {
-      setSelectedFilter((prev) => (filterOptions.includes(prev) ? prev : filterOptions[0]));
-    }
-  }, [filterOptions]);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -42,7 +33,7 @@ export default function ParagraphTab({ filterLabel, filterOptions = [] }: Materi
       id: Date.now(),
       title: file.name,
       dateAttached: new Date().toLocaleDateString(),
-      subject: filterOptions.length > 1 ? filterOptions[1] : "Unassigned"
+      subject: selectedSubject !== "All Subjects" ? selectedSubject : "Unassigned"
     };
 
     setMaterials([...materials, newMaterial]);
@@ -96,13 +87,11 @@ export default function ParagraphTab({ filterLabel, filterOptions = [] }: Materi
     setSelectMode(false);
   };
 
-  const allOption = filterOptions.length > 0 ? filterOptions[0] : "All Subjects";
-  const filteredMaterials = hasFilter && selectedFilter !== allOption
-    ? materials.filter((material) => (material.subject ?? "Unassigned") === selectedFilter)
+  const filteredMaterials = selectedSubject !== "All Subjects"
+    ? materials.filter((material) => (material.subject ?? "Unassigned") === selectedSubject)
     : materials;
 
   useEffect(() => {
-    if (!hasFilter) return;
     setSelectedMaterials((prev) => {
       const visibleIds = new Set(filteredMaterials.map((material) => material.id));
       let changed = false;
@@ -119,7 +108,7 @@ export default function ParagraphTab({ filterLabel, filterOptions = [] }: Materi
       }
       return next;
     });
-  }, [hasFilter, filteredMaterials]);
+  }, [filteredMaterials]);
 
   return (
     <div>
@@ -133,19 +122,8 @@ export default function ParagraphTab({ filterLabel, filterOptions = [] }: Materi
         md:mb-2
       "
       >
-  <p className="text-gray-600 text-md font-medium">Total: {materials.length}</p>
+  <p className="text-gray-600 text-md font-medium">Total: {filteredMaterials.length}</p>
         <div className="flex items-center gap-3">
-          {hasFilter && (
-            <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
-              <span className="text-sm text-gray-700 whitespace-nowrap">{filterLabel}:</span>
-              <FilterDropdown
-                options={filterOptions}
-                value={selectedFilter}
-                onChange={setSelectedFilter}
-                className="min-w-[140px]"
-              />
-            </div>
-          )}
           {selectMode ? (
             <>
               <SecondaryButton small onClick={handleCancelSelect}>

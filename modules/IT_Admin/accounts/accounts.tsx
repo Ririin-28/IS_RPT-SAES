@@ -1,7 +1,7 @@
 "use client";
 import Sidebar from "@/components/IT_Admin/Sidebar";
 import Header from "@/components/IT_Admin/Header";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import { FaTimes } from "react-icons/fa";
@@ -25,13 +25,17 @@ import MasterTeacherGradeSixTab from "./MasterTeacherTab/GradeSixTab";
 import ITAdminTab from "./ITAdminTab/ITAdminTab";
 // Principal Tab
 import PrincipalTab from "./PrincipalTab/PrincipalTab";
-
+import type { AccountType } from "./components/AccountActionsMenu";
 
 export default function ITAdminAccounts() {
   const [activeTab, setActiveTab] = useState("All Grades");
-  const [accountType, setAccountType] = useState("Master Teachers");
+  const [accountType, setAccountType] = useState<AccountType>("Master Teachers");
   const [accounts, setAccounts] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+
+  const handleAccountTypeChange = useCallback((value: string) => {
+    setAccountType(value as AccountType);
+  }, []);
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
@@ -50,7 +54,7 @@ export default function ITAdminAccounts() {
                   <HeaderDropdown
                     options={["Principal", "IT Admin", "Master Teachers", "Teachers"]}
                     value={accountType}
-                    onChange={setAccountType}
+                    onChange={handleAccountTypeChange}
                   />
                   {(accountType === "IT Admin" || accountType === "Principal") ? (
                     <SecondaryHeader title="Accounts" />
@@ -65,7 +69,7 @@ export default function ITAdminAccounts() {
                     </>
                   )}
                 </div>
-                <div className="flex gap-3 w-full sm:w-auto mt-4 sm:mt-0">
+                <div className="flex gap-3 w-full sm:w-auto mt-4 sm:mt-0 items-center justify-end">
                   <div className="relative flex-1 sm:flex-initial">
                     <input
                       type="text"

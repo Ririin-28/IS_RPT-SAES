@@ -8,7 +8,7 @@ export default function MasterTeacherWelcome() {
 
   // Countdown timer
   useEffect(() => {
-    if (count === 0) router.push("/MasterTeacher/dashboard");
+  if (count === 0) router.push("/MasterTeacher/Coordinator/dashboard");
     const timer = setTimeout(() => setCount(count - 1), 1000);
     return () => clearTimeout(timer);
   }, [count, router]);
