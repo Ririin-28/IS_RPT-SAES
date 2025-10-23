@@ -1,11 +1,19 @@
 "use client";
 import Sidebar from "@/components/Principal/Sidebar";
 import Header from "@/components/Principal/Header";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 // Button Component
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 // Modal Component
 import AddScheduleModal from "./Modals/AddScheduleModal";
+import {
+  GRADE_LEVELS,
+  WEEKDAYS,
+  createEmptySchedule,
+  type RemedialPeriodPayload,
+  type RemedialSchedule,
+  type WeekdayKey,
+} from "./types";
 
 interface Activity {
   id: number;
@@ -18,13 +26,68 @@ interface Activity {
   type: string;
 }
 
-interface RemedialPeriod {
-  id: number;
-  title: string;
-  startDate: Date;
-  endDate: Date;
-  isActive: boolean;
-}
+type RemedialPeriod = RemedialPeriodPayload;
+
+const DAY_INDEX_TO_KEY: (WeekdayKey | null)[] = [null, "monday", "tuesday", "wednesday", "thursday", "friday", null];
+
+const formatTime = (time: string) => {
+  if (!time) return "";
+  const [hourStr, minuteStr] = time.split(":");
+  const hour = Number(hourStr);
+  if (Number.isNaN(hour)) return time;
+  const period = hour >= 12 ? "PM" : "AM";
+  const normalizedHour = ((hour + 11) % 12) + 1;
+  return `${normalizedHour}:${minuteStr ?? "00"} ${period}`;
+};
+
+const formatTimeRange = (start: string, end: string) => `${formatTime(start)} - ${formatTime(end)}`;
+
+const formatDateRange = (start?: Date, end?: Date) => {
+  if (!start || !end) {
+    return "--";
+  }
+
+  const startLabel = start.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: start.getFullYear() === end.getFullYear() ? undefined : "numeric",
+  });
+  const endLabel = end.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+
+  return `${startLabel} – ${endLabel}`;
+};
+
+const normalizeSchedule = (rawSchedule: unknown): RemedialSchedule => {
+  const base = createEmptySchedule();
+  if (!rawSchedule || typeof rawSchedule !== "object") {
+    return base;
+  }
+
+  const scheduleObj = rawSchedule as Record<string, any>;
+  WEEKDAYS.forEach(({ key }) => {
+    const dayInput = scheduleObj[key];
+    if (dayInput && typeof dayInput === "object") {
+      base[key].subject = typeof dayInput.subject === "string" ? dayInput.subject : "";
+
+      const gradesInput = (dayInput as { grades?: Record<string, any> }).grades ?? {};
+      GRADE_LEVELS.forEach((grade) => {
+        const gradeData = gradesInput[grade as unknown as keyof typeof gradesInput];
+        if (gradeData && typeof gradeData === "object") {
+          base[key].grades[grade] = {
+            startTime: typeof gradeData.startTime === "string" ? gradeData.startTime : "",
+            endTime: typeof gradeData.endTime === "string" ? gradeData.endTime : "",
+          };
+        }
+      });
+    }
+  });
+
+  return base;
+};
 
 export default function PrincipalCalendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -37,6 +100,48 @@ export default function PrincipalCalendar() {
   // Activities array for calendar
   const [activities, setActivities] = useState<Activity[]>([]);
 
+  const activePeriod = useMemo(() => {
+    const now = new Date();
+    return (
+      remedialPeriods.find((period) => {
+        if (!period.startDate || !period.endDate) return false;
+        return period.isActive && now >= period.startDate && now <= period.endDate;
+      }) ?? null
+    );
+  }, [remedialPeriods]);
+
+  const upcomingPeriods = useMemo(() => {
+    const now = new Date();
+    return remedialPeriods
+      .filter((period) => period.startDate && period.startDate > now)
+      .sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
+  }, [remedialPeriods]);
+
+  const nextUpcomingPeriod = upcomingPeriods[0] ?? null;
+
+  const activeScheduleSummary = useMemo(() => {
+    if (!activePeriod) return [] as Array<{ label: string; subject: string; grades: { grade: number; range: string }[] }>;
+
+    return WEEKDAYS.map(({ key, label }) => {
+      const dayPlan = activePeriod.schedule?.[key];
+      if (!dayPlan) {
+        return { label, subject: "", grades: [] };
+      }
+
+      const grades = GRADE_LEVELS.map((grade) => {
+        const gradePlan = dayPlan.grades[grade];
+        if (!gradePlan?.startTime || !gradePlan?.endTime) return null;
+        return { grade, range: formatTimeRange(gradePlan.startTime, gradePlan.endTime) };
+      }).filter(Boolean) as { grade: number; range: string }[];
+
+      return {
+        label,
+        subject: dayPlan.subject?.trim?.() ?? "",
+        grades,
+      };
+    }).filter((entry) => entry.subject || entry.grades.length > 0);
+  }, [activePeriod]);
+
   // Initialize remedial periods
   useEffect(() => {
     // Try to load from localStorage if available
@@ -45,7 +150,9 @@ export default function PrincipalCalendar() {
       const parsedPeriods = JSON.parse(savedPeriods).map((period: any) => ({
         ...period,
         startDate: new Date(period.startDate),
-        endDate: new Date(period.endDate)
+        endDate: new Date(period.endDate),
+        isActive: Boolean(period.isActive),
+        schedule: normalizeSchedule(period.schedule),
       }));
       setRemedialPeriods(parsedPeriods);
     } else {
@@ -58,14 +165,6 @@ export default function PrincipalCalendar() {
   useEffect(() => {
     localStorage.setItem('remedialPeriods', JSON.stringify(remedialPeriods));
   }, [remedialPeriods]);
-
-  // Check if current date is within a remedial period
-  const isRemedialPeriodActive = () => {
-    return remedialPeriods.some(period => {
-      const now = new Date();
-      return period.isActive && now >= period.startDate && now <= period.endDate;
-    });
-  };
 
   // Add new schedule
   const handleAddSchedule = (schedule: RemedialPeriod) => {
@@ -133,11 +232,23 @@ export default function PrincipalCalendar() {
   };
 
   // Check if a date is within any remedial period
-  const isDateInRemedialPeriod = (date: Date) => {
-    return remedialPeriods.some(period => {
-      if (!period.startDate || !period.endDate || isNaN(period.startDate.getTime()) || isNaN(period.endDate.getTime())) return false;
-      return period.isActive && date >= period.startDate && date <= period.endDate;
-    });
+  const getRemedialPlanForDate = (date: Date) => {
+    const dayKey = DAY_INDEX_TO_KEY[date.getDay()];
+    if (!dayKey) return null;
+
+    for (const period of remedialPeriods) {
+      if (!period.isActive) continue;
+      if (!period.startDate || !period.endDate) continue;
+      if (date >= period.startDate && date <= period.endDate) {
+        return {
+          period,
+          dayKey,
+          schedule: period.schedule?.[dayKey],
+        };
+      }
+    }
+
+    return null;
   };
 
   // Render the calendar - only month view now
@@ -212,14 +323,24 @@ export default function PrincipalCalendar() {
             (a) => a.date.getDate() === day && a.date.getMonth() === month && a.date.getFullYear() === year
           );
 
-          // Check if this day is within a remedial period
-          const isRemedialDay = isDateInRemedialPeriod(currentDay);
+          const remedialPlan = getRemedialPlanForDate(currentDay);
+          const daySchedule = remedialPlan?.schedule;
+          const gradeSummaries = daySchedule
+            ? GRADE_LEVELS.map((grade) => ({
+                grade,
+                startTime: daySchedule.grades[grade]?.startTime ?? "",
+                endTime: daySchedule.grades[grade]?.endTime ?? "",
+              })).filter((entry) => entry.startTime && entry.endTime)
+            : [];
+          const isRemedialDay = Boolean(remedialPlan);
+          const subjectLabel = daySchedule?.subject?.trim?.() ?? "";
+          const hasScheduleDetails = Boolean(subjectLabel || gradeSummaries.length > 0);
 
           days.push(
             <div
               key={`day-${day}`}
-              className={`h-20 p-1 border border-gray-100 overflow-hidden relative ${
-                isRemedialDay ? "bg-green-50" : ""
+              className={`h-24 p-1 border overflow-hidden relative transition-colors ${
+                isRemedialDay ? "bg-green-50 border-green-200" : "border-gray-100"
               }`}
             >
               <div className="text-right text-sm font-medium text-gray-800 mb-1">
@@ -231,7 +352,24 @@ export default function PrincipalCalendar() {
                   <span>{day}</span>
                 )}
               </div>
-              <div className="overflow-y-auto max-h-12 space-y-1">
+              <div className="overflow-y-auto max-h-20 space-y-1">
+                {hasScheduleDetails && daySchedule && (
+                  <div className="bg-green-100 border border-green-200 rounded px-1 py-1 text-[10px] text-green-900">
+                    <div className="font-semibold text-[11px] truncate">
+                      {subjectLabel || "Remedial Session"}
+                    </div>
+                    {gradeSummaries.slice(0, 3).map((entry) => (
+                      <div key={`grade-summary-${entry.grade}`} className="truncate">
+                        G{entry.grade}: {formatTimeRange(entry.startTime, entry.endTime)}
+                      </div>
+                    ))}
+                    {gradeSummaries.length > 3 && (
+                      <div className="text-[9px] text-green-800 text-right">
+                        +{gradeSummaries.length - 3} more grades
+                      </div>
+                    )}
+                  </div>
+                )}
                 {dayActivities.slice(0, 2).map((activity) => (
                   <div
                     key={activity.id}
@@ -279,80 +417,141 @@ export default function PrincipalCalendar() {
         <Header title="Calendar" />
         <main className="flex-1 overflow-y-auto">
           <div className="p-4 h-full sm:p-5 md:p-6">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-full min-h-[400px] overflow-y-auto p-4 sm:p-5 md:p-6">
-              {/* Simplified Remedial Period Controls */}
-              <div className="mb-4 p-4 bg-gray-100 rounded-lg">
-                <h3 className="text-lg font-semibold text-black mb-2">Remedial Period Management</h3>
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <p className="text-sm text-black">
-                      Status: {isRemedialPeriodActive() ? (
-                        <span className="font-semibold text-green-600">Active</span>
-                      ) : (
-                        <span className="font-semibold text-gray-600">Inactive</span>
-                      )}
-                    </p>
-                  </div>
-                  <div className="flex space-x-2">
-                    <UtilityButton small onClick={() => setShowAddScheduleModal(true)}>
-                      Add Schedule
-                    </UtilityButton>
+            <div className="flex flex-col gap-6">
+              <section className="grid gap-4 lg:grid-cols-[minmax(0,1.6fr),minmax(0,1fr)]">
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-6 shadow-sm">
+                  <div className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div className="space-y-1">
+                        <p className="text-xs font-semibold uppercase tracking-widest text-emerald-700">Remedial Period</p>
+                        <h3 className="text-2xl font-bold text-emerald-900">
+                          {activePeriod ? activePeriod.title : "No active period"}
+                        </h3>
+                        {activePeriod && (
+                          <p className="text-sm text-emerald-800">
+                            {formatDateRange(activePeriod.startDate, activePeriod.endDate)}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${
+                            activePeriod
+                              ? "border-emerald-400 bg-emerald-100 text-emerald-700"
+                              : "border-gray-300 bg-gray-100 text-gray-600"
+                          }`}
+                        >
+                          <span className="h-2 w-2 rounded-full bg-current" />
+                          {activePeriod ? "Active" : "Inactive"}
+                        </span>
+                        <UtilityButton small onClick={() => setShowAddScheduleModal(true)}>
+                          Manage Periods
+                        </UtilityButton>
+                      </div>
+                    </div>
+
+                    {showActivationPrompt && recentlyAddedId && (
+                      <div className="rounded-xl border border-blue-200 bg-blue-50/80 p-4 text-sm text-blue-900 shadow-sm">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <span>New remedial plan created. Activate it to display highlights on the calendar.</span>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                setRemedialPeriods((prev) => prev.map((p) => ({ ...p, isActive: p.id === recentlyAddedId })));
+                                setShowActivationPrompt(false);
+                              }}
+                              className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow hover:bg-blue-700"
+                            >
+                              Activate Now
+                            </button>
+                            <button
+                              onClick={() => setShowActivationPrompt(false)}
+                              className="rounded-md border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+                            >
+                              Dismiss
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {activeScheduleSummary.length > 0 && (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {activeScheduleSummary.map((day) => (
+                          <div
+                            key={day.label}
+                            className="rounded-xl border border-emerald-200 bg-white/80 p-4 shadow-sm"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-sm font-semibold text-emerald-900">{day.label}</span>
+                              {day.subject && (
+                                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+                                  {day.subject}
+                                </span>
+                              )}
+                            </div>
+                            <ul className="mt-3 space-y-1 text-xs text-emerald-900">
+                              {day.grades.map((grade) => (
+                                <li key={`${day.label}-${grade.grade}`} className="flex items-center justify-between gap-3">
+                                  <span className="font-medium">Grade {grade.grade}</span>
+                                  <span className="text-emerald-700">{grade.range}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
-                {showActivationPrompt && recentlyAddedId && (
-                  <div className="mb-4 p-3 rounded-md border border-blue-200 bg-blue-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <div className="text-sm text-blue-800">
-                      Indicated schedule? Activate it now so it appears highlighted on the calendar.
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => {
-                          setRemedialPeriods(prev => prev.map(p => ({ ...p, isActive: p.id === recentlyAddedId })));
-                          setShowActivationPrompt(false);
-                        }}
-                        className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700"
-                      >
-                        Activate Now
-                      </button>
-                      <button
-                        onClick={() => setShowActivationPrompt(false)}
-                        className="px-3 py-1.5 text-xs font-medium rounded-md bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
-                      >
-                        Dismiss
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
 
-              {/* Calendar Controls */}
-              <div className="flex flex-col space-y-3 mb-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
-                <div className="flex items-center space-x-2 sm:space-x-3">
-                  <div className="flex items-center space-x-1">
-                    <button onClick={prevPeriod} className="p-2 rounded-md hover:bg-gray-100 text-gray-700">
+                <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                  <h4 className="text-base font-semibold text-gray-900">Next Remedial Period</h4>
+                  {nextUpcomingPeriod ? (
+                    <div className="mt-4 space-y-4">
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">{nextUpcomingPeriod.title}</p>
+                        <p className="text-sm text-gray-500">
+                          {formatDateRange(nextUpcomingPeriod.startDate, nextUpcomingPeriod.endDate)}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-4 rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">
+                      No upcoming schedules yet. Plan ahead to keep everyone aligned.
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div className="flex items-center gap-2 text-gray-700">
+                    <button onClick={prevPeriod} className="rounded-lg border border-gray-200 p-2 hover:bg-gray-100">
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                         <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
                       </svg>
                     </button>
-                    <button onClick={nextPeriod} className="p-2 rounded-md hover:bg-gray-100 text-gray-700">
+                    <button onClick={nextPeriod} className="rounded-lg border border-gray-200 p-2 hover:bg-gray-100">
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                         <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
                       </svg>
                     </button>
+                    <h2 className="text-lg font-semibold sm:text-xl">
+                      {currentDate.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+                    </h2>
                   </div>
-                  <h2 className="text-lg font-semibold text-gray-800 sm:text-xl">
-                    {currentDate.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
-                  </h2>
-                  <button onClick={goToToday} className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-md text-gray-700">
-                    Today
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button onClick={goToToday} className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">
+                      Today
+                    </button>
+                  </div>
                 </div>
-              </div>
 
-              {/* Calendar View */}
-              <div className="border rounded-lg overflow-hidden bg-white">
-                {renderCalendar()}
-              </div>
+                <div className="mt-6 overflow-hidden rounded-xl border border-gray-100">
+                  {renderCalendar()}
+                </div>
+              </section>
             </div>
           </div>
         </main>

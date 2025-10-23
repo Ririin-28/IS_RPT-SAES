@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback, type ChangeEvent } from "react";
 import TableList from "@/components/Common/Tables/TableList";
 import UserDetailModal from "../Modals/UserDetailsModal";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
+import AccountActionsMenu, { type AccountActionKey } from "../components/AccountActionsMenu";
 
 const sections = ["All Sections", "A", "B", "C"];
 
@@ -80,6 +81,23 @@ export default function MasterTeacherGradeFourTab({ teachers, setTeachers, searc
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedTeacher, setSelectedTeacher] = useState<any>(null);
   const [filter, setFilter] = useState({ section: "All Sections" });
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+
+  const handleMenuAction = useCallback((action: AccountActionKey) => {
+    if (action === "master-teacher:upload") {
+      uploadInputRef.current?.click();
+      return;
+    }
+    console.log(`[MasterTeacher Grade 4] Action triggered: ${action}`);
+  }, []);
+
+  const handleFileChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      console.log(`[MasterTeacher Grade 4] File selected: ${file.name}`);
+    }
+    event.target.value = "";
+  }, []);
 
   const GradeFourTeachers = teachers.filter(teacher => 
     teacher.grade === 4 || teacher.grade === "4"
@@ -102,19 +120,34 @@ export default function MasterTeacherGradeFourTab({ teachers, setTeachers, searc
 
   return (
     <div>
-      <div className="flex flex-row justify-between items-center mb-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
         <p className="text-gray-600 text-md font-medium">
           Total: {GradeFourTeachers.length}
         </p>
-        
-        <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
-          <span className="text-sm text-gray-700 whitespace-nowrap">Section:</span>
-          <CustomDropdown 
-            options={sections}
-            value={filter.section}
-            onChange={(value) => setFilter({ section: value })}
-            className="min-w-[120px]"
-          />
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
+          <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
+            <span className="text-sm text-gray-700 whitespace-nowrap">Section:</span>
+            <CustomDropdown 
+              options={sections}
+              value={filter.section}
+              onChange={(value) => setFilter({ section: value })}
+              className="min-w-[120px]"
+            />
+          </div>
+          <div className="flex items-center justify-end">
+            <AccountActionsMenu
+              accountType="Master Teachers"
+              onAction={handleMenuAction}
+              buttonAriaLabel="Open master teacher actions"
+            />
+            <input
+              ref={uploadInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={handleFileChange}
+              className="hidden"
+            />
+          </div>
         </div>
       </div>
       

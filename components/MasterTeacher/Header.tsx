@@ -1,6 +1,7 @@
 "use client";
 import RPTLogoTitle from "../Common/RPTLogoTitle";
 import React from "react";
+import { usePathname, useRouter } from "next/navigation";
 import ProfileDropdown from "../Common/ProfileDropdown";
 
 interface HeaderProps {
@@ -16,6 +17,41 @@ export default function MasterTeacherHeader({ title, onSearch }: HeaderProps) {
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const notificationBtnRef = React.useRef<HTMLButtonElement>(null);
   const notificationDropdownRef = React.useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
+  const router = useRouter();
+
+  const handleRoleSwitch = React.useCallback(
+    (targetPath: string) => {
+      setShowDropdown(false);
+      if (pathname !== targetPath) {
+        router.push(targetPath);
+      }
+    },
+    [pathname, router]
+  );
+
+  const roleOptions = React.useMemo(() => {
+    if (!pathname) return undefined;
+    const isCoordinator = pathname.startsWith("/MasterTeacher/Coordinator");
+    const isRemedial = pathname.startsWith("/MasterTeacher/RemedialTeacher");
+
+    if (!isCoordinator && !isRemedial) {
+      return undefined;
+    }
+
+    return [
+      {
+        label: "Coordinator View",
+        active: isCoordinator,
+        onSelect: () => handleRoleSwitch("/MasterTeacher/Coordinator/dashboard"),
+      },
+      {
+        label: "Remedial Teacher View",
+        active: isRemedial,
+        onSelect: () => handleRoleSwitch("/MasterTeacher/RemedialTeacher/dashboard"),
+      },
+    ];
+  }, [handleRoleSwitch, pathname]);
 
   // Hide dropdowns when clicking outside
   React.useEffect(() => {
@@ -143,6 +179,7 @@ export default function MasterTeacherHeader({ title, onSearch }: HeaderProps) {
                   onLogout={() => {
                     /* handle logout click */ setShowDropdown(false);
                   }}
+                  roleOptions={roleOptions}
                 />
               </div>
             )}

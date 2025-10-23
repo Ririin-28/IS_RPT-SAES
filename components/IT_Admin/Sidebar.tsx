@@ -3,6 +3,19 @@ import React, { useCallback } from "react";
 import RPTLogoTitle from "../Common/RPTLogoTitle";
 import { useRouter, usePathname } from "next/navigation";
 
+// Types for navigation items
+type NavChild = {
+  label: string;
+  path: string;
+};
+
+type NavItem = {
+  label: string;
+  path?: string;
+  icon: React.ReactNode;
+  children?: NavChild[];
+};
+
 // Memoized SVG icons to prevent unnecessary re-renders
 const DashboardIcon = React.memo(() => (
   <svg width="24" height="24" fill="none" viewBox="0 0 24 24">
@@ -34,28 +47,37 @@ const LogsIcon = React.memo(() => (
 ));
 
 const ArchiveIcon = React.memo(() => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-archive-icon lucide-archive">
-    <rect width="20" height="5" x="2" y="3" rx="1"/>
-    <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/>
-    <path d="M10 12h4"/>
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="lucide lucide-archive-icon lucide-archive"
+  >
+    <rect width="20" height="5" x="2" y="3" rx="1" />
+    <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
+    <path d="M10 12h4" />
   </svg>
 ));
 
-export default function Sidebar() {
-  const [open, setOpen] = React.useState(false);
-  const router = useRouter();
-  const pathname = usePathname();
+// Navigation items with submenus
+const NAV_ITEMS: NavItem[] = [
+  { label: "Dashboard", path: "/IT_Admin/dashboard", icon: <DashboardIcon /> },
+  { label: "Accounts", path: "/IT_Admin/accounts", icon: <AccountsIcon /> },
+  { label: "Logs", path: "/IT_Admin/logs", icon: <LogsIcon /> },
+  { label: "Archive", path: "/IT_Admin/archive", icon: <ArchiveIcon /> },
+];
 
-  // Menu items with navigation paths
-  const menuItems = React.useMemo(
-    () => [
-  { label: "Dashboard", icon: <DashboardIcon />, path: "/IT_Admin/dashboard" },
-  { label: "Accounts", icon: <AccountsIcon />, path: "/IT_Admin/accounts" },
-  { label: "Logs", icon: <LogsIcon />, path: "/IT_Admin/logs" },
-  { label: "Archive", icon: <ArchiveIcon />, path: "/IT_Admin/archive" },
-    ],
-    []
-  );
+export default function ITAdminSidebar() {
+  const [open, setOpen] = React.useState(false);
+  const [openSubmenu, setOpenSubmenu] = React.useState<string | null>(null);
+  const router = useRouter();
+  const pathname = usePathname() ?? "";
 
   // Memoized toggle function
   const toggleSidebar = useCallback(() => {
@@ -65,6 +87,7 @@ export default function Sidebar() {
   // Memoized close function
   const closeSidebar = useCallback(() => {
     setOpen(false);
+    setOpenSubmenu(null);
   }, []);
 
   // Handle navigation with sidebar close
@@ -74,6 +97,12 @@ export default function Sidebar() {
       closeSidebar();
     },
     [router, closeSidebar]
+  );
+
+  // Check if path is active
+  const isActivePath = useCallback(
+    (path: string) => Boolean(pathname?.toLowerCase().startsWith(path.toLowerCase())),
+    [pathname]
   );
 
   return (
@@ -137,23 +166,94 @@ export default function Sidebar() {
 
         {/* Menu Items */}
         <nav className="flex flex-col gap-3">
-          {menuItems.map((item) => {
-            const isActive = pathname === item.path;
+          {NAV_ITEMS.map((item) => {
+            const hasChildren = Boolean(item.children && item.children.length > 0);
+            const childActive = hasChildren
+              ? item.children!.some((child) => isActivePath(child.path))
+              : false;
+            const active = item.path ? isActivePath(item.path) || childActive : childActive;
+            const expanded = hasChildren && (openSubmenu === item.label || childActive);
+
+            if (hasChildren) {
+              return (
+                <div key={item.label} className="group relative">
+                  <button
+                    type="button"
+                    className={`
+                      w-full flex items-center gap-4 font-medium text-base px-3 py-2 rounded-lg transition-all
+                      ${active ? "bg-[#013300] text-white shadow" : "text-[#013300]"}
+                      hover:ring-2 hover:ring-[#013300] hover:scale-[1.02] hover:shadow
+                    `}
+                    onClick={() => setOpenSubmenu((prev) => (prev === item.label ? null : item.label))}
+                    aria-expanded={expanded}
+                    aria-haspopup="true"
+                  >
+                    <span
+                      className={`rounded-lg p-1 flex items-center justify-center shadow-md ${
+                        active ? "bg-white text-[#013300]" : "bg-green-50"
+                      }`}
+                    >
+                      {item.icon}
+                    </span>
+                    <span className="tracking-wide flex-1 text-left">{item.label}</span>
+                    <svg
+                      className={`w-4 h-4 transition-transform duration-300 ${expanded ? "rotate-180" : "rotate-0"}`}
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+
+                  <div
+                    className={`
+                      overflow-hidden transition-all duration-300 ease-in-out
+                      ${expanded ? "max-h-60 opacity-100" : "max-h-0 opacity-0"}
+                      md:group-hover:max-h-60 md:group-hover:opacity-100
+                    `}
+                  >
+                    <div className="flex flex-col mt-1 gap-2 rounded-lg bg-green-50 p-2">
+                      {item.children!.map((child) => {
+                        const childIsActive = isActivePath(child.path);
+                        return (
+                          <button
+                            key={child.label}
+                            type="button"
+                            className={`
+                              w-full text-left px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200
+                              ${childIsActive ? "bg-[#013300] text-white shadow" : "text-[#013300]"}
+                              hover:ring-2 hover:ring-[#013300] hover:scale-[1.02] hover:shadow
+                            `}
+                            onClick={() => handleNavigation(child.path)}
+                          >
+                            {child.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
             return (
               <button
                 key={item.label}
+                type="button"
                 className={`
                   flex items-center gap-4 font-medium text-base px-3 py-2 rounded-lg transition-all
-                  ${isActive ? "bg-[#013300] text-white shadow" : "text-[#013300]"}
+                  ${active ? "bg-[#013300] text-white shadow" : "text-[#013300]"}
                   hover:ring-2 hover:ring-[#013300] hover:scale-[1.03] hover:shadow
-                  focus:outline-none focus:ring-2 focus:bg-[#013300] focus:text-white
-                  active:bg-[#013300] active:text-white
                 `}
-                onClick={() => handleNavigation(item.path)}
-                aria-current={isActive ? "page" : undefined}
+                onClick={() => handleNavigation(item.path!)}
+                aria-current={active ? "page" : undefined}
               >
                 <span
-                  className={`rounded-lg p-1 flex items-center justify-center shadow-md bg-green-50 text-[#013300]`}
+                  className={`rounded-lg p-1 flex items-center justify-center shadow-md ${
+                    active ? "bg-white text-[#013300]" : "bg-green-50"
+                  }`}
                 >
                   {item.icon}
                 </span>

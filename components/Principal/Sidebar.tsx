@@ -49,19 +49,43 @@ const ReportsIcon = React.memo(() => (
   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-file-chart-line-icon lucide-file-chart-line"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m16 13-3.5 3.5-2-2L8 17"/></svg>
 ));
 
+type MenuChild = {
+  label: string;
+  href: string;
+  subject: string;
+};
+
+type MenuItem = {
+  label: string;
+  icon: React.ReactNode;
+  path?: string;
+  children?: MenuChild[];
+};
+
 export default function Sidebar() {
   const [open, setOpen] = React.useState(false);
+  const [openSubmenu, setOpenSubmenu] = React.useState<string | null>(null);
+  const [isDesktop, setIsDesktop] = React.useState(false);
   const router = useRouter();
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
 
   // Menu items with navigation paths
-  const menuItems = React.useMemo(
+  const menuItems = React.useMemo<MenuItem[]>(
     () => [
       { label: "Dashboard", icon: <DashboardIcon />, path: "/Principal/dashboard" },
       { label: "Calendar", icon: <CalendarIcon />, path: "/Principal/calendar" },
       { label: "Students", icon: <StudentsIcon />, path: "/Principal/students" },
       { label: "Teachers", icon: <TeachersIcon />, path: "/Principal/teachers" },
-      { label: "Materials", icon: <MaterialsIcon />, path: "/Principal/materials" },
+      {
+        label: "Materials",
+        icon: <MaterialsIcon />,
+        path: "/Principal/materials",
+        children: [
+          { label: "English", href: "/Principal/materials/english", subject: "english" },
+          { label: "Filipino", href: "/Principal/materials/filipino", subject: "filipino" },
+          { label: "Mathematics", href: "/Principal/materials/mathematics", subject: "mathematics" },
+        ],
+      },
       { label: "Reports", icon: <ReportsIcon />, path: "/Principal/reports" },
     ],
     []
@@ -75,6 +99,39 @@ export default function Sidebar() {
   // Memoized close function
   const closeSidebar = useCallback(() => {
     setOpen(false);
+    setOpenSubmenu(null);
+  }, []);
+
+  React.useEffect(() => {
+    const updateViewport = () => {
+      setIsDesktop(window.innerWidth >= 768);
+    };
+
+    updateViewport();
+    window.addEventListener("resize", updateViewport);
+    return () => window.removeEventListener("resize", updateViewport);
+  }, []);
+
+  React.useEffect(() => {
+    if (isDesktop) {
+      setOpenSubmenu(null);
+    }
+  }, [isDesktop]);
+
+  const handleMouseEnter = useCallback((label: string) => {
+    if (isDesktop) {
+      setOpenSubmenu(label);
+    }
+  }, [isDesktop]);
+
+  const handleMouseLeave = useCallback(() => {
+    if (isDesktop) {
+      setOpenSubmenu(null);
+    }
+  }, [isDesktop]);
+
+  const handleSubmenuToggle = useCallback((label: string) => {
+    setOpenSubmenu((prev) => (prev === label ? null : label));
   }, []);
 
   // Handle navigation with sidebar close
@@ -148,7 +205,92 @@ export default function Sidebar() {
         {/* Menu Items */}
         <nav className="flex flex-col gap-3">
           {menuItems.map((item) => {
-            const isActive = pathname === item.path;
+            const hasChildren = Boolean(item.children && item.children.length > 0);
+            const basePath = item.path ?? "";
+            const childMatches = hasChildren
+              ? item.children!.some((child: MenuChild) => pathname === child.href || pathname.startsWith(`${child.href}/`))
+              : false;
+            const isActive = pathname === basePath || childMatches;
+            const isSubmenuOpen = openSubmenu === item.label;
+            const submenuHeight = hasChildren ? item.children!.length * 48 + 16 : 0;
+
+            if (hasChildren) {
+              return (
+                <div 
+                  key={item.label} 
+                  className="group relative"
+                  onMouseEnter={() => handleMouseEnter(item.label)}
+                  onMouseLeave={handleMouseLeave}
+                >
+                  {/* Parent (clickable to toggle submenu on mobile) */}
+                  <button
+                    type="button"
+                    className={`
+                      w-full flex items-center gap-4 font-medium text-base px-3 py-2 rounded-lg transition-all
+                      ${isActive ? "bg-[#013300] text-white shadow" : "text-[#013300]"}
+                      hover:ring-2 hover:ring-[#013300] hover:scale-[1.02] hover:shadow
+                    `}
+                    onClick={() => handleSubmenuToggle(item.label)}
+                    aria-expanded={isSubmenuOpen}
+                    aria-haspopup="true"
+                  >
+                    <span className={`rounded-lg p-1 flex items-center justify-center shadow-md ${
+                      isActive ? "bg-white text-[#013300]" : "bg-green-50 text-[#013300]"
+                    }`}>
+                      {item.icon}
+                    </span>
+                    <span className="tracking-wide flex-1 text-left">{item.label}</span>
+                    {/* Chevron icon for submenu */}
+                    <svg
+                      className={`w-4 h-4 transition-transform duration-300 ${
+                        isSubmenuOpen ? "rotate-180" : "rotate-0"
+                      }`}
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+
+                  {/* Dropdown with smooth transition - appears below the parent */}
+                  <div
+                    className={`
+                      overflow-hidden transition-all duration-300 ease-in-out
+                      ${isSubmenuOpen ? "max-h-48 opacity-100" : "max-h-0 opacity-0"}
+                      md:group-hover:max-h-48 md:group-hover:opacity-100
+                    `}
+                    style={{
+                      maxHeight: isSubmenuOpen ? submenuHeight : 0,
+                      opacity: isSubmenuOpen ? 1 : 0,
+                    }}
+                  >
+                    <div className="flex flex-col mt-1 gap-2 rounded-lg bg-green-50 p-2">
+                      {item.children!.map((child: MenuChild) => {
+                        const isChildActive = pathname === child.href || pathname.startsWith(`${child.href}/`);
+                        return (
+                          <button
+                            key={child.label}
+                            type="button"
+                            className={`
+                              w-full text-left px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200
+                              ${isChildActive ? "bg-[#013300] text-white shadow" : "text-[#013300]"}
+                              hover:ring-2 hover:ring-[#013300] hover:scale-[1.02] hover:shadow
+                            `}
+                            onClick={() => handleNavigation(child.href)}
+                          >
+                            {child.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            // Normal items
             return (
               <button
                 key={item.label}
@@ -159,11 +301,13 @@ export default function Sidebar() {
                   focus:outline-none focus:ring-2 focus:bg-[#013300] focus:text-white
                   active:bg-[#013300] active:text-white
                 `}
-                onClick={() => handleNavigation(item.path)}
+                onClick={() => handleNavigation(item.path!)}
                 aria-current={isActive ? "page" : undefined}
               >
                 <span
-                  className={`rounded-lg p-1 flex items-center justify-center shadow-md bg-green-50 text-[#013300]`}
+                  className={`rounded-lg p-1 flex items-center justify-center shadow-md ${
+                    isActive ? "bg-white text-[#013300]" : "bg-green-50 text-[#013300]"
+                  }`}
                 >
                   {item.icon}
                 </span>

@@ -1,0 +1,57 @@
+"use client";
+import { useState } from "react";
+import UtilityButton from "@/components/Common/Buttons/UtilityButton";
+import TableList from "@/components/Common/Tables/TableList";
+
+export default function NotProficientArchive() {
+  const [remedials] = useState<any[]>([
+    {
+      id: 1,
+      title: "Basic Addition & Subtraction",
+      domain: "Numbers and Operations",
+      dateToUse: "2024-06-01",
+      status: "Approved",
+    },
+    {
+      id: 2,
+      title: "Simple Multiplication",
+      domain: "Numbers and Operations",
+      dateToUse: "2024-06-02",
+      status: "Pending",
+    },
+    {
+      id: 3,
+      title: "Basic Division",
+      domain: "Numbers and Operations",
+      dateToUse: "2024-06-03",
+      status: "Approved",
+    },
+  ]);
+
+  return (
+    <div>
+      <div className="flex flex-row justify-between items-center mb-4 sm:mb-6 md:mb-2">
+        <p className="text-gray-600 text-md font-medium">
+          Total: {remedials.length}
+        </p>
+      </div>
+      <TableList
+        columns={[
+          { key: "no", title: "No#" },
+          { key: "title", title: "Title" },
+          { key: "domain", title: "Domain" },
+          { key: "dateToUse", title: "Date Archived" },
+        ]}
+        data={remedials.map((r, idx) => ({ ...r, no: idx + 1 }))}
+        actions={(row: any) => (
+          <>
+            <a href="/MasterTeacher/RemedialTeacher/remedial/MathFlashcards">
+              <UtilityButton small>Restore</UtilityButton>
+            </a>
+          </>
+        )}
+        pageSize={10}
+      />
+    </div>
+  );
+}
