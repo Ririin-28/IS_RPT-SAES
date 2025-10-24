@@ -29,6 +29,7 @@ export type RemedialPeriodPayload = {
   startDate: Date;
   endDate: Date;
   isActive: boolean;
+  endedAt?: Date | null;
   schedule: RemedialSchedule;
 };
 
