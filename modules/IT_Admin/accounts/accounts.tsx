@@ -29,7 +29,7 @@ import type { AccountType } from "./components/AccountActionsMenu";
 
 export default function ITAdminAccounts() {
   const [activeTab, setActiveTab] = useState("All Grades");
-  const [accountType, setAccountType] = useState<AccountType>("Master Teachers");
+  const [accountType, setAccountType] = useState<AccountType>("IT Admin");
   const [accounts, setAccounts] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -52,7 +52,7 @@ export default function ITAdminAccounts() {
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                 <div className="flex items-center gap-0">
                   <HeaderDropdown
-                    options={["Principal", "IT Admin", "Master Teachers", "Teachers"]}
+                    options={["IT Admin", "Principal", "Master Teachers", "Teachers"]}
                     value={accountType}
                     onChange={handleAccountTypeChange}
                   />

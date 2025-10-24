@@ -177,7 +177,7 @@ export default function ITAdminDashboard() {
                 <OverviewCard
 
                   value={3}
-                  label="Disabled Accounts"
+                  label="Archived Accounts"
                   icon={
                     <svg width="38" height="38" fill="none" viewBox="0 0 24 24" stroke="#013300" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M4.929 4.929 19.07 19.071" />

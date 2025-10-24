@@ -106,7 +106,7 @@ export default function Footer() {
       </div>
 
       {/* Bottom Note */}
-      <div className="text-center text-xs text-gray-600 mt-5">&copy; {new Date().getFullYear()} RPT-SAES. All rights reserved.</div>
+      <div className="text-center mb-4 text-xs text-gray-600 mt-5">&copy; {new Date().getFullYear()} RPT-SAES. All rights reserved.</div>
     </footer>
   );
 }

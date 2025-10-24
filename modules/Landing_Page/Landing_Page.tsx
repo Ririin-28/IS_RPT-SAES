@@ -16,7 +16,7 @@ export default function Home() {
           flex items-center justify-between px-6 py-4
           
           /* Tablet */
-          md:px-8 md:py-5 md:justify-center md:relative
+          md:px-8 md:py-4 md:justify-center md:relative
           
           /* Desktop */
           lg:px-10
@@ -40,11 +40,9 @@ export default function Home() {
             <Link
               href="#home"
               className="
-              font-bold text-[#013300] hover:text-green-700
-              /* Tablet */
-              md:text-sm
-              /* Desktop */
-              lg:text-base
+              font-bold text-[#013300] hover:text-green-800
+              md:text-lg
+              lg:text-lg
             "
             >
               Home
@@ -52,9 +50,9 @@ export default function Home() {
             <Link
               href="#about"
               className="
-              font-bold text-[#013300] hover:text-green-700
-              md:text-sm
-              lg:text-base
+              font-bold text-[#013300] hover:text-green-800
+              md:text-lg
+              lg:text-lg
             "
             >
               About
@@ -62,9 +60,9 @@ export default function Home() {
             <Link
               href="#mobile"
               className="
-              font-bold text-[#013300] hover:text-green-700
-              md:text-sm
-              lg:text-base
+              font-bold text-[#013300] hover:text-green-800
+              md:text-lg
+              lg:text-lg
             "
             >
               Mobile
@@ -72,12 +70,22 @@ export default function Home() {
             <Link
               href="#contacts"
               className="
-              font-bold text-[#013300] hover:text-green-700
-              md:text-sm
-              lg:text-base
+              font-bold text-[#013300] hover:text-green-800
+              md:text-lg
+              lg:text-lg
             "
             >
               Contacts
+            </Link>
+            <Link
+              href="/auth/login"
+              className="
+              font-bold text-[#013300] hover:text-green-800
+              md:text-lg
+              lg:text-lg
+              "
+              >
+                Login
             </Link>
           </nav>
         </div>
@@ -117,24 +125,13 @@ export default function Home() {
           "
             style={{ minHeight: "350px" }}
           >
-            <h2
-              className="
-              /* Mobile */
-              text-xl text-[#013300] mb-3
-              
-              /* Tablet */
-              md:text-2xl
-              
-              /* Desktop */
-              lg:text-3xl
-            "
-            >
-              Welcome to RPT-SAES
-            </h2>
+            <p className="text-lg pb-5 md:text-xl font-medium opacity-90">
+              Welcome to <span className="font-semibold">RPT-SAES</span>
+            </p>
             <h1
               className="
               /* Mobile */
-              text-3xl font-bold text-[#013300] mb-4 leading-tight
+              text-3xl font-extrabold text-[#013300] mb-4 leading-tight
               
               /* Tablet */
               md:text-4xl md:mb-5
@@ -162,8 +159,20 @@ export default function Home() {
               An innovative platform designed to support teachers in managing and tracking student progress in remedial programs.
             </p>
             <div className="flex flex-wrap gap-4 mt-4">
-              <Link href="/auth/login" className="inline-block">
-                <UtilityButton>Get Started</UtilityButton>
+              <Link href="/auth/login" className="
+                /* Mobile */
+                flex items-center pl-4 pr-2 py-2 bg-[#013300] text-white text-base font-bold rounded-lg hover:bg-green-900 transition
+                
+                /* Tablet */
+                md:pl-4 md:py-3 md:text-lg
+                
+                /* Desktop */
+                lg:text-xl
+              ">
+                Get Started
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 ml-2 md:w-6 md:h-6">
+                  <path d="m9 18 6-6-6-6"/>
+                </svg>
               </Link>
             </div>
           </div>
@@ -197,7 +206,7 @@ export default function Home() {
                 height={500}
                 priority
                 className="object-cover rounded-xl shadow-lg"
-                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 80vw, 1200px"
+                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 90vw, 1200px"
               />
               <div
                 className="
@@ -262,7 +271,7 @@ export default function Home() {
           <h2
             className="
             /* Mobile */
-            text-3xl font-bold text-green-900 mb-4 text-center
+            text-3xl font-bold text-[#013300] mb-4 text-center
             
             /* Tablet */
             md:text-4xl
@@ -289,7 +298,7 @@ export default function Home() {
               /* Tablet */
               md:text-lg
             ">
-              RPT-SAES was created to revolutionize how educators track and manage student progress in remedial programs. Our platform simplifies literacy and numeracy program management, empowering teachers to provide personalized support for every student.
+               To enhance the San Agustin Elementary School remedial program. We provide teachers with a centralized system that tracks student performance, materials management, and uses AI-driven performance analysis and suggestions.
             </p>
             
             <div className="space-y-4">
@@ -330,7 +339,7 @@ export default function Home() {
                   </div>
                 </div>
                 <div className="ml-4">
-                  <h4 className="font-semibold text-green-900">AI-generated insights</h4>
+                  <h4 className="font-semibold text-green-900">AI-Driven Analysis and Insights</h4>
                   <p className="mt-1 text-green-800">Smart recommendations that help teachers identify learning gaps of students.</p>
                 </div>
               </div>
@@ -455,7 +464,7 @@ export default function Home() {
               <h3
                 className="
                 /* Mobile */
-                text-2xl font-bold text-[#013300] mb-2
+                text-2xl font-extrabold text-[#013300] mb-5
                 
                 /* Tablet */
                 md:text-3xl
@@ -470,7 +479,7 @@ export default function Home() {
               <p
                 className="
                 /* Mobile */
-                text-base text-green-900 mb-4
+                text-base text-green-900 mb-6
                 
                 /* Tablet */
                 md:text-lg md:mb-6
@@ -479,10 +488,9 @@ export default function Home() {
                 Improve student engagement, enjoy while learning
               </p>
               <a
-                href="#"
                 className="
                   /* Mobile */
-                  flex items-center px-4 py-2 bg-green-900 text-white text-base font-bold rounded-lg hover:bg-green-800 transition
+                  flex items-center px-4 py-2 bg-[#013300] text-white text-base font-bold rounded-lg hover:bg-green-900 transition
                   
                   /* Tablet */
                   md:px-6 md:py-3 md:text-lg
@@ -500,7 +508,6 @@ export default function Home() {
           </div>
         </div>
       </section>
-
       <Footer />
     </div>
   );
