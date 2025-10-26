@@ -55,7 +55,7 @@ const HeaderDropdown = ({ options, value, onChange, className = "", openOnHover 
     >
       <button
         type="button"
-        className="flex items-center gap-2 pl-2 pr-1 py-1.5 mb-2 text-xl font-semibold text-[#013300] cursor-pointer focus:outline-none group"
+        className="flex items-center gap-2 pl-0 pr-1 py-1.5 mb-2 text-xl font-semibold text-[#013300] cursor-pointer focus:outline-none group"
         onClick={handleButtonClick}
       >
         {value}

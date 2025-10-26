@@ -81,18 +81,18 @@ export default function PrincipalMaterials({ subjectSlug }: PrincipalMaterialsPr
             <div className="bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[400px] overflow-y-auto p-4 sm:p-5 md:p-6">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                 <div className="flex flex-wrap sm:flex-nowrap items-center gap-0 w-full sm:w-auto">
+                  <SecondaryHeader title={`${subjectTitle} Materials for`} />
                   <HeaderDropdown
                     options={GRADE_OPTIONS}
                     value={selectedGrade}
                     onChange={setSelectedGrade}
-                    openOnHover
+                    className="pl-2"
                   />
-                  <SecondaryHeader title={`${subjectTitle} Materials for`} />
                   <HeaderDropdown
                     options={[...tabOptions]}
                     value={activeTab}
                     onChange={setActiveTab}
-                    className="min-w-[140px]"
+                    className="pl-0"
                   />
                 </div>
                 <div className="flex gap-3 w-full sm:w-auto mt-4 sm:mt-0">

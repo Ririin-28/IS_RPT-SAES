@@ -106,12 +106,13 @@ export default function MasterTeacherRemedial() {
             "
             >
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                <div className="flex items-center gap-10">
+                <div className="flex items-center gap-0">
                   <SecondaryHeader title={`${subject} Remedial`} />
                   <HeaderDropdown
                     options={[...currentTabOptions]}
                     value={activeTab}
                     onChange={setActiveTab}
+                    className="pl-2"
                   />
                 </div>
               </div>

@@ -34,6 +34,7 @@ export default function PrincipalStudents() {
                     options={["All Grades", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"]}
                     value={activeTab}
                     onChange={setActiveTab}
+                    className="pl-2"
                   />
                 </div>
                 <div className="flex gap-3 w-full sm:w-auto mt-4 sm:mt-0">

@@ -1,8 +1,45 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
+import { useForm } from "react-hook-form";
 import TableList from "@/components/Common/Tables/TableList";
-import UserDetailModal from "../Modals/UserDetailsModal";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import AccountActionsMenu, { type AccountActionKey } from "../components/AccountActionsMenu";
+import AddPrincipalModal, { type AddPrincipalFormValues } from "./Modals/AddPrincipalModal";
+import PrincipalDetailsModal from "./Modals/PrincipalDetailsModal";
+import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
+import DangerButton from "@/components/Common/Buttons/DangerButton";
+import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
+
+const NAME_COLLATOR = new Intl.Collator("en", { sensitivity: "base", numeric: true });
+
+function toStringOrNull(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const str = String(value).trim();
+  return str.length > 0 ? str : null;
+}
+
+function sortPrincipals(records: any[]) {
+  return [...records].sort((a, b) => {
+    const nameA = toStringOrNull(a.name);
+    const nameB = toStringOrNull(b.name);
+
+    if (nameA && nameB) {
+      const cmp = NAME_COLLATOR.compare(nameA, nameB);
+      if (cmp !== 0) {
+        return cmp;
+      }
+    } else if (nameA) {
+      return -1;
+    } else if (nameB) {
+      return 1;
+    }
+
+    const idA = typeof a.userId === "number" ? a.userId : Number.parseInt(String(a.userId ?? 0), 10) || 0;
+    const idB = typeof b.userId === "number" ? b.userId : Number.parseInt(String(b.userId ?? 0), 10) || 0;
+    return idA - idB;
+  });
+}
 
 interface PrincipalTabProps {
   principals: any[];
@@ -10,85 +47,170 @@ interface PrincipalTabProps {
   searchTerm: string;
 }
 
-interface KebabMenuProps {
-  onEdit: () => void;
-  onDelete: () => void;
-}
-
-const KebabMenu = ({ onEdit, onDelete }: KebabMenuProps) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  return (
-    <div className="relative" ref={menuRef}>
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="p-1 hover:bg-gray-100 rounded"
-      >
-        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-          <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
-        </svg>
-      </button>
-      {isOpen && (
-        <div className="absolute right-0 mt-1 w-32 bg-white border border-gray-200 rounded-md shadow-lg z-10">
-          <button
-            onClick={() => {
-              onEdit();
-              setIsOpen(false);
-            }}
-            className="w-full px-3 py-2 text-left text-sm text-[#013300] hover:bg-gray-50 flex items-center gap-2"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-            Edit
-          </button>
-          <button
-            onClick={() => {
-              onDelete();
-              setIsOpen(false);
-            }}
-            className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-gray-50 flex items-center gap-2"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-            Delete
-          </button>
-        </div>
-      )}
-    </div>
-  );
-};
-
 export default function PrincipalTab({ principals, setPrincipals, searchTerm }: PrincipalTabProps) {
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
   const [selectedPrincipal, setSelectedPrincipal] = useState<any>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedPrincipalKeys, setSelectedPrincipalKeys] = useState<Set<string>>(new Set());
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const addPrincipalForm = useForm<AddPrincipalFormValues>({
+    mode: "onTouched",
+    defaultValues: {
+      firstName: "",
+      middleName: "",
+      lastName: "",
+      email: "",
+      phoneNumber: "",
+    },
+  });
+
+  const getPrincipalKey = useCallback((principal: any) => {
+    const fallbackIndex = principals.indexOf(principal);
+    return String(principal.id ?? principal.principalId ?? principal.email ?? principal.contactNumber ?? principal.name ?? fallbackIndex);
+  }, [principals]);
 
   const handleMenuAction = useCallback((action: AccountActionKey) => {
-    console.log(`[Principal Tab] Action triggered: ${action}`);
-  }, []);
+    if (action === "principal:add") {
+      setSubmitError(null);
+      setSuccessMessage(null);
+      addPrincipalForm.reset();
+      setShowAddModal(true);
+      return;
+    }
+    if (action === "principal:select") {
+      setSelectMode(true);
+      return;
+    }
+  }, [addPrincipalForm]);
 
-  const filteredPrincipals = principals.filter((principal) => {
+  const handleAddPrincipal = useCallback(async (values: AddPrincipalFormValues) => {
+    const payload = {
+      firstName: values.firstName.trim(),
+      middleName: values.middleName.trim() || null,
+      lastName: values.lastName.trim(),
+      email: values.email.trim().toLowerCase(),
+      phoneNumber: values.phoneNumber.replace(/\D/g, ""),
+    };
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      const response = await fetch("/api/it_admin/principals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => ({}));
+        throw new Error(errorPayload?.error ?? `Unable to add Principal (status ${response.status}).`);
+      }
+
+      const result = await response.json();
+      const record = result?.record ?? null;
+      const userId = result?.userId ?? record?.userId ?? null;
+
+      const fallbackRecord = {
+        userId,
+        firstName: payload.firstName,
+        middleName: payload.middleName,
+        lastName: payload.lastName,
+        email: payload.email,
+        contactNumber: payload.phoneNumber,
+        principalId: userId != null ? String(userId) : undefined,
+        lastLogin: null,
+        name: [payload.firstName, payload.middleName, payload.lastName].filter(Boolean).join(" "),
+      };
+
+      const normalizedRecord = record ?? fallbackRecord;
+
+      const withoutExisting = principals.filter((principal: any) => {
+        if (normalizedRecord.userId == null) {
+          return true;
+        }
+        return principal.userId !== normalizedRecord.userId;
+      });
+      const updated = sortPrincipals([...withoutExisting, normalizedRecord]);
+      setPrincipals(updated);
+
+      addPrincipalForm.reset();
+      setShowAddModal(false);
+      if (result?.temporaryPassword) {
+        setSuccessMessage(
+          `${normalizedRecord.name ?? "New Principal"} added successfully. Temporary password: ${result.temporaryPassword}`,
+        );
+      } else {
+        setSuccessMessage(`${normalizedRecord.name ?? "New Principal"} added successfully.`);
+      }
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Unable to add Principal.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [addPrincipalForm, principals, setPrincipals]);
+
+  const handleCloseAddModal = useCallback(() => {
+    setShowAddModal(false);
+    setSubmitError(null);
+    addPrincipalForm.reset();
+  }, [addPrincipalForm]);
+
+  const filteredPrincipals = useMemo(() => principals.filter((principal) => {
     const matchSearch = searchTerm === "" || 
       principal.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       principal.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      principal.principalId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      principal.school?.toLowerCase().includes(searchTerm.toLowerCase());
+      principal.principalId?.toLowerCase().includes(searchTerm.toLowerCase());
       
     return matchSearch;
-  });
+  }), [principals, searchTerm]);
+
+  const handleSelectPrincipal = useCallback((id: string, checked: boolean) => {
+    setSelectedPrincipalKeys((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleSelectAll = useCallback((checked: boolean) => {
+    if (checked) {
+      const keys = new Set(filteredPrincipals.map((principal: any) => getPrincipalKey(principal)));
+      setSelectedPrincipalKeys(keys);
+      return;
+    }
+    setSelectedPrincipalKeys(new Set());
+  }, [filteredPrincipals, getPrincipalKey]);
+
+  const handleCancelSelect = useCallback(() => {
+    setSelectMode(false);
+    setSelectedPrincipalKeys(new Set());
+  }, []);
+
+  const handleDeleteSelected = useCallback(() => {
+    if (selectedPrincipalKeys.size === 0) return;
+    setShowDeleteModal(true);
+  }, [selectedPrincipalKeys]);
+
+  const handleConfirmDeleteSelected = useCallback(() => {
+    const remaining = principals.filter((principal: any) => !selectedPrincipalKeys.has(getPrincipalKey(principal)));
+    setPrincipals(remaining);
+    setSelectedPrincipalKeys(new Set());
+    setSelectMode(false);
+    setShowDeleteModal(false);
+  }, [getPrincipalKey, principals, selectedPrincipalKeys, setPrincipals]);
+
+  const handleCloseDeleteModal = useCallback(() => {
+    setShowDeleteModal(false);
+  }, []);
 
   const handleShowDetails = (principal: any) => {
     setSelectedPrincipal(principal);
@@ -101,18 +223,51 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
         <p className="text-gray-600 text-md font-medium">
           Total: {principals.length}
         </p>
-        <AccountActionsMenu
-          accountType="Principal"
-          onAction={handleMenuAction}
-          buttonAriaLabel="Open principal actions"
-        />
+        <div className="flex items-center gap-3">
+          {selectMode ? (
+            <>
+              <SecondaryButton small onClick={handleCancelSelect}>
+                Cancel
+              </SecondaryButton>
+              <DangerButton
+                small
+                onClick={handleDeleteSelected}
+                disabled={selectedPrincipalKeys.size === 0}
+                className={selectedPrincipalKeys.size === 0 ? "opacity-60 cursor-not-allowed" : ""}
+              >
+                Delete ({selectedPrincipalKeys.size})
+              </DangerButton>
+            </>
+          ) : (
+            <AccountActionsMenu
+              accountType="Principal"
+              onAction={handleMenuAction}
+              buttonAriaLabel="Open principal actions"
+            />
+          )}
+        </div>
       </div>
       
-      <UserDetailModal
+      <PrincipalDetailsModal
         show={showDetailModal}
         onClose={() => setShowDetailModal(false)}
-        user={selectedPrincipal}
+        principal={selectedPrincipal}
       />
+
+      <AddPrincipalModal
+        show={showAddModal}
+        onClose={handleCloseAddModal}
+        onSubmit={handleAddPrincipal}
+        form={addPrincipalForm}
+        isSubmitting={isSubmitting}
+        apiError={submitError}
+      />
+
+      {successMessage && (
+        <div className="mb-4 rounded-md border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">
+          {successMessage}
+        </div>
+      )}
 
       <TableList
         columns={[
@@ -120,26 +275,31 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
           { key: "principalId", title: "Principal ID" },
           { key: "name", title: "Full Name" },
           { key: "email", title: "Email" },
-          { key: "school", title: "School" },
           { key: "contactNumber", title: "Contact Number" },
-          { key: "status", title: "Status" },
         ]}
-        data={filteredPrincipals.map((principal, idx) => ({
+        data={filteredPrincipals.map((principal: any, idx: number) => ({
           ...principal,
+          id: getPrincipalKey(principal),
           no: idx + 1,
         }))}
         actions={(row: any) => (
-          <div className="flex items-center gap-2">
-            <UtilityButton small onClick={() => handleShowDetails(row)}>
-              View Details
-            </UtilityButton>
-            <KebabMenu
-              onEdit={() => console.log('Edit', row)}
-              onDelete={() => console.log('Delete', row)}
-            />
-          </div>
+          <UtilityButton small onClick={() => handleShowDetails(row)}>
+            View Details
+          </UtilityButton>
         )}
+        selectable={selectMode}
+        selectedItems={selectedPrincipalKeys}
+        onSelectAll={handleSelectAll}
+        onSelectItem={(id, checked) => handleSelectPrincipal(String(id), checked)}
         pageSize={10}
+      />
+
+      <DeleteConfirmationModal
+        isOpen={showDeleteModal}
+        onClose={handleCloseDeleteModal}
+        onConfirm={handleConfirmDeleteSelected}
+        title="Confirm Delete Selected"
+        message={`Are you sure you want to delete ${selectedPrincipalKeys.size} selected principal${selectedPrincipalKeys.size === 1 ? "" : "s"}? This action cannot be undone.`}
       />
     </div>
   );

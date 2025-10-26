@@ -213,7 +213,11 @@ export default function MasterTeacherAllGradesTab({ teachers, setTeachers, searc
           { key: "section", title: "Section" },
           { key: "email", title: "Email" },
           { key: "contactNumber", title: "Contact Number" },
-          { key: "archivedDate", title: "Archived Date" },
+          {
+            key: "archivedDate",
+            title: "Archived Date",
+            render: (row: any) => row.archivedDateDisplay ?? "—",
+          },
         ]}
         data={tableData}
         actions={() => <></>}

@@ -66,13 +66,29 @@ export default function TeacherSidebar() {
   const router = useRouter();
   const pathname = usePathname();
 
-  // Menu items with navigation paths for teacher
+  // Menu items with navigation paths for teacher - UPDATED WITH SUBMENUS FOR STUDENTS
   const menuItems = React.useMemo(
     () => [
       { label: "Dashboard", icon: <DashboardIcon />, path: "/Teacher/dashboard" },
       { label: "Calendar", icon: <CalendarIcon />, path: "/Teacher/calendar" },
-      { label: "Students", icon: <StudentsIcon />, path: "/Teacher/students" },
-      { label: "Materials", icon: <MaterialsIcon />, path: "/Teacher/materials" },
+      {
+        label: "Students", 
+        icon: <StudentsIcon />, 
+        children: [
+          { label: "English", path: "/Teacher/students/english" },
+          { label: "Filipino", path: "/Teacher/students/filipino" },
+          { label: "Math", path: "/Teacher/students/math" },
+        ],
+      },
+      {
+        label: "Materials", 
+        icon: <MaterialsIcon />, 
+        children: [
+          { label: "English", path: "/Teacher/materials/english" },
+          { label: "Filipino", path: "/Teacher/materials/filipino" },
+          { label: "Math", path: "/Teacher/materials/math" },
+        ],
+      },
       {
         label: "Remedial",
         icon: <RemedialIcon />,
@@ -82,7 +98,15 @@ export default function TeacherSidebar() {
           { label: "Math", path: "/Teacher/remedial/math" },
         ],
       },
-      { label: "Report", icon: <ReportIcon />, path: "/Teacher/report" },
+      {
+        label: "Report",
+        icon: <ReportIcon />,
+        children: [
+          { label: "English", path: "/Teacher/report/english" },
+          { label: "Filipino", path: "/Teacher/report/filipino" },
+          { label: "Math", path: "/Teacher/report/math" },
+        ],
+      },
     ],
     []
   );
@@ -139,13 +163,16 @@ export default function TeacherSidebar() {
     [router, closeSidebar]
   );
 
-  // Check if any child of Remedial is active
-  const isRemedialActive = React.useMemo(() => {
-    const remedialItem = menuItems.find(item => item.label === "Remedial" && item.children);
-    if (!remedialItem?.children) return false;
-    
-    return remedialItem.children.some(child => pathname === child.path);
-  }, [menuItems, pathname]);
+  // Check if any child of a parent item is active
+  const isParentActive = React.useCallback((item: any) => {
+    if (item.path) {
+      return pathname === item.path;
+    }
+    if (item.children) {
+      return item.children.some((child: any) => pathname === child.path);
+    }
+    return false;
+  }, [pathname]);
 
   return (
     <>
@@ -209,12 +236,9 @@ export default function TeacherSidebar() {
         {/* Menu Items */}
         <nav className="flex flex-col gap-3">
           {menuItems.map((item) => {
-            const isActive = pathname === item.path;
+            const isActive = isParentActive(item);
             const isSubmenuOpen = openSubmenu === item.label;
             const submenuHeight = item.children ? item.children.length * 48 + 16 : 0;
-            
-            // For Remedial tab, check if any child is active
-            const isRemedialItemActive = item.label === "Remedial" && isRemedialActive;
 
             if (item.children) {
               return (
@@ -229,7 +253,7 @@ export default function TeacherSidebar() {
                     type="button"
                     className={`
                       w-full flex items-center gap-4 font-medium text-base px-3 py-2 rounded-lg transition-all
-                      ${isRemedialItemActive ? "bg-[#013300] text-white shadow" : "text-[#013300]"}
+                      ${isActive ? "bg-[#013300] text-white shadow" : "text-[#013300]"}
                       hover:ring-2 hover:ring-[#013300] hover:scale-[1.02] hover:shadow
                     `}
                     onClick={() => handleSubmenuToggle(item.label)}
@@ -237,7 +261,7 @@ export default function TeacherSidebar() {
                     aria-haspopup="true"
                   >
                     <span className={`rounded-lg p-1 flex items-center justify-center shadow-md ${
-                      isRemedialItemActive ? "bg-white text-[#013300]" : "bg-green-50"
+                      isActive ? "bg-white text-[#013300]" : "bg-green-50"
                     }`}>
                       {item.icon}
                     </span>

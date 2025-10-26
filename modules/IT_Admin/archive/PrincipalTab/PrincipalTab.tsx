@@ -32,7 +32,11 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
           { key: "name", title: "Full Name" },
           { key: "email", title: "Email" },
           { key: "contactNumber", title: "Contact Number" },
-          { key: "archivedDate", title: "Archived Date" },
+          {
+            key: "archivedDate",
+            title: "Archived Date",
+            render: (row: any) => row.archivedDateDisplay ?? "—",
+          },
         ]}
         data={filteredPrincipals.map((principal, idx) => ({
           ...principal,
