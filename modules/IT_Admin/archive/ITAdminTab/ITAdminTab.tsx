@@ -27,7 +27,11 @@ export default function ITAdminArchiveTab({ itAdmins, searchTerm }: ITAdminArchi
           { key: "adminId", title: "Admin ID" },
           { key: "name", title: "Full Name" },
           { key: "email", title: "Email" },
-          { key: "archivedDate", title: "Archived Date" },
+          {
+            key: "archivedDate",
+            title: "Archived Date",
+            render: (row: any) => row.archivedDateDisplay ?? "—",
+          },
         ]}
         data={filteredAdmins.map((admin, index) => ({
           ...admin,

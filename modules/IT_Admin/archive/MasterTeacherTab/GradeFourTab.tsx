@@ -215,7 +215,11 @@ export default function MasterTeacherGradeFourTab({ teachers, setTeachers, searc
           { key: "name", title: "Full Name" },
           { key: "email", title: "Email" },
           { key: "contactNumber", title: "Contact Number" },
-          { key: "archivedDate", title: "Archived Date" },
+          {
+            key: "archivedDate",
+            title: "Archived Date",
+            render: (row: any) => row.archivedDateDisplay ?? "—",
+          },
         ]}
         data={tableData}
         actions={() => <></>}

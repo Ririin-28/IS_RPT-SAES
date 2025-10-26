@@ -7,12 +7,12 @@ import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import { FaTimes } from "react-icons/fa";
 import { usePathname } from "next/navigation";
 // English Tabs
-import EnglishNonReaderTab from "./Tabs/NonReaderTab";
-import EnglishSyllableTab from "./Tabs/SyllableTab";
-import EnglishWordTab from "./Tabs/WordTab";
-import EnglishPhraseTab from "./Tabs/PhraseTab";
-import EnglishSentenceTab from "./Tabs/SentenceTab";
-import EnglishParagraphTab from "./Tabs/ParagraphTab";
+import EnglishNonReaderTab from "./EnglishTabs/NonReaderTab";
+import EnglishSyllableTab from "./EnglishTabs/SyllableTab";
+import EnglishWordTab from "./EnglishTabs/WordTab";
+import EnglishPhraseTab from "./EnglishTabs/PhraseTab";
+import EnglishSentenceTab from "./EnglishTabs/SentenceTab";
+import EnglishParagraphTab from "./EnglishTabs/ParagraphTab";
 // Filipino Tabs
 import FilipinoNonReaderTab from "./FilipinoTabs/NonReaderTab";
 import FilipinoSyllableTab from "./FilipinoTabs/SyllableTab";
@@ -102,6 +102,7 @@ export default function MasterTeacherMaterials() {
                     options={[...currentTabOptions]}
                     value={activeTab}
                     onChange={setActiveTab}
+                    className="pl-2"
                   />
                 </div>
                 <div className="flex gap-3 w-full sm:w-auto mt-4 sm:mt-0">

@@ -80,10 +80,17 @@ ReportIcon.displayName = "ReportIcon";
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", path: "/MasterTeacher/RemedialTeacher/dashboard", icon: <DashboardIcon /> },
   { label: "Calendar", path: "/MasterTeacher/RemedialTeacher/calendar", icon: <CalendarIcon /> },
-  { label: "Students", path: "/MasterTeacher/RemedialTeacher/students", icon: <StudentsIcon /> },
+  {
+    label: "Students",
+    icon: <StudentsIcon />,
+    children: [
+      { label: "English", path: "/MasterTeacher/RemedialTeacher/students/english" },
+      { label: "Filipino", path: "/MasterTeacher/RemedialTeacher/students/filipino" },
+      { label: "Math", path: "/MasterTeacher/RemedialTeacher/students/math" },
+    ],
+  },
   {
     label: "Materials",
-    path: "/MasterTeacher/RemedialTeacher/materials",
     icon: <MaterialsIcon />,
     children: [
       { label: "English", path: "/MasterTeacher/RemedialTeacher/materials/english" },
@@ -100,24 +107,36 @@ const NAV_ITEMS: NavItem[] = [
       { label: "Math", path: "/MasterTeacher/RemedialTeacher/remedial/math" },
     ],
   },
-  { label: "Report", path: "/MasterTeacher/RemedialTeacher/report", icon: <ReportIcon /> },
+  {
+    label: "Report",
+    icon: <ReportIcon />,
+    children: [
+      { label: "English", path: "/MasterTeacher/RemedialTeacher/report/english" },
+      { label: "Filipino", path: "/MasterTeacher/RemedialTeacher/report/filipino" },
+      { label: "Math", path: "/MasterTeacher/RemedialTeacher/report/math" },
+    ],
+  },
 ];
 
 export default function RemedialTeacherSidebar() {
   const [open, setOpen] = React.useState(false);
   const [openSubmenu, setOpenSubmenu] = React.useState<string | null>(null);
+  const [isDesktop, setIsDesktop] = React.useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
+  // Memoized toggle function
   const toggleSidebar = useCallback(() => {
     setOpen((prev) => !prev);
   }, []);
 
+  // Memoized close function
   const closeSidebar = useCallback(() => {
     setOpen(false);
     setOpenSubmenu(null);
   }, []);
 
+  // Handle navigation with sidebar close
   const handleNavigation = useCallback(
     (path: string) => {
       router.push(path);
@@ -126,13 +145,65 @@ export default function RemedialTeacherSidebar() {
     [router, closeSidebar]
   );
 
+  // Check if path is active
   const isActivePath = useCallback(
-    (path: string) => Boolean(pathname?.toLowerCase().startsWith(path.toLowerCase())),
+    (path: string) => pathname === path,
     [pathname]
   );
 
+  // Check if any child of a parent item is active
+  const isParentActive = useCallback(
+    (item: NavItem) => {
+      if (item.path) {
+        return isActivePath(item.path);
+      }
+      if (item.children) {
+        return item.children.some(child => isActivePath(child.path));
+      }
+      return false;
+    },
+    [isActivePath]
+  );
+
+  // Desktop detection
+  React.useEffect(() => {
+    const updateViewport = () => {
+      setIsDesktop(window.innerWidth >= 768);
+    };
+
+    updateViewport();
+    window.addEventListener("resize", updateViewport);
+    return () => window.removeEventListener("resize", updateViewport);
+  }, []);
+
+  // Reset submenu on desktop
+  React.useEffect(() => {
+    if (isDesktop) {
+      setOpenSubmenu(null);
+    }
+  }, [isDesktop]);
+
+  // Hover handlers for desktop
+  const handleMouseEnter = useCallback((label: string) => {
+    if (isDesktop) {
+      setOpenSubmenu(label);
+    }
+  }, [isDesktop]);
+
+  const handleMouseLeave = useCallback(() => {
+    if (isDesktop) {
+      setOpenSubmenu(null);
+    }
+  }, [isDesktop]);
+
+  // Submenu toggle for mobile
+  const handleSubmenuToggle = useCallback((label: string) => {
+    setOpenSubmenu((prev) => (prev === label ? null : label));
+  }, []);
+
   return (
     <>
+      {/* Mobile Hamburger Button */}
       <button
         className="md:hidden fixed top-5 left-4 z-50 bg-green-50 p-2 rounded-lg shadow-md"
         onClick={toggleSidebar}
@@ -154,15 +225,17 @@ export default function RemedialTeacherSidebar() {
         </svg>
       </button>
 
+      {/* Sidebar */}
       <aside
         className={`
-          fixed z-50 top-0 left-0 h-full w-64 bg-green-50 flex flex-col px-6 py-8 font-sans
+          fixed z-50 top-0 left-0 h-full w-64 bg-green-50 flex flex-col px-6 py-8 font-sans 
           transition-transform duration-300 shadow-xl
           ${open ? "translate-x-0" : "-translate-x-full"} rounded-xl
           md:static md:translate-x-0 md:min-h-screen
         `}
         style={{ maxWidth: "100vw" }}
       >
+        {/* Mobile Close Button */}
         <div className="flex md:hidden justify-end mb-4">
           <button className="p-2 rounded hover:bg-green-100" onClick={closeSidebar} aria-label="Close sidebar">
             <svg
@@ -181,43 +254,51 @@ export default function RemedialTeacherSidebar() {
           </button>
         </div>
 
+        {/* Logo and Title */}
         <RPTLogoTitle small />
 
+        {/* Divider */}
         <div className="my-6 border-b border-[#013300]" />
 
+        {/* Menu Items */}
         <nav className="flex flex-col gap-3">
           {NAV_ITEMS.map((item) => {
             const hasChildren = Boolean(item.children && item.children.length > 0);
-            const childActive = hasChildren
-              ? item.children!.some((child) => isActivePath(child.path))
-              : false;
-            const active = item.path ? isActivePath(item.path) || childActive : childActive;
-            const expanded = hasChildren && (openSubmenu === item.label || childActive);
+            const isActive = isParentActive(item);
+            const isSubmenuOpen = openSubmenu === item.label;
+            const submenuHeight = item.children ? item.children.length * 48 + 16 : 0;
 
             if (hasChildren) {
               return (
-                <div key={item.label} className="group relative">
+                <div 
+                  key={item.label} 
+                  className="group relative"
+                  onMouseEnter={() => handleMouseEnter(item.label)}
+                  onMouseLeave={handleMouseLeave}
+                >
+                  {/* Parent item - clickable to toggle submenu on mobile */}
                   <button
                     type="button"
                     className={`
                       w-full flex items-center gap-4 font-medium text-base px-3 py-2 rounded-lg transition-all
-                      ${active ? "bg-[#013300] text-white shadow" : "text-[#013300]"}
+                      ${isActive ? "bg-[#013300] text-white shadow" : "text-[#013300]"}
                       hover:ring-2 hover:ring-[#013300] hover:scale-[1.02] hover:shadow
                     `}
-                    onClick={() => setOpenSubmenu((prev) => (prev === item.label ? null : item.label))}
-                    aria-expanded={expanded}
+                    onClick={() => handleSubmenuToggle(item.label)}
+                    aria-expanded={isSubmenuOpen}
                     aria-haspopup="true"
                   >
-                    <span
-                      className={`rounded-lg p-1 flex items-center justify-center shadow-md ${
-                        active ? "bg-white text-[#013300]" : "bg-green-50"
-                      }`}
-                    >
+                    <span className={`rounded-lg p-1 flex items-center justify-center shadow-md ${
+                      isActive ? "bg-white text-[#013300]" : "bg-green-50"
+                    }`}>
                       {item.icon}
                     </span>
                     <span className="tracking-wide flex-1 text-left">{item.label}</span>
+                    {/* Chevron icon for submenu */}
                     <svg
-                      className={`w-4 h-4 transition-transform duration-300 ${expanded ? "rotate-180" : "rotate-0"}`}
+                      className={`w-4 h-4 transition-transform duration-300 ${
+                        isSubmenuOpen ? "rotate-180" : "rotate-0"
+                      }`}
                       fill="none"
                       stroke="currentColor"
                       strokeWidth="2"
@@ -227,23 +308,28 @@ export default function RemedialTeacherSidebar() {
                     </svg>
                   </button>
 
+                  {/* Dropdown with smooth transition */}
                   <div
                     className={`
                       overflow-hidden transition-all duration-300 ease-in-out
-                      ${expanded ? "max-h-60 opacity-100" : "max-h-0 opacity-0"}
-                      md:group-hover:max-h-60 md:group-hover:opacity-100
+                      ${isSubmenuOpen ? "max-h-48 opacity-100" : "max-h-0 opacity-0"}
+                      md:group-hover:max-h-48 md:group-hover:opacity-100
                     `}
+                    style={{
+                      maxHeight: isSubmenuOpen ? submenuHeight : 0,
+                      opacity: isSubmenuOpen ? 1 : 0,
+                    }}
                   >
                     <div className="flex flex-col mt-1 gap-2 rounded-lg bg-green-50 p-2">
                       {item.children!.map((child) => {
-                        const childIsActive = isActivePath(child.path);
+                        const isChildActive = isActivePath(child.path);
                         return (
                           <button
                             key={child.label}
                             type="button"
                             className={`
                               w-full text-left px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200
-                              ${childIsActive ? "bg-[#013300] text-white shadow" : "text-[#013300]"}
+                              ${isChildActive ? "bg-[#013300] text-white shadow" : "text-[#013300]"}
                               hover:ring-2 hover:ring-[#013300] hover:scale-[1.02] hover:shadow
                             `}
                             onClick={() => handleNavigation(child.path)}
@@ -258,21 +344,22 @@ export default function RemedialTeacherSidebar() {
               );
             }
 
+            // Normal menu items without children
             return (
               <button
                 key={item.label}
                 type="button"
                 className={`
                   flex items-center gap-4 font-medium text-base px-3 py-2 rounded-lg transition-all
-                  ${active ? "bg-[#013300] text-white shadow" : "text-[#013300]"}
+                  ${isActive ? "bg-[#013300] text-white shadow" : "text-[#013300]"}
                   hover:ring-2 hover:ring-[#013300] hover:scale-[1.03] hover:shadow
                 `}
                 onClick={() => handleNavigation(item.path!)}
-                aria-current={active ? "page" : undefined}
+                aria-current={isActive ? "page" : undefined}
               >
                 <span
                   className={`rounded-lg p-1 flex items-center justify-center shadow-md ${
-                    active ? "bg-white text-[#013300]" : "bg-green-50"
+                    isActive ? "bg-white text-[#013300]" : "bg-green-50"
                   }`}
                 >
                   {item.icon}
@@ -284,6 +371,7 @@ export default function RemedialTeacherSidebar() {
         </nav>
       </aside>
 
+      {/* Mobile Overlay */}
       {open && (
         <div
           className="fixed inset-0 backdrop-blur-xs bg-opacity-30 z-40 md:hidden"

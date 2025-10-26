@@ -65,6 +65,7 @@ export default function MasterTeacherTeachers() {
                     options={["Information List", "Attendance List"]}
                     value={activeTab}
                     onChange={setActiveTab}
+                    className="pl-2"
                   />
                 </div>
                 <div className="flex gap-3 w-full sm:w-auto mt-4 sm:mt-0">

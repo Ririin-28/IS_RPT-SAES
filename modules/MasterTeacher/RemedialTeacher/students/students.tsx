@@ -1,18 +1,120 @@
 "use client";
 import Sidebar from "@/components/MasterTeacher/RemedialTeacher/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
-import { useState } from "react";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import { FaTimes } from "react-icons/fa";
-// Tabs
-import StudentTab from "./Tabs/StudentTab";
-import AttendanceTab from "./Tabs/AttendanceTab";
+import { useCallback, useEffect, useMemo, useState, type ComponentType, type Dispatch, type SetStateAction } from "react";
+import { useRouter } from "next/navigation";
+import EnglishStudentTab from "./EnglishTabs/StudentTab";
+import EnglishAttendanceTab from "./EnglishTabs/AttendanceTab";
+import FilipinoStudentTab from "./FilipinoTabs/StudentTab";
+import FilipinoAttendanceTab from "./FilipinoTabs/AttendanceTab";
+import MathStudentTab from "./MathTabs/StudentTab";
+import MathAttendanceTab from "./MathTabs/AttendanceTab";
 
-export default function MasterTeacherStudents() {
-  const [activeTab, setActiveTab] = useState("Information List");
+type SubjectKey = "english" | "filipino" | "math";
+
+type StudentTabProps = {
+  students: any[];
+  setStudents: Dispatch<SetStateAction<any[]>>;
+  searchTerm: string;
+};
+
+type SubjectConfig = {
+  label: string;
+  headerTitle: string;
+  StudentTab: ComponentType<StudentTabProps>;
+  AttendanceTab: ComponentType<StudentTabProps>;
+};
+
+const SUBJECT_CONFIG: Record<SubjectKey, SubjectConfig> = {
+  english: {
+    label: "English",
+    headerTitle: "English Students",
+    StudentTab: EnglishStudentTab,
+    AttendanceTab: EnglishAttendanceTab,
+  },
+  filipino: {
+    label: "Filipino",
+    headerTitle: "Filipino Students",
+    StudentTab: FilipinoStudentTab,
+    AttendanceTab: FilipinoAttendanceTab,
+  },
+  math: {
+    label: "Math",
+    headerTitle: "Math Students",
+    StudentTab: MathStudentTab,
+    AttendanceTab: MathAttendanceTab,
+  },
+};
+
+const SUBJECT_OPTIONS = [
+  { label: "English", value: "english" as const },
+  { label: "Filipino", value: "filipino" as const },
+  { label: "Math", value: "math" as const },
+];
+
+const TAB_OPTIONS = ["Information List", "Attendance List"] as const;
+
+const normalizeSubject = (slug?: string): SubjectKey => {
+  const value = (slug ?? "english").toLowerCase();
+  if (value === "filipino") return "filipino";
+  if (value === "math" || value === "mathematics") return "math";
+  return "english";
+};
+
+type MasterTeacherStudentsProps = {
+  subjectSlug?: string;
+};
+
+export default function MasterTeacherStudents({ subjectSlug }: MasterTeacherStudentsProps = {}) {
+  const router = useRouter();
+  const subject = useMemo(() => normalizeSubject(subjectSlug), [subjectSlug]);
+  const { label: subjectLabel, headerTitle, StudentTab, AttendanceTab } = SUBJECT_CONFIG[subject];
+
+  const [subjectStudents, setSubjectStudents] = useState<Record<SubjectKey, any[]>>({
+    english: [],
+    filipino: [],
+    math: [],
+  });
+
+  const [activeTab, setActiveTab] = useState<string>(TAB_OPTIONS[0]);
   const [searchTerm, setSearchTerm] = useState("");
-  const [students, setStudents] = useState<any[]>([]);
+
+  useEffect(() => {
+    setActiveTab(TAB_OPTIONS[0]);
+    setSearchTerm("");
+  }, [subject]);
+
+  const students = subjectStudents[subject];
+
+  const setStudents = useCallback(
+    (value: SetStateAction<any[]>) => {
+      setSubjectStudents((prev) => {
+        const current = prev[subject];
+        const next = typeof value === "function" ? value(current) : value;
+        if (next === current) {
+          return prev;
+        }
+        return {
+          ...prev,
+          [subject]: next,
+        };
+      });
+    },
+    [subject]
+  );
+
+  const handleSubjectChange = useCallback(
+    (nextLabel: string) => {
+      const nextSubject = SUBJECT_OPTIONS.find((option) => option.label === nextLabel)?.value ?? "english";
+      if (nextSubject !== subject) {
+        router.push(`/MasterTeacher/RemedialTeacher/students/${nextSubject}`);
+      }
+    },
+    [router, subject]
+  );
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
@@ -26,7 +128,7 @@ export default function MasterTeacherStudents() {
         flex-1 pt-16 flex flex-col overflow-hidden      
       "
       >
-        <Header title="Student List" />
+        <Header title={`Student List`} />
         <main className="flex-1">
           <div
             className="
@@ -55,12 +157,13 @@ export default function MasterTeacherStudents() {
             "
             >
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                <div className="flex items-center gap-0">
-                  <SecondaryHeader title="Students" />
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                  <SecondaryHeader title={headerTitle} />
                   <HeaderDropdown
-                    options={["Information List", "Attendance List"]}
+                    options={[...TAB_OPTIONS]}
                     value={activeTab}
                     onChange={setActiveTab}
+                    className="pl-0"
                   />
                 </div>
                 <div className="flex gap-3 w-full sm:w-auto mt-4 sm:mt-0">
@@ -94,8 +197,12 @@ export default function MasterTeacherStudents() {
                 sm:mt-6
               "
               >
-                {activeTab === "Information List" && <StudentTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
-                {activeTab === "Attendance List" && <AttendanceTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
+                {activeTab === "Information List" && (
+                  <StudentTab students={students} setStudents={setStudents} searchTerm={searchTerm} />
+                )}
+                {activeTab === "Attendance List" && (
+                  <AttendanceTab students={students} setStudents={setStudents} searchTerm={searchTerm} />
+                )}
               </div>
             </div>
           </div>

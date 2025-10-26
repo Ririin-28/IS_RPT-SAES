@@ -8,8 +8,8 @@ export type AccountType = "Principal" | "IT Admin" | "Master Teachers" | "Teache
 export type AccountActionKey =
   | "principal:add"
   | "principal:select"
-  | "it-admin:add"
-  | "it-admin:select"
+  | "it_admin:add"
+  | "it_admin:select"
   | "master-teacher:add"
   | "master-teacher:upload"
   | "master-teacher:select"
@@ -51,8 +51,8 @@ const ACCOUNT_ACTIONS: Record<AccountType, ActionConfig[]> = {
     { label: "Select", action: "principal:select", icon: <SelectIcon /> },
   ],
   "IT Admin": [
-    { label: "Add IT Admin", action: "it-admin:add", icon: <AddIcon /> },
-    { label: "Select", action: "it-admin:select", icon: <SelectIcon /> },
+    { label: "Add IT Admin", action: "it_admin:add", icon: <AddIcon /> },
+    { label: "Select", action: "it_admin:select", icon: <SelectIcon /> },
   ],
   "Master Teachers": [
     { label: "Add MasterTeacher", action: "master-teacher:add", icon: <AddIcon /> },

@@ -1,20 +1,88 @@
 "use client";
 import TeacherSidebar from "@/components/Teacher/Sidebar";
 import TeacherHeader from "@/components/Teacher/Header";
-import { useState } from "react";
+import { useEffect, useMemo, useState, type ComponentType } from "react";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import { FaTimes } from "react-icons/fa";
-// Tabs
-import NonReaderTab from "./Tabs/NonReaderTab";
-import SyllableTab from "./Tabs/SyllableTab";
-import WordTab from "./Tabs/WordTab";
-import SentenceTab from "./Tabs/SentenceTab";
-import ParagraphTab from "./Tabs/ParagraphTab";
+//Tabs
+import EnglishNonReaderTab from "./EnglishTabs/NonReaderTab";
+import EnglishSyllableTab from "./EnglishTabs/SyllableTab";
+import EnglishWordTab from "./EnglishTabs/WordTab";
+import EnglishPhraseTab from "./EnglishTabs/PhraseTab";
+import EnglishSentenceTab from "./EnglishTabs/SentenceTab";
+import EnglishParagraphTab from "./EnglishTabs/ParagraphTab";
+import FilipinoNonReaderTab from "./FilipinoTabs/NonReaderTab";
+import FilipinoSyllableTab from "./FilipinoTabs/SyllableTab";
+import FilipinoWordTab from "./FilipinoTabs/WordTab";
+import FilipinoPhraseTab from "./FilipinoTabs/PhraseTab";
+import FilipinoSentenceTab from "./FilipinoTabs/SentenceTab";
+import FilipinoParagraphTab from "./FilipinoTabs/ParagraphTab";
+import MathNotProficientTab from "./MathTabs/NotProficientTab";
+import MathLowProficientTab from "./MathTabs/LowProficientTab";
+import MathNearlyProficientTab from "./MathTabs/NearlyProficientTab";
+import MathProficientTab from "./MathTabs/ProficientTab";
+import MathHighlyProficientTab from "./MathTabs/HighlyProficientTab";
 
-export default function TeacherMaterials() {
-  const [activeTab, setActiveTab] = useState("Non Reader");
+type SubjectKey = "English" | "Filipino" | "Math";
+
+type TeacherMaterialsProps = {
+  subjectSlug?: string;
+};
+
+const SUBJECT_TABS: Record<SubjectKey, readonly string[]> = {
+  English: ["Non Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"],
+  Filipino: ["Non Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"],
+  Math: ["Not Proficient", "Low Proficient", "Nearly Proficient", "Proficient", "Highly Proficient"],
+};
+
+type TabComponent = ComponentType<Record<string, never>>;
+
+const SUBJECT_COMPONENTS: Record<SubjectKey, Record<string, TabComponent>> = {
+  English: {
+    "Non Reader": EnglishNonReaderTab,
+    Syllable: EnglishSyllableTab,
+    Word: EnglishWordTab,
+    Phrase: EnglishPhraseTab,
+    Sentence: EnglishSentenceTab,
+    Paragraph: EnglishParagraphTab,
+  },
+  Filipino: {
+    "Non Reader": FilipinoNonReaderTab,
+    Syllable: FilipinoSyllableTab,
+    Word: FilipinoWordTab,
+    Phrase: FilipinoPhraseTab,
+    Sentence: FilipinoSentenceTab,
+    Paragraph: FilipinoParagraphTab,
+  },
+  Math: {
+    "Not Proficient": MathNotProficientTab,
+    "Low Proficient": MathLowProficientTab,
+    "Nearly Proficient": MathNearlyProficientTab,
+    Proficient: MathProficientTab,
+    "Highly Proficient": MathHighlyProficientTab,
+  },
+};
+
+const normalizeSubject = (slug?: string): SubjectKey => {
+  const normalized = (slug ?? "english").toLowerCase();
+  if (normalized === "filipino") return "Filipino";
+  if (normalized === "math" || normalized === "mathematics") return "Math";
+  return "English";
+};
+
+export default function TeacherMaterials({ subjectSlug }: TeacherMaterialsProps) {
+  const subject = useMemo(() => normalizeSubject(subjectSlug), [subjectSlug]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [activeTab, setActiveTab] = useState(() => SUBJECT_TABS[subject][0]);
+
+  useEffect(() => {
+    setActiveTab(SUBJECT_TABS[subject][0]);
+  }, [subject]);
+
+  const tabOptions = SUBJECT_TABS[subject];
+  const subjectComponents = SUBJECT_COMPONENTS[subject];
+  const ActiveTabComponent = subjectComponents[activeTab] ?? subjectComponents[tabOptions[0]];
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
@@ -59,11 +127,12 @@ export default function TeacherMaterials() {
             >
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                 <div className="flex items-center gap-0">
-                  <SecondaryHeader title="Materials for" />
+                  <SecondaryHeader title={`${subject} Materials`} />
                   <HeaderDropdown
-                    options={["Non Reader", "Syllable", "Word", "Sentence", "Paragraph"]}
+                    options={[...tabOptions]}
                     value={activeTab}
                     onChange={setActiveTab}
+                    className="pl-2"
                   />
                 </div>
                 <div className="flex gap-3 w-full sm:w-auto mt-4 sm:mt-0">
@@ -97,11 +166,7 @@ export default function TeacherMaterials() {
                 sm:mt-2
               "
               >
-                {activeTab === "Non Reader" && <NonReaderTab />}
-                {activeTab === "Syllable" && <SyllableTab />}
-                {activeTab === "Word" && <WordTab />}
-                {activeTab === "Sentence" && <SentenceTab />}
-                {activeTab === "Paragraph" && <ParagraphTab />}
+                {ActiveTabComponent ? <ActiveTabComponent /> : null}
               </div>
             </div>
           </div>

@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ITAdminSidebar from "@/components/IT_Admin/Sidebar";
 import ITAdminHeader from "@/components/IT_Admin/Header";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
@@ -33,15 +33,222 @@ const ACCOUNT_OPTIONS = ["IT Admin", "Principal", "Master Teachers", "Teachers",
 
 type AccountOption = (typeof ACCOUNT_OPTIONS)[number];
 
+type ArchiveRoleKey = "admin" | "principal" | "master_teacher" | "teacher" | "student";
+
+const ACCOUNT_TYPE_TO_ROLE: Record<AccountOption, ArchiveRoleKey> = {
+  "IT Admin": "admin",
+  Principal: "principal",
+  "Master Teachers": "master_teacher",
+  Teachers: "teacher",
+  Students: "student",
+};
+
+interface ArchiveEntry {
+  archiveId: number;
+  userId: number | null;
+  roleKey: ArchiveRoleKey | null;
+  roleLabel: string;
+  name: string | null;
+  email?: string;
+  reason?: string;
+  archivedDate: string | null;
+  archivedDateDisplay: string;
+  grade?: string | null;
+  section?: string | null;
+  contactNumber?: string | null;
+  [key: string]: unknown;
+}
+
+const normalizeRoleKey = (role: string | null | undefined): ArchiveRoleKey | null => {
+  if (!role) return null;
+  const value = role.toLowerCase();
+  if (value === "admin" || value === "it_admin" || value === "it-admin") return "admin";
+  if (value === "principal") return "principal";
+  if (value === "master_teacher" || value === "master-teacher" || value === "masterteacher") return "master_teacher";
+  if (value === "teacher" || value === "faculty") return "teacher";
+  if (value === "student") return "student";
+  return null;
+};
+
+function toStringOrNull(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+
+  return String(value).trim() || null;
+}
+
+function normalizeIsoTimestamp(value: unknown): string | null {
+  if (!value) {
+    return null;
+  }
+
+  if (typeof value === "string") {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+
+  const parsed = new Date(value as string);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function formatTimestamp(value: string | null | undefined): string {
+  if (!value) {
+    return "—";
+  }
+
+  try {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return "Invalid Date";
+    }
+
+    return parsed.toLocaleString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
+    });
+  } catch {
+    return "Invalid Date";
+  }
+}
+
+function buildFullName(record: any): string | null {
+  const nameCandidate = toStringOrNull(record.name ?? record.fullName ?? record.full_name);
+  if (nameCandidate) {
+    return nameCandidate;
+  }
+
+  const first = toStringOrNull(record.firstName ?? record.first_name);
+  const last = toStringOrNull(record.lastName ?? record.last_name);
+  const combined = `${first ?? ""} ${last ?? ""}`.trim();
+  if (combined.length > 0) {
+    return combined;
+  }
+
+  const username = toStringOrNull(record.username);
+  if (username) {
+    return username;
+  }
+
+  const email = toStringOrNull(record.email ?? record.user_email);
+  if (email) {
+    return email;
+  }
+
+  const userId = record.userId ?? record.user_id;
+  if (userId !== null && userId !== undefined) {
+    return `User ${userId}`;
+  }
+
+  return "Unknown User";
+}
+
+function normalizeArchiveRecord(record: any): ArchiveEntry {
+  const archiveId = record.archiveId ?? record.archive_id ?? 0;
+  const userId = record.userId ?? record.user_id ?? null;
+  const roleKey = normalizeRoleKey(record.role ?? record.roleKey);
+  const roleLabel = record.roleLabel ?? record.role ?? "Unknown";
+  const archivedIso = normalizeIsoTimestamp(record.archivedDate ?? record.timestamp ?? record.archived_at ?? null);
+  const archivedDisplay = formatTimestamp(archivedIso);
+  const email = toStringOrNull(record.email ?? record.user_email ?? record.contactEmail);
+  const contactNumber = toStringOrNull(
+    record.contactNumber ?? record.contact_number ?? record.contactNo ?? record.phone ?? record.mobile
+  );
+  const grade = record.grade != null ? toStringOrNull(record.grade) : null;
+  const section = record.section != null ? toStringOrNull(record.section) : null;
+
+  return {
+    ...record,
+    archiveId,
+    userId,
+    roleKey,
+    roleLabel,
+    name: buildFullName(record),
+    email: email ?? undefined,
+    reason: toStringOrNull(record.reason) ?? undefined,
+    archivedDate: archivedIso,
+    archivedDateDisplay: archivedDisplay,
+    grade,
+    section,
+    contactNumber: contactNumber ?? null,
+  };
+}
+
 export default function ITAdminArchive() {
   const [activeTab, setActiveTab] = useState<string>("All Grades");
   const [accountType, setAccountType] = useState<AccountOption>("Master Teachers");
   const [accounts, setAccounts] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [archiveRecords, setArchiveRecords] = useState<ArchiveEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const showGradeDropdown = useMemo(() => {
     return accountType === "Master Teachers" || accountType === "Teachers" || accountType === "Students";
   }, [accountType]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let isActive = true;
+
+    const fetchArchive = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+  const response = await fetch("/api/it_admin/archive", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          throw new Error(`Request failed with status ${response.status}`);
+        }
+        const payload = await response.json();
+        if (!isActive) return;
+        const records: ArchiveEntry[] = (payload.records ?? []).map((record: any) => normalizeArchiveRecord(record));
+        setArchiveRecords(records);
+      } catch (err) {
+        if (!isActive) return;
+        if ((err as Error).name === "AbortError") {
+          return;
+        }
+        setError(err instanceof Error ? err.message : "Unable to load archived accounts.");
+        setArchiveRecords([]);
+      } finally {
+        if (isActive) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    fetchArchive();
+
+    return () => {
+      isActive = false;
+      controller.abort();
+    };
+  }, []);
 
   const handleAccountTypeChange = (next: string) => {
     const selected = ACCOUNT_OPTIONS.find((option) => option === next) ?? ACCOUNT_OPTIONS[0];
@@ -55,6 +262,12 @@ export default function ITAdminArchive() {
     const selected = GRADE_OPTIONS.find((option) => option === next) ?? GRADE_OPTIONS[0];
     setActiveTab(selected);
   };
+
+  useEffect(() => {
+    const roleKey = ACCOUNT_TYPE_TO_ROLE[accountType];
+    const filtered = archiveRecords.filter((entry) => entry.roleKey === roleKey);
+    setAccounts(filtered);
+  }, [accountType, archiveRecords]);
 
   return (
 	<div className="flex h-screen bg-white overflow-hidden">
@@ -110,6 +323,12 @@ export default function ITAdminArchive() {
               </div>
 
               {/*---------------------------------Tab Content---------------------------------*/}
+              {isLoading && (
+                <p className="text-sm text-gray-500">Loading archived accounts…</p>
+              )}
+              {!isLoading && error && (
+                <p className="text-sm text-red-600" role="alert">{error}</p>
+              )}
               <div className="mt-4 sm:mt-6">
                 {accountType === "IT Admin" && (
                   <ITAdminArchiveTab itAdmins={accounts} searchTerm={searchTerm} />

@@ -83,10 +83,19 @@ export default function Sidebar() {
         children: [
           { label: "English", href: "/Principal/materials/english", subject: "english" },
           { label: "Filipino", href: "/Principal/materials/filipino", subject: "filipino" },
-          { label: "Mathematics", href: "/Principal/materials/mathematics", subject: "mathematics" },
+          { label: "Math", href: "/Principal/materials/mathematics", subject: "mathematics" },
         ],
       },
-      { label: "Reports", icon: <ReportsIcon />, path: "/Principal/reports" },
+      {
+        label: "Reports",
+        icon: <ReportsIcon />,
+        path: "/Principal/reports",
+        children: [
+          { label: "English", href: "/Principal/reports/english", subject: "english" },
+          { label: "Filipino", href: "/Principal/reports/filipino", subject: "filipino" },
+          { label: "Math", href: "/Principal/reports/math", subject: "math" },
+        ],
+      },
     ],
     []
   );

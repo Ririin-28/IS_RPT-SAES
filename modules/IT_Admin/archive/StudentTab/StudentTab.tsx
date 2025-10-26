@@ -40,7 +40,11 @@ export default function StudentTab({ students, searchTerm, selectedGrade }: Stud
           { key: "name", title: "Full Name" },
           { key: "grade", title: "Grade" },
           { key: "section", title: "Section" },
-          { key: "archivedDate", title: "Date Archived" },
+          {
+            key: "archivedDate",
+            title: "Date Archived",
+            render: (row: any) => row.archivedDateDisplay ?? "—",
+          },
         ]}
         data={filteredStudents.map((student, index) => ({
           ...student,

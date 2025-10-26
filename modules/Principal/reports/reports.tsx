@@ -3,15 +3,44 @@ import Sidebar from "@/components/Principal/Sidebar";
 import PrincipalHeader from "@/components/Principal/Header";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
-import { useState } from "react";
+import { useEffect, useMemo, useState, type ComponentType } from "react";
 import { FaTimes } from "react-icons/fa";
 // Tabs
-import GradeOneTab from "./Tabs/GradeOneTab";
-import GradeTwoTab from "./Tabs/GradeTwoTab";
-import GradeThreeTab from "./Tabs/GradeThreeTab";
-import GradeFourTab from "./Tabs/GradeFourTab";
-import GradeFiveTab from "./Tabs/GradeFiveTab";
-import GradeSixTab from "./Tabs/GradeSixTab";
+import EnglishGradeOneTab from "./EnglishTabs/GradeOneTab";
+import EnglishGradeTwoTab from "./EnglishTabs/GradeTwoTab";
+import EnglishGradeThreeTab from "./EnglishTabs/GradeThreeTab";
+import EnglishGradeFourTab from "./EnglishTabs/GradeFourTab";
+import EnglishGradeFiveTab from "./EnglishTabs/GradeFiveTab";
+import EnglishGradeSixTab from "./EnglishTabs/GradeSixTab";
+import FilipinoGradeOneTab from "./FilipinoTabs/GradeOneTab";
+import FilipinoGradeTwoTab from "./FilipinoTabs/GradeTwoTab";
+import FilipinoGradeThreeTab from "./FilipinoTabs/GradeThreeTab";
+import FilipinoGradeFourTab from "./FilipinoTabs/GradeFourTab";
+import FilipinoGradeFiveTab from "./FilipinoTabs/GradeFiveTab";
+import FilipinoGradeSixTab from "./FilipinoTabs/GradeSixTab";
+import MathGradeOneTab from "./MathTabs/GradeOneTab";
+import MathGradeTwoTab from "./MathTabs/GradeTwoTab";
+import MathGradeThreeTab from "./MathTabs/GradeThreeTab";
+import MathGradeFourTab from "./MathTabs/GradeFourTab";
+import MathGradeFiveTab from "./MathTabs/GradeFiveTab";
+import MathGradeSixTab from "./MathTabs/GradeSixTab";
+
+type SubjectKey = "english" | "filipino" | "math";
+
+interface PrincipalReportsProps {
+  subject?: SubjectKey;
+}
+
+const SUBJECT_LABELS: Record<SubjectKey, string> = {
+  english: "English",
+  filipino: "Filipino",
+  math: "Math",
+};
+
+type GradeTabProps = {
+  searchTerm: string;
+  onSearchTermChange: (value: string) => void;
+};
 
 const GRADE_OPTIONS = [
   "Grade 1",
@@ -22,27 +51,55 @@ const GRADE_OPTIONS = [
   "Grade 6",
 ];
 
-const MONTH_OPTIONS = [
-  "Monthly",
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
+const SUBJECT_GRADE_COMPONENTS: Record<SubjectKey, Record<string, ComponentType<GradeTabProps>>> = {
+  english: {
+    "Grade 1": EnglishGradeOneTab,
+    "Grade 2": EnglishGradeTwoTab,
+    "Grade 3": EnglishGradeThreeTab,
+    "Grade 4": EnglishGradeFourTab,
+    "Grade 5": EnglishGradeFiveTab,
+    "Grade 6": EnglishGradeSixTab,
+  },
+  filipino: {
+    "Grade 1": FilipinoGradeOneTab,
+    "Grade 2": FilipinoGradeTwoTab,
+    "Grade 3": FilipinoGradeThreeTab,
+    "Grade 4": FilipinoGradeFourTab,
+    "Grade 5": FilipinoGradeFiveTab,
+    "Grade 6": FilipinoGradeSixTab,
+  },
+  math: {
+    "Grade 1": MathGradeOneTab,
+    "Grade 2": MathGradeTwoTab,
+    "Grade 3": MathGradeThreeTab,
+    "Grade 4": MathGradeFourTab,
+    "Grade 5": MathGradeFiveTab,
+    "Grade 6": MathGradeSixTab,
+  },
+};
 
-export default function PrincipalReports() {
-  const [activeTab, setActiveTab] = useState("Grade 1");
-  const [reports, setReports] = useState<any[]>([]);
-  const [selectedMonth, setSelectedMonth] = useState("Monthly");
+export default function PrincipalReports({ subject = "english" }: PrincipalReportsProps) {
   const [searchTerm, setSearchTerm] = useState("");
+  const [activeGrade, setActiveGrade] = useState(() => {
+    const initialComponents = SUBJECT_GRADE_COMPONENTS[subject] ?? SUBJECT_GRADE_COMPONENTS.english;
+    return Object.keys(initialComponents)[0] ?? GRADE_OPTIONS[0];
+  });
+  const subjectLabel = useMemo(() => SUBJECT_LABELS[subject] ?? "" , [subject]);
+  const subjectGradeComponents = SUBJECT_GRADE_COMPONENTS[subject] ?? SUBJECT_GRADE_COMPONENTS.english;
+  const gradeOptions = useMemo(() => Object.keys(subjectGradeComponents), [subjectGradeComponents]);
+  const fallbackGrade = gradeOptions[0] ?? "";
+  const ActiveGradeComponent =
+    subjectGradeComponents[activeGrade] ??
+    (fallbackGrade ? subjectGradeComponents[fallbackGrade] : undefined) ??
+    EnglishGradeOneTab;
+
+  useEffect(() => {
+    if (!activeGrade || !(activeGrade in subjectGradeComponents)) {
+      if (fallbackGrade) {
+        setActiveGrade(fallbackGrade);
+      }
+    }
+  }, [subject, activeGrade, subjectGradeComponents, fallbackGrade]);
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
@@ -86,21 +143,13 @@ export default function PrincipalReports() {
             "
             >
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                {/* Title and dropdowns aligned to the left */}
                 <div className="flex flex-wrap sm:flex-nowrap items-center gap-0 w-full sm:w-auto">
+                  <SecondaryHeader title={`Reports for ${subjectLabel}`} />
                   <HeaderDropdown
-                    options={MONTH_OPTIONS}
-                    value={selectedMonth}
-                    onChange={(value) => setSelectedMonth(value)}
-                    openOnHover
-                  />
-                  <SecondaryHeader title="Reports for" />
-                  <HeaderDropdown
-                    options={GRADE_OPTIONS}
-                    value={activeTab}
-                    onChange={(value) => setActiveTab(value)}
-                    openOnHover
-                    className="min-w-[100px]"
+                    options={gradeOptions.length ? gradeOptions : GRADE_OPTIONS}
+                    value={activeGrade}
+                    onChange={(value) => setActiveGrade(value)}
+                    className="pl-2"
                   />
                 </div>
 
@@ -127,61 +176,11 @@ export default function PrincipalReports() {
               </div>
 
               {/*---------------------------------Tab Content---------------------------------*/}
-              <div>
-                {activeTab === "Grade 1" && (
-                  <GradeOneTab
-                    reports={reports}
-                    setReports={setReports}
-                    selectedMonth={selectedMonth}
-                    searchTerm={searchTerm}
-                    onSearchTermChange={(value) => setSearchTerm(value)}
-                  />
-                )}
-                {activeTab === "Grade 2" && (
-                  <GradeTwoTab
-                    reports={reports}
-                    setReports={setReports}
-                    selectedMonth={selectedMonth}
-                    searchTerm={searchTerm}
-                    onSearchTermChange={(value) => setSearchTerm(value)}
-                  />
-                )}
-                {activeTab === "Grade 3" && (
-                  <GradeThreeTab
-                    reports={reports}
-                    setReports={setReports}
-                    selectedMonth={selectedMonth}
-                    searchTerm={searchTerm}
-                    onSearchTermChange={(value) => setSearchTerm(value)}
-                  />
-                )}
-                {activeTab === "Grade 4" && (
-                  <GradeFourTab
-                    reports={reports}
-                    setReports={setReports}
-                    selectedMonth={selectedMonth}
-                    searchTerm={searchTerm}
-                    onSearchTermChange={(value) => setSearchTerm(value)}
-                  />
-                )}
-                {activeTab === "Grade 5" && (
-                  <GradeFiveTab
-                    reports={reports}
-                    setReports={setReports}
-                    selectedMonth={selectedMonth}
-                    searchTerm={searchTerm}
-                    onSearchTermChange={(value) => setSearchTerm(value)}
-                  />
-                )}
-                {activeTab === "Grade 6" && (
-                  <GradeSixTab
-                    reports={reports}
-                    setReports={setReports}
-                    selectedMonth={selectedMonth}
-                    searchTerm={searchTerm}
-                    onSearchTermChange={(value) => setSearchTerm(value)}
-                  />
-                )}
+              <div className="space-y-4">
+                <ActiveGradeComponent
+                  searchTerm={searchTerm}
+                  onSearchTermChange={(value) => setSearchTerm(value)}
+                />
               </div>
             </div>
           </div>
