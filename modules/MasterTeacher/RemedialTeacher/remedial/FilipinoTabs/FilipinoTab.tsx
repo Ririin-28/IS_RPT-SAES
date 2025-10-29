@@ -1,0 +1,275 @@
+"use client";
+import { useEffect, useRef, useState } from "react";
+import UtilityButton from "@/components/Common/Buttons/UtilityButton";
+import TableList from "@/components/Common/Tables/TableList";
+
+export const FILIPINO_LEVELS = [
+  "Non Reader",
+  "Syllable",
+  "Word",
+  "Phrase",
+  "Sentence",
+  "Paragraph",
+] as const;
+
+export type FilipinoLevel = (typeof FILIPINO_LEVELS)[number];
+
+interface FilipinoRemedial {
+  id: number;
+  title: string;
+  phonemic: string;
+  dateToUse: string;
+}
+
+const INITIAL_REMEDIALS: Record<FilipinoLevel, FilipinoRemedial[]> = {
+  "Non Reader": [
+    {
+      id: 1,
+      title: "Aralin 1 - Katinig",
+      phonemic: "Non-Reader",
+      dateToUse: "2024-06-01",
+    },
+    {
+      id: 2,
+      title: "Aralin 2 - Patinig",
+      phonemic: "Non-Reader",
+      dateToUse: "2024-06-02",
+    },
+  ],
+  Syllable: [],
+  Word: [],
+  Phrase: [],
+  Sentence: [],
+  Paragraph: [],
+};
+const STORAGE_KEY = "MASTER_TEACHER_REMEDIAL_FILIPINO";
+
+type FilipinoRemedialsByLevel = Record<FilipinoLevel, FilipinoRemedial[]>;
+
+function cloneInitialRemedials(): FilipinoRemedialsByLevel {
+  return FILIPINO_LEVELS.reduce((acc, level) => {
+    acc[level] = INITIAL_REMEDIALS[level].map((item) => ({ ...item }));
+    return acc;
+  }, {} as FilipinoRemedialsByLevel);
+}
+
+function normalizeFilipinoEntries(entries: FilipinoRemedial[] | undefined, fallback: FilipinoRemedial[]): FilipinoRemedial[] {
+  const fallbackList = fallback.length > 0 ? fallback : [{ id: 0, title: "", phonemic: "", dateToUse: "" }];
+
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return fallbackList.map((item) => ({ ...item }));
+  }
+
+  return entries.map((item: any, index) => {
+    const template = fallback[index] ?? fallbackList[Math.min(index, fallbackList.length - 1)];
+
+    return {
+      id: typeof item?.id === "number" ? item.id : template.id,
+      title: typeof item?.title === "string" && item.title.trim() ? item.title : template.title,
+      phonemic: typeof item?.phonemic === "string" && item.phonemic.trim() ? item.phonemic : template.phonemic,
+      dateToUse: typeof item?.dateToUse === "string" && item.dateToUse.trim() ? item.dateToUse : template.dateToUse,
+    };
+  });
+}
+
+function readStoredFilipinoRemedials(): FilipinoRemedialsByLevel | null {
+  const storedValue = window.localStorage.getItem(STORAGE_KEY);
+  if (!storedValue) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(storedValue) as Partial<Record<FilipinoLevel, FilipinoRemedial[]>>;
+    return FILIPINO_LEVELS.reduce((acc, level) => {
+      const normalized = normalizeFilipinoEntries(parsed?.[level], INITIAL_REMEDIALS[level]);
+      acc[level] = normalized;
+      return acc;
+    }, {} as FilipinoRemedialsByLevel);
+  } catch {
+    return null;
+  }
+}
+
+const formatDate = (value: string) => {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime())
+    ? value
+    : parsed.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
+};
+
+interface FilipinoTabProps {
+  level: FilipinoLevel;
+}
+
+export default function FilipinoTab({ level }: FilipinoTabProps) {
+  const hasLoadedFromStorage = useRef(false);
+  const [remedialsByLevel, setRemedialsByLevel] = useState<FilipinoRemedialsByLevel>(() => cloneInitialRemedials());
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [draft, setDraft] = useState<FilipinoRemedial | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  const remedials = remedialsByLevel[level] ?? [];
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!hasLoadedFromStorage.current) return;
+
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(remedialsByLevel));
+  }, [remedialsByLevel]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const stored = readStoredFilipinoRemedials();
+    if (stored) {
+      setRemedialsByLevel(stored);
+    } else {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(cloneInitialRemedials()));
+    }
+
+    hasLoadedFromStorage.current = true;
+  }, []);
+
+  useEffect(() => {
+    setEditingId(null);
+    setDraft(null);
+    setValidationError(null);
+  }, [level]);
+
+  const startEdit = (id: number) => {
+    const target = remedials.find((item) => item.id === id);
+    if (!target) return;
+    setValidationError(null);
+    setEditingId(id);
+    setDraft({ ...target });
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setDraft(null);
+    setValidationError(null);
+  };
+
+  const updateDraft = <K extends keyof FilipinoRemedial>(key: K, value: FilipinoRemedial[K]) => {
+    setDraft((prev) => (prev ? { ...prev, [key]: value } : prev));
+  };
+
+  const handleSave = () => {
+    if (!draft) return;
+
+    const trimmedTitle = draft.title.trim();
+    const trimmedPhonemic = draft.phonemic.trim();
+    const dateValue = draft.dateToUse.trim();
+
+    if (!trimmedTitle || !trimmedPhonemic || !dateValue) {
+      setValidationError("Pakipunan ang lahat ng detalye bago mag-save.");
+      return;
+    }
+
+    const updated: FilipinoRemedial = {
+      id: draft.id,
+      title: trimmedTitle,
+      phonemic: trimmedPhonemic,
+      dateToUse: dateValue,
+    };
+
+    setRemedialsByLevel((prev) => ({
+      ...prev,
+      [level]: prev[level].map((item) => (item.id === draft.id ? updated : item)),
+    }));
+
+    cancelEdit();
+  };
+
+  const rows = remedials.map((remedial, index) => ({
+    ...remedial,
+    no: index + 1,
+    startIndex: index,
+  }));
+
+  return (
+    <div>
+      <div className="flex flex-row justify-between items-center mb-4 sm:mb-6 md:mb-2">
+        <p className="text-gray-600 text-md font-medium">Tota: {remedials.length}</p>
+        <div className="flex gap-2" />
+      </div>
+      {validationError && <p className="text-sm text-red-600 mb-3">{validationError}</p>}
+
+      <TableList
+        columns={[
+          { key: "no", title: "No#" },
+          {
+            key: "title",
+            title: "Title",
+            render: (row: any) =>
+              editingId === row.id && draft ? (
+                <input
+                  value={draft.title}
+                  onChange={(event) => updateDraft("title", event.target.value)}
+                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-700"
+                />
+              ) : (
+                row.title
+              ),
+          },
+          {
+            key: "phonemic",
+            title: "Phonemic",
+            render: (row: any) =>
+              editingId === row.id && draft ? (
+                <input
+                  value={draft.phonemic}
+                  onChange={(event) => updateDraft("phonemic", event.target.value)}
+                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-700"
+                />
+              ) : (
+                row.phonemic
+              ),
+          },
+          {
+            key: "dateToUse",
+            title: "Date to use",
+            render: (row: any) =>
+              editingId === row.id && draft ? (
+                <input
+                  type="date"
+                  value={draft.dateToUse}
+                  onChange={(event) => updateDraft("dateToUse", event.target.value)}
+                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-700"
+                />
+              ) : (
+                formatDate(row.dateToUse)
+              ),
+          },
+        ]}
+        data={rows}
+        actions={(row: any) => (
+          <>
+            <a href={`/MasterTeacher/RemedialTeacher/remedial/FilipinoFlashcards?start=${row.startIndex}`}>
+              <UtilityButton small>Play</UtilityButton>
+            </a>
+            {editingId === row.id ? (
+              <>
+                <UtilityButton small onClick={handleSave}>
+                  Save
+                </UtilityButton>
+                <UtilityButton
+                  small
+                  className="bg-white text-[#013300] border-[#013300] hover:bg-gray-100"
+                  onClick={cancelEdit}
+                >
+                  Cancel
+                </UtilityButton>
+              </>
+            ) : (
+              <UtilityButton small onClick={() => startEdit(row.id)}>
+                Edit
+              </UtilityButton>
+            )}
+          </>
+        )}
+        pageSize={10}
+      />
+    </div>
+  );
+}
