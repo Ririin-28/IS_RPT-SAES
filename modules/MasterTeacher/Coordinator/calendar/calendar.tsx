@@ -6,36 +6,64 @@ import { useForm } from "react-hook-form";
 // Button Components
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
-import UtilityButton from "@/components/Common/Buttons/UtilityButton";
-import DangerButton from "@/components/Common/Buttons/DangerButton";
-// Text Components
-import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
-import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
-import BodyText from "@/components/Common/Texts/BodyText";
 // Modal Components
 import AddScheduleModal from "./Modals/AddScheduleModal";
 import ActivityDetailModal from "./Modals/ActivityDetailModal";
 import DeleteConfirmationModal from "./Modals/DeleteConfirmationModal";
+import WeeklyScheduleModal, { WEEKDAY_ORDER, WeeklyScheduleFormData } from "./Modals/WeeklyScheduleModal";
 
 interface Activity {
   id: number;
   title: string;
   day: string;
   roomNo: string;
-  description: string;
+  description?: string;
   date: Date;
   end: Date;
   type: string;
+  gradeLevel?: string;
+  subject?: string;
+  isWeeklyTemplate?: boolean;
+  weekRef?: string;
 }
+
+const GRADE_LEVEL = "Grade 3";
+const DEFAULT_ROOM = "Grade 3 Classroom";
+
+const parseDateInput = (value: string): Date => {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day);
+};
+
+const createDateWithTime = (baseDate: Date, time: string): Date => {
+  const [hour, minute] = time.split(":").map(Number);
+  const result = new Date(baseDate);
+  result.setHours(hour, minute, 0, 0);
+  return result;
+};
+
+const formatTimeLabel = (time: string): string => {
+  const [hour, minute] = time.split(":").map(Number);
+  const date = new Date();
+  date.setHours(hour, minute, 0, 0);
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+};
+
+const formatLongDate = (date: Date): string =>
+  date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+
+const buildWeekKey = (gradeLevel: string, weekStart: string) => `${gradeLevel}-${weekStart}`;
 
 export default function MasterTeacherCalendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState("month");
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showWeeklyModal, setShowWeeklyModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [activityToDelete, setActivityToDelete] = useState<Activity | null>(null);
+  const [weeklySchedule, setWeeklySchedule] = useState<WeeklyScheduleFormData | null>(null);
 
   // React Hook Form setup
   const formMethods = useForm({
@@ -114,7 +142,7 @@ export default function MasterTeacherCalendar() {
     setShowAddModal(true);
   };
 
-  // Add new schedule
+  // Add new schedule from modal (single)
   const handleAddSchedule = (data: any) => {
     const [year, month, day] = data.date.split("-").map(Number);
     const startDate = new Date(year, month - 1, day, 9, 0, 0);
@@ -129,9 +157,58 @@ export default function MasterTeacherCalendar() {
       type: "class",
     };
 
-    setActivities([...activities, newActivity]);
+    setActivities((prev) => [...prev, newActivity]);
     setShowAddModal(false);
     reset();
+  };
+
+  const generateActivitiesForWeek = (schedule: WeeklyScheduleFormData): Activity[] => {
+    const baseId = activities.length > 0 ? Math.max(...activities.map((a) => a.id)) + 1 : 1;
+    const mondayDate = parseDateInput(schedule.weekStart);
+    const weekKey = buildWeekKey(GRADE_LEVEL, schedule.weekStart);
+
+    return WEEKDAY_ORDER.map((day, index) => {
+      const activityDate = new Date(mondayDate);
+      activityDate.setDate(activityDate.getDate() + index);
+      const startDate = createDateWithTime(activityDate, schedule.startTime);
+      const endDate = createDateWithTime(activityDate, schedule.endTime);
+
+      return {
+        id: baseId + index,
+        title: `${schedule.subjects[day]} Remediation Session`,
+        day,
+        roomNo: DEFAULT_ROOM,
+        description: `${schedule.subjects[day]} remediation for ${GRADE_LEVEL}`,
+        date: startDate,
+        end: endDate,
+        type: "class",
+        gradeLevel: GRADE_LEVEL,
+        subject: schedule.subjects[day],
+        isWeeklyTemplate: true,
+        weekRef: weekKey,
+      } satisfies Activity;
+    });
+  };
+
+  const handleWeeklySave = (data: WeeklyScheduleFormData) => {
+    const weekActivities = generateActivitiesForWeek(data);
+    const weekKey = buildWeekKey(GRADE_LEVEL, data.weekStart);
+
+    setActivities((prev) => {
+      const filtered = prev.filter((activity) => activity.weekRef !== weekKey);
+      return [...filtered, ...weekActivities];
+    });
+
+    setWeeklySchedule(data);
+    setShowWeeklyModal(false);
+  };
+
+  const clearWeeklyPlan = () => {
+    if (weeklySchedule) {
+      const weekKey = buildWeekKey(GRADE_LEVEL, weeklySchedule.weekStart);
+      setActivities((prev) => prev.filter((activity) => activity.weekRef !== weekKey));
+    }
+    setWeeklySchedule(null);
   };
 
   // Delete schedule with confirmation
@@ -197,15 +274,23 @@ export default function MasterTeacherCalendar() {
                   >
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
-                        <div className="font-medium text-gray-900">{activity.title}</div>
-                        <div className="text-sm text-gray-600 mt-1">
-                          {activity.date.toLocaleDateString("en-US", { 
-                            month: "long", 
-                            day: "numeric", 
-                            year: "numeric" 
-                          })}
+                        <div className="font-medium text-gray-900">
+                          {activity.subject ?? activity.title}
                         </div>
-                        <div className="text-xs text-gray-500 mt-1">{activity.roomNo}</div>
+                        <div className="text-sm text-gray-600 mt-1">
+                          {activity.date.toLocaleDateString("en-US", {
+                            month: "long",
+                            day: "numeric",
+                            year: "numeric",
+                          })}
+                          {" · "}
+                          {activity.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          {" - "}
+                          {activity.end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          {(activity.gradeLevel ?? GRADE_LEVEL) + " · " + activity.roomNo}
+                        </div>
                       </div>
                       <button
                         onClick={(e) => {
@@ -224,7 +309,7 @@ export default function MasterTeacherCalendar() {
           ))
         ) : (
           <div className="text-center text-gray-500 py-8">
-            No activities scheduled. Double-click on a date in month view to add activities.
+            No activities scheduled yet. Plan the weekly subjects above or double-click a date in month view to add a single session.
           </div>
         )}
       </div>
@@ -256,7 +341,7 @@ export default function MasterTeacherCalendar() {
           days.push(
             <div
               key={`day-${day}`}
-              className="h-20 p-1 border border-gray-100 overflow-hidden relative hover:bg-gray-50 transition-colors cursor-pointer"
+              className="h-24 p-1 border overflow-hidden relative hover:bg-gray-50 transition-colors cursor-pointer border-gray-100"
               onDoubleClick={() => handleDateDoubleClick(currentDay)}
             >
               <div className="text-right text-sm font-medium text-gray-800 mb-1">
@@ -275,8 +360,10 @@ export default function MasterTeacherCalendar() {
                     className={`text-xs p-1 rounded truncate cursor-pointer border ${getActivityColor(activity.type)}`}
                     onClick={() => setSelectedActivity(activity)}
                   >
-                    <div className="flex justify-between items-center">
-                      <span className="truncate">{activity.title}</span>
+                    <div className="flex justify-between items-center gap-2">
+                      <span className="truncate font-semibold text-[#013300]">
+                        {activity.subject ?? activity.title}
+                      </span>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -286,6 +373,12 @@ export default function MasterTeacherCalendar() {
                       >
                         ×
                       </button>
+                    </div>
+                    <div className="mt-0.5 flex items-center justify-between text-[0.65rem] text-gray-600">
+                      <span className="truncate">{activity.gradeLevel ?? GRADE_LEVEL}</span>
+                      <span>
+                        {activity.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </span>
                     </div>
                   </div>
                 ))}
@@ -373,12 +466,16 @@ export default function MasterTeacherCalendar() {
                 >
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
-                      <div className="font-medium text-gray-900 text-sm">{activity.title}</div>
+                      <div className="font-medium text-gray-900 text-sm">
+                        {activity.subject ?? activity.title}
+                      </div>
                       <div className="text-xs text-gray-600 mt-1">
                         {activity.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} -{" "}
                         {activity.end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                       </div>
-                      <div className="text-xs text-gray-500 mt-1">{activity.roomNo}</div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {(activity.gradeLevel ?? GRADE_LEVEL) + " · " + activity.roomNo}
+                      </div>
                     </div>
                     <button
                       onClick={(e) => {
@@ -403,6 +500,11 @@ export default function MasterTeacherCalendar() {
     return <div className="divide-y">{days}</div>;
   };
 
+  const weeklyWeekStartLabel = weeklySchedule ? formatLongDate(parseDateInput(weeklySchedule.weekStart)) : null;
+  const weeklyTimeLabel = weeklySchedule
+    ? `${formatTimeLabel(weeklySchedule.startTime)} - ${formatTimeLabel(weeklySchedule.endTime)}`
+    : null;
+
   return (
     <div className="flex h-screen bg-white overflow-hidden">
       <Sidebar />
@@ -412,60 +514,121 @@ export default function MasterTeacherCalendar() {
           <div className="p-4 h-full sm:p-5 md:p-6">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-full min-h-[400px] overflow-y-auto p-4 sm:p-5 md:p-6">
               {/* Calendar Controls */}
-              <div className="flex flex-col space-y-3 mb-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
-                <div className="flex items-center space-x-2 sm:space-x-3">
-                  <div className="flex items-center space-x-1">
-                    <button onClick={prevPeriod} className="p-2 rounded-md hover:bg-gray-100 text-gray-700">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
-                      </svg>
-                    </button>
-                    <button onClick={nextPeriod} className="p-2 rounded-md hover:bg-gray-100 text-gray-700">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                      </svg>
+              <div className="flex flex-col gap-3 mb-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center space-x-2 sm:space-x-3">
+                    <div className="flex items-center space-x-1">
+                      <button onClick={prevPeriod} className="p-2 rounded-md hover:bg-gray-100 text-gray-700">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                      <button onClick={nextPeriod} className="p-2 rounded-md hover:bg-gray-100 text-gray-700">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    </div>
+                    <h2 className="text-lg font-semibold text-gray-800 sm:text-xl">
+                      {view === "month"
+                        ? currentDate.toLocaleDateString("en-US", { month: "long", year: "numeric" })
+                        : view === "week"
+                        ? `Week of ${currentDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+                        : "Activities by Week"}
+                    </h2>
+                    <button onClick={goToToday} className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-md text-gray-700">
+                      Today
                     </button>
                   </div>
-                  <h2 className="text-lg font-semibold text-gray-800 sm:text-xl">
-                    {view === "month"
-                      ? currentDate.toLocaleDateString("en-US", { month: "long", year: "numeric" })
-                      : view === "week"
-                      ? `Week of ${currentDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
-                      : "Activities by Week"}
-                  </h2>
-                  <button onClick={goToToday} className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-md text-gray-700">
-                    Today
-                  </button>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:space-x-2">
+                    <div className="flex bg-gray-100 rounded-md p-1">
+                      <button
+                        onClick={() => setView("month")}
+                        className={`px-3 py-1.5 text-xs rounded-md sm:text-sm ${
+                          view === "month" ? "bg-white text-gray-800 shadow-sm" : "text-gray-600 hover:text-gray-800"
+                        }`}
+                      >
+                        Month
+                      </button>
+                      <button
+                        onClick={() => setView("week")}
+                        className={`px-3 py-1.5 text-xs rounded-md sm:text-sm ${
+                          view === "week" ? "bg-white text-gray-800 shadow-sm" : "text-gray-600 hover:text-gray-800"
+                        }`}
+                      >
+                        Week
+                      </button>
+                      <button
+                        onClick={() => setView("list")}
+                        className={`px-3 py-1.5 text-xs rounded-md sm:text-sm ${
+                          view === "list" ? "bg-white text-gray-800 shadow-sm" : "text-gray-600 hover:text-gray-800"
+                        }`}
+                      >
+                        List
+                      </button>
+                    </div>
+                    <PrimaryButton
+                      type="button"
+                      small
+                      className="px-4"
+                      onClick={() => setShowWeeklyModal(true)}
+                    >
+                      {weeklySchedule ? "Update Weekly Schedule" : "Set Schedule"}
+                    </PrimaryButton>
+                  </div>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <div className="flex bg-gray-100 rounded-md p-1">
-                    <button
-                      onClick={() => setView("month")}
-                      className={`px-3 py-1.5 text-xs rounded-md sm:text-sm ${
-                        view === "month" ? "bg-white text-gray-800 shadow-sm" : "text-gray-600 hover:text-gray-800"
-                      }`}
-                    >
-                      Month
-                    </button>
-                    <button
-                      onClick={() => setView("week")}
-                      className={`px-3 py-1.5 text-xs rounded-md sm:text-sm ${
-                        view === "week" ? "bg-white text-gray-800 shadow-sm" : "text-gray-600 hover:text-gray-800"
-                      }`}
-                    >
-                      Week
-                    </button>
-                    <button
-                      onClick={() => setView("list")}
-                      className={`px-3 py-1.5 text-xs rounded-md sm:text-sm ${
-                        view === "list" ? "bg-white text-gray-800 shadow-sm" : "text-gray-600 hover:text-gray-800"
-                      }`}
-                    >
-                      List
-                    </button>
+
+                <div className="rounded-lg border border-gray-200 bg-gray-50/80 p-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-xl font-semibold text-gray-800">{GRADE_LEVEL} Remediation Plan</p>
+                      {weeklySchedule ? (
+                        <>
+                          <p className="text-sm text-gray-600">
+                            Week of {weeklyWeekStartLabel} · {weeklyTimeLabel}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-sm text-gray-600">
+                          Click Plan Weekly Schedule to add schedule for {GRADE_LEVEL}
+                        </p>
+                      )}
+                    </div>
+                    {weeklySchedule && (
+                      <SecondaryButton
+                        type="button"
+                        onClick={clearWeeklyPlan}
+                        className="px-4 py-2 text-sm"
+                      >
+                        Clear Plan
+                      </SecondaryButton>
+                    )}
                   </div>
+
+                  {weeklySchedule && (
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                      {WEEKDAY_ORDER.map((day) => (
+                        <div
+                          key={day}
+                          className="rounded-xl border border-gray-200 bg-white px-5 py-4 shadow-sm"
+                        >
+                          <div className="text-sm font-semibold uppercase tracking-wide text-gray-500">{day}</div>
+                          <div className="mt-1 text-lg font-semibold text-black">{weeklySchedule.subjects[day]}</div>
+                          <div className="mt-2 text-sm text-gray-600">{weeklyTimeLabel}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
+
+              <WeeklyScheduleModal
+                show={showWeeklyModal}
+                onClose={() => setShowWeeklyModal(false)}
+                onSave={handleWeeklySave}
+                initialData={weeklySchedule}
+                gradeLevel={GRADE_LEVEL}
+              />
 
               {/* Add Schedule Modal */}
               <AddScheduleModal

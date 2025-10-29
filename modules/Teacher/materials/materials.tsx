@@ -1,88 +1,51 @@
 "use client";
 import TeacherSidebar from "@/components/Teacher/Sidebar";
 import TeacherHeader from "@/components/Teacher/Header";
-import { useEffect, useMemo, useState, type ComponentType } from "react";
+import { useEffect, useMemo, useState } from "react";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import { FaTimes } from "react-icons/fa";
-//Tabs
-import EnglishNonReaderTab from "./EnglishTabs/NonReaderTab";
-import EnglishSyllableTab from "./EnglishTabs/SyllableTab";
-import EnglishWordTab from "./EnglishTabs/WordTab";
-import EnglishPhraseTab from "./EnglishTabs/PhraseTab";
-import EnglishSentenceTab from "./EnglishTabs/SentenceTab";
-import EnglishParagraphTab from "./EnglishTabs/ParagraphTab";
-import FilipinoNonReaderTab from "./FilipinoTabs/NonReaderTab";
-import FilipinoSyllableTab from "./FilipinoTabs/SyllableTab";
-import FilipinoWordTab from "./FilipinoTabs/WordTab";
-import FilipinoPhraseTab from "./FilipinoTabs/PhraseTab";
-import FilipinoSentenceTab from "./FilipinoTabs/SentenceTab";
-import FilipinoParagraphTab from "./FilipinoTabs/ParagraphTab";
-import MathNotProficientTab from "./MathTabs/NotProficientTab";
-import MathLowProficientTab from "./MathTabs/LowProficientTab";
-import MathNearlyProficientTab from "./MathTabs/NearlyProficientTab";
-import MathProficientTab from "./MathTabs/ProficientTab";
-import MathHighlyProficientTab from "./MathTabs/HighlyProficientTab";
+import { usePathname } from "next/navigation";
+// English Tabs
+import EnglishTab, { ENGLISH_LEVELS, type EnglishLevel } from "./EnglishTabs/EnglishTab";
+// Filipino Tabs
+import FilipinoTab, { FILIPINO_LEVELS, type FilipinoLevel } from "./FilipinoTabs/FilipinoTab";
+// Math Tabs
+import MathTab, { MATH_LEVELS, type MathLevel } from "./MathTabs/MathTab";
 
-type SubjectKey = "English" | "Filipino" | "Math";
+const SUBJECT_OPTIONS = ["English", "Filipino", "Math"] as const;
 
-type TeacherMaterialsProps = {
-  subjectSlug?: string;
-};
-
-const SUBJECT_TABS: Record<SubjectKey, readonly string[]> = {
-  English: ["Non Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"],
-  Filipino: ["Non Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"],
-  Math: ["Not Proficient", "Low Proficient", "Nearly Proficient", "Proficient", "Highly Proficient"],
-};
-
-type TabComponent = ComponentType<Record<string, never>>;
-
-const SUBJECT_COMPONENTS: Record<SubjectKey, Record<string, TabComponent>> = {
-  English: {
-    "Non Reader": EnglishNonReaderTab,
-    Syllable: EnglishSyllableTab,
-    Word: EnglishWordTab,
-    Phrase: EnglishPhraseTab,
-    Sentence: EnglishSentenceTab,
-    Paragraph: EnglishParagraphTab,
-  },
-  Filipino: {
-    "Non Reader": FilipinoNonReaderTab,
-    Syllable: FilipinoSyllableTab,
-    Word: FilipinoWordTab,
-    Phrase: FilipinoPhraseTab,
-    Sentence: FilipinoSentenceTab,
-    Paragraph: FilipinoParagraphTab,
-  },
-  Math: {
-    "Not Proficient": MathNotProficientTab,
-    "Low Proficient": MathLowProficientTab,
-    "Nearly Proficient": MathNearlyProficientTab,
-    Proficient: MathProficientTab,
-    "Highly Proficient": MathHighlyProficientTab,
-  },
-};
-
-const normalizeSubject = (slug?: string): SubjectKey => {
-  const normalized = (slug ?? "english").toLowerCase();
-  if (normalized === "filipino") return "Filipino";
-  if (normalized === "math" || normalized === "mathematics") return "Math";
-  return "English";
-};
-
-export default function TeacherMaterials({ subjectSlug }: TeacherMaterialsProps) {
-  const subject = useMemo(() => normalizeSubject(subjectSlug), [subjectSlug]);
+export default function MasterTeacherMaterials() {
+  const pathname = usePathname();
+  const subject = useMemo<(typeof SUBJECT_OPTIONS)[number]>(() => {
+    if (!pathname) return "English";
+    const lowerPath = pathname.toLowerCase();
+    if (lowerPath.includes("/materials/filipino")) return "Filipino";
+    if (lowerPath.includes("/materials/math")) return "Math";
+    return "English";
+  }, [pathname]);
+  const [activeTab, setActiveTab] = useState("Non Reader");
   const [searchTerm, setSearchTerm] = useState("");
-  const [activeTab, setActiveTab] = useState(() => SUBJECT_TABS[subject][0]);
+
+  const englishTabs = ENGLISH_LEVELS;
+  const filipinoTabs = FILIPINO_LEVELS;
+  const mathTabs = MATH_LEVELS;
+
+  const currentTabOptions = subject === "English" ? englishTabs : subject === "Filipino" ? filipinoTabs : mathTabs;
+
+  const ensureEnglishLevel = (value: string): EnglishLevel =>
+    englishTabs.find((level) => level === value) ?? englishTabs[0];
+
+  const ensureFilipinoLevel = (value: string): FilipinoLevel =>
+    filipinoTabs.find((level) => level === value) ?? filipinoTabs[0];
+
+  const ensureMathLevel = (value: string): MathLevel =>
+    mathTabs.find((level) => level === value) ?? mathTabs[0];
 
   useEffect(() => {
-    setActiveTab(SUBJECT_TABS[subject][0]);
+    const defaultTab = subject === "English" ? englishTabs[0] : subject === "Filipino" ? filipinoTabs[0] : mathTabs[0];
+    setActiveTab(defaultTab);
   }, [subject]);
-
-  const tabOptions = SUBJECT_TABS[subject];
-  const subjectComponents = SUBJECT_COMPONENTS[subject];
-  const ActiveTabComponent = subjectComponents[activeTab] ?? subjectComponents[tabOptions[0]];
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
@@ -126,10 +89,12 @@ export default function TeacherMaterials({ subjectSlug }: TeacherMaterialsProps)
             "
             >
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                <div className="flex items-center gap-0">
-                  <SecondaryHeader title={`${subject} Materials`} />
+                <div className="flex flex-col gap-0 sm:flex-row sm:items-center sm:gap-0">
+                  <div className="flex items-center gap-2">
+                    <SecondaryHeader title={`${subject} Materials`} />
+                  </div>
                   <HeaderDropdown
-                    options={[...tabOptions]}
+                    options={[...currentTabOptions]}
                     value={activeTab}
                     onChange={setActiveTab}
                     className="pl-2"
@@ -166,7 +131,9 @@ export default function TeacherMaterials({ subjectSlug }: TeacherMaterialsProps)
                 sm:mt-2
               "
               >
-                {ActiveTabComponent ? <ActiveTabComponent /> : null}
+                {subject === "English" && <EnglishTab level={ensureEnglishLevel(activeTab)} searchTerm={searchTerm} />}
+                {subject === "Filipino" && <FilipinoTab level={ensureFilipinoLevel(activeTab)} searchTerm={searchTerm} />}
+                {subject === "Math" && <MathTab level={ensureMathLevel(activeTab)} searchTerm={searchTerm} />}
               </div>
             </div>
           </div>

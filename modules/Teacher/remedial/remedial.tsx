@@ -7,77 +7,59 @@ import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 // Tabs
 // English Tabs
-import NonReaderTab from "./EnglishTabs/NonReaderTab";
-import SyllableTab from "./EnglishTabs/SyllableTab";
-import WordTab from "./EnglishTabs/WordTab";
-import SentenceTab from "./EnglishTabs/SentenceTab";
-import ParagraphTab from "./EnglishTabs/ParagraphTab";
-import PhraseTab from "./EnglishTabs/PhraseTab";
+import EnglishTab, { ENGLISH_LEVELS, type EnglishLevel } from "./EnglishTabs/EnglishTab";
 // Filipino Tabs
-import FilipinoNonReaderTab from "./FilipinoTabs/NonReaderTab";
-import FilipinoSyllableTab from "./FilipinoTabs/SyllableTab";
-import FilipinoWordTab from "./FilipinoTabs/WordTab";
-import FilipinoPhraseTab from "./FilipinoTabs/PhraseTab";
-import FilipinoSentenceTab from "./FilipinoTabs/SentenceTab";
-import FilipinoParagraphTab from "./FilipinoTabs/ParagraphTab";
+import FilipinoTab, { FILIPINO_LEVELS, type FilipinoLevel } from "./FilipinoTabs/FilipinoTab";
 // Math Tabs
-import NotProficientTab from "./MathTabs/NotProficientTab";
-import LowProficientTab from "./MathTabs/LowProficientTab";
-import NearlyProficientTab from "./MathTabs/NearlyProficientTab";
-import ProficientTab from "./MathTabs/ProficientTab";
-import HighlyProficientTab from "./MathTabs/HighlyProficientTab";
+import MathTab, { MATH_LEVELS, type MathLevel } from "./MathTabs/MathTab";
 
-export default function TeacherRemedial() {
+export default function MasterTeacherRemedial() {
   const pathname = usePathname();
 
-  // Determine subject from URL path (mirrors MasterTeacher logic)
+  // Determine subject from URL path
   const getSubjectFromPath = () => {
-    if (pathname?.includes('/english')) return 'English';
-    if (pathname?.includes('/filipino')) return 'Filipino';
-    if (pathname?.includes('/math')) return 'Math';
-    return 'English';
+    if (pathname?.includes("/english")) return "English";
+    if (pathname?.includes("/filipino")) return "Filipino";
+    if (pathname?.includes("/math")) return "Math";
+    return "English"; // default
   };
 
-  const [subject, setSubject] = useState<string>(getSubjectFromPath());
-  const [activeTab, setActiveTab] = useState<string>("Non Reader");
+  const initialSubject = getSubjectFromPath();
+  const initialTab = initialSubject === "English" ? ENGLISH_LEVELS[0] : initialSubject === "Filipino" ? FILIPINO_LEVELS[0] : MATH_LEVELS[0];
 
-  const englishTabs = ["Non Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"] as const;
-  const filipinoTabs = ["Non Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"] as const;
-  const mathTabs = [
-    "Not Proficient",
-    "Low Proficient",
-    "Nearly Proficient",
-    "Proficient",
-    "Highly Proficient",
-  ] as const;
-  const currentTabOptions = subject === "English" ? englishTabs : subject === "Filipino" ? filipinoTabs : mathTabs;
-
-  // Update subject when path changes & reset tab (consistent with master)
+  const [subject, setSubject] = useState(initialSubject);
+  const [activeTab, setActiveTab] = useState(initialTab);
+  
+  // Update subject when path changes
   useEffect(() => {
     const newSubject = getSubjectFromPath();
-    if (newSubject !== subject) {
-      setSubject(newSubject);
-    }
+    setSubject(newSubject);
   }, [pathname]);
 
+  const currentTabOptions = subject === "English" ? ENGLISH_LEVELS : subject === "Filipino" ? FILIPINO_LEVELS : MATH_LEVELS;
+  
+  // Reset active tab when subject changes
   useEffect(() => {
-    setActiveTab(currentTabOptions[0]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (subject === "English") {
+      setActiveTab(ENGLISH_LEVELS[0]);
+    } else if (subject === "Filipino") {
+      setActiveTab(FILIPINO_LEVELS[0]);
+    } else {
+      setActiveTab(MATH_LEVELS[0]);
+    }
   }, [subject]);
+
   return (
-    <div
-      className="
-      /* Mobile */
-      flex h-screen bg-white overflow-hidden
-    "
-    >
+    <div className="flex h-screen bg-white overflow-hidden">
       {/*---------------------------------Sidebar---------------------------------*/}
       <TeacherSidebar />
+
       {/*---------------------------------Main Content---------------------------------*/}
       <div
         className="
         /* Mobile */
         flex-1 pt-16 flex flex-col overflow-hidden
+        
       "
       >
         <TeacherHeader title="Remedial" />
@@ -86,8 +68,10 @@ export default function TeacherRemedial() {
             className="
             /* Mobile */
             p-4 h-full
+            
             /* Tablet */
             sm:p-5
+            
             /* Desktop */
             md:p-6
           "
@@ -96,9 +80,12 @@ export default function TeacherRemedial() {
             <div
               className="
               /* Mobile */
-              bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[400px] overflow-y-auto p-4
+              bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[400px] 
+              overflow-y-auto p-4
+              
               /* Tablet */
               sm:p-5
+              
               /* Desktop */
               md:p-6
             "
@@ -109,48 +96,33 @@ export default function TeacherRemedial() {
                   <HeaderDropdown
                     options={[...currentTabOptions]}
                     value={activeTab}
-                    onChange={setActiveTab}
+                    onChange={(value) => setActiveTab(value as typeof activeTab)}
                     className="pl-2"
                   />
                 </div>
               </div>
 
               {/*---------------------------------Tab Content---------------------------------*/}
-              <div className="mt-4 sm:mt-6">
+              <div
+                className="
+                /* Mobile */
+                mt-1
+                /* Tablet */
+                sm:mt-2
+              "
+              >
                 {/* English */}
                 {subject === "English" && (
                   <>
-                    {activeTab === "Non Reader" && <NonReaderTab />}
-                    {activeTab === "Syllable" && <SyllableTab />}
-                    {activeTab === "Word" && <WordTab />}
-                    {activeTab === "Phrase" && <PhraseTab />}
-                    {activeTab === "Sentence" && <SentenceTab />}
-                    {activeTab === "Paragraph" && <ParagraphTab />}
+                    <EnglishTab level={activeTab as EnglishLevel} />
                   </>
                 )}
                 {/* Filipino */}
-                {subject === "Filipino" && (
-                  <>
-                    {activeTab === "Non Reader" && <FilipinoNonReaderTab />}
-                    {activeTab === "Syllable" && <FilipinoSyllableTab />}
-                    {activeTab === "Word" && <FilipinoWordTab />}
-                    {activeTab === "Phrase" && <FilipinoPhraseTab />}
-                    {activeTab === "Sentence" && <FilipinoSentenceTab />}
-                    {activeTab === "Paragraph" && <FilipinoParagraphTab />}
-                  </>
-                )}
+                {subject === "Filipino" && <FilipinoTab level={activeTab as FilipinoLevel} />}
                 {/* Math */}
-                {subject === "Math" && (
-                  <>
-                    {activeTab === "Not Proficient" && <NotProficientTab />}
-                    {activeTab === "Low Proficient" && <LowProficientTab />}
-                    {activeTab === "Nearly Proficient" && <NearlyProficientTab />}
-                    {activeTab === "Proficient" && <ProficientTab />}
-                    {activeTab === "Highly Proficient" && <HighlyProficientTab />}
-                  </>
-                )}
-              </div> {/* end tab content */}
-            </div> {/* end white card */}
+                {subject === "Math" && <MathTab level={activeTab as MathLevel} />}
+              </div>
+            </div>
           </div>
         </main>
       </div>
