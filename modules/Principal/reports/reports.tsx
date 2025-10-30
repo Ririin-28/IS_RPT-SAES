@@ -28,7 +28,7 @@ import MathGradeSixTab from "./MathTabs/GradeSixTab";
 type SubjectKey = "english" | "filipino" | "math";
 
 interface PrincipalReportsProps {
-  subject?: SubjectKey;
+  subjectSlug?: string;
 }
 
 const SUBJECT_LABELS: Record<SubjectKey, string> = {
@@ -78,7 +78,15 @@ const SUBJECT_GRADE_COMPONENTS: Record<SubjectKey, Record<string, ComponentType<
   },
 };
 
-export default function PrincipalReports({ subject = "english" }: PrincipalReportsProps) {
+const normalizeSubject = (slug?: string): SubjectKey => {
+  const value = (slug ?? "english").toLowerCase();
+  if (value === "filipino") return "filipino";
+  if (value === "math" || value === "mathematics") return "math";
+  return "english";
+};
+
+export default function PrincipalReports({ subjectSlug }: PrincipalReportsProps) {
+  const subject = normalizeSubject(subjectSlug);
   const [searchTerm, setSearchTerm] = useState("");
   const [activeGrade, setActiveGrade] = useState(() => {
     const initialComponents = SUBJECT_GRADE_COMPONENTS[subject] ?? SUBJECT_GRADE_COMPONENTS.english;

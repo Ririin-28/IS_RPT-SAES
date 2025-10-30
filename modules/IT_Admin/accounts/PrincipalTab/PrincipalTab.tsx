@@ -8,6 +8,8 @@ import PrincipalDetailsModal from "./Modals/PrincipalDetailsModal";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
+import { exportRowsToExcel } from "@/lib/utils/export-to-excel";
+import { buildAccountsExportFilename, PRINCIPAL_EXPORT_COLUMNS } from "../utils/export-columns";
 
 const NAME_COLLATOR = new Intl.Collator("en", { sensitivity: "base", numeric: true });
 
@@ -169,6 +171,21 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
     return matchSearch;
   }), [principals, searchTerm]);
 
+
+  const handleExport = useCallback(() => {
+    if (filteredPrincipals.length === 0) {
+      window.alert("No principal accounts available to export.");
+      return;
+    }
+
+    const filename = buildAccountsExportFilename("principal-accounts");
+    void exportRowsToExcel({
+      rows: filteredPrincipals,
+      columns: PRINCIPAL_EXPORT_COLUMNS,
+      filename,
+      sheetName: "Principal Accounts",
+    });
+  }, [filteredPrincipals]);
   const handleSelectPrincipal = useCallback((id: string, checked: boolean) => {
     setSelectedPrincipalKeys((prev) => {
       const next = new Set(prev);
@@ -243,6 +260,10 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
               accountType="Principal"
               onAction={handleMenuAction}
               buttonAriaLabel="Open principal actions"
+              exportConfig={{
+                onExport: handleExport,
+                disabled: filteredPrincipals.length === 0,
+              }}
             />
           )}
         </div>

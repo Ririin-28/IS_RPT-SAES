@@ -1,9 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { getStoredDisplayName } from "@/lib/utils/user-profile";
+
+const TEACHER_FALLBACK_NAME = "Maria Santos";
 
 export default function TeacherWelcome() {
   const [count, setCount] = useState(3);
+  const [displayName, setDisplayName] = useState(TEACHER_FALLBACK_NAME);
   const router = useRouter();
 
   // Countdown timer - redirect to teacher dashboard
@@ -12,6 +16,10 @@ export default function TeacherWelcome() {
     const timer = setTimeout(() => setCount(count - 1), 1000);
     return () => clearTimeout(timer);
   }, [count, router]);
+
+  useEffect(() => {
+    setDisplayName(getStoredDisplayName(TEACHER_FALLBACK_NAME));
+  }, []);
 
   return (
     <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-blue-100 via-blue-50 to-white">
@@ -56,7 +64,7 @@ export default function TeacherWelcome() {
           <br />
           Teacher!
         </h2>
-  <h1 className="text-2xl md:text-6xl font-bold text-blue-900 text-center mb-8">Maria Santos</h1>
+    <h1 className="text-2xl md:text-6xl font-bold text-blue-900 text-center mb-8">{displayName}</h1>
         <div className="text-xl md:text-2xl text-blue-800 font-semibold text-center flex items-center justify-center">
           Redirecting to dashboard
           <span className="ml-2 flex gap-1">
