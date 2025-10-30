@@ -43,14 +43,30 @@ export async function POST(req) {
       await db.execute("UPDATE trusted_devices SET last_used = NOW() WHERE user_id = ?", [user.user_id]);
       await db.end();
       return new Response(
-        JSON.stringify({ success: true, skipOtp: true, role: user.role, user_id: user.user_id }),
+        JSON.stringify({
+          success: true,
+          skipOtp: true,
+          role: user.role,
+          user_id: user.user_id,
+          first_name: user.first_name,
+          middle_name: user.middle_name,
+          last_name: user.last_name,
+        }),
         { status: 200 }
       );
     }
     // 4. Device not trusted → redirect to verification (OTP will be sent from /api/send-otp)
     await db.end();
     return new Response(
-      JSON.stringify({ success: true, otpRequired: true, role: user.role, user_id: user.user_id }),
+      JSON.stringify({
+        success: true,
+        otpRequired: true,
+        role: user.role,
+        user_id: user.user_id,
+        first_name: user.first_name,
+        middle_name: user.middle_name,
+        last_name: user.last_name,
+      }),
       { status: 200 }
     );
   } catch (err) {

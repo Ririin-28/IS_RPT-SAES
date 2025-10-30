@@ -20,6 +20,14 @@ import BodyLabel from "@/components/Common/Texts/BodyLabel";
 
 const sections = ["All Sections", "A", "B", "C"];
 
+const ExportIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" d="m7 10 5 5 5-5" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 15V3" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M5 19h14" />
+  </svg>
+);
+
 interface CustomDropdownProps {
   options: string[];
   value: string;
@@ -164,6 +172,32 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
       
     return matchSection && matchSearch;
   });
+
+  const handleExport = () => {
+    if (filteredStudents.length === 0) {
+      alert("No students available to export.");
+      return;
+    }
+
+    const exportData = filteredStudents.map((student, index) => ({
+      "No#": index + 1,
+      "Student ID": student.studentId ?? "",
+      "Full Name": student.name ?? "",
+      Grade: student.grade ?? "",
+      Section: student.section ?? "",
+      Guardian: student.guardian ?? "",
+      "Guardian Contact": student.guardianContact ?? "",
+      Address: student.address ?? "",
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Students");
+
+    const timestamp = new Date().toISOString().replace(/[:.-]/g, "");
+    const filename = `MasterTeacher_English_Students_${timestamp}.xlsx`;
+    XLSX.writeFile(workbook, filename);
+  };
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
@@ -350,6 +384,26 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
                       <path d="M9 12l2 2 4-4" />
                     </svg>
                     Select
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!filteredStudents.length) {
+                        alert("No students available to export.");
+                        return;
+                      }
+                      handleExport();
+                      close();
+                    }}
+                    className={`mt-1 flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[#013300] ${
+                      filteredStudents.length === 0
+                        ? "opacity-40 cursor-not-allowed"
+                        : "hover:bg-gray-50"
+                    }`}
+                    aria-disabled={filteredStudents.length === 0}
+                  >
+                    <ExportIcon />
+                    Export to Excel
                   </button>
                 </div>
               )}

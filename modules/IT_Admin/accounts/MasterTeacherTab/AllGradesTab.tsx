@@ -10,6 +10,7 @@ import DangerButton from "@/components/Common/Buttons/DangerButton";
 import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
 import MasterTeacherDetailsModal from "./Modals/MasterTeacherDetailsModal";
 import AddMasterTeacherModal from "./Modals/AddMasterTeacherModal";
+import { MASTER_TEACHER_EXPORT_COLUMNS, exportAccountRows } from "../utils/export-columns";
 
 const sections = ["All Sections", "A", "B", "C"];
 
@@ -201,6 +202,16 @@ export default function TeacherAllGradesTab({ teachers, setTeachers, searchTerm 
     return matchSection && matchSearch;
   }), [AllGradesTeachers, filter.section, searchTerm]);
 
+  const handleExport = useCallback(() => {
+    void exportAccountRows({
+      rows: filteredTeachers,
+      columns: MASTER_TEACHER_EXPORT_COLUMNS,
+      baseFilename: "master-teacher-accounts",
+      sheetName: "Master Teacher Accounts",
+      emptyMessage: "No master teacher accounts available to export.",
+    });
+  }, [filteredTeachers]);
+
   const handleShowDetails = (teacher: any) => {
     setSelectedMasterTeacher(teacher);
     setShowDetailModal(true);
@@ -285,6 +296,10 @@ export default function TeacherAllGradesTab({ teachers, setTeachers, searchTerm 
                 accountType="Master Teachers"
                 onAction={handleMenuAction}
                 buttonAriaLabel="Open master teacher actions"
+                exportConfig={{
+                  onExport: handleExport,
+                  disabled: filteredTeachers.length === 0,
+                }}
               />
             )}
             <input

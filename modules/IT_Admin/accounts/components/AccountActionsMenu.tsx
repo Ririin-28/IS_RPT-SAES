@@ -45,6 +45,14 @@ const SelectIcon = () => (
   </svg>
 );
 
+const ExportIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" d="m7 10 5 5 5-5" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 15V3" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M5 19h14" />
+  </svg>
+);
+
 const ACCOUNT_ACTIONS: Record<AccountType, ActionConfig[]> = {
   Principal: [
     { label: "Add Principal", action: "principal:add", icon: <AddIcon /> },
@@ -71,6 +79,11 @@ interface AccountActionsMenuProps {
   onAction?: (action: AccountActionKey) => boolean | void;
   buttonAriaLabel?: string;
   className?: string;
+  exportConfig?: {
+    label?: string;
+    disabled?: boolean;
+    onExport: () => void;
+  };
 }
 
 export default function AccountActionsMenu({
@@ -78,6 +91,7 @@ export default function AccountActionsMenu({
   onAction,
   buttonAriaLabel = "Open menu",
   className = "",
+  exportConfig,
 }: AccountActionsMenuProps) {
   const handleAction = useCallback(
     (action: AccountActionKey, close: () => void) => {
@@ -107,6 +121,29 @@ export default function AccountActionsMenu({
               {label}
             </button>
           ))}
+          {exportConfig && (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  if (exportConfig.disabled) {
+                    return;
+                  }
+                  exportConfig.onExport();
+                  close();
+                }}
+                className={`flex w-full items-center gap-2 px-4 py-2 text-left text-sm ${
+                  exportConfig.disabled
+                    ? "text-gray-300 cursor-not-allowed"
+                    : "text-[#013300] hover:bg-gray-50"
+                }`}
+                aria-disabled={exportConfig.disabled}
+              >
+                <ExportIcon />
+                {exportConfig.label ?? "Export to Excel"}
+              </button>
+            </>
+          )}
         </div>
       )}
     />

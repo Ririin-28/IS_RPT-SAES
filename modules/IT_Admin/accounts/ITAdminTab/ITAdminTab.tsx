@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { useForm } from "react-hook-form";
 import TableList from "@/components/Common/Tables/TableList";
@@ -6,6 +6,7 @@ import ITAdminDetailsModal from "./Modals/ITAdminDetailsModal";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import AccountActionsMenu, { type AccountActionKey } from "../components/AccountActionsMenu";
 import AddITAdminModal, { type AddITAdminFormValues } from "./Modals/AddITAdminModal";
+import { exportAccountRows, IT_ADMIN_EXPORT_COLUMNS } from "../utils/export-columns";
 
 const NAME_COLLATOR = new Intl.Collator("en", { sensitivity: "base", numeric: true });
 
@@ -132,18 +133,30 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
   }, [addITAdminForm]);
 
 
-  const filteredITAdmins = itAdmins.filter((admin) => {
+  const filteredITAdmins = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
     if (query.length === 0) {
-      return true;
+      return itAdmins;
     }
 
-    const nameMatch = admin.name?.toLowerCase().includes(query);
-    const emailMatch = admin.email?.toLowerCase().includes(query);
-    const idMatch = (admin.adminId ?? "").toLowerCase().includes(query);
+    return itAdmins.filter((admin) => {
+      const nameMatch = admin.name?.toLowerCase().includes(query);
+      const emailMatch = admin.email?.toLowerCase().includes(query);
+      const idMatch = (admin.adminId ?? "").toLowerCase().includes(query);
 
-    return Boolean(nameMatch || emailMatch || idMatch);
-  });
+      return Boolean(nameMatch || emailMatch || idMatch);
+    });
+  }, [itAdmins, searchTerm]);
+
+  const handleExport = useCallback(() => {
+    void exportAccountRows({
+      rows: filteredITAdmins,
+      columns: IT_ADMIN_EXPORT_COLUMNS,
+      baseFilename: "it-admin-accounts",
+      sheetName: "IT Admin Accounts",
+      emptyMessage: "No IT Admin accounts available to export.",
+    });
+  }, [filteredITAdmins]);
 
   const handleShowDetails = (admin: any) => {
     setSelectedITAdmin(admin);
@@ -231,6 +244,10 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
           accountType="IT Admin"
           onAction={handleMenuAction}
           buttonAriaLabel="Open IT Admin actions"
+          exportConfig={{
+            onExport: handleExport,
+            disabled: filteredITAdmins.length === 0,
+          }}
         />
 
       </div>

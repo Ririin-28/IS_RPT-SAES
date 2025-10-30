@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { FaEye, FaEyeSlash, FaInfoCircle } from "react-icons/fa";
 import RPTLogoTitle from "@/components/Common/RPTLogoTitle";
 import { clearOAuthState } from "@/lib/utils/clear-oauth-state";
+import { storeUserProfile } from "@/lib/utils/user-profile";
 
 export default function Login() {
   const [showErrorModal, setShowErrorModal] = useState(false);
@@ -104,39 +105,49 @@ export default function Login() {
       console.log("[LOGIN] backend response:", data);
       if (res.status === 401 || data.error) {
         setShowErrorModal(true);
-      } else if (data.skipOtp) {
-        // Device is trusted, redirect to welcome page
-        let welcomePath = "/";
-        switch (data.role) {
-          case "it_admin":
-            welcomePath = "/IT_Admin/welcome";
-            break;
-          case "principal":
-            welcomePath = "/Principal/welcome";
-            break;
-          case "parent":
-            welcomePath = "/Parent/welcome";
-            break;
-          case "teacher":
-            welcomePath = "/Teacher/welcome";
-            break;
-          case "masterteacher":
-            welcomePath = "/MasterTeacher/welcome";
-            break;
-          default:
-            welcomePath = "/";
-        }
-        console.log("[LOGIN] redirecting to:", welcomePath);
-        router.push(welcomePath);
       } else {
-        // Device not trusted, redirect to verification page
-        const params = new URLSearchParams({
-          email,
-          role: data.role || "",
-          user_id: data.user_id || ""
-        }).toString();
-        console.log("[LOGIN] redirecting to verification with params:", params);
-        router.push(`/auth/verification?${params}`);
+        storeUserProfile({
+          firstName: data.first_name,
+          middleName: data.middle_name,
+          lastName: data.last_name,
+          role: data.role,
+          userId: data.user_id,
+        });
+
+        if (data.skipOtp) {
+          // Device is trusted, redirect to welcome page
+          let welcomePath = "/";
+          switch (data.role) {
+            case "it_admin":
+              welcomePath = "/IT_Admin/welcome";
+              break;
+            case "principal":
+              welcomePath = "/Principal/welcome";
+              break;
+            case "parent":
+              welcomePath = "/Parent/welcome";
+              break;
+            case "teacher":
+              welcomePath = "/Teacher/welcome";
+              break;
+            case "masterteacher":
+              welcomePath = "/MasterTeacher/welcome";
+              break;
+            default:
+              welcomePath = "/";
+          }
+          console.log("[LOGIN] redirecting to:", welcomePath);
+          router.push(welcomePath);
+        } else {
+          // Device not trusted, redirect to verification page
+          const params = new URLSearchParams({
+            email,
+            role: data.role || "",
+            user_id: data.user_id || "",
+          }).toString();
+          console.log("[LOGIN] redirecting to verification with params:", params);
+          router.push(`/auth/verification?${params}`);
+        }
       }
     } catch (err) {
       setShowErrorModal(true);

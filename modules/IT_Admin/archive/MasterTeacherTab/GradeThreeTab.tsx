@@ -8,6 +8,15 @@ import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
 import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
 import { useArchiveRestoreDelete } from "../Common/useArchiveRestoreDelete";
 import { ensureArchiveRowKey } from "../Common/archiveRowKey";
+import { exportArchiveRows } from "../utils/export-columns";
+
+const ExportIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" d="m7 10 5 5 5-5" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 15V3" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M5 19h14" />
+  </svg>
+);
 
 const sections = ["All Sections", "A", "B", "C"];
 
@@ -128,6 +137,15 @@ export default function MasterTeacherGradeThreeTab({ teachers, setTeachers, sear
     };
   });
 
+  const handleExport = () => {
+    void exportArchiveRows({
+      rows: filteredTeachers,
+      accountLabel: "Master Teacher",
+      gradeLabel: "Grade 3",
+      emptyMessage: "No Grade 3 master teacher archive records available to export.",
+    });
+  };
+
   return (
     <div>
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
@@ -199,6 +217,25 @@ export default function MasterTeacherGradeThreeTab({ teachers, setTeachers, sear
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-trash-icon lucide-trash"><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                       Delete
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!filteredTeachers.length) {
+                          return;
+                        }
+                        handleExport();
+                        close();
+                      }}
+                      className={`mt-1 flex w-full items-center gap-2 px-4 py-2 text-left text-sm ${
+                        filteredTeachers.length === 0
+                          ? "text-gray-300 cursor-not-allowed"
+                          : "text-[#013300] hover:bg-gray-50"
+                      }`}
+                      aria-disabled={filteredTeachers.length === 0}
+                    >
+                      <ExportIcon />
+                      Export to Excel
                     </button>
                   </div>
                 )}
