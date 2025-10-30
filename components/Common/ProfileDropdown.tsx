@@ -82,7 +82,7 @@ export default function ProfileDropdown({ email, name, onProfile, onLogout, role
                   className={`w-full text-left px-3 py-2 rounded-lg border transition-all duration-150 ${
                     option.active
                       ? "bg-[#013300] text-white border-[#013300] shadow"
-                      : "border-transparent bg-green-50 text-[#013300] hover:border-[#013300] hover:bg-white"
+                      : "border-transparent text-[#013300] hover:bg-green-50"
                   }`}
                 >
                   <div className="flex items-center justify-between">

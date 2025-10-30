@@ -32,13 +32,13 @@ export default function BaseModal({
   return (
     <div className="fixed inset-0 backdrop-blur-xs flex items-center justify-center p-4 z-50">
       <div className={`bg-white rounded-lg shadow-xl w-full ${maxWidthClasses[maxWidth]} max-h-[95vh] overflow-y-auto`}>
-        <div className="p-6">
-          {/* Modal Header */}
-          <div className="flex justify-between items-center mb-4 border-b pb-4">
-            <h2 className="text-xl font-semibold text-gray-900">{title}</h2>
+        {/* Modal Header with green background */}
+        <div className="bg-[#013300] text-white rounded-t-lg p-6">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-semibold">{title}</h2>
             <button
               onClick={onClose}
-              className="text-gray-500 hover:text-gray-700 transition-colors"
+              className="text-white hover:text-gray-200 transition-colors p-1 rounded-full hover:bg-[#015500]"
               aria-label="Close modal"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -46,19 +46,19 @@ export default function BaseModal({
               </svg>
             </button>
           </div>
-
-          {/* Modal Content */}
-          <div className="space-y-6">
-            {children}
-          </div>
-
-          {/* Modal Footer */}
-          {footer && (
-            <div className="flex justify-end gap-3 pt-4 border-t mt-6">
-              {footer}
-            </div>
-          )}
         </div>
+
+        {/* Modal Content */}
+        <div className="p-6 space-y-6">
+          {children}
+        </div>
+
+        {/* Modal Footer */}
+        {footer && (
+          <div className="flex justify-end gap-3 pt-4 border-t mt-6 px-6 pb-6">
+            {footer}
+          </div>
+        )}
       </div>
     </div>
   );

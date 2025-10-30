@@ -469,7 +469,7 @@ export default function MasterTeacherDashboard() {
                   </div>
                   <div className="mt-3 md:mt-2">
                     <TertiaryHeader title="Subject Assigned:" />
-                    <BodyText title="Mathematics, English, Filipino" />
+                    <BodyText title="English" />
                   </div>
                 </div>
               </div>

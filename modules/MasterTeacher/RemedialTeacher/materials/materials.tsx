@@ -7,25 +7,11 @@ import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import { FaTimes } from "react-icons/fa";
 import { usePathname } from "next/navigation";
 // English Tabs
-import EnglishNonReaderTab from "./EnglishTabs/NonReaderTab";
-import EnglishSyllableTab from "./EnglishTabs/SyllableTab";
-import EnglishWordTab from "./EnglishTabs/WordTab";
-import EnglishPhraseTab from "./EnglishTabs/PhraseTab";
-import EnglishSentenceTab from "./EnglishTabs/SentenceTab";
-import EnglishParagraphTab from "./EnglishTabs/ParagraphTab";
+import EnglishTab, { ENGLISH_LEVELS, type EnglishLevel } from "./EnglishTabs/EnglishTab";
 // Filipino Tabs
-import FilipinoNonReaderTab from "./FilipinoTabs/NonReaderTab";
-import FilipinoSyllableTab from "./FilipinoTabs/SyllableTab";
-import FilipinoWordTab from "./FilipinoTabs/WordTab";
-import FilipinoPhraseTab from "./FilipinoTabs/PhraseTab";
-import FilipinoSentenceTab from "./FilipinoTabs/SentenceTab";
-import FilipinoParagraphTab from "./FilipinoTabs/ParagraphTab";
+import FilipinoTab, { FILIPINO_LEVELS, type FilipinoLevel } from "./FilipinoTabs/FilipinoTab";
 // Math Tabs
-import MathNotProficientTab from "./MathTabs/NotProficientTab";
-import MathLowProficientTab from "./MathTabs/LowProficientTab";
-import MathNearlyProficientTab from "./MathTabs/NearlyProficientTab";
-import MathProficientTab from "./MathTabs/ProficientTab";
-import MathHighlyProficientTab from "./MathTabs/HighlyProficientTab";
+import MathTab, { MATH_LEVELS, type MathLevel } from "./MathTabs/MathTab";
 
 const SUBJECT_OPTIONS = ["English", "Filipino", "Math"] as const;
 
@@ -41,11 +27,20 @@ export default function MasterTeacherMaterials() {
   const [activeTab, setActiveTab] = useState("Non Reader");
   const [searchTerm, setSearchTerm] = useState("");
 
-  const englishTabs = ["Non Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"] as const;
-  const filipinoTabs = ["Non Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"] as const;
-  const mathTabs = ["Not Proficient", "Low Proficient", "Nearly Proficient", "Proficient", "Highly Proficient"] as const;
+  const englishTabs = ENGLISH_LEVELS;
+  const filipinoTabs = FILIPINO_LEVELS;
+  const mathTabs = MATH_LEVELS;
 
   const currentTabOptions = subject === "English" ? englishTabs : subject === "Filipino" ? filipinoTabs : mathTabs;
+
+  const ensureEnglishLevel = (value: string): EnglishLevel =>
+    englishTabs.find((level) => level === value) ?? englishTabs[0];
+
+  const ensureFilipinoLevel = (value: string): FilipinoLevel =>
+    filipinoTabs.find((level) => level === value) ?? filipinoTabs[0];
+
+  const ensureMathLevel = (value: string): MathLevel =>
+    mathTabs.find((level) => level === value) ?? mathTabs[0];
 
   useEffect(() => {
     const defaultTab = subject === "English" ? englishTabs[0] : subject === "Filipino" ? filipinoTabs[0] : mathTabs[0];
@@ -136,35 +131,9 @@ export default function MasterTeacherMaterials() {
                 sm:mt-2
               "
               >
-                {subject === "English" && (
-                  <>
-                    {activeTab === "Non Reader" && <EnglishNonReaderTab />}
-                    {activeTab === "Syllable" && <EnglishSyllableTab />}
-                    {activeTab === "Word" && <EnglishWordTab />}
-                    {activeTab === "Phrase" && <EnglishPhraseTab />}
-                    {activeTab === "Sentence" && <EnglishSentenceTab />}
-                    {activeTab === "Paragraph" && <EnglishParagraphTab />}
-                  </>
-                )}
-                {subject === "Filipino" && (
-                  <>
-                    {activeTab === "Non Reader" && <FilipinoNonReaderTab />}
-                    {activeTab === "Syllable" && <FilipinoSyllableTab />}
-                    {activeTab === "Word" && <FilipinoWordTab />}
-                    {activeTab === "Phrase" && <FilipinoPhraseTab />}
-                    {activeTab === "Sentence" && <FilipinoSentenceTab />}
-                    {activeTab === "Paragraph" && <FilipinoParagraphTab />}
-                  </>
-                )}
-                {subject === "Math" && (
-                  <>
-                    {activeTab === "Not Proficient" && <MathNotProficientTab />}
-                    {activeTab === "Low Proficient" && <MathLowProficientTab />}
-                    {activeTab === "Nearly Proficient" && <MathNearlyProficientTab />}
-                    {activeTab === "Proficient" && <MathProficientTab />}
-                    {activeTab === "Highly Proficient" && <MathHighlyProficientTab />}
-                  </>
-                )}
+                {subject === "English" && <EnglishTab level={ensureEnglishLevel(activeTab)} searchTerm={searchTerm} />}
+                {subject === "Filipino" && <FilipinoTab level={ensureFilipinoLevel(activeTab)} searchTerm={searchTerm} />}
+                {subject === "Math" && <MathTab level={ensureMathLevel(activeTab)} searchTerm={searchTerm} />}
               </div>
             </div>
           </div>
