@@ -3,11 +3,11 @@
 type ReportRow = {
   learner: string;
   section: string;
-  diagnostic: string;
-  quarterOne: string;
-  quarterTwo: string;
-  quarterThree: string;
-  quarterFour: string;
+  preAssessment: string;
+  october: string;
+  december: string;
+  midYear: string;
+  postAssessment: string;
   endingProfile: string;
 };
 
@@ -15,61 +15,61 @@ const rows: ReportRow[] = [
   {
     learner: "Andres, Felicity",
     section: "III-Integrity",
-    diagnostic: "NP",
-    quarterOne: "NP",
-    quarterTwo: "LP",
-    quarterThree: "LP",
-    quarterFour: "NPF",
+    preAssessment: "NP",
+    october: "NP",
+    december: "LP",
+    midYear: "LP",
+    postAssessment: "NPF",
     endingProfile: "NPF",
   },
   {
     learner: "Ballesteros, Nolan",
     section: "III-Integrity",
-    diagnostic: "LP",
-    quarterOne: "LP",
-    quarterTwo: "NPF",
-    quarterThree: "NPF",
-    quarterFour: "P",
+    preAssessment: "LP",
+    october: "LP",
+    december: "NPF",
+    midYear: "NPF",
+    postAssessment: "P",
     endingProfile: "P",
   },
   {
     learner: "Cruz, Justine",
     section: "III-Resilience",
-    diagnostic: "NP",
-    quarterOne: "LP",
-    quarterTwo: "LP",
-    quarterThree: "NPF",
-    quarterFour: "P",
+    preAssessment: "NP",
+    october: "LP",
+    december: "LP",
+    midYear: "NPF",
+    postAssessment: "P",
     endingProfile: "P",
   },
   {
     learner: "De Guzman, Lianne",
     section: "III-Resilience",
-    diagnostic: "LP",
-    quarterOne: "NPF",
-    quarterTwo: "P",
-    quarterThree: "P",
-    quarterFour: "P",
+    preAssessment: "LP",
+    october: "NPF",
+    december: "P",
+    midYear: "P",
+    postAssessment: "P",
     endingProfile: "P",
   },
   {
     learner: "Escueta, Carlo",
     section: "III-Valor",
-    diagnostic: "NP",
-    quarterOne: "NP",
-    quarterTwo: "LP",
-    quarterThree: "LP",
-    quarterFour: "NPF",
+    preAssessment: "NP",
+    october: "NP",
+    december: "LP",
+    midYear: "LP",
+    postAssessment: "NPF",
     endingProfile: "NPF",
   },
   {
     learner: "Fuentes, Janella",
     section: "III-Valor",
-    diagnostic: "NPF",
-    quarterOne: "NPF",
-    quarterTwo: "P",
-    quarterThree: "P",
-    quarterFour: "HP",
+    preAssessment: "NPF",
+    october: "NPF",
+    december: "P",
+    midYear: "P",
+    postAssessment: "HP",
     endingProfile: "HP",
   },
 ];
@@ -92,14 +92,14 @@ export default function MathReportTab() {
               <th rowSpan={2} className="border border-gray-300 p-3 text-left font-semibold">Name of Learners</th>
               <th rowSpan={2} className="border border-gray-300 p-3 text-left font-semibold">Section</th>
               <th rowSpan={2} className="border border-gray-300 p-3 text-center font-semibold">Diagnostic<br />Assessment</th>
-              <th colSpan={4} className="border border-gray-300 p-3 text-center font-semibold">Quarterly Assessment Progress</th>
+              <th colSpan={3} className="border border-gray-300 p-3 text-center font-semibold">School-Based Numeracy Assessment</th>
+              <th rowSpan={2} className="border border-gray-300 p-3 text-center font-semibold">Post-Assessment<br />March</th>
               <th rowSpan={2} className="border border-gray-300 p-3 text-center font-semibold">Ending<br />Numeracy Profile</th>
             </tr>
             <tr className="bg-gray-50">
-              <th className="border border-gray-300 p-3 text-center font-semibold">Q1</th>
-              <th className="border border-gray-300 p-3 text-center font-semibold">Q2</th>
-              <th className="border border-gray-300 p-3 text-center font-semibold">Q3</th>
-              <th className="border border-gray-300 p-3 text-center font-semibold">Q4</th>
+              <th className="border border-gray-300 p-3 text-center font-semibold">October</th>
+              <th className="border border-gray-300 p-3 text-center font-semibold">December</th>
+              <th className="border border-gray-300 p-3 text-center font-semibold">Mid-Year<br />Assessment<br />February</th>
             </tr>
           </thead>
           <tbody>
@@ -107,11 +107,11 @@ export default function MathReportTab() {
               <tr key={row.learner} className="hover:bg-gray-50">
                 <td className="border border-gray-300 p-3">{row.learner}</td>
                 <td className="border border-gray-300 p-3 text-center">{row.section}</td>
-                <td className="border border-gray-300 p-3 text-center">{row.diagnostic}</td>
-                <td className="border border-gray-300 p-3 text-center">{row.quarterOne}</td>
-                <td className="border border-gray-300 p-3 text-center">{row.quarterTwo}</td>
-                <td className="border border-gray-300 p-3 text-center">{row.quarterThree}</td>
-                <td className="border border-gray-300 p-3 text-center">{row.quarterFour}</td>
+                <td className="border border-gray-300 p-3 text-center">{row.preAssessment}</td>
+                <td className="border border-gray-300 p-3 text-center">{row.october}</td>
+                <td className="border border-gray-300 p-3 text-center">{row.december}</td>
+                <td className="border border-gray-300 p-3 text-center">{row.midYear}</td>
+                <td className="border border-gray-300 p-3 text-center">{row.postAssessment}</td>
                 <td className="border border-gray-300 p-3 text-center">{row.endingProfile}</td>
               </tr>
             ))}
