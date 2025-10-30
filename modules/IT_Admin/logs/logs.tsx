@@ -1,10 +1,12 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import ITAdminHeader from "@/components/IT_Admin/Header";
 import ITAdminSidebar from "@/components/IT_Admin/Sidebar";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import TableList from "@/components/Common/Tables/TableList";
+import UtilityButton from "@/components/Common/Buttons/UtilityButton";
+import { exportLogRows } from "./utils/export-columns";
 
 const ROLE_OPTIONS = [
   "All Users",
@@ -212,6 +214,16 @@ export default function ITAdminLogs() {
 
   const filteredLogs = useMemo(() => logs, [logs]);
 
+  const handleExport = useCallback(() => {
+    void exportLogRows({
+      rows: filteredLogs,
+      roleLabel: roleFilter,
+      emptyMessage: roleFilter === "All Users"
+        ? "No login log records available to export."
+        : `No ${roleFilter.toLowerCase()} login log records available to export.`,
+    });
+  }, [filteredLogs, roleFilter]);
+
   // Helper to format timestamp
   const formatTimestamp = (ts: string | null | undefined) => {
     if (!ts) return "—";
@@ -278,6 +290,9 @@ export default function ITAdminLogs() {
                   </div>
                   <p className="text-gray-600 text-md font-medium">Total: {totalCount}</p>
                 </div>
+                <UtilityButton small onClick={handleExport} disabled={filteredLogs.length === 0}>
+                  Export to Excel
+                </UtilityButton>
               </div>
 
               {/* Loading State */}

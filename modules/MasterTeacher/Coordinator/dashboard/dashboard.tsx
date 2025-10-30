@@ -1,5 +1,6 @@
 "use client";
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import Sidebar from "@/components/MasterTeacher/Coordinator/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
 // Button Components
@@ -73,44 +74,55 @@ function OverviewCard({
   label,
   icon,
   className = "",
+  onClick,
 }: {
   value: React.ReactNode;
   label: string;
   icon?: React.ReactNode;
   className?: string;
+  onClick?: () => void;
 }) {
-  return (
-    <div
-      className={`bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg
+  const baseClasses = `bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg
       flex flex-col items-center justify-center p-5 min-w-[160px] min-h-[110px]
       transition-transform duration-200 hover:scale-105
       sm:p-6 sm:min-w-[180px] sm:min-h-[120px]
-      lg:p-7 ${className}`}
-    >
+      lg:p-7 ${className}`;
+
+  const content = (
+    <>
       <div className="flex flex-row items-center">
-        <span
-          className="text-4xl font-extrabold text-[#013300] drop-shadow sm:text-5xl"
-        >
+        <span className="text-4xl font-extrabold text-[#013300] drop-shadow sm:text-5xl">
           {value}
         </span>
-        {icon && (
-          <span
-            className="ml-1 sm:ml-2"
-          >
-            {icon}
-          </span>
-        )}
+        {icon && <span className="ml-1 sm:ml-2">{icon}</span>}
       </div>
-      <div
-        className="text-green-900 text-sm font-semibold mt-1 tracking-wide sm:text-base sm:mt-2"
-      >
+      <div className="text-green-900 text-sm font-semibold mt-1 tracking-wide sm:text-base sm:mt-2">
         {label}
       </div>
-    </div>
+    </>
   );
+
+  if (typeof onClick === "function") {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`${baseClasses} focus:outline-none cursor-pointer text-left`}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return <div className={baseClasses}>{content}</div>;
 }
 
 export default function MasterTeacherDashboard() {
+  const router = useRouter();
+  const handleNavigate = useCallback((path: string) => {
+    router.push(path);
+  }, [router]);
+
   // Get today's date in simplified month format (same as Principal)
   const today = new Date();
   const monthShort = [
@@ -436,12 +448,6 @@ export default function MasterTeacherDashboard() {
               <div className="flex flex-col mb-3 md:flex-row md:items-center md:justify-between">
                 <SecondaryHeader title="Teacher Overview" />
                 <div className="flex space-x-2 mt-2 md:mt-0">
-                  <PrimaryButton 
-                    onClick={() => {}} 
-                    className="text-sm py-1.5 px-3"
-                  >
-                    Student Progress
-                  </PrimaryButton>
                 </div>
               </div>
 
@@ -484,6 +490,7 @@ export default function MasterTeacherDashboard() {
                       <path d="M4 18v-2c0-2.66 5.33-4 8-4s8 1.34 8 4v2" stroke="#013300" strokeWidth="2" strokeLinecap="round" />
                     </svg>
                   }
+                  onClick={() => handleNavigate("/MasterTeacher/RemedialTeacher/students")}
                 />
                 <OverviewCard
                   value={pendingApprovals}
@@ -493,6 +500,7 @@ export default function MasterTeacherDashboard() {
                       <path d="M12 15V17M12 7V13M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="#013300" strokeWidth="2" strokeLinecap="round" />
                     </svg>
                   }
+                  onClick={() => handleNavigate("/MasterTeacher/Coordinator/materials?view=pending")}
                 />
                 <OverviewCard
                   value={"20"}
@@ -503,8 +511,13 @@ export default function MasterTeacherDashboard() {
                       <rect x="7" y="3" width="10" height="4" rx="1" stroke="#013300" strokeWidth="2" />
                     </svg>
                   }
+                  onClick={() => handleNavigate("/MasterTeacher/Coordinator/materials?view=uploaded")}
                 />
-                <OverviewCard value={<span className="text-2xl">{dateToday}</span>} label="Date Today" />
+                <OverviewCard
+                  value={<span className="text-2xl">{dateToday}</span>}
+                  label="Date Today"
+                  onClick={() => handleNavigate("/MasterTeacher/Coordinator/calendar")}
+                />
               </div>
 
               <hr className="border-gray-300 mb-4 sm:mb-5 md:mb-6" />
