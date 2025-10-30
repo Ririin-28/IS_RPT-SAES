@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { useRouter } from "next/navigation";
-import { signOut } from "next-auth/react";
+import { clearStoredUserProfile } from "@/lib/utils/user-profile";
 type RoleSwitchOption = {
   label: string;
   description?: string;
@@ -33,7 +33,13 @@ export default function ProfileDropdown({ email, name, onProfile, onLogout, role
       onLogout();
       return;
     }
-    signOut({ callbackUrl: "/auth/login?logout=true" });
+    clearStoredUserProfile();
+    try {
+      sessionStorage.setItem("wasLoggedOut", "true");
+    } catch (error) {
+      console.warn("Unable to persist logout marker", error);
+    }
+    router.push("/auth/login?logout=true");
   };
 
   return (

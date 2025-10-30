@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import RPTLogoTitle from "@/components/Common/RPTLogoTitle";
@@ -12,12 +12,37 @@ const HERO_IMAGES = [
   "/SAES/Carousel-3.jpg",
   "/SAES/Carousel-4.jpg",
   "/SAES/Carousel-5.jpg",
+  "/SAES/Carousel-6.jpg",
+  "/SAES/Carousel-7.jpg",
+];
+
+const NAV_LINKS = [
+  { label: "Home", href: "#home" },
+  { label: "About", href: "#about" },
+  { label: "Download", href: "#mobile" },
+  { label: "Contacts", href: "#contacts" },
+  { label: "Login", href: "/auth/login", isRoute: true },
 ];
 
 export default function Home() {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [mounted, setMounted] = useState(false);
+  const [visibleSections, setVisibleSections] = useState({
+    hero: false,
+    about: false,
+    mission: false,
+    features: false,
+    mobile: false
+  });
+  
   const slideCount = HERO_IMAGES.length;
+  
+  // Refs for sections
+  const heroRef = useRef(null);
+  const aboutRef = useRef(null);
+  const missionRef = useRef(null);
+  const featuresRef = useRef(null);
+  const mobileRef = useRef(null);
 
   useEffect(() => {
     setMounted(true);
@@ -26,7 +51,37 @@ export default function Home() {
       setCurrentSlide((prev) => (prev + 1) % slideCount);
     }, 5000);
 
-    return () => clearInterval(timer);
+    // Set up Intersection Observer for scroll animations
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setVisibleSections(prev => ({
+              ...prev,
+              [entry.target.id]: true
+            }));
+          }
+        });
+      },
+      {
+        threshold: 0.1,
+        rootMargin: '0px 0px -50px 0px'
+      }
+    );
+
+    // Observe all sections after a short delay to ensure they're rendered
+    setTimeout(() => {
+      if (heroRef.current) observer.observe(heroRef.current);
+      if (aboutRef.current) observer.observe(aboutRef.current);
+      if (missionRef.current) observer.observe(missionRef.current);
+      if (featuresRef.current) observer.observe(featuresRef.current);
+      if (mobileRef.current) observer.observe(mobileRef.current);
+    }, 100);
+
+    return () => {
+      clearInterval(timer);
+      observer.disconnect();
+    };
   }, [slideCount]);
 
   const goToSlide = (index: number) => {
@@ -39,6 +94,11 @@ export default function Home() {
 
   const handleNext = () => {
     goToSlide(currentSlide + 1);
+  };
+
+  // Helper function to determine if section should be visible
+  const isSectionVisible = (section: string) => {
+    return mounted && visibleSections[section as keyof typeof visibleSections];
   };
 
   return (
@@ -78,10 +138,11 @@ export default function Home() {
             lg:gap-16
           "
           >
-            {["Home", "About", "Mobile", "Contacts", "Login"].map((item, index) => (
+            {NAV_LINKS.map((item, index) => (
               <Link
-                key={item}
-                href={item === "Login" ? "/auth/login" : `#${item.toLowerCase()}`}
+                key={item.label}
+                href={item.href}
+                scroll={!item.isRoute}
                 className={`
                   font-bold text-[#013300] hover:text-green-800 transition-all duration-300 transform hover:scale-105
                   md:text-lg
@@ -90,15 +151,16 @@ export default function Home() {
                 `}
                 style={{ transitionDelay: `${index * 100 + 200}ms` }}
               >
-                {item}
+                {item.label}
               </Link>
             ))}
           </nav>
         </div>
       </header>
 
-      {/* Hero Section */}
+      {/* Hero Section - Always visible when mounted */}
       <main
+        ref={heroRef}
         id="home"
         className="
         /* Mobile */
@@ -141,6 +203,21 @@ export default function Home() {
             `}
             style={{ minHeight: "350px" }}
           >
+            <div
+              className="flex items-center gap-3 mb-4 md:gap-4 md:mb-6"
+            >
+              <Image
+                src="/SAES/SAESLogo.png"
+                alt="San Agustin Elementary School logo"
+                width={64}
+                height={64}
+                priority
+                className="h-12 w-12 md:h-16 md:w-16 object-contain"
+              />
+              <span className="text-lg font-semibold text-[#013300] md:text-xl lg:text-2xl">
+                San Agustin Elementary School
+              </span>
+            </div>
             <p className="text-lg pb-5 md:text-xl font-medium opacity-90">
               Welcome to <span className="font-semibold">RPT-SAES</span>
             </p>
@@ -298,10 +375,11 @@ export default function Home() {
         </div>
       </main>
 
-      {/* About Section - With "Our Mission" from redesign */}
+      {/* About Section - With Feature Cards */}
       <section
+        ref={aboutRef}
         id="about"
-        className={`
+        className="
         /* Mobile */
         px-6 py-16
         
@@ -310,108 +388,216 @@ export default function Home() {
         
         /* Desktop */
         lg:px-12 lg:py-24
-        transition-all duration-700 delay-300
-        ${mounted ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}
-      `}
+      "
       >
         <div
           className="
           /* Mobile */
-          mb-12 w-full max-w-4xl mx-auto px-4
+          mb-12 w-full max-w-6xl mx-auto px-4
           
           /* Tablet */
           md:mb-16
         "
         >
+          {/* Updated Title with Hero Section Style */}
           <h2
             className={`
             /* Mobile */
-            text-3xl font-bold text-[#013300] mb-4 text-center
+            text-3xl font-extrabold text-[#013300] mb-4 text-center leading-tight
             
             /* Tablet */
-            md:text-4xl
-            transition-all duration-700 delay-400 transform
-            ${mounted ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-6 opacity-0 scale-95'}
+            md:text-4xl md:mb-5
+            
+            /* Desktop */
+            lg:text-5xl
+            transition-all duration-800 delay-200 transform
+            ${isSectionVisible('about') ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-6 opacity-0 scale-95'}
           `}
           >
             About RPT-SAES
           </h2>
+
+          {/* Mission Section with Animated Circles */}
+          <div ref={missionRef} id="mission" className="relative mt-16 mb-20 max-w-4xl mx-auto">
+            <h3
+              className={`text-2xl font-semibold text-[#013300] mb-6 text-center md:text-3xl transition-all duration-700 delay-200 transform ${
+                isSectionVisible("mission") ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"
+              }`}
+            >
+            </h3>
+            {/* Animated Circles */}
+            <div className={`
+              absolute -left-20 top-1/2 -translate-y-1/2 w-40 h-40 rounded-full
+              bg-gradient-to-br from-green-500/20 to-green-300/10 blur-2xl
+              transition-all duration-1000 delay-300
+              ${isSectionVisible('mission') ? 'translate-x-0 opacity-100 scale-100' : '-translate-x-20 opacity-0 scale-50'}
+            `}></div>
+            
+            <div className={`
+              absolute -right-20 top-1/2 -translate-y-1/2 w-40 h-40 rounded-full
+              bg-gradient-to-br from-green-300/15 to-green-100/25 blur-2xl
+              transition-all duration-1000 delay-500
+              ${isSectionVisible('mission') ? 'translate-x-0 opacity-100 scale-100' : 'translate-x-20 opacity-0 scale-50'}
+            `}></div>
+
+            {/* Mission Text Container */}
+            <div className="relative z-10">
+              <div className={`
+                bg-gradient-to-r from-green-50/60 to-green-100/40 
+                border border-green-100/40 rounded-3xl
+                backdrop-blur-sm
+                transition-all duration-800 delay-700
+                ${isSectionVisible('mission') ? 'scale-100 opacity-100' : 'scale-95 opacity-0'}
+              `}>
+                <p className={`
+                  /* Mobile */
+                  text-green-900 leading-relaxed text-lg px-6 py-8 text-center
+                  
+                  /* Tablet */
+                  md:text-xl md:px-10 md:py-10
+                  transition-all duration-700 delay-900
+                  ${isSectionVisible('mission') ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}
+                `}>
+                  Our mission is to enhance the San Agustin Elementary School remedial program by providing teachers with a centralized system that tracks student performance, manages materials, and uses AI-driven analysis to support student learning.
+                </p>
+              </div>
+            </div>
+          </div>
           
-          {/* Our Mission Section */}
-          <div className="mt-12">
+          {/* Key Features Title */}
+          <div ref={featuresRef} id="features" className="mt-16">
             <h3 className={`
               /* Mobile */
-              text-2xl font-semibold text-[#013300] mb-4
+              text-2xl font-semibold text-[#013300] mb-8 text-center
               
               /* Tablet */
-              md:text-3xl
-              transition-all duration-700 delay-500 transform
-              ${mounted ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}
+              md:text-3xl md:mb-12
+              transition-all duration-700 delay-200 transform
+              ${isSectionVisible('features') ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}
             `}>
-              Our Mission
+              Key Features
             </h3>
-            <p className={`
-              /* Mobile */
-              text-green-900 leading-relaxed mb-6
-              
-              /* Tablet */
-              md:text-lg
-              transition-all duration-700 delay-600 transform
-              ${mounted ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}
-            `}>
-               To enhance the San Agustin Elementary School remedial program. We provide teachers with a centralized system that tracks student performance, materials management, and uses AI-driven performance analysis and suggestions.
-            </p>
-            
-            <div className="space-y-4">
-              {[
-                {
-                  title: "Centralized Repository of Remedial",
-                  desc: "A unified platform where teachers can upload, organize, and access all remedial materials in one place."
-                },
-                {
-                  title: "Interactive Quiz",
-                  desc: "Engaging digital quizzes that make learning of students interactive and dynamic."
-                },
-                {
-                  title: "AI-Driven Analysis and Insights",
-                  desc: "Smart recommendations that help teachers identify learning gaps of students."
-                },
-                {
-                  title: "Tracking Student Performance",
-                  desc: "Tracks student progress in literacy and numeracy to record students performance."
-                }
-              ].map((item, index) => (
-                <div 
-                  key={index}
-                  className={`flex items-start transition-all duration-500 transform ${
-                    mounted 
-                      ? 'translate-x-0 opacity-100' 
-                      : 'translate-x-6 opacity-0'
-                  }`}
-                  style={{ transitionDelay: `${700 + index * 100}ms` }}
-                >
-                  <div className="flex-shrink-0 mt-1">
-                    <div className="w-8 h-8 rounded-full bg-[#013300] flex items-center justify-center transition-all duration-300 transform hover:scale-110">
-                      <svg className="w-4 h-4 text-green-700" fill="none" stroke="white" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    </div>
-                  </div>
-                  <div className="ml-4">
-                    <h4 className="font-semibold text-green-900">{item.title}</h4>
-                    <p className="mt-1 text-green-800">{item.desc}</p>
-                  </div>
+          </div>
+          
+          {/* Feature Cards Section */}
+          <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-4 md:gap-8">
+            {[
+              {
+                defaultIcon: "/Landing_Cards/1A.png",
+                hoverIcon: "/Landing_Cards/1B.png",
+                title: "Centralized Repository",
+                desc: "A unified platform where teachers can manage all remedial materials in one place."
+              },
+              {
+                defaultIcon: "/Landing_Cards/2A.png",
+                hoverIcon: "/Landing_Cards/2B.png",
+                title: "Tracking Student Performance",
+                desc: "Tracks student progress in literacy and numeracy to record students performance."
+              },
+              {
+                defaultIcon: "/Landing_Cards/3A.png",
+                hoverIcon: "/Landing_Cards/3B.png",
+                title: "AI-Driven Analysis",
+                desc: "Smart recommendations that help teachers identify learning gaps of students."
+              },
+              {
+                defaultIcon: "/Landing_Cards/4A.png",
+                hoverIcon: "/Landing_Cards/4B.png",
+                title: "Interactive Quiz",
+                desc: "Engaging digital quizzes that make learning of students interactive and dynamic."
+              }
+            ].map((feature, index) => (
+              <div
+                key={index}
+                className={`
+                  group relative bg-white/80 backdrop-blur-sm rounded-2xl p-8 border border-green-100/60 
+                  shadow-[0_8px_32px_rgba(1,51,0,0.08)] hover:shadow-[0_20px_50px_rgba(1,51,0,0.15)]
+                  transition-all duration-300 ease-out cursor-pointer
+                  flex flex-col items-center text-center
+                  hover:bg-gradient-to-br hover:from-green-50 hover:to-white
+                  hover:border-green-200/80
+                  min-h-[280px] md:min-h-[300px] lg:min-h-[320px]
+                  transition-all duration-700 transform
+                  ${isSectionVisible('features') ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}
+                `}
+                style={{ transitionDelay: `${isSectionVisible('features') ? 300 + index * 150 : 0}ms` }}
+              >
+                {/* Default State - Icon and Title Only */}
+                <div className="
+                  flex flex-col items-center justify-center h-full
+                  group-hover:opacity-0 group-hover:scale-90
+                  transition-all duration-300 ease-out
+                ">
+                  <Image
+                    src={feature.defaultIcon}
+                    alt={`${feature.title} icon`}
+                    width={80}
+                    height={80}
+                    className="w-20 h-20 object-contain mb-6"
+                  />
+                  
+                  {/* Title */}
+                  <h4 className="
+                    font-bold text-[#013300] text-xl leading-tight px-2
+                  ">
+                    {feature.title}
+                  </h4>
                 </div>
-              ))}
-            </div>
+
+                {/* Hover State - Full Description */}
+                <div className="
+                  absolute inset-0 p-8 flex flex-col items-center justify-center
+                  opacity-0 scale-95
+                  group-hover:opacity-100 group-hover:scale-100
+                  transition-all duration-300 ease-out
+                  pointer-events-none
+                ">
+                  <Image
+                    src={feature.hoverIcon}
+                    alt={`${feature.title} icon highlighted`}
+                    width={72}
+                    height={72}
+                    className="w-16 h-16 object-contain mb-6"
+                  />
+                  
+                  {/* Title in Hover State */}
+                  <h4 className="
+                    font-bold text-[#013300] text-lg leading-tight mb-4 px-2
+                    group-hover:text-green-800
+                  ">
+                    {feature.title}
+                  </h4>
+                  
+                  {/* Description */}
+                  <p className="
+                    text-green-800 text-base leading-relaxed text-center
+                    opacity-0 translate-y-2
+                    group-hover:opacity-100 group-hover:translate-y-0
+                    transition-all duration-300 delay-100
+                    px-2
+                  ">
+                    {feature.desc}
+                  </p>
+                </div>
+
+                {/* Card Scale Effect */}
+                <div className="
+                  absolute inset-0 rounded-2xl
+                  scale-100 group-hover:scale-105
+                  transition-transform duration-300 ease-out
+                  -z-10
+                " />
+              </div>
+            ))}
           </div>
         </div>
       </section>
 
       {/* Quiz Section - With three decorative circles */}
       <section
+        ref={mobileRef}
         id="mobile"
-        className={`
+        className="
         /* Mobile */
         px-6 py-12
         
@@ -420,9 +606,7 @@ export default function Home() {
         
         /* Desktop */
         lg:px-12 lg:py-20
-        transition-all duration-700 delay-500
-        ${mounted ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}
-      `}
+      "
       >
         <div
           className="
@@ -457,8 +641,8 @@ export default function Home() {
                 
                 /* Desktop */
                 lg:-top-5 lg:-left-20 lg:w-[23rem] lg:h-[23rem]
-                transition-all duration-1000 delay-600
-                ${mounted ? 'scale-100 opacity-100' : 'scale-50 opacity-0'}
+                transition-all duration-1000 delay-300
+                ${isSectionVisible('mobile') ? 'scale-100 opacity-100' : 'scale-50 opacity-0'}
               `}></div>
               
               <div className={`
@@ -470,8 +654,8 @@ export default function Home() {
                 
                 /* Desktop */
                 lg:-bottom-2 lg:-right-12 lg:w-[24rem] lg:h-[24rem]
-                transition-all duration-1000 delay-700
-                ${mounted ? 'scale-100 opacity-100' : 'scale-50 opacity-0'}
+                transition-all duration-1000 delay-500
+                ${isSectionVisible('mobile') ? 'scale-100 opacity-100' : 'scale-50 opacity-0'}
               `}></div>
               
               <div className={`
@@ -483,8 +667,8 @@ export default function Home() {
                 
                 /* Desktop */
                 lg:-right-8 lg:w-80 lg:h-80
-                transition-all duration-1000 delay-800
-                ${mounted ? 'scale-100 opacity-100' : 'scale-50 opacity-0'}
+                transition-all duration-1000 delay-700
+                ${isSectionVisible('mobile') ? 'scale-100 opacity-100' : 'scale-50 opacity-0'}
               `}></div>
               
               {/* Phone Image - Should be above circles */}
@@ -503,7 +687,7 @@ export default function Home() {
                   /* Desktop */
                   lg:w-80
                   transition-all duration-800 delay-900 transform
-                  ${mounted ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-8 opacity-0 scale-95'}
+                  ${isSectionVisible('mobile') ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-8 opacity-0 scale-95'}
                 `}
               />
             </div>
@@ -516,8 +700,8 @@ export default function Home() {
               
               /* Tablet */
               md:items-start md:text-left 
-              transition-all duration-800 delay-1000
-              ${mounted ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}
+              transition-all duration-800 delay-200
+              ${isSectionVisible('mobile') ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}
             `}
             >
               <Image
@@ -534,8 +718,8 @@ export default function Home() {
                   
                   /* Desktop */
                   lg:w-90 lg:mb-0
-                  transition-all duration-700 delay-1100 transform
-                  ${mounted ? 'scale-100 opacity-100' : 'scale-90 opacity-0'}
+                  transition-all duration-700 delay-400 transform
+                  ${isSectionVisible('mobile') ? 'scale-100 opacity-100' : 'scale-90 opacity-0'}
                 `}
               />
               <h3
@@ -548,12 +732,12 @@ export default function Home() {
                 
                 /* Desktop */
                 lg:text-4xl
-                transition-all duration-700 delay-1200 transform
-                ${mounted ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}
+                transition-all duration-700 delay-600 transform
+                ${isSectionVisible('mobile') ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}
               `}
               >
-                For Interactive
-                <br className="hidden md:block" /> Learning of Students
+                Innovation  
+               <br className="hidden md:block" /> in Your Hands
               </h3>
               <p
                 className={`
@@ -562,11 +746,12 @@ export default function Home() {
                 
                 /* Tablet */
                 md:text-lg md:mb-6
-                transition-all duration-700 delay-1300 transform
-                ${mounted ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}
+                transition-all duration-700 delay-800 transform
+                ${isSectionVisible('mobile') ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}
               `}
               >
-                Improve student engagement, enjoy while learning
+                Manage remedial programs and 
+                <br className="hidden md:block" /> track student progress directly from your phone.
               </p>
               <a
                 className={`
@@ -578,8 +763,8 @@ export default function Home() {
                   
                   /* Desktop */
                   lg:text-xl
-                  transition-all duration-700 delay-1400
-                  ${mounted ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-6 opacity-0 scale-95'}
+                  transition-all duration-700 delay-1000
+                  ${isSectionVisible('mobile') ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-6 opacity-0 scale-95'}
                 `}
               >
                 <svg className="w-5 h-5 mr-2 md:w-6 md:h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
