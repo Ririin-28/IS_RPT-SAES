@@ -1,11 +1,5 @@
 import MasterTeacherReport from "@/modules/MasterTeacher/RemedialTeacher/report/report";
 
-interface ReportPageProps {
-  params: {
-    subject?: string;
-  };
-}
-
-export default function MasterTeacherReportBySubject({ params }: ReportPageProps) {
+export default function SubjectReportPage({ params }: { params: { subject: string } }) {
   return <MasterTeacherReport subjectSlug={params.subject} />;
 }
