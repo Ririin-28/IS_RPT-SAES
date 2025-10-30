@@ -1,17 +1,25 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { getStoredDisplayName } from "@/lib/utils/user-profile";
+
+const MASTER_TEACHER_FALLBACK_NAME = "Juan Dela Cruz";
 
 export default function MasterTeacherWelcome() {
   const [count, setCount] = useState(3);
+  const [displayName, setDisplayName] = useState(MASTER_TEACHER_FALLBACK_NAME);
   const router = useRouter();
 
   // Countdown timer
   useEffect(() => {
-  if (count === 0) router.push("/MasterTeacher/Coordinator/dashboard");
+    if (count === 0) router.push("/MasterTeacher/Coordinator/dashboard");
     const timer = setTimeout(() => setCount(count - 1), 1000);
     return () => clearTimeout(timer);
   }, [count, router]);
+
+  useEffect(() => {
+    setDisplayName(getStoredDisplayName(MASTER_TEACHER_FALLBACK_NAME));
+  }, []);
 
   return (
     <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-green-100 via-green-50 to-white">
@@ -56,7 +64,7 @@ export default function MasterTeacherWelcome() {
           <br />
           Master Teacher!
         </h2>
-  <h1 className="text-2xl md:text-6xl font-bold text-green-900 text-center mb-8">Juan Dela Cruz</h1>
+    <h1 className="text-2xl md:text-6xl font-bold text-green-900 text-center mb-8">{displayName}</h1>
         <div className="text-xl md:text-2xl text-green-800 font-semibold text-center flex items-center justify-center">
           Redirecting to dashboard
           <span className="ml-2 flex gap-1">

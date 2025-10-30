@@ -282,7 +282,7 @@ export default function ITAdminArchive() {
 			{/*---------------------------------Main Container---------------------------------*/}
 			<div className="bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[400px] overflow-y-auto p-4 sm:p-5 md:p-6">
 				<div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                <div className="flex items-center gap-0">
+                <div className="flex items-center gap-2">
                   <HeaderDropdown
                     options={[...ACCOUNT_OPTIONS]}
                     value={accountType}

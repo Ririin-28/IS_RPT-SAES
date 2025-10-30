@@ -1,5 +1,6 @@
 "use client";
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
+import type { RefObject } from 'react';
 import Header from "@/components/Parent/Header";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
@@ -11,15 +12,15 @@ function OverviewCard({
   label,
   icon,
   className = "",
+  onClick,
 }: {
   value: React.ReactNode;
   label: string;
   icon?: React.ReactNode;
   className?: string;
+  onClick?: () => void;
 }) {
-  return (
-    <div
-      className={`
+  const containerClasses = `
       /* Mobile */
       bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg
       flex flex-col items-center justify-center p-5 min-w-[160px] min-h-[110px]
@@ -31,8 +32,10 @@ function OverviewCard({
       /* Desktop */
       lg:p-7
       ${className}
-    `}
-    >
+    `;
+
+  const content = (
+    <>
       <div className="flex flex-row items-center">
         <span
           className="
@@ -70,8 +73,22 @@ function OverviewCard({
       >
         {label}
       </div>
-    </div>
+    </>
   );
+
+  if (typeof onClick === "function") {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`${containerClasses} focus:outline-none cursor-pointer text-left`}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return <div className={containerClasses}>{content}</div>;
 }
 
 // Simplified Schedule Card Component (without icons)
@@ -337,6 +354,24 @@ const currentChild = {
 
 export default function ParentDashboard() {
   const [selectedSubject, setSelectedSubject] = useState('English');
+  const progressSectionRef = useRef<HTMLDivElement | null>(null);
+  const attendanceSectionRef = useRef<HTMLDivElement | null>(null);
+
+  const scrollToSection = useCallback((sectionRef: RefObject<HTMLDivElement | null>) => {
+    sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
+  const handleSubjectCardClick = useCallback(
+    (subject: string) => {
+      setSelectedSubject(subject);
+      scrollToSection(progressSectionRef);
+    },
+    [scrollToSection, progressSectionRef, setSelectedSubject],
+  );
+
+  const handleAttendanceCardClick = useCallback(() => {
+    scrollToSection(attendanceSectionRef);
+  }, [scrollToSection, attendanceSectionRef]);
 
   // Get current day for highlighting
   const getCurrentDay = () => {
@@ -428,18 +463,22 @@ export default function ParentDashboard() {
                       <path d="M12 8V12L15 15M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="#013300" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                     </svg>
                   }
+                  onClick={handleAttendanceCardClick}
                 />
                 <OverviewCard
                   value={<span className="text-3xl sm:text-4xl font-extrabold text-[#013300]">{currentChild.currentLevel.English.split(' ')[0]}</span>}
                   label="English Level"
+                  onClick={() => handleSubjectCardClick('English')}
                 />
                 <OverviewCard
                   value={<span className="text-3xl sm:text-4xl font-extrabold text-[#013300]">{currentChild.currentLevel.Filipino.split(' ')[0]}</span>}
                   label="Filipino Level"
+                  onClick={() => handleSubjectCardClick('Filipino')}
                 />
                 <OverviewCard
                   value={<span className="text-3xl sm:text-4xl font-extrabold text-[#013300]">{currentChild.currentLevel.Math.split(' ')[0]}</span>}
                   label="Math Level"
+                  onClick={() => handleSubjectCardClick('Math')}
                 />
               </div>
 
@@ -447,7 +486,7 @@ export default function ParentDashboard() {
 
               {/* Remedial Subjects Section */}
               <div className="space-y-8">
-                <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg p-6">
+                <div ref={progressSectionRef} className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg p-6">
                   <TertiaryHeader title="Learning Progress" />
                   
                   {/* Subject Buttons */}
@@ -531,6 +570,17 @@ export default function ParentDashboard() {
                       </div>
                     </div>
 
+                    {/* Teacher Feedback */}
+                    <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-200">
+                      <h4 className="font-bold text-gray-800">Teacher's Comment</h4>
+                      <p className="mt-2 text-sm leading-relaxed text-gray-700">
+                        {currentProgress.teacherComments}
+                      </p>
+                      <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-green-700">
+                        — {currentProgress.teacher}
+                      </p>
+                    </div>
+
                     {/* Next Goals */}
                     <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
                       <h4 className="font-bold text-gray-800 mb-2 flex items-center">
@@ -542,7 +592,7 @@ export default function ParentDashboard() {
                 </div>
 
                 {/* Updated Schedule Section with Calendar */}
-                <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg p-6">
+                <div ref={attendanceSectionRef} className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg p-6">
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {/* Schedule Cards */}
                     <div>

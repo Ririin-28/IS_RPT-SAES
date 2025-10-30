@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import Sidebar from "@/components/IT_Admin/Sidebar";
 import Header from "@/components/IT_Admin/Header";
 // Text Components
@@ -41,11 +42,13 @@ function OverviewCard({
   label,
   icon,
   className = "",
+  onClick,
 }: {
   value: React.ReactNode;
   label: string;
   icon?: React.ReactNode;
   className?: string;
+  onClick?: () => void;
 }) {
   // Sanitize string values to prevent XSS
   const sanitizeContent = (content: any): React.ReactNode => {
@@ -56,13 +59,11 @@ function OverviewCard({
     return content;
   };
 
-  return (
-    <div
-      className={`
+  const baseClasses = `
       /* Mobile */
       bg-gradient-to-br bg-green-50 rounded-xl shadow-lg
       flex flex-col items-center justify-center p-5 min-w-[160px] min-h-[110px]
-      transition-transform duration-200
+  transition-transform duration-200 hover:scale-105
 
       /* Tablet */
       sm:p-6 sm:min-w-[180px] sm:min-h-[120px]
@@ -70,8 +71,10 @@ function OverviewCard({
       /* Desktop */
       lg:p-7
       ${className}
-    `}
-    >
+    `;
+
+  const content = (
+    <>
       <div className="flex flex-row items-center">
         <span
           className="
@@ -109,8 +112,22 @@ function OverviewCard({
       >
         {sanitizeContent(label)}
       </div>
-    </div>
+    </>
   );
+
+  if (typeof onClick === "function") {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`${baseClasses} focus:outline-none cursor-pointer text-left`}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return <div className={baseClasses}>{content}</div>;
 }
 
 
@@ -131,6 +148,11 @@ function formatDateTime(dt: string | null | undefined) {
 }
 
 export default function ITAdminDashboard() {
+  const router = useRouter();
+  const handleNavigation = useCallback((path: string) => {
+    router.push(path);
+  }, [router]);
+
   const [overview, setOverview] = useState<OverviewData>({
     totalUsers: null,
     newUsersThisWeek: null,
@@ -199,6 +221,7 @@ export default function ITAdminDashboard() {
             <circle cx="9" cy="7" r="4" />
           </svg>
         ),
+        onClick: () => handleNavigation("/IT_Admin/accounts"),
       },
       {
         key: "new-users",
@@ -212,6 +235,7 @@ export default function ITAdminDashboard() {
             <line x1="22" x2="16" y1="11" y2="11" />
           </svg>
         ),
+        onClick: () => handleNavigation("/IT_Admin/accounts"),
       },
       {
         key: "pending-users",
@@ -226,6 +250,7 @@ export default function ITAdminDashboard() {
             <rect x="8" y="2" width="8" height="4" rx="1" />
           </svg>
         ),
+        onClick: () => handleNavigation("/IT_Admin/logs"),
       },
       {
         key: "archived-users",
@@ -237,9 +262,10 @@ export default function ITAdminDashboard() {
             <circle cx="12" cy="12" r="10" />
           </svg>
         ),
+        onClick: () => handleNavigation("/IT_Admin/archive"),
       },
     ],
-    [overview]
+    [overview, handleNavigation]
   );
 
   const tableColumns = useMemo(
@@ -319,6 +345,7 @@ export default function ITAdminDashboard() {
                       value={displayValue}
                       label={card.label}
                       icon={card.icon}
+                      onClick={card.onClick}
                     />
                   );
                 })}
