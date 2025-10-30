@@ -246,7 +246,7 @@ export default function EnglishTab({ level }: EnglishTabProps) {
         actions={(row: any) => (
           <>
             {level === "Non Reader" ? (
-              <a href={`/MasterTeacher/RemedialTeacher/remedial/EnglishFlashcards?start=${row.startIndex}`}>
+              <a href={`/Teacher/remedial/EnglishFlashcards?start=${row.startIndex}`}>
                 <UtilityButton small>Play</UtilityButton>
               </a>
             ) : (

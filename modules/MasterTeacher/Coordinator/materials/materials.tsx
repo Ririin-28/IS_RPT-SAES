@@ -93,19 +93,14 @@ export default function MasterTeacherMaterials() {
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                 <div className="flex flex-col gap-0 sm:flex-row sm:items-center sm:gap-0">
                   <div className="flex items-center gap-2">
-                    <HeaderDropdown
-                      options={[...SUBJECT_OPTIONS]}
-                      value={subject}
-                      onChange={handleSubjectChange}
-                    />
                     <SecondaryHeader title="Materials" />
+                    <HeaderDropdown
+                      options={[...currentTabOptions]}
+                      value={activeTab}
+                      onChange={setActiveTab}
+                      className="pl-0"
+                    />
                   </div>
-                  <HeaderDropdown
-                    options={[...currentTabOptions]}
-                    value={activeTab}
-                    onChange={setActiveTab}
-                    className="pl-2"
-                  />
                 </div>
                 <div className="flex gap-3 w-full sm:w-auto mt-4 sm:mt-0">
                   <div className="relative flex-1 sm:flex-initial">

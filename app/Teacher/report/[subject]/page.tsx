@@ -1,11 +1,5 @@
 import TeacherReport from "@/modules/Teacher/report/report";
 
-interface ReportPageProps {
-  params: {
-    subject?: string;
-  };
-}
-
-export default function TeacherReportBySubject({ params }: ReportPageProps) {
+export default function SubjectReportPage({ params }: { params: { subject: string } }) {
   return <TeacherReport subjectSlug={params.subject} />;
 }

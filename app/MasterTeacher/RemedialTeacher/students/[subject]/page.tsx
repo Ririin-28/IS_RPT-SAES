@@ -1,11 +1,5 @@
 import MasterTeacherStudents from "@/modules/MasterTeacher/RemedialTeacher/students/students";
 
-type MasterTeacherStudentsSubjectPageProps = {
-  params: {
-    subject: string;
-  };
-};
-
-export default function MasterTeacherStudentsSubjectPage({ params }: MasterTeacherStudentsSubjectPageProps) {
+export default function SubjectStudentsPage({ params }: { params: { subject: string } }) {
   return <MasterTeacherStudents subjectSlug={params.subject} />;
 }
