@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import TableList from "@/components/Common/Tables/TableList";
+import EditContentModal, { type FlashcardContent } from "../Modals/EditContentModal";
 
 export const MATH_LEVELS = [
   "Not Proficient",
@@ -75,6 +76,50 @@ const INITIAL_REMEDIALS: Record<MathLevel, MathRemedial[]> = {
   ],
 };
 const STORAGE_KEY = "MASTER_TEACHER_REMEDIAL_MATH";
+const FLASHCARDS_STORAGE_KEY = "MASTER_TEACHER_MATH_FLASHCARDS";
+
+const INITIAL_FLASHCARDS: FlashcardContent[] = [
+  { sentence: "5 + 3", highlights: [], answer: "8" },
+  { sentence: "9 - 4", highlights: [], answer: "5" },
+  { sentence: "6 × 7", highlights: [], answer: "42" },
+  { sentence: "20 ÷ 4", highlights: [], answer: "5" },
+  { sentence: "12 + 15", highlights: [], answer: "27" },
+];
+
+function isValidFlashcardContent(value: unknown): value is FlashcardContent[] {
+  if (!Array.isArray(value) || value.length === 0) return false;
+  return value.every((item) => {
+    if (!item || typeof item !== "object") return false;
+    const candidate = item as { sentence?: unknown; highlights?: unknown; answer?: unknown };
+    if (typeof candidate.sentence !== "string") return false;
+    if (!Array.isArray(candidate.highlights)) return false;
+    if (!candidate.highlights.every((entry) => typeof entry === "string")) return false;
+    if (candidate.answer !== undefined && typeof candidate.answer !== "string") return false;
+    return true;
+  });
+}
+
+function readStoredFlashcards(): FlashcardContent[] {
+  if (typeof window === "undefined") return INITIAL_FLASHCARDS;
+
+  const storedValue = window.localStorage.getItem(FLASHCARDS_STORAGE_KEY);
+  if (!storedValue) {
+    window.localStorage.setItem(FLASHCARDS_STORAGE_KEY, JSON.stringify(INITIAL_FLASHCARDS));
+    return INITIAL_FLASHCARDS;
+  }
+
+  try {
+    const parsed = JSON.parse(storedValue);
+    if (isValidFlashcardContent(parsed)) {
+      return parsed;
+    }
+  } catch (error) {
+    console.warn("Failed to parse math flashcards", error);
+  }
+
+  window.localStorage.setItem(FLASHCARDS_STORAGE_KEY, JSON.stringify(INITIAL_FLASHCARDS));
+  return INITIAL_FLASHCARDS;
+}
 
 type MathRemedialsByLevel = Record<MathLevel, MathRemedial[]>;
 
@@ -139,9 +184,11 @@ interface MathTabProps {
 export default function MathTab({ level }: MathTabProps) {
   const hasLoadedFromStorage = useRef(false);
   const [remedialsByLevel, setRemedialsByLevel] = useState<MathRemedialsByLevel>(() => cloneInitialRemedials());
+  const [flashcards, setFlashcards] = useState<FlashcardContent[]>(INITIAL_FLASHCARDS);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draft, setDraft] = useState<MathRemedial | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   const remedials = remedialsByLevel[level] ?? [];
 
@@ -162,6 +209,9 @@ export default function MathTab({ level }: MathTabProps) {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(cloneInitialRemedials()));
     }
 
+    const storedFlashcards = readStoredFlashcards();
+    setFlashcards(storedFlashcards);
+
     hasLoadedFromStorage.current = true;
   }, []);
 
@@ -172,6 +222,7 @@ export default function MathTab({ level }: MathTabProps) {
   }, [level]);
 
   const startEdit = (id: number) => {
+    if (level === "Not Proficient") return;
     const target = remedials.find((item) => item.id === id);
     if (!target) return;
     setValidationError(null);
@@ -221,6 +272,14 @@ export default function MathTab({ level }: MathTabProps) {
     no: index + 1,
     startIndex: index,
   }));
+
+  const handleSaveFlashcards = (updatedFlashcards: FlashcardContent[]) => {
+    setFlashcards(updatedFlashcards);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(FLASHCARDS_STORAGE_KEY, JSON.stringify(updatedFlashcards));
+    }
+    setIsEditModalOpen(false);
+  };
 
   return (
     <div>
@@ -283,7 +342,15 @@ export default function MathTab({ level }: MathTabProps) {
             <a href={`/MasterTeacher/RemedialTeacher/remedial/MathFlashcards?start=${row.startIndex}`}>
               <UtilityButton small>Play</UtilityButton>
             </a>
-            {editingId === row.id ? (
+            {level === "Not Proficient" ? (
+              <UtilityButton
+                small
+                className="bg-[#013300] hover:bg-green-900"
+                onClick={() => setIsEditModalOpen(true)}
+              >
+                Edit
+              </UtilityButton>
+            ) : editingId === row.id ? (
               <>
                 <UtilityButton small onClick={handleSave}>
                   Save
@@ -304,6 +371,13 @@ export default function MathTab({ level }: MathTabProps) {
           </>
         )}
         pageSize={10}
+      />
+
+      <EditContentModal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        flashcards={flashcards}
+        onSave={handleSaveFlashcards}
       />
     </div>
   );
