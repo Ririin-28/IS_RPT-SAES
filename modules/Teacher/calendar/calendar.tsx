@@ -172,7 +172,7 @@ export default function TeacherCalendar() {
           days.push(
             <div
               key={`day-${day}`}
-              className="h-20 p-1 border border-gray-100 overflow-hidden relative"
+              className="h-24 p-1 border overflow-hidden relative hover:bg-gray-50 transition-colors cursor-pointer border-gray-100"
             >
               <div className="text-right text-sm font-medium text-gray-800 mb-1">
                 {day === new Date().getDate() && month === new Date().getMonth() && year === new Date().getFullYear() ? (

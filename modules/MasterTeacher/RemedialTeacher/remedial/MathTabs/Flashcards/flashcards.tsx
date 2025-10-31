@@ -4,30 +4,14 @@ import { FiArrowLeft, FiArrowRight } from "react-icons/fi";
 import { useSearchParams, useRouter } from "next/navigation";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import TableList from "@/components/Common/Tables/TableList";
-import { type FlashcardContent } from "../../Modals/EditContentModal";
 
-const FLASHCARD_CONTENT_KEY = "MASTER_TEACHER_MATH_FLASHCARDS";
-
-const INITIAL_FLASHCARDS: FlashcardContent[] = [
-  { sentence: "5 + 3", highlights: [], answer: "8" },
-  { sentence: "9 - 4", highlights: [], answer: "5" },
-  { sentence: "6 × 7", highlights: [], answer: "42" },
-  { sentence: "20 ÷ 4", highlights: [], answer: "5" },
-  { sentence: "12 + 15", highlights: [], answer: "27" },
+const flashcardsData = [
+  { question: "5 + 3", correctAnswer: "8" },
+  { question: "9 - 4", correctAnswer: "5" },
+  { question: "6 × 7", correctAnswer: "42" },
+  { question: "20 ÷ 4", correctAnswer: "5" },
+  { question: "12 + 15", correctAnswer: "27" },
 ];
-
-function isValidFlashcardContent(value: unknown): value is FlashcardContent[] {
-  if (!Array.isArray(value) || value.length === 0) return false;
-  return value.every((item) => {
-    if (!item || typeof item !== "object") return false;
-    const candidate = item as { sentence?: unknown; highlights?: unknown; answer?: unknown };
-    if (typeof candidate.sentence !== "string") return false;
-    if (!Array.isArray(candidate.highlights)) return false;
-    if (!candidate.highlights.every((entry) => typeof entry === "string")) return false;
-    if (candidate.answer !== undefined && typeof candidate.answer !== "string") return false;
-    return true;
-  });
-}
 
 const STUDENT_ROSTER_KEY = "MASTER_TEACHER_MATH_STUDENTS";
 const PERFORMANCE_HISTORY_KEY = "MASTER_TEACHER_MATH_PERFORMANCE";
@@ -65,15 +49,10 @@ const DEFAULT_MATH_STUDENTS: StudentRecord[] = [
 export default function MasterTeacherMathFlashcards() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [flashcardsData, setFlashcardsData] = useState<FlashcardContent[]>(INITIAL_FLASHCARDS);
   const startParam = searchParams?.get("start");
-  const startIndex = useMemo(() => {
-    if (!startParam) return 0;
-    const parsed = Number.parseInt(startParam, 10);
-    if (Number.isNaN(parsed)) return 0;
-    const maxIndex = Math.max(flashcardsData.length - 1, 0);
-    return Math.min(Math.max(parsed, 0), maxIndex);
-  }, [flashcardsData.length, startParam]);
+  const startIndex = startParam
+    ? Math.min(Math.max(parseInt(startParam), 0), flashcardsData.length - 1)
+    : 0;
 
   const [view, setView] = useState<"select" | "session">("select");
   const [students, setStudents] = useState<StudentRecord[]>(DEFAULT_MATH_STUDENTS);
@@ -84,26 +63,6 @@ export default function MasterTeacherMathFlashcards() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-
-    try {
-      const storedContent = window.localStorage.getItem(FLASHCARD_CONTENT_KEY);
-      if (storedContent) {
-        const parsed = JSON.parse(storedContent);
-        if (isValidFlashcardContent(parsed)) {
-          setFlashcardsData(parsed);
-        } else {
-          window.localStorage.setItem(FLASHCARD_CONTENT_KEY, JSON.stringify(INITIAL_FLASHCARDS));
-          setFlashcardsData(INITIAL_FLASHCARDS);
-        }
-      } else {
-        window.localStorage.setItem(FLASHCARD_CONTENT_KEY, JSON.stringify(INITIAL_FLASHCARDS));
-        setFlashcardsData(INITIAL_FLASHCARDS);
-      }
-    } catch (error) {
-      console.warn("Failed to load math flashcards", error);
-      setFlashcardsData(INITIAL_FLASHCARDS);
-      window.localStorage.setItem(FLASHCARD_CONTENT_KEY, JSON.stringify(INITIAL_FLASHCARDS));
-    }
 
     try {
       const storedStudents = window.localStorage.getItem(STUDENT_ROSTER_KEY);
@@ -199,25 +158,7 @@ export default function MasterTeacherMathFlashcards() {
   const [rate, setRate] = useState<number | null>(null); // seconds
   const [score, setScore] = useState<number | null>(null);
 
-  useEffect(() => {
-    if (flashcardsData.length === 0) {
-      setCurrent(0);
-    } else {
-      setCurrent((prev) => Math.min(Math.max(prev, 0), flashcardsData.length - 1));
-    }
-  }, [flashcardsData.length]);
-
-  useEffect(() => {
-    setCurrent(startIndex);
-  }, [startIndex]);
-
-  const currentCard: FlashcardContent = flashcardsData[current] ?? {
-    sentence: "",
-    highlights: [],
-    answer: "",
-  };
-  const question = currentCard.sentence;
-  const correctAnswer = currentCard.answer ?? "";
+  const { question, correctAnswer } = flashcardsData[current];
 
   const resetFields = useCallback(() => {
     setUserAnswer("");
@@ -228,14 +169,12 @@ export default function MasterTeacherMathFlashcards() {
   }, []);
 
   const handlePrev = () => {
-    setCurrent((prev) => (flashcardsData.length > 0 ? Math.max(prev - 1, 0) : 0));
+    setCurrent((prev) => Math.max(prev - 1, 0));
     resetFields();
   };
 
   const handleNext = () => {
-    setCurrent((prev) =>
-      flashcardsData.length > 0 ? Math.min(prev + 1, flashcardsData.length - 1) : 0,
-    );
+    setCurrent((prev) => Math.min(prev + 1, flashcardsData.length - 1));
     resetFields();
   };
 
@@ -247,16 +186,11 @@ export default function MasterTeacherMathFlashcards() {
   };
 
   const handleStopSession = () => {
-    const activeQuestion = question;
+    const activeQuestion = flashcardsData[current]?.question ?? "";
     const currentScore = score;
     const currentRate = rate;
 
-    if (
-      selectedStudentId !== null &&
-      currentScore !== null &&
-      currentRate !== null &&
-      flashcardsData.length > 0
-    ) {
+    if (selectedStudentId !== null && currentScore !== null && currentRate !== null) {
       addPerformanceEntry({
         id: `perf-${Date.now()}`,
         studentId: selectedStudentId,
@@ -281,14 +215,9 @@ export default function MasterTeacherMathFlashcards() {
 
   useEffect(() => {
     setStartTime(Date.now());
-  }, [current, flashcardsData.length]);
+  }, [current]);
 
   const handleSubmit = () => {
-    if (flashcardsData.length === 0) {
-      setFeedback("No flashcards available. Please add content first.");
-      return;
-    }
-
     if (!userAnswer.trim()) {
       setFeedback("Please enter your answer first.");
       return;
@@ -298,7 +227,7 @@ export default function MasterTeacherMathFlashcards() {
     const durationSec = (endTime - (startTime || endTime)) / 1000;
     setRate(durationSec);
 
-    const isCorrect = userAnswer.trim() === correctAnswer.trim();
+    const isCorrect = userAnswer.trim() === correctAnswer;
     setScore(isCorrect ? 100 : 0);
 
     if (isCorrect) {
@@ -382,9 +311,7 @@ export default function MasterTeacherMathFlashcards() {
     return null;
   }
 
-  const progressPercent = flashcardsData.length
-    ? ((current + 1) / flashcardsData.length) * 100
-    : 0;
+  const progressPercent = ((current + 1) / flashcardsData.length) * 100;
   const progressCircleStyle: CSSProperties = {
     background: `conic-gradient(#013300 ${progressPercent * 3.6}deg, #e6f4ef ${progressPercent * 3.6}deg)`,
   };
@@ -416,7 +343,7 @@ export default function MasterTeacherMathFlashcards() {
             <div className="text-center sm:text-left">
               <p className="text-xs uppercase tracking-wide text-slate-500">Card</p>
               <p className="text-xl font-semibold text-[#013300]">
-                {flashcardsData.length ? current + 1 : 0} <span className="text-base font-normal text-slate-400">/ {flashcardsData.length}</span>
+                {current + 1} <span className="text-base font-normal text-slate-400">/ {flashcardsData.length}</span>
               </p>
             </div>
           </div>
@@ -427,7 +354,7 @@ export default function MasterTeacherMathFlashcards() {
   <div className="h-full rounded-3xl border border-gray-300 bg-white shadow-md shadow-gray-200 overflow-hidden flex flex-col">
     <div className="flex-1 px-6 sm:px-8 lg:px-12 py-12 flex items-center justify-center text-center bg-gradient-to-b from-white via-white to-[#f3f7f4]">
       <p className="text-4xl sm:text-5xl lg:text-6xl font-semibold text-[#013300] tracking-tight">
-        {question || "No flashcards available."}
+        {question}
       </p>
     </div>
     <div className="px-6 sm:px-8 py-6 border-t border-gray-300 flex flex-col gap-4 md:flex-row md:items-stretch md:justify-between bg-white/90">
@@ -445,8 +372,7 @@ export default function MasterTeacherMathFlashcards() {
         <span className="uppercase tracking-wide text-xs text-slate-600 opacity-0">Action</span>
         <button
           onClick={handleSubmit}
-          disabled={flashcardsData.length === 0}
-          className="inline-flex items-center justify-center gap-2 rounded-full bg-[#013300] px-7 py-3 text-base font-semibold text-white shadow-md shadow-gray-200 transition hover:bg-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed h-full w-full"
+          className="inline-flex items-center justify-center gap-2 rounded-full bg-[#013300] px-7 py-3 text-base font-semibold text-white shadow-md shadow-gray-200 transition hover:bg-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600 active:scale-95 h-full w-full"
         >
           Check Answer
         </button>
@@ -482,7 +408,7 @@ export default function MasterTeacherMathFlashcards() {
                 {score === 0 && userAnswer && (
                   <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm">
                     <p className="text-xs uppercase tracking-wide text-slate-500">Correct answer</p>
-                    <p className="text-base font-semibold text-[#013300]">{correctAnswer || "—"}</p>
+                    <p className="text-base font-semibold text-[#013300]">{correctAnswer}</p>
                   </div>
                 )}
               </div>
@@ -494,7 +420,7 @@ export default function MasterTeacherMathFlashcards() {
           <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-center gap-3 w-full">
             <button
               onClick={handlePrev}
-              disabled={flashcardsData.length === 0 || current === 0}
+              disabled={current === 0}
               className="inline-flex items-center justify-center gap-2 rounded-full border border-[#013300] px-6 py-3 text-sm font-medium text-[#013300] transition hover:border-[#013300] hover:bg-emerald-50 disabled:opacity-40 disabled:hover:bg-transparent w-full sm:w-auto"
             >
               <FiArrowLeft /> Previous
@@ -507,7 +433,7 @@ export default function MasterTeacherMathFlashcards() {
             </button>
             <button
               onClick={handleNext}
-              disabled={flashcardsData.length === 0 || current === flashcardsData.length - 1}
+              disabled={current === flashcardsData.length - 1}
               className="inline-flex items-center justify-center gap-2 rounded-full border border-[#013300] px-6 py-3 text-sm font-medium text-[#013300] transition hover:border-[#013300] hover:bg-emerald-50 disabled:opacity-40 disabled:hover:bg-transparent w-full sm:w-auto"
             >
               Next <FiArrowRight />

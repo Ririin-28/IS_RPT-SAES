@@ -104,7 +104,6 @@ function comparePhonemeArrays(expectedArr: string[], actualArr: string[]) {
 
 const STUDENT_ROSTER_KEY = "MASTER_TEACHER_FILIPINO_STUDENTS";
 const PERFORMANCE_HISTORY_KEY = "MASTER_TEACHER_FILIPINO_PERFORMANCE";
-const FLASHCARD_CONTENT_KEY = "MASTER_TEACHER_FILIPINO_FLASHCARDS";
 
 type StudentRecord = {
   id: string;
@@ -130,23 +129,6 @@ type EnrichedStudent = StudentRecord & {
   lastPerformance: StudentPerformanceEntry | null;
 };
 
-type FlashcardContent = {
-  sentence: string;
-  highlights: string[];
-};
-
-function isValidFlashcardContent(value: unknown): value is FlashcardContent[] {
-  if (!Array.isArray(value)) return false;
-  if (value.length === 0) return false;
-  return value.every((item) => {
-    if (!item || typeof item !== "object") return false;
-    const candidate = item as { sentence?: unknown; highlights?: unknown };
-    if (typeof candidate.sentence !== "string") return false;
-    if (!Array.isArray(candidate.highlights)) return false;
-    return candidate.highlights.every((word) => typeof word === "string");
-  });
-}
-
 const DEFAULT_FILIPINO_STUDENTS: StudentRecord[] = [
   { id: "fil-001", studentId: "FIL-2025-001", name: "Juan Dela Cruz", grade: "4", section: "A" },
   { id: "fil-002", studentId: "FIL-2025-002", name: "Maria Santos", grade: "4", section: "B" },
@@ -156,7 +138,7 @@ const DEFAULT_FILIPINO_STUDENTS: StudentRecord[] = [
 ];
 
 /* ---------- Filipino Flashcards data ---------- */
-const INITIAL_FLASHCARDS: FlashcardContent[] = [
+const flashcardsData = [
   { sentence: "Ang bata ay naglalaro sa parke.", highlights: ["bata", "parke"] },
   { sentence: "Kumakain ng masarap na pagkain ang pamilya.", highlights: ["masarap", "pamilya"] },
   { sentence: "Maganda ang bulaklak sa hardin.", highlights: ["bulaklak", "hardin"] },
@@ -171,17 +153,12 @@ const INITIAL_FLASHCARDS: FlashcardContent[] = [
 
 /* ---------- Component ---------- */
 export default function MasterTeacherFilipinoFlashcards() {
-  const router = useRouter();
-  const [flashcardsData, setFlashcardsData] = useState<FlashcardContent[]>(INITIAL_FLASHCARDS);
   const searchParams = useSearchParams();
+  const router = useRouter();
   const startParam = searchParams?.get("start");
-  const startIndex = useMemo(() => {
-    if (!startParam) return 0;
-    const parsed = Number.parseInt(startParam, 10);
-    if (Number.isNaN(parsed)) return 0;
-    const maxIndex = Math.max(flashcardsData.length - 1, 0);
-    return Math.min(Math.max(parsed, 0), maxIndex);
-  }, [flashcardsData.length, startParam]);
+  const startIndex = startParam
+    ? Math.min(Math.max(parseInt(startParam), 0), flashcardsData.length - 1)
+    : 0;
 
   const [view, setView] = useState<"select" | "session">("select");
   const [students, setStudents] = useState<StudentRecord[]>(DEFAULT_FILIPINO_STUDENTS);
@@ -189,27 +166,6 @@ export default function MasterTeacherFilipinoFlashcards() {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [studentSearch, setStudentSearch] = useState("");
   const [lastSavedStudentId, setLastSavedStudentId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    try {
-      const stored = window.localStorage.getItem(FLASHCARD_CONTENT_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (isValidFlashcardContent(parsed)) {
-          setFlashcardsData(parsed);
-          return;
-        }
-      }
-
-      window.localStorage.setItem(FLASHCARD_CONTENT_KEY, JSON.stringify(INITIAL_FLASHCARDS));
-      setFlashcardsData(INITIAL_FLASHCARDS);
-    } catch (error) {
-      console.warn("Failed to load Filipino flashcard content", error);
-      setFlashcardsData(INITIAL_FLASHCARDS);
-    }
-  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -302,21 +258,8 @@ export default function MasterTeacherFilipinoFlashcards() {
   }, []);
 
   const [current, setCurrent] = useState(startIndex);
-
-  useEffect(() => {
-    if (flashcardsData.length === 0) {
-      setCurrent(0);
-      return;
-    }
-    setCurrent((prev) => Math.min(Math.max(prev, 0), flashcardsData.length - 1));
-  }, [flashcardsData.length]);
-
-  useEffect(() => {
-    setCurrent(startIndex);
-  }, [startIndex]);
-
-  const currentCard = flashcardsData[current] ?? flashcardsData[0] ?? INITIAL_FLASHCARDS[0];
-  const sentence = currentCard?.sentence ?? "";
+  const currentCard = flashcardsData[current];
+  const { sentence } = currentCard;
 
   // recognition + metrics state
   const [isListening, setIsListening] = useState(false);
@@ -409,12 +352,8 @@ export default function MasterTeacherFilipinoFlashcards() {
     resetSessionTracking();
   }, [current, resetSessionTracking]);
 
-  const handlePrev = () =>
-    setCurrent((prev) => (flashcardsData.length > 0 ? Math.max(prev - 1, 0) : 0));
-  const handleNext = () =>
-    setCurrent((prev) =>
-      flashcardsData.length > 0 ? Math.min(prev + 1, flashcardsData.length - 1) : 0,
-    );
+  const handlePrev = () => setCurrent((prev) => Math.max(prev - 1, 0));
+  const handleNext = () => setCurrent((prev) => Math.min(prev + 1, flashcardsData.length - 1));
 
   const handleStartSession = (studentId: string) => {
     setSelectedStudentId(studentId);
@@ -515,38 +454,30 @@ export default function MasterTeacherFilipinoFlashcards() {
     const totalSpeechMs = (speechEndRef.current && speechStartRef.current) ? Math.max(1, (speechEndRef.current - speechStartRef.current)) : 1;
     const totalSilenceMs = cumulativeSilentMsRef.current;
     const pauseRatio = Math.min(1, totalSilenceMs / totalSpeechMs);
-    const fluencyScore = Math.min(100, Math.max(0, Math.round((1 - pauseRatio) * 100)));
+    const fluencyScore = Math.round((1 - pauseRatio) * 100);
 
     // Reading rate: words per minute
-    const wpm = Math.max(0, Math.round((expWords.length / (totalSpeechMs / 1000)) * 60));
+    const wpm = Math.round((expWords.length / (totalSpeechMs / 1000)) * 60);
 
     // Combine scores
-  const conf = resultConfidence ?? 0.8;
-  const pronScore = Math.min(100, Math.max(0, Math.round((0.5 * wordAccuracy) + (0.35 * phonemeAccuracy) + (0.15 * conf * 100))));
-    const correctnessPercent = Math.min(100, Math.max(0, Math.round(wordAccuracy)));
-    const readingSpeedPercent = Math.min(100, Math.max(0, wpm));
-    const averageScore = Math.min(100, Math.max(0, Math.round((pronScore + fluencyScore + readingSpeedPercent) / 3)));
+    const conf = resultConfidence ?? 0.8;
+    const pronScore = Math.round((0.5 * wordAccuracy) + (0.35 * phonemeAccuracy) + (0.15 * conf * 100));
 
-    let averageLabel: "Excellent" | "Very Good" | "Good" | "Fair" | "Poor";
-    if (averageScore >= 90) averageLabel = "Excellent";
-    else if (averageScore >= 80) averageLabel = "Very Good";
-    else if (averageScore >= 70) averageLabel = "Good";
-    else if (averageScore >= 60) averageLabel = "Fair";
-    else averageLabel = "Poor";
+    // Filipino remarks
+    let remarks = "";
+    if (pronScore > 85 && fluencyScore > 80) remarks = "Magaling! Napakagaling ng iyong pagbigkas at fluency! 🌟";
+    else if (pronScore > 70) remarks = "Magaling — kaunting pagsasanay pa sa pagbigkas at fluency. 💪";
+    else if (pronScore > 50) remarks = "Katamtaman — kailangan ng pagsasanay sa mga tunog at bawasan ang paghinto. 🗣️";
+    else remarks = "Kailangan ng mas maraming pagsasanay — pagbutihin ang kalinasan at bilis. 📚";
 
     return {
-      expWords,
-      spkWords,
-      perWordDetails,
-      correctness: correctnessPercent,
+      expWords, spkWords, perWordDetails,
+      wordAccuracy: Math.round(wordAccuracy * 100) / 100,
       phonemeAccuracy: Math.round(phonemeAccuracy * 100) / 100,
       fluencyScore,
-      readingSpeed: wpm,
       wpm,
       pronScore,
-      averageScore,
-      averageLabel,
-      remarks: averageLabel
+      remarks
     };
   }
 
@@ -699,9 +630,7 @@ export default function MasterTeacherFilipinoFlashcards() {
     return null;
   }
 
-  const progressPercent = flashcardsData.length
-    ? ((current + 1) / flashcardsData.length) * 100
-    : 0;
+  const progressPercent = ((current + 1) / flashcardsData.length) * 100;
   const progressCircleStyle: CSSProperties = {
     background: `conic-gradient(#013300 ${progressPercent * 3.6}deg, #e6f4ef ${progressPercent * 3.6}deg)`,
   };
@@ -733,7 +662,7 @@ export default function MasterTeacherFilipinoFlashcards() {
             <div className="text-center sm:text-left">
               <p className="text-xs uppercase tracking-wide text-slate-500">Card</p>
               <p className="text-xl font-semibold text-[#013300]">
-                {flashcardsData.length ? current + 1 : 0} <span className="text-base font-normal text-slate-400">/ {flashcardsData.length}</span>
+                {current + 1} <span className="text-base font-normal text-slate-400">/ {flashcardsData.length}</span>
               </p>
             </div>
           </div>
@@ -806,24 +735,18 @@ export default function MasterTeacherFilipinoFlashcards() {
                     <dd className="text-lg font-semibold text-[#013300]">{metrics ? `${metrics.pronScore}%` : "—"}</dd>
                   </div>
                   <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3">
-                    <dt className="text-xs uppercase tracking-wide text-slate-500">Correctness</dt>
-                    <dd className="text-lg font-semibold text-[#013300]">{metrics ? `${metrics.correctness}%` : "—"}</dd>
+                    <dt className="text-xs uppercase tracking-wide text-slate-500">Fluency</dt>
+                    <dd className="text-lg font-semibold text-[#013300]">{metrics ? `${metrics.fluencyScore}%` : "—"}</dd>
+                  </div>
+                  <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3">
+                    <dt className="text-xs uppercase tracking-wide text-slate-500">Sound Accuracy</dt>
+                    <dd className="text-lg font-semibold text-[#013300]">{metrics ? `${metrics.phonemeAccuracy.toFixed(0)}%` : "—"}</dd>
                   </div>
                   <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3">
                     <dt className="text-xs uppercase tracking-wide text-slate-500">Reading Speed</dt>
-                    <dd className="text-lg font-semibold text-[#013300]">{metrics ? `${(metrics.readingSpeed ?? metrics.wpm)} WPM` : "—"}</dd>
-                  </div>
-                  <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3">
-                    <dt className="text-xs uppercase tracking-wide text-slate-500">Average</dt>
-                    <dd className="text-lg font-semibold text-[#013300]">{metrics ? `${metrics.averageScore}%` : "—"}</dd>
+                    <dd className="text-lg font-semibold text-[#013300]">{metrics ? `${metrics.wpm} WPM` : "—"}</dd>
                   </div>
                 </dl>
-                <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3">
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Remark</p>
-                  <p className="mt-1 text-sm font-medium text-[#013300]">
-                    {feedback || "Waiting for evaluation."}
-                  </p>
-                </div>
               </div>
             </div>
           </aside>
@@ -833,7 +756,7 @@ export default function MasterTeacherFilipinoFlashcards() {
           <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-center gap-3 w-full">
             <button
               onClick={handlePrev}
-              disabled={flashcardsData.length === 0 || current === 0}
+              disabled={current === 0}
               className="inline-flex items-center justify-center gap-2 rounded-full border border-[#013300] px-6 py-3 text-sm font-medium text-[#013300] transition hover:border-[#013300] hover:bg-emerald-50 disabled:opacity-40 disabled:hover:bg-transparent w-full sm:w-auto"
             >
               <FiArrowLeft /> Previous
@@ -846,7 +769,7 @@ export default function MasterTeacherFilipinoFlashcards() {
             </button>
             <button
               onClick={handleNext}
-              disabled={flashcardsData.length === 0 || current === flashcardsData.length - 1}
+              disabled={current === flashcardsData.length - 1}
               className="inline-flex items-center justify-center gap-2 rounded-full border border-[#013300] px-6 py-3 text-sm font-medium text-[#013300] transition hover:border-[#013300] hover:bg-emerald-50 disabled:opacity-40 disabled:hover:bg-transparent w-full sm:w-auto"
             >
               Next <FiArrowRight />

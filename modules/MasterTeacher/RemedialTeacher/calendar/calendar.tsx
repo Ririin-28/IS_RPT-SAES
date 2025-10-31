@@ -2,20 +2,7 @@
 import Sidebar from "@/components/MasterTeacher/RemedialTeacher/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
 import { useState } from "react";
-import { useForm } from "react-hook-form";
-// Button Components
-import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
-import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
-import UtilityButton from "@/components/Common/Buttons/UtilityButton";
-import DangerButton from "@/components/Common/Buttons/DangerButton";
-// Text Components
-import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
-import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
-import BodyText from "@/components/Common/Texts/BodyText";
-// Modal Components
-import AddScheduleModal from "./Modals/AddScheduleModal";
-import ActivityDetailModal from "./Modals/ActivityDetailModal";
-import DeleteConfirmationModal from "./Modals/DeleteConfirmationModal";
+
 
 interface Activity {
   id: number;
@@ -31,23 +18,7 @@ interface Activity {
 export default function MasterTeacherCalendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState("month");
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const [activityToDelete, setActivityToDelete] = useState<Activity | null>(null);
 
-  // React Hook Form setup
-  const formMethods = useForm({
-    defaultValues: {
-      title: "",
-      date: "",
-      roomNo: "",
-      description: "",
-      teachers: [],
-    },
-  });
-  const { reset, setValue } = formMethods;
 
   // Activities data in state - Start with empty array
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -107,52 +78,7 @@ export default function MasterTeacherCalendar() {
     setCurrentDate(new Date());
   };
 
-  // Handle double click on date
-  const handleDateDoubleClick = (date: Date) => {
-    setSelectedDate(date);
-    setValue("date", date.toLocaleDateString("en-CA")); 
-    setShowAddModal(true);
-  };
 
-  // Add new schedule
-  const handleAddSchedule = (data: any) => {
-    const [year, month, day] = data.date.split("-").map(Number);
-    const startDate = new Date(year, month - 1, day, 9, 0, 0);
-    const endDate = new Date(year, month - 1, day, 10, 0, 0);
-
-    const newActivity: Activity = {
-      id: activities.length > 0 ? Math.max(...activities.map((a) => a.id)) + 1 : 1,
-      ...data,
-      day: startDate.toLocaleDateString("en-US", { weekday: "long" }),
-      date: startDate,
-      end: endDate,
-      type: "class",
-    };
-
-    setActivities([...activities, newActivity]);
-    setShowAddModal(false);
-    reset();
-  };
-
-  // Delete schedule with confirmation
-  const handleDeleteClick = (activity: Activity) => {
-    setActivityToDelete(activity);
-    setShowDeleteModal(true);
-  };
-
-  const handleDeleteConfirm = () => {
-    if (activityToDelete) {
-      setActivities(activities.filter((activity) => activity.id !== activityToDelete.id));
-      setSelectedActivity(null);
-      setShowDeleteModal(false);
-      setActivityToDelete(null);
-    }
-  };
-
-  const handleDeleteCancel = () => {
-    setShowDeleteModal(false);
-    setActivityToDelete(null);
-  };
 
   // Activity type colors
   const getActivityColor = (type: string) => {
@@ -192,8 +118,7 @@ export default function MasterTeacherCalendar() {
                 {activities.map((activity) => (
                   <div
                     key={activity.id}
-                    className="p-3 border-l-4 border-[#013300] bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-pointer"
-                    onClick={() => setSelectedActivity(activity)}
+                    className="p-3 border-l-4 border-[#013300] bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow"
                   >
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
@@ -207,15 +132,7 @@ export default function MasterTeacherCalendar() {
                         </div>
                         <div className="text-xs text-gray-500 mt-1">{activity.roomNo}</div>
                       </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteClick(activity);
-                        }}
-                        className="text-gray-400 hover:text-red-500 text-lg"
-                      >
-                        ×
-                      </button>
+
                     </div>
                   </div>
                 ))}
@@ -224,7 +141,7 @@ export default function MasterTeacherCalendar() {
           ))
         ) : (
           <div className="text-center text-gray-500 py-8">
-            No activities scheduled. Double-click on a date in month view to add activities.
+            No activities scheduled.
           </div>
         )}
       </div>
@@ -256,8 +173,7 @@ export default function MasterTeacherCalendar() {
           days.push(
             <div
               key={`day-${day}`}
-              className="h-20 p-1 border border-gray-100 overflow-hidden relative hover:bg-gray-50 transition-colors cursor-pointer"
-              onDoubleClick={() => handleDateDoubleClick(currentDay)}
+              className="h-24 p-1 border overflow-hidden relative hover:bg-gray-50 transition-colors cursor-pointer border-gray-100"
             >
               <div className="text-right text-sm font-medium text-gray-800 mb-1">
                 {day === new Date().getDate() && month === new Date().getMonth() && year === new Date().getFullYear() ? (
@@ -272,21 +188,9 @@ export default function MasterTeacherCalendar() {
                 {dayActivities.slice(0, 2).map((activity) => (
                   <div
                     key={activity.id}
-                    className={`text-xs p-1 rounded truncate cursor-pointer border ${getActivityColor(activity.type)}`}
-                    onClick={() => setSelectedActivity(activity)}
+                    className={`text-xs p-1 rounded truncate border ${getActivityColor(activity.type)}`}
                   >
-                    <div className="flex justify-between items-center">
-                      <span className="truncate">{activity.title}</span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteClick(activity);
-                        }}
-                        className="text-xs text-red-500 hover:text-red-700"
-                      >
-                        ×
-                      </button>
-                    </div>
+                    <span className="truncate">{activity.title}</span>
                   </div>
                 ))}
                 {dayActivities.length > 2 && (
@@ -345,7 +249,6 @@ export default function MasterTeacherCalendar() {
         <div 
           key={`weekday-${i}`} 
           className="border-b border-gray-200"
-          onDoubleClick={() => handleDateDoubleClick(dayDate)}
         >
           <div className="p-2 bg-gray-50">
             <div>
@@ -365,31 +268,17 @@ export default function MasterTeacherCalendar() {
               dayActivities.map((activity) => (
                 <div
                   key={activity.id}
-                  className="p-2 rounded-lg border-l-4 shadow-sm bg-white cursor-pointer hover:shadow-md transition-shadow"
+                  className="p-2 rounded-lg border-l-4 shadow-sm bg-white hover:shadow-md transition-shadow"
                   style={{
                     borderLeftColor: activity.type === "class" ? "#2563EB" : activity.type === "meeting" ? "#059669" : "#7C3AED",
                   }}
-                  onClick={() => setSelectedActivity(activity)}
                 >
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <div className="font-medium text-gray-900 text-sm">{activity.title}</div>
-                      <div className="text-xs text-gray-600 mt-1">
-                        {activity.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} -{" "}
-                        {activity.end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </div>
-                      <div className="text-xs text-gray-500 mt-1">{activity.roomNo}</div>
-                    </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteClick(activity);
-                      }}
-                      className="text-gray-400 hover:text-red-500 text-lg"
-                    >
-                      ×
-                    </button>
+                  <div className="font-medium text-gray-900 text-sm">{activity.title}</div>
+                  <div className="text-xs text-gray-600 mt-1">
+                    {activity.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} -{" "}
+                    {activity.end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </div>
+                  <div className="text-xs text-gray-500 mt-1">{activity.roomNo}</div>
                 </div>
               ))
             ) : (
@@ -467,40 +356,7 @@ export default function MasterTeacherCalendar() {
                 </div>
               </div>
 
-              {/* Add Schedule Modal */}
-              <AddScheduleModal
-                show={showAddModal}
-                onClose={() => {
-                  setShowAddModal(false);
-                  reset();
-                }}
-                form={formMethods}
-                onSubmit={handleAddSchedule}
-                selectedDate={selectedDate}
-              />
 
-              {/* Activity Detail Modal */}
-              <ActivityDetailModal 
-                activity={selectedActivity} 
-                onClose={() => setSelectedActivity(null)} 
-                onDelete={(id) => {
-                  const activity = activities.find(a => a.id === id);
-                  if (activity) handleDeleteClick(activity);
-                }}
-              />
-
-              {/* Delete Confirmation Modal */}
-              <DeleteConfirmationModal
-                show={showDeleteModal}
-                onClose={handleDeleteCancel}
-                onConfirm={handleDeleteConfirm}
-                activityTitle={activityToDelete?.title}
-                activityDate={activityToDelete?.date.toLocaleDateString("en-US", {
-                  month: "long",
-                  day: "numeric",
-                  year: "numeric"
-                })}
-              />
 
               {/* Calendar View */}
               <div className="border rounded-lg overflow-hidden bg-white">

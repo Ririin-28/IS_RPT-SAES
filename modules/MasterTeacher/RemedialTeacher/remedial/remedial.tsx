@@ -1,6 +1,6 @@
 "use client";
-import Sidebar from "@/components/MasterTeacher/RemedialTeacher/Sidebar";
-import Header from "@/components/MasterTeacher/Header";
+import TeacherSidebar from "@/components/Teacher/Sidebar";
+import TeacherHeader from "@/components/Teacher/Header";
 import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
@@ -52,7 +52,7 @@ export default function MasterTeacherRemedial() {
   return (
     <div className="flex h-screen bg-white overflow-hidden">
       {/*---------------------------------Sidebar---------------------------------*/}
-      <Sidebar />
+      <TeacherSidebar />
 
       {/*---------------------------------Main Content---------------------------------*/}
       <div
@@ -62,7 +62,7 @@ export default function MasterTeacherRemedial() {
         
       "
       >
-        <Header title="Remedial" />
+        <TeacherHeader title="Remedial" />
         <main className="flex-1 overflow-y-auto">
           <div
             className="
