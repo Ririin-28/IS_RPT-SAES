@@ -517,7 +517,7 @@ export default function Home() {
                   hover:bg-gradient-to-br hover:from-green-50 hover:to-white
                   hover:border-green-200/80
                   min-h-[280px] md:min-h-[300px] lg:min-h-[320px]
-                  transition-all duration-700 transform
+                  transform
                   ${isSectionVisible('features') ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}
                 `}
                 style={{ transitionDelay: `${isSectionVisible('features') ? 300 + index * 150 : 0}ms` }}
@@ -756,14 +756,13 @@ export default function Home() {
               <a
                 className={`
                   /* Mobile */
-                  flex items-center px-4 py-2 bg-[#013300] text-white text-base font-bold rounded-lg hover:bg-green-900 transform hover:scale-105
+                  flex items-center px-4 py-2 bg-[#013300] text-white cursor-pointer text-base font-bold rounded-lg hover:bg-green-900
                   
                   /* Tablet */
                   md:px-6 md:py-3 md:text-lg
                   
                   /* Desktop */
                   lg:text-xl
-                  transition-all duration-700 delay-1000
                   ${isSectionVisible('mobile') ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-6 opacity-0 scale-95'}
                 `}
               >

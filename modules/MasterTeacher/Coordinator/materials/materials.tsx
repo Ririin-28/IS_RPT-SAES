@@ -5,44 +5,67 @@ import { useCallback, useEffect, useState } from "react";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import { FaTimes } from "react-icons/fa";
-// English Tabs
-import EnglishNonReaderTab from "./Tabs/NonReaderTab";
-import EnglishSyllableTab from "./Tabs/SyllableTab";
-import EnglishWordTab from "./Tabs/WordTab";
-import EnglishPhraseTab from "./Tabs/PhraseTab";
-import EnglishSentenceTab from "./Tabs/SentenceTab";
-import EnglishParagraphTab from "./Tabs/ParagraphTab";
-// Filipino Tabs
-import FilipinoNonReaderTab from "./FilipinoTabs/NonReaderTab";
-import FilipinoSyllableTab from "./FilipinoTabs/SyllableTab";
-import FilipinoWordTab from "./FilipinoTabs/WordTab";
-import FilipinoPhraseTab from "./FilipinoTabs/PhraseTab";
-import FilipinoSentenceTab from "./FilipinoTabs/SentenceTab";
-import FilipinoParagraphTab from "./FilipinoTabs/ParagraphTab";
-// Math Tabs
-import MathNotProficientTab from "./MathTabs/NotProficientTab";
-import MathLowProficientTab from "./MathTabs/LowProficientTab";
-import MathNearlyProficientTab from "./MathTabs/NearlyProficientTab";
-import MathProficientTab from "./MathTabs/ProficientTab";
-import MathHighlyProficientTab from "./MathTabs/HighlyProficientTab";
+import MaterialTabContent from "./MaterialTabContent";
 
 const SUBJECT_OPTIONS = ["English", "Filipino", "Math"] as const;
+
+type TabDefinition = {
+  label: string;
+  showRequests?: boolean;
+  columns?: { key: string; title: string }[];
+};
+
+const DEFAULT_COLUMNS: { key: string; title: string }[] = [
+  { key: "no", title: "No#" },
+  { key: "title", title: "Title" },
+  { key: "dateAttached", title: "Date Attached" },
+];
+
+const MATH_COLUMNS: { key: string; title: string }[] = [
+  { key: "no", title: "No#" },
+  { key: "title", title: "Title" },
+  { key: "domain", title: "Domain" },
+  { key: "dateAttached", title: "Date Attached" },
+];
+
+const TAB_CONFIG: Record<(typeof SUBJECT_OPTIONS)[number], readonly TabDefinition[]> = {
+  English: [
+    { label: "Non Reader", showRequests: true, columns: DEFAULT_COLUMNS },
+    { label: "Syllable", columns: DEFAULT_COLUMNS },
+    { label: "Word", columns: DEFAULT_COLUMNS },
+    { label: "Phrase", columns: DEFAULT_COLUMNS },
+    { label: "Sentence", columns: DEFAULT_COLUMNS },
+    { label: "Paragraph", columns: DEFAULT_COLUMNS },
+  ],
+  Filipino: [
+    { label: "Non Reader", columns: DEFAULT_COLUMNS },
+    { label: "Syllable", columns: DEFAULT_COLUMNS },
+    { label: "Word", columns: DEFAULT_COLUMNS },
+    { label: "Phrase", columns: DEFAULT_COLUMNS },
+    { label: "Sentence", columns: DEFAULT_COLUMNS },
+    { label: "Paragraph", columns: DEFAULT_COLUMNS },
+  ],
+  Math: [
+    { label: "Not Proficient", columns: MATH_COLUMNS },
+    { label: "Low Proficient", columns: MATH_COLUMNS },
+    { label: "Nearly Proficient", columns: MATH_COLUMNS },
+    { label: "Proficient", columns: MATH_COLUMNS },
+    { label: "Highly Proficient", columns: MATH_COLUMNS },
+  ],
+};
 
 export default function MasterTeacherMaterials() {
   const [subject, setSubject] = useState<(typeof SUBJECT_OPTIONS)[number]>("English");
   const [activeTab, setActiveTab] = useState("Non Reader");
   const [searchTerm, setSearchTerm] = useState("");
 
-  const englishTabs = ["Non Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"] as const;
-  const filipinoTabs = ["Non Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"] as const;
-  const mathTabs = ["Not Proficient", "Low Proficient", "Nearly Proficient", "Proficient", "Highly Proficient"] as const;
-
-  const currentTabOptions = subject === "English" ? englishTabs : subject === "Filipino" ? filipinoTabs : mathTabs;
+  const currentTabOptions = TAB_CONFIG[subject];
 
   useEffect(() => {
-    const defaultTab = subject === "English" ? englishTabs[0] : subject === "Filipino" ? filipinoTabs[0] : mathTabs[0];
-    setActiveTab(defaultTab);
+    setActiveTab(TAB_CONFIG[subject][0]?.label ?? "");
   }, [subject]);
+
+  const currentTab = currentTabOptions.find((tab) => tab.label === activeTab) ?? currentTabOptions[0];
 
   const handleSubjectChange = useCallback((nextSubject: string) => {
     const matchedSubject = SUBJECT_OPTIONS.find((option) => option === nextSubject) ?? SUBJECT_OPTIONS[0];
@@ -93,9 +116,9 @@ export default function MasterTeacherMaterials() {
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                 <div className="flex flex-col gap-0 sm:flex-row sm:items-center sm:gap-0">
                   <div className="flex items-center gap-2">
-                    <SecondaryHeader title="Materials" />
+                    <SecondaryHeader title="English Materials" />
                     <HeaderDropdown
-                      options={[...currentTabOptions]}
+                      options={currentTabOptions.map((tab) => tab.label)}
                       value={activeTab}
                       onChange={setActiveTab}
                       className="pl-0"
@@ -133,34 +156,13 @@ export default function MasterTeacherMaterials() {
                 sm:mt-2
               "
               >
-                {subject === "English" && (
-                  <>
-                    {activeTab === "Non Reader" && <EnglishNonReaderTab />}
-                    {activeTab === "Syllable" && <EnglishSyllableTab />}
-                    {activeTab === "Word" && <EnglishWordTab />}
-                    {activeTab === "Phrase" && <EnglishPhraseTab />}
-                    {activeTab === "Sentence" && <EnglishSentenceTab />}
-                    {activeTab === "Paragraph" && <EnglishParagraphTab />}
-                  </>
-                )}
-                {subject === "Filipino" && (
-                  <>
-                    {activeTab === "Non Reader" && <FilipinoNonReaderTab />}
-                    {activeTab === "Syllable" && <FilipinoSyllableTab />}
-                    {activeTab === "Word" && <FilipinoWordTab />}
-                    {activeTab === "Phrase" && <FilipinoPhraseTab />}
-                    {activeTab === "Sentence" && <FilipinoSentenceTab />}
-                    {activeTab === "Paragraph" && <FilipinoParagraphTab />}
-                  </>
-                )}
-                {subject === "Math" && (
-                  <>
-                    {activeTab === "Not Proficient" && <MathNotProficientTab />}
-                    {activeTab === "Low Proficient" && <MathLowProficientTab />}
-                    {activeTab === "Nearly Proficient" && <MathNearlyProficientTab />}
-                    {activeTab === "Proficient" && <MathProficientTab />}
-                    {activeTab === "Highly Proficient" && <MathHighlyProficientTab />}
-                  </>
+                {currentTab && (
+                  <MaterialTabContent
+                    subject={subject}
+                    category={currentTab.label}
+                    columns={currentTab.columns}
+                    showRequestsModal={currentTab.showRequests}
+                  />
                 )}
               </div>
             </div>

@@ -107,7 +107,6 @@ function comparePhonemeArrays(expectedArr: string[], actualArr: string[]) {
 
 const STUDENT_ROSTER_KEY = "MASTER_TEACHER_ENGLISH_STUDENTS";
 const PERFORMANCE_HISTORY_KEY = "MASTER_TEACHER_ENGLISH_PERFORMANCE";
-const FLASHCARD_CONTENT_KEY = "MASTER_TEACHER_ENGLISH_FLASHCARDS";
 
 type StudentRecord = {
   id: string;
@@ -133,18 +132,6 @@ type EnrichedStudent = StudentRecord & {
   lastPerformance: StudentPerformanceEntry | null;
 };
 
-function isValidFlashcardContent(value: unknown): value is FlashcardContent[] {
-  if (!Array.isArray(value)) return false;
-  if (value.length === 0) return false;
-  return value.every((item) => {
-    if (!item || typeof item !== "object") return false;
-    const candidate = item as { sentence?: unknown; highlights?: unknown };
-    if (typeof candidate.sentence !== "string") return false;
-    if (!Array.isArray(candidate.highlights)) return false;
-    return candidate.highlights.every((word) => typeof word === "string");
-  });
-}
-
 const DEFAULT_ENGLISH_STUDENTS: StudentRecord[] = [
   { id: "eng-001", studentId: "EN-2025-001", name: "Ava Martinez", grade: "4", section: "A" },
   { id: "eng-002", studentId: "EN-2025-002", name: "Liam Santos", grade: "4", section: "B" },
@@ -154,12 +141,7 @@ const DEFAULT_ENGLISH_STUDENTS: StudentRecord[] = [
 ];
 
 /* ---------- English Remedial Flashcards data ---------- */
-type FlashcardContent = {
-  sentence: string;
-  highlights: string[];
-};
-
-const INITIAL_FLASHCARDS: FlashcardContent[] = [
+const flashcardsData = [
   { sentence: "The cat sat on the mat.", highlights: ["cat", "sat", "mat"] },
   { sentence: "A big dog ran in the park.", highlights: ["big", "dog", "ran"] },
   { sentence: "She has a red ball and blue car.", highlights: ["red", "ball", "blue"] },
@@ -174,17 +156,12 @@ const INITIAL_FLASHCARDS: FlashcardContent[] = [
 
 /* ---------- Component ---------- */
 export default function MasterTeacherEnglishRemedialFlashcards() {
-  const router = useRouter();
-  const [flashcardsData, setFlashcardsData] = useState<FlashcardContent[]>(INITIAL_FLASHCARDS);
   const searchParams = useSearchParams();
+  const router = useRouter();
   const startParam = searchParams?.get("start");
-  const startIndex = useMemo(() => {
-    if (!startParam) return 0;
-    const parsed = Number.parseInt(startParam, 10);
-    if (Number.isNaN(parsed)) return 0;
-    const maxIndex = Math.max(flashcardsData.length - 1, 0);
-    return Math.min(Math.max(parsed, 0), maxIndex);
-  }, [flashcardsData.length, startParam]);
+  const startIndex = startParam
+    ? Math.min(Math.max(parseInt(startParam), 0), flashcardsData.length - 1)
+    : 0;
 
   const [view, setView] = useState<"select" | "session">("select");
   const [students, setStudents] = useState<StudentRecord[]>(DEFAULT_ENGLISH_STUDENTS);
@@ -192,27 +169,6 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [studentSearch, setStudentSearch] = useState("");
   const [lastSavedStudentId, setLastSavedStudentId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    try {
-      const stored = window.localStorage.getItem(FLASHCARD_CONTENT_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (isValidFlashcardContent(parsed)) {
-          setFlashcardsData(parsed);
-          return;
-        }
-      }
-
-      window.localStorage.setItem(FLASHCARD_CONTENT_KEY, JSON.stringify(INITIAL_FLASHCARDS));
-      setFlashcardsData(INITIAL_FLASHCARDS);
-    } catch (error) {
-      console.warn("Failed to load English flashcard content", error);
-      setFlashcardsData(INITIAL_FLASHCARDS);
-    }
-  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -305,21 +261,8 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
   }, []);
 
   const [current, setCurrent] = useState(startIndex);
-
-  useEffect(() => {
-    if (flashcardsData.length === 0) {
-      setCurrent(0);
-      return;
-    }
-    setCurrent((prev) => Math.min(Math.max(prev, 0), flashcardsData.length - 1));
-  }, [flashcardsData.length]);
-
-  useEffect(() => {
-    setCurrent(startIndex);
-  }, [startIndex]);
-
-  const currentCard = flashcardsData[current] ?? flashcardsData[0] ?? INITIAL_FLASHCARDS[0];
-  const sentence = currentCard?.sentence ?? "";
+  const currentCard = flashcardsData[current];
+  const { sentence } = currentCard;
 
   // recognition + metrics state
   const [isListening, setIsListening] = useState(false);
@@ -338,12 +281,8 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
   const speechEndRef = useRef<number | null>(null);
   const cumulativeSilentMsRef = useRef<number>(0);
 
-  const handlePrev = () =>
-    setCurrent((prev) => (flashcardsData.length > 0 ? Math.max(prev - 1, 0) : 0));
-  const handleNext = () =>
-    setCurrent((prev) =>
-      flashcardsData.length > 0 ? Math.min(prev + 1, flashcardsData.length - 1) : 0,
-    );
+  const handlePrev = () => setCurrent((prev) => Math.max(prev - 1, 0));
+  const handleNext = () => setCurrent((prev) => Math.min(prev + 1, flashcardsData.length - 1));
 
   const handleStartSession = (studentId: string) => {
     setSelectedStudentId(studentId);
@@ -519,7 +458,7 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
 
     // Fluency metrics
     const totalSpeechMs = (speechEndRef.current && speechStartRef.current)
-      ? Math.max(1, (speechEndRef.current - speechStartRef.current))
+      ? Math.max(1, speechEndRef.current - speechStartRef.current)
       : 1;
     const totalSilenceMs = cumulativeSilentMsRef.current;
     const pauseRatio = Math.min(1, totalSilenceMs / totalSpeechMs);
@@ -527,8 +466,11 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
 
     const wpmRaw = Math.max(0, Math.round((expWords.length / (totalSpeechMs / 1000)) * 60));
 
-  const conf = resultConfidence ?? 0.8;
-  const pronScore = Math.min(100, Math.max(0, Math.round((0.5 * wordAccuracy) + (0.35 * phonemeAccuracy) + (0.15 * conf * 100))));
+    const conf = resultConfidence ?? 0.8;
+    const pronScore = Math.min(
+      100,
+      Math.max(0, Math.round((0.5 * wordAccuracy) + (0.35 * phonemeAccuracy) + (0.15 * conf * 100)))
+    );
     const correctnessPercent = Math.min(100, Math.max(0, Math.round(wordAccuracy)));
     const readingSpeedPercent = Math.min(100, Math.max(0, wpmRaw));
     const averageScore = Math.min(100, Math.max(0, Math.round((pronScore + fluencyScore + readingSpeedPercent) / 3)));
@@ -641,14 +583,17 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
     }
   };
 
-  // Calculate average for student table
-  const calculateStudentAverage = (student: EnrichedStudent) => {
+  // Helper to compute the capped average score used in roster summaries.
+  const calculateStudentAverage = useCallback((student: EnrichedStudent) => {
     if (!student.lastPerformance) return "—";
     const { pronScore, fluencyScore, wpm } = student.lastPerformance;
     const readingSpeedPercent = Math.min(100, Math.max(0, Math.round(wpm)));
-    const average = Math.min(100, Math.max(0, Math.round((pronScore + fluencyScore + readingSpeedPercent) / 3)));
+    const average = Math.min(
+      100,
+      Math.max(0, Math.round((pronScore + fluencyScore + readingSpeedPercent) / 3))
+    );
     return `${average}%`;
-  };
+  }, []);
 
   const selectionRows = filteredStudents.map((student, index) => ({
     ...student,
