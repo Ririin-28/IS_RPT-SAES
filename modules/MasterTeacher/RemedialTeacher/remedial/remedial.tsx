@@ -1,7 +1,7 @@
 "use client";
-import TeacherSidebar from "@/components/Teacher/Sidebar";
-import TeacherHeader from "@/components/Teacher/Header";
-import { useState, useEffect } from "react";
+import Sidebar from "@/components/MasterTeacher/RemedialTeacher/Sidebar";
+import Header from "@/components/MasterTeacher/Header";
+import { useState, useEffect, useMemo } from "react";
 import { usePathname } from "next/navigation";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
@@ -13,11 +13,15 @@ import FilipinoTab, { FILIPINO_LEVELS, type FilipinoLevel } from "./FilipinoTabs
 // Math Tabs
 import MathTab, { MATH_LEVELS, type MathLevel } from "./MathTabs/MathTab";
 
+type AssessmentLevel = EnglishLevel;
+const ASSESSMENT_LEVELS = ENGLISH_LEVELS;
+
 export default function MasterTeacherRemedial() {
   const pathname = usePathname();
 
   // Determine subject from URL path
   const getSubjectFromPath = () => {
+    if (pathname?.includes("/assessment")) return "Assessment";
     if (pathname?.includes("/english")) return "English";
     if (pathname?.includes("/filipino")) return "Filipino";
     if (pathname?.includes("/math")) return "Math";
@@ -25,7 +29,7 @@ export default function MasterTeacherRemedial() {
   };
 
   const initialSubject = getSubjectFromPath();
-  const initialTab = initialSubject === "English" ? ENGLISH_LEVELS[0] : initialSubject === "Filipino" ? FILIPINO_LEVELS[0] : MATH_LEVELS[0];
+  const initialTab = initialSubject === "English" ? ENGLISH_LEVELS[0] : initialSubject === "Filipino" ? FILIPINO_LEVELS[0] : initialSubject === "Math" ? MATH_LEVELS[0] : ASSESSMENT_LEVELS[0];
 
   const [subject, setSubject] = useState(initialSubject);
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -36,7 +40,13 @@ export default function MasterTeacherRemedial() {
     setSubject(newSubject);
   }, [pathname]);
 
-  const currentTabOptions = subject === "English" ? ENGLISH_LEVELS : subject === "Filipino" ? FILIPINO_LEVELS : MATH_LEVELS;
+  const currentTabOptions = subject === "English" ? ENGLISH_LEVELS : subject === "Filipino" ? FILIPINO_LEVELS : subject === "Math" ? MATH_LEVELS : ASSESSMENT_LEVELS;
+
+  const assessmentLanguage = useMemo(() => {
+    if (pathname?.includes("/assessment/filipino")) return "Filipino";
+    if (pathname?.includes("/assessment/math")) return "Math";
+    return "English";
+  }, [pathname]);
   
   // Reset active tab when subject changes
   useEffect(() => {
@@ -44,15 +54,19 @@ export default function MasterTeacherRemedial() {
       setActiveTab(ENGLISH_LEVELS[0]);
     } else if (subject === "Filipino") {
       setActiveTab(FILIPINO_LEVELS[0]);
-    } else {
+    } else if (subject === "Math") {
       setActiveTab(MATH_LEVELS[0]);
+    } else if (subject === "Assessment") {
+      setActiveTab(ASSESSMENT_LEVELS[0]);
     }
   }, [subject]);
+
+  const subjectHeader = subject === "Assessment" ? "Assessment Center" : `${subject} Remedial`;
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
       {/*---------------------------------Sidebar---------------------------------*/}
-      <TeacherSidebar />
+      <Sidebar />
 
       {/*---------------------------------Main Content---------------------------------*/}
       <div
@@ -62,7 +76,7 @@ export default function MasterTeacherRemedial() {
         
       "
       >
-        <TeacherHeader title="Remedial" />
+        <Header title="Remedial" />
         <main className="flex-1 overflow-y-auto">
           <div
             className="
@@ -92,7 +106,7 @@ export default function MasterTeacherRemedial() {
             >
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                 <div className="flex items-center gap-0">
-                  <SecondaryHeader title={`${subject} Remedial`} />
+                  <SecondaryHeader title={subjectHeader} />
                   <HeaderDropdown
                     options={[...currentTabOptions]}
                     value={activeTab}
