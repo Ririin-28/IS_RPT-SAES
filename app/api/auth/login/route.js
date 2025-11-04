@@ -4,7 +4,7 @@ import nodemailer from "nodemailer";
 
 export async function POST(req) {
   try {
-  const { email, password, deviceToken, deviceName } = await req.json();
+  const { email, password, userId, deviceToken, deviceName } = await req.json();
     const db = await mysql.createConnection({
       host: "localhost",
       user: "root",
@@ -15,6 +15,23 @@ export async function POST(req) {
     const [users] = await db.execute("SELECT * FROM users WHERE email = ?", [email]);
     const user = users[0];
     if (!user) {
+      await db.end();
+      return new Response(JSON.stringify({ error: "Invalid credentials" }), { status: 401 });
+    }
+    let normalizedUserId = null;
+    if (userId !== undefined && userId !== null && userId !== "") {
+      normalizedUserId = Number(userId);
+      if (!Number.isFinite(normalizedUserId)) {
+        await db.end();
+        return new Response(JSON.stringify({ error: "Invalid credentials" }), { status: 401 });
+      }
+      if (Number(user.user_id) !== normalizedUserId) {
+        await db.end();
+        return new Response(JSON.stringify({ error: "Invalid credentials" }), { status: 401 });
+      }
+    }
+
+    if (user.role === "it_admin" && normalizedUserId === null) {
       await db.end();
       return new Response(JSON.stringify({ error: "Invalid credentials" }), { status: 401 });
     }

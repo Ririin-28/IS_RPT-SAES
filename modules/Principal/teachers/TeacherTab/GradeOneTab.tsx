@@ -11,6 +11,23 @@ interface GradeOneTabProps {
   searchTerm: string;
 }
 
+const matchesGrade = (teacher: any, targetGrade: number) => {
+  if (typeof teacher?.gradeNumber === "number") {
+    return teacher.gradeNumber === targetGrade;
+  }
+  const gradeValue = teacher?.grade;
+  if (typeof gradeValue === "number") {
+    return gradeValue === targetGrade;
+  }
+  if (typeof gradeValue === "string") {
+    const match = gradeValue.match(/(\d+)/);
+    if (match) {
+      return Number(match[1]) === targetGrade;
+    }
+  }
+  return false;
+};
+
 interface CustomDropdownProps {
   options: string[];
   value: string;
@@ -81,11 +98,9 @@ export default function TeacherGradeOneTab({ teachers, setTeachers, searchTerm }
   const [selectedTeacher, setSelectedTeacher] = useState<any>(null);
   const [filter, setFilter] = useState({ section: "All Sections" });
 
-  const GradeOneTeachers = teachers.filter(teacher => 
-    teacher.grade === 1 || teacher.grade === "1"
-  );
+  const gradeOneTeachers = teachers.filter((teacher) => matchesGrade(teacher, 1));
 
-  const filteredTeachers = GradeOneTeachers.filter((teacher) => {
+  const filteredTeachers = gradeOneTeachers.filter((teacher: any) => {
     const matchSection = filter.section === "All Sections" || teacher.section === filter.section;
     const matchSearch = searchTerm === "" || 
       teacher.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -104,7 +119,7 @@ export default function TeacherGradeOneTab({ teachers, setTeachers, searchTerm }
     <div>
       <div className="flex flex-row justify-between items-center mb-4">
         <p className="text-gray-600 text-md font-medium">
-          Total: {GradeOneTeachers.length}
+          Total: {gradeOneTeachers.length}
         </p>
         
         <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
@@ -132,7 +147,7 @@ export default function TeacherGradeOneTab({ teachers, setTeachers, searchTerm }
           { key: "email", title: "Email" },
           { key: "contactNumber", title: "Contact Number" },
         ]}
-        data={filteredTeachers.map((teacher, idx) => ({
+        data={filteredTeachers.map((teacher: any, idx: number) => ({
           ...teacher,
           no: idx + 1,
         }))}

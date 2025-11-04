@@ -1,7 +1,7 @@
 "use client";
 import Sidebar from "@/components/Principal/Sidebar";
 import PrincipalHeader from "@/components/Principal/Header";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import { FaTimes } from "react-icons/fa";
@@ -18,6 +18,46 @@ export default function PrincipalStudents() {
   const [activeTab, setActiveTab] = useState("All Grades");
   const [students, setStudents] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadStudents() {
+      setIsLoading(true);
+      try {
+        const response = await fetch("/api/principal/students", { signal: controller.signal });
+        if (!response.ok) {
+          throw new Error(`Failed to load students (status ${response.status})`);
+        }
+
+        const data = await response.json();
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        setStudents(Array.isArray(data?.students) ? data.students : []);
+        setError(null);
+      } catch (err: unknown) {
+        if ((err as Error)?.name === "AbortError" || controller.signal.aborted) {
+          return;
+        }
+        console.error("Failed to load principal students", err);
+        setError("Unable to load students. Please try again later.");
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    loadStudents();
+
+    return () => {
+      controller.abort();
+    };
+  }, []);
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
@@ -58,6 +98,17 @@ export default function PrincipalStudents() {
                 </div>
               </div>
               
+              {error && (
+                <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {error}
+                </div>
+              )}
+              {!error && isLoading && (
+                <div className="mb-4 rounded-md border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+                  Loading students…
+                </div>
+              )}
+
               <div className="mt-4 sm:mt-6">
                 {activeTab === "All Grades" && <AllGradesTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
                 {activeTab === "Grade 1" && <GradeOneTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}

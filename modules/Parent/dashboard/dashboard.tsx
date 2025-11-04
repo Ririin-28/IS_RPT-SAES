@@ -1,12 +1,14 @@
 "use client";
-import { useState, useRef, useCallback } from 'react';
-import type { RefObject } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import type { ReactElement, RefObject } from "react";
 import Header from "@/components/Parent/Header";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
+import { getStoredUserProfile } from "@/lib/utils/user-profile";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 
-// OverviewCard component with responsive styles
+const SUPPORTED_SUBJECTS = ["English", "Filipino", "Math"] as const;
+
 function OverviewCard({
   value,
   label,
@@ -21,15 +23,10 @@ function OverviewCard({
   onClick?: () => void;
 }) {
   const containerClasses = `
-      /* Mobile */
       bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg
       flex flex-col items-center justify-center p-5 min-w-[160px] min-h-[110px]
       transition-transform duration-200 hover:scale-105
-
-      /* Tablet */
       sm:p-6 sm:min-w-[180px] sm:min-h-[120px]
-
-      /* Desktop */
       lg:p-7
       ${className}
     `;
@@ -37,42 +34,10 @@ function OverviewCard({
   const content = (
     <>
       <div className="flex flex-row items-center">
-        <span
-          className="
-          /* Mobile */
-          text-4xl font-extrabold text-[#013300] drop-shadow
-
-          /* Tablet */
-          sm:text-5xl
-        "
-        >
-          {value}
-        </span>
-        {icon && (
-          <span
-            className="
-          /* Mobile */
-          ml-1
-
-          /* Tablet */
-          sm:ml-2
-        "
-          >
-            {icon}
-          </span>
-        )}
+        <span className="text-4xl font-extrabold text-[#013300] drop-shadow sm:text-5xl">{value}</span>
+        {icon && <span className="ml-1 sm:ml-2">{icon}</span>}
       </div>
-      <div
-        className="
-        /* Mobile */
-        text-green-900 text-sm font-semibold mt-1 tracking-wide
-
-        /* Tablet */
-        sm:text-base sm:mt-2
-      "
-      >
-        {label}
-      </div>
+      <div className="text-green-900 text-sm font-semibold mt-1 tracking-wide sm:text-base sm:mt-2">{label}</div>
     </>
   );
 
@@ -91,122 +56,231 @@ function OverviewCard({
   return <div className={containerClasses}>{content}</div>;
 }
 
-// Simplified Schedule Card Component (without icons)
-function ScheduleCard({ day, subject, time, isToday = false }: {
+function ScheduleCard({
+  day,
+  subject,
+  time,
+  isToday = false,
+}: {
   day: string;
   subject: string;
-  time: string;
+  time: string | null;
   isToday?: boolean;
 }) {
   return (
-    <div className={`
-      bg-white p-4 rounded-lg shadow flex justify-between items-center border border-gray-200
-      ${isToday ? 'border-gray-300 bg-green-50' : ''}
-    `}>
+    <div
+      className={`bg-white p-4 rounded-lg shadow flex justify-between items-center border border-gray-200 ${
+        isToday ? "border-gray-300 bg-green-50" : ""
+      }`}
+    >
       <div>
-        <h4 className={`font-semibold ${isToday ? 'text-green-900' : 'text-green-900'}`}>
-          {day}
-        </h4>
+        <h4 className={`font-semibold ${isToday ? "text-green-900" : "text-green-900"}`}>{day}</h4>
         <p className="text-sm text-gray-600">{subject}</p>
       </div>
-      <div className="text-sm text-gray-500">{time}</div>
+      <div className="text-sm text-gray-500">{time ?? "Schedule pending"}</div>
     </div>
   );
 }
 
-// Attendance Calendar Component
-function AttendanceCalendar() {
-  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
-  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
+type AttendanceRecord = {
+  date: string;
+  subject: string | null;
+  present: boolean;
+};
+
+type AttendanceCalendarProps = {
+  attendanceRecords: AttendanceRecord[];
+  attendanceRate: number | null;
+};
+
+type AttendanceSummary = {
+  records: AttendanceRecord[];
+  totalSessions: number;
+  presentSessions: number;
+  absentSessions: number;
+  attendanceRate: number | null;
+};
+
+type ScheduleEntry = {
+  day: string;
+  subject: string;
+  timeRange: string | null;
+};
+
+type SupportedSubject = (typeof SUPPORTED_SUBJECTS)[number];
+
+type SubjectProgress = {
+  currentLevel: string;
+  startingLevel: string;
+  improvement: string;
+  strengths: string[];
+  areasForImprovement: string[];
+  recentActivities: string[];
+  teacherComments: string;
+  nextGoals: string;
+  teacher: string;
+};
+
+type ChildProfile = {
+  studentId: number;
+  userId: number;
+  firstName: string;
+  middleName: string | null;
+  lastName: string;
+  grade: string | null;
+  section: string | null;
+  relationship: string | null;
+  subjects: string[];
+};
+
+type ChildView = ChildProfile & {
+  age: number;
+  teacher: string;
+  attendance: number;
+  currentLevel: Record<SupportedSubject, string>;
+  progressDetails: Record<SupportedSubject, SubjectProgress>;
+};
+
+type ParentInfo = {
+  parentId: number;
+  relationship: string | null;
+};
+
+type ParentDashboardResponse = {
+  parent: ParentInfo;
+  child: ChildProfile;
+  attendance: AttendanceSummary;
+  schedule: ScheduleEntry[];
+};
+
+function AttendanceCalendar({ attendanceRecords, attendanceRate }: AttendanceCalendarProps) {
+  const latestDate = useMemo(() => {
+    if (attendanceRecords.length === 0) {
+      return new Date();
+    }
+    const last = attendanceRecords[attendanceRecords.length - 1]?.date;
+    const candidate = last ? new Date(`${last}T00:00:00`) : null;
+    return candidate && !Number.isNaN(candidate.getTime()) ? candidate : new Date();
+  }, [attendanceRecords]);
+
+  const [currentMonth, setCurrentMonth] = useState<number>(latestDate.getMonth());
+  const [currentYear, setCurrentYear] = useState<number>(latestDate.getFullYear());
+
+  useEffect(() => {
+    const refreshedLatest = attendanceRecords.length > 0 ? attendanceRecords[attendanceRecords.length - 1]?.date : null;
+    if (!refreshedLatest) return;
+    const parsed = new Date(`${refreshedLatest}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) return;
+    setCurrentMonth(parsed.getMonth());
+    setCurrentYear(parsed.getFullYear());
+  }, [attendanceRecords]);
+
+  const attendanceByDate = useMemo(() => {
+    const map = new Map<string, { total: number; present: number }>();
+    for (const record of attendanceRecords) {
+      const key = record.date.slice(0, 10);
+      const current = map.get(key) ?? { total: 0, present: 0 };
+      current.total += 1;
+      if (record.present) {
+        current.present += 1;
+      }
+      map.set(key, current);
+    }
+    return map;
+  }, [attendanceRecords]);
 
   const months = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
   ];
 
-  // Sample attendance data (present: true, absent: false)
-  const attendanceData = {
-    1: true, 2: true, 3: true, 4: false, 5: true, 6: true, 7: true,
-    8: true, 9: true, 10: true, 11: true, 12: false, 13: true, 14: true,
-    15: true, 16: true, 17: true, 18: true, 19: false, 20: true, 21: true,
-    22: true, 23: true, 24: true, 25: true, 26: true, 27: false, 28: true,
-    29: true, 30: true, 31: true
-  };
+  const getDaysInMonth = (month: number, year: number) => new Date(year, month + 1, 0).getDate();
+  const getFirstDayOfMonth = (month: number, year: number) => new Date(year, month, 1).getDay();
 
-  const getDaysInMonth = (month: number, year: number) => {
-    return new Date(year, month + 1, 0).getDate();
-  };
-
-  const getFirstDayOfMonth = (month: number, year: number) => {
-    return new Date(year, month, 1).getDay();
-  };
-
-  const getDayOfWeek = (dayIndex: number, firstDayOfMonth: number) => {
-    return (firstDayOfMonth + dayIndex) % 7;
+  const navigateMonth = (direction: "prev" | "next") => {
+    if (direction === "prev") {
+      if (currentMonth === 0) {
+        setCurrentMonth(11);
+        setCurrentYear((year) => year - 1);
+      } else {
+        setCurrentMonth((month) => month - 1);
+      }
+    } else if (currentMonth === 11) {
+      setCurrentMonth(0);
+      setCurrentYear((year) => year + 1);
+    } else {
+      setCurrentMonth((month) => month + 1);
+    }
   };
 
   const daysInMonth = getDaysInMonth(currentMonth, currentYear);
   const firstDayOfMonth = getFirstDayOfMonth(currentMonth, currentYear);
 
-  const navigateMonth = (direction: 'prev' | 'next') => {
-    if (direction === 'prev') {
-      if (currentMonth === 0) {
-        setCurrentMonth(11);
-        setCurrentYear(currentYear - 1);
-      } else {
-        setCurrentMonth(currentMonth - 1);
-      }
-    } else {
-      if (currentMonth === 11) {
-        setCurrentMonth(0);
-        setCurrentYear(currentYear + 1);
-      } else {
-        setCurrentMonth(currentMonth + 1);
-      }
-    }
-  };
-
-  const days = [];
-  // Add empty cells for days before the first day of the month
-  for (let i = 0; i < firstDayOfMonth; i++) {
-  days.push(<div key={`empty-${i}`} className="h-12"></div>);
+  const dayCells: ReactElement[] = [];
+  for (let emptyIndex = 0; emptyIndex < firstDayOfMonth; emptyIndex += 1) {
+    dayCells.push(<div key={`empty-${emptyIndex}`} className="h-12" />);
   }
 
-  // Add cells for each day of the month
-  for (let day = 1; day <= daysInMonth; day++) {
-    const isPresent = attendanceData[day as keyof typeof attendanceData];
-    const isToday = new Date().getDate() === day && 
-                   new Date().getMonth() === currentMonth && 
-                   new Date().getFullYear() === currentYear;
-    
-    const dayOfWeek = getDayOfWeek(day - 1, firstDayOfMonth);
-    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6; // Sunday (0) or Saturday (6)
-    
-    days.push(
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const dateKey = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const summary = attendanceByDate.get(dateKey);
+    const dayOfWeek = new Date(currentYear, currentMonth, day).getDay();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    const today = new Date();
+    const isToday = today.getFullYear() === currentYear && today.getMonth() === currentMonth && today.getDate() === day;
+
+    let statusClass = "bg-green-50 text-green-900";
+    if (isWeekend) {
+      statusClass = "bg-gray-50 text-gray-400";
+    } else if (summary) {
+      if (summary.present === summary.total) {
+        statusClass = "bg-green-100 text-green-800 border border-green-200";
+      } else if (summary.present === 0) {
+        statusClass = "bg-red-100 text-red-800 border border-red-200";
+      } else {
+        statusClass = "bg-yellow-100 text-yellow-800 border border-yellow-200";
+      }
+    }
+
+    dayCells.push(
       <div
         key={day}
-        className={`
-          h-12 flex items-center justify-center rounded text-sm font-medium border border-gray-100
-          ${isToday ? 'ring-1 ring-gray-300' : ''}
-          ${isWeekend ? 'bg-gray-50 text-gray-400' : 'bg-green-50 text-green-900'}
-          ${!isWeekend && isPresent === true ? 'bg-green-100 text-green-800' : ''}
-          ${!isWeekend && isPresent === false ? 'bg-red-100 text-red-800' : ''}
-          ${!isWeekend && isPresent === undefined ? 'bg-gray-100 text-gray-400' : ''}
-        `}
+        className={`h-12 flex items-center justify-center rounded text-sm font-medium border border-gray-100 ${statusClass} ${
+          isToday ? "ring-1 ring-gray-300" : ""
+        }`}
       >
         {day}
-      </div>
+      </div>,
     );
   }
 
+  const monthKey = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
+  const monthlyRecords = attendanceRecords.filter((record) => record.date.startsWith(monthKey));
+  const monthTotal = monthlyRecords.length;
+  const monthPresent = monthlyRecords.filter((record) => record.present).length;
+  const monthRate = monthTotal > 0 ? Math.round((monthPresent / monthTotal) * 100) : null;
+  const displayedRate = monthRate ?? attendanceRate;
+
   return (
     <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-      <div className="flex items-center justify-between mb-6">
+  <div className="flex items-center justify-between mb-6">
         <h4 className="font-bold text-gray-800">Monthly Attendance</h4>
         <div className="flex items-center space-x-2">
           <button
-            onClick={() => navigateMonth('prev')}
+            onClick={() => navigateMonth("prev")}
             className="p-1 rounded hover:bg-gray-100 text-black font-bold text-lg"
+            type="button"
+            aria-label="Previous month"
           >
             ‹
           </button>
@@ -214,8 +288,10 @@ function AttendanceCalendar() {
             {months[currentMonth]} {currentYear}
           </span>
           <button
-            onClick={() => navigateMonth('next')}
+            onClick={() => navigateMonth("next")}
             className="p-1 rounded hover:bg-gray-100 text-black font-bold text-lg"
+            type="button"
+            aria-label="Next month"
           >
             ›
           </button>
@@ -223,26 +299,30 @@ function AttendanceCalendar() {
       </div>
 
       <div className="grid grid-cols-7 gap-2 mb-6">
-        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
           <div key={day} className="text-center text-xs font-medium text-gray-600 py-1">
             {day}
           </div>
-        ))}
-        {days}
+        )) }
+        {dayCells}
       </div>
 
       <div className="flex flex-wrap items-center justify-center gap-4 text-xs mb-6">
         <div className="flex items-center space-x-1">
-          <div className="w-3 h-3 bg-green-100 rounded border border-green-200"></div>
+          <div className="w-3 h-3 bg-green-100 rounded border border-green-200" />
           <span className="text-gray-700 font-medium">Present</span>
         </div>
         <div className="flex items-center space-x-1">
-          <div className="w-3 h-3 bg-red-100 rounded border border-red-200"></div>
+          <div className="w-3 h-3 bg-red-100 rounded border border-red-200" />
           <span className="text-gray-700 font-medium">Absent</span>
         </div>
         <div className="flex items-center space-x-1">
-          <div className="w-3 h-3 bg-gray-100 rounded border border-gray-200"></div>
-          <span className="text-gray-700 font-medium">No Data</span>
+          <div className="w-3 h-3 bg-yellow-100 rounded border border-yellow-200" />
+          <span className="text-gray-700 font-medium">Partial</span>
+        </div>
+        <div className="flex items-center space-x-1">
+          <div className="w-3 h-3 bg-gray-50 rounded border border-gray-200" />
+          <span className="text-gray-700 font-medium">Weekend</span>
         </div>
       </div>
 
@@ -250,11 +330,13 @@ function AttendanceCalendar() {
         <div className="flex justify-between items-center">
           <span className="text-sm font-medium text-gray-800">Monthly Attendance Rate</span>
           <span className="px-3 py-1 text-base font-bold text-gray-800">
-            {currentChild.attendance}%
+            {displayedRate != null ? `${displayedRate}%` : "—"}
           </span>
         </div>
         <p className="text-xs text-gray-600 mt-1">
-          Based on {Object.values(attendanceData).filter(Boolean).length} out of {daysInMonth} school days.
+          {monthTotal > 0
+            ? `Based on ${monthPresent} of ${monthTotal} recorded sessions this month.`
+            : "No attendance records available for this month."}
         </p>
       </div>
     </div>
@@ -288,8 +370,13 @@ function ProgressCard({ title, value, description, icon, color = "green" }: {
   );
 }
 
-// Sample data for a single child
-const currentChild = {
+const FALLBACK_SUBJECTS: SupportedSubject[] = [...SUPPORTED_SUBJECTS];
+
+const FALLBACK_CHILD_VIEW: ChildView = {
+  studentId: 0,
+  userId: 0,
+  relationship: null,
+  subjects: FALLBACK_SUBJECTS,
   firstName: "John",
   middleName: "Michael",
   lastName: "Doe",
@@ -351,9 +438,65 @@ const currentChild = {
     }
   }
 };
+type ParentDashboardState = {
+  isLoading: boolean;
+  error: string | null;
+  parent: ParentInfo | null;
+  child: ChildProfile | null;
+  attendance: AttendanceSummary | null;
+  schedule: ScheduleEntry[];
+};
+
+const FALLBACK_ATTENDANCE_RECORDS: AttendanceRecord[] = [
+  { date: "2025-10-01", subject: "English Remedial", present: true },
+  { date: "2025-10-02", subject: "English Remedial", present: true },
+  { date: "2025-10-03", subject: "Math Remedial", present: false },
+  { date: "2025-10-04", subject: "Filipino Remedial", present: true },
+  { date: "2025-10-07", subject: "Math Remedial", present: true },
+  { date: "2025-10-08", subject: "Filipino Remedial", present: false },
+  { date: "2025-10-09", subject: "English Remedial", present: true },
+  { date: "2025-10-10", subject: "Math Remedial", present: true },
+  { date: "2025-10-11", subject: "Filipino Remedial", present: true },
+  { date: "2025-10-14", subject: "Math Remedial", present: false },
+  { date: "2025-10-15", subject: "English Remedial", present: true },
+  { date: "2025-10-16", subject: "Filipino Remedial", present: true },
+];
+
+const FALLBACK_ATTENDANCE_SUMMARY: AttendanceSummary = (() => {
+  const totalSessions = FALLBACK_ATTENDANCE_RECORDS.length;
+  const presentSessions = FALLBACK_ATTENDANCE_RECORDS.filter((record) => record.present).length;
+  const absentSessions = totalSessions - presentSessions;
+  const attendanceRate = totalSessions > 0 ? Math.round((presentSessions / totalSessions) * 100) : null;
+  return {
+    records: FALLBACK_ATTENDANCE_RECORDS,
+    totalSessions,
+    presentSessions,
+    absentSessions,
+    attendanceRate,
+  };
+})();
+
+const FALLBACK_SCHEDULE: ScheduleEntry[] = [
+  { day: "Monday", subject: "Filipino", timeRange: "8:00-9:30 AM" },
+  { day: "Tuesday", subject: "Filipino", timeRange: "8:00-9:30 AM" },
+  { day: "Wednesday", subject: "English", timeRange: "8:00-9:30 AM" },
+  { day: "Thursday", subject: "Math", timeRange: "8:00-9:30 AM" },
+  { day: "Friday", subject: "Quiz", timeRange: "8:00-9:00 AM" },
+];
+
+const isSupportedSubject = (subject: string): subject is SupportedSubject =>
+  SUPPORTED_SUBJECTS.includes(subject as SupportedSubject);
 
 export default function ParentDashboard() {
-  const [selectedSubject, setSelectedSubject] = useState('English');
+  const [selectedSubject, setSelectedSubject] = useState<SupportedSubject>("English");
+  const [state, setState] = useState<ParentDashboardState>({
+    isLoading: true,
+    error: null,
+    parent: null,
+    child: null,
+    attendance: null,
+    schedule: [],
+  });
   const progressSectionRef = useRef<HTMLDivElement | null>(null);
   const attendanceSectionRef = useRef<HTMLDivElement | null>(null);
 
@@ -361,17 +504,89 @@ export default function ParentDashboard() {
     sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
+  useEffect(() => {
+    const profile = getStoredUserProfile();
+    const userId = Number(profile?.userId);
+
+    if (!Number.isFinite(userId)) {
+      setState((previous) => ({
+        ...previous,
+        isLoading: false,
+        error: "Unable to determine the signed-in parent. Please sign in again.",
+      }));
+      return;
+    }
+
+    const controller = new AbortController();
+
+    const loadDashboard = async () => {
+      setState((previous) => ({ ...previous, isLoading: true, error: null }));
+      try {
+        const response = await fetch(`/api/parent/dashboard?userId=${userId}`, {
+          method: "GET",
+          signal: controller.signal,
+        });
+
+        let payload: unknown = null;
+        try {
+          payload = await response.json();
+        } catch (error) {
+          payload = null;
+        }
+
+        if (!response.ok || !payload) {
+          const message =
+            typeof payload === "object" && payload && "error" in payload
+              ? String((payload as { error?: unknown }).error)
+              : `Failed to load dashboard (${response.status})`;
+          throw new Error(message);
+        }
+
+        const data = payload as ParentDashboardResponse;
+
+        setState({
+          isLoading: false,
+          error: null,
+          parent: data.parent,
+          child: data.child,
+          attendance: data.attendance,
+          schedule: data.schedule,
+        });
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        const message = error instanceof Error ? error.message : "Failed to load dashboard.";
+        setState({
+          isLoading: false,
+          error: message,
+          parent: null,
+          child: null,
+          attendance: null,
+          schedule: [],
+        });
+      }
+    };
+
+    loadDashboard();
+
+    return () => {
+      controller.abort();
+    };
+  }, []);
+
   const handleSubjectCardClick = useCallback(
-    (subject: string) => {
+    (subject: SupportedSubject) => {
       setSelectedSubject(subject);
       scrollToSection(progressSectionRef);
     },
-    [scrollToSection, progressSectionRef, setSelectedSubject],
+    [scrollToSection],
   );
 
   const handleAttendanceCardClick = useCallback(() => {
     scrollToSection(attendanceSectionRef);
-  }, [scrollToSection, attendanceSectionRef]);
+  }, [scrollToSection]);
 
   // Get current day for highlighting
   const getCurrentDay = () => {
@@ -380,18 +595,50 @@ export default function ParentDashboard() {
   };
 
   const currentDay = getCurrentDay();
+  const attendanceSummary = state.attendance ?? FALLBACK_ATTENDANCE_SUMMARY;
+  const attendanceRecords = attendanceSummary.records.length > 0 ? attendanceSummary.records : FALLBACK_ATTENDANCE_RECORDS;
 
-  // Remedial week schedule
-  const remedialSchedule = [
-    { day: 'Monday', subject: 'Filipino', time: '8:00-9:30 AM' },
-    { day: 'Tuesday', subject: 'Filipino', time: '8:00-9:30 AM' },
-    { day: 'Wednesday', subject: 'English', time: '8:00-9:30 AM' },
-    { day: 'Thursday', subject: 'Math', time: '8:00-9:30 AM' },
-    { day: 'Friday', subject: 'Quiz', time: '8:00-9:00 AM' },
-  ];
+  const currentChild = useMemo<ChildView>(() => {
+    if (!state.child) {
+      return FALLBACK_CHILD_VIEW;
+    }
 
-  const subjects = ['English', 'Filipino', 'Math'];
-  const currentProgress = currentChild.progressDetails[selectedSubject as keyof typeof currentChild.progressDetails];
+  const supportedSubjects = (state.child.subjects ?? []).filter(isSupportedSubject);
+  const subjectsFromApi = supportedSubjects.length > 0 ? supportedSubjects : FALLBACK_CHILD_VIEW.subjects;
+
+    return {
+      ...FALLBACK_CHILD_VIEW,
+      studentId: state.child.studentId,
+      userId: state.child.userId,
+      firstName: state.child.firstName || FALLBACK_CHILD_VIEW.firstName,
+      middleName: state.child.middleName ?? FALLBACK_CHILD_VIEW.middleName,
+      lastName: state.child.lastName || FALLBACK_CHILD_VIEW.lastName,
+      grade: state.child.grade ?? FALLBACK_CHILD_VIEW.grade,
+      section: state.child.section ?? FALLBACK_CHILD_VIEW.section,
+      relationship: state.child.relationship ?? FALLBACK_CHILD_VIEW.relationship,
+      subjects: subjectsFromApi,
+      attendance: attendanceSummary.attendanceRate ?? FALLBACK_CHILD_VIEW.attendance,
+    };
+  }, [state.child, attendanceSummary.attendanceRate]);
+
+  const subjects = useMemo<SupportedSubject[]>(() => {
+    const filtered = currentChild.subjects.filter(isSupportedSubject);
+    return filtered.length > 0 ? filtered : FALLBACK_SUBJECTS;
+  }, [currentChild]);
+
+  const attendanceRate = attendanceSummary.attendanceRate ?? currentChild.attendance;
+
+  useEffect(() => {
+    if (subjects.length === 0) {
+      return;
+    }
+    setSelectedSubject((current) => (subjects.includes(current) ? current : subjects[0]));
+  }, [subjects]);
+
+  const scheduleEntries = state.schedule.length > 0 ? state.schedule : FALLBACK_SCHEDULE;
+
+  const currentProgress: SubjectProgress =
+    currentChild.progressDetails[selectedSubject] ?? currentChild.progressDetails.English;
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
@@ -407,6 +654,18 @@ export default function ParentDashboard() {
               <div className="mb-6">
                 <SecondaryHeader title="Child Profile" />
               </div>
+
+              {state.error && (
+                <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                  {state.error}
+                </div>
+              )}
+
+              {state.isLoading && !state.child && !state.error && (
+                <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                  Loading child details…
+                </div>
+              )}
 
               {/* Child Details Section */}
               <div className="bg-[#E9FDF2] rounded-xl shadow-lg p-6 mb-8 min-h-[160px] flex flex-col gap-6 md:flex-row md:items-start md:px-8">
@@ -496,7 +755,7 @@ export default function ParentDashboard() {
                       return (
                         <UtilityButton
                           key={subject}
-                          onClick={() => setSelectedSubject(subject)}
+                          onClick={() => handleSubjectCardClick(subject)}
                           className={`transition-all duration-200 ${isActive ? 'shadow-lg' : '!bg-white !text-[#013300] border-[#013300] hover:!bg-green-50 hover:!text-[#013300]'}`}
                         >
                           {subject}
@@ -598,12 +857,12 @@ export default function ParentDashboard() {
                     <div>
                       <TertiaryHeader title="Weekly Schedule" />
                       <div className="mt-4 space-y-3">
-                        {remedialSchedule.map((item, index) => (
+                        {scheduleEntries.map((item) => (
                           <ScheduleCard
-                            key={index}
+                            key={`${item.day}-${item.subject}`}
                             day={item.day}
                             subject={item.subject}
-                            time={item.time}
+                            time={item.timeRange}
                             isToday={item.day === currentDay}
                           />
                         ))}
@@ -615,7 +874,7 @@ export default function ParentDashboard() {
                     </div>
                     
                     {/* Attendance Calendar */}
-                    <AttendanceCalendar />
+                    <AttendanceCalendar attendanceRecords={attendanceRecords} attendanceRate={attendanceRate} />
                   </div>
                 </div>
               </div>

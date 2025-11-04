@@ -1,7 +1,9 @@
 "use client";
 import RPTLogoTitle from "../Common/RPTLogoTitle";
 import React from "react";
+import { useRouter } from "next/navigation";
 import ProfileDropdown from "../Common/ProfileDropdown";
+import { performClientLogout } from "@/lib/utils/logout";
 
 interface TeacherHeaderProps {
   title?: string;
@@ -12,6 +14,7 @@ export default function TeacherHeader({ title, onSearch }: TeacherHeaderProps) {
   const [searchQuery, setSearchQuery] = React.useState("");
   const [showDropdown, setShowDropdown] = React.useState(false);
   const [showNotifications, setShowNotifications] = React.useState(false);
+  const router = useRouter();
   const profileBtnRef = React.useRef<HTMLButtonElement>(null);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const notificationBtnRef = React.useRef<HTMLButtonElement>(null);
@@ -138,7 +141,8 @@ export default function TeacherHeader({ title, onSearch }: TeacherHeaderProps) {
                     /* handle profile click */ setShowDropdown(false);
                   }}
                   onLogout={() => {
-                    /* handle logout click */ setShowDropdown(false);
+                    setShowDropdown(false);
+                    performClientLogout(router);
                   }}
                 />
               </div>

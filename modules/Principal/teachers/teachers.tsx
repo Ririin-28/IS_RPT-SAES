@@ -1,7 +1,7 @@
 "use client";
 import Sidebar from "@/components/Principal/Sidebar";
 import PrincipalHeader from "@/components/Principal/Header";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import { FaTimes } from "react-icons/fa";
@@ -27,7 +27,49 @@ export default function PrincipalTeachers() {
   const [activeTab, setActiveTab] = useState("All Grades");
   const [teacherType, setTeacherType] = useState("Master Teachers");
   const [teachers, setTeachers] = useState<any[]>([]);
+  const [masterTeachers, setMasterTeachers] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadTeachers() {
+      setIsLoading(true);
+      try {
+        const response = await fetch("/api/principal/teachers", { signal: controller.signal });
+        if (!response.ok) {
+          throw new Error(`Failed to load teachers (status ${response.status})`);
+        }
+
+        const data = await response.json();
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        setTeachers(Array.isArray(data?.teachers) ? data.teachers : []);
+        setMasterTeachers(Array.isArray(data?.masterTeachers) ? data.masterTeachers : []);
+        setError(null);
+      } catch (err: unknown) {
+        if ((err as Error)?.name === "AbortError" || controller.signal.aborted) {
+          return;
+        }
+        console.error("Failed to load principal teachers", err);
+        setError("Unable to load teachers. Please try again later.");
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    loadTeachers();
+
+    return () => {
+      controller.abort();
+    };
+  }, []);
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
@@ -73,17 +115,28 @@ export default function PrincipalTeachers() {
                 </div>
               </div>
               
+              {error && (
+                <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {error}
+                </div>
+              )}
+              {!error && isLoading && (
+                <div className="mb-4 rounded-md border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+                  Loading teachers…
+                </div>
+              )}
+
               {/*---------------------------------Tab Content---------------------------------*/}
               <div className="mt-4 sm:mt-6">
                 {teacherType === "Master Teachers" && (
                   <>
-                    {activeTab === "All Grades" && <MasterTeacherAllGradesTab teachers={teachers} setTeachers={setTeachers} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 1" && <MasterTeacherGradeOneTab teachers={teachers} setTeachers={setTeachers} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 2" && <MasterTeacherGradeTwoTab teachers={teachers} setTeachers={setTeachers} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 3" && <MasterTeacherGradeThreeTab teachers={teachers} setTeachers={setTeachers} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 4" && <MasterTeacherGradeFourTab teachers={teachers} setTeachers={setTeachers} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 5" && <MasterTeacherGradeFiveTab teachers={teachers} setTeachers={setTeachers} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 6" && <MasterTeacherGradeSixTab teachers={teachers} setTeachers={setTeachers} searchTerm={searchTerm} />}
+                    {activeTab === "All Grades" && <MasterTeacherAllGradesTab teachers={masterTeachers} setTeachers={setMasterTeachers} searchTerm={searchTerm} />}
+                    {activeTab === "Grade 1" && <MasterTeacherGradeOneTab teachers={masterTeachers} setTeachers={setMasterTeachers} searchTerm={searchTerm} />}
+                    {activeTab === "Grade 2" && <MasterTeacherGradeTwoTab teachers={masterTeachers} setTeachers={setMasterTeachers} searchTerm={searchTerm} />}
+                    {activeTab === "Grade 3" && <MasterTeacherGradeThreeTab teachers={masterTeachers} setTeachers={setMasterTeachers} searchTerm={searchTerm} />}
+                    {activeTab === "Grade 4" && <MasterTeacherGradeFourTab teachers={masterTeachers} setTeachers={setMasterTeachers} searchTerm={searchTerm} />}
+                    {activeTab === "Grade 5" && <MasterTeacherGradeFiveTab teachers={masterTeachers} setTeachers={setMasterTeachers} searchTerm={searchTerm} />}
+                    {activeTab === "Grade 6" && <MasterTeacherGradeSixTab teachers={masterTeachers} setTeachers={setMasterTeachers} searchTerm={searchTerm} />}
                   </>
                 )}
                 {teacherType === "Teachers" && (
