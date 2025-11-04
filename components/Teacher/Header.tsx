@@ -2,6 +2,7 @@
 import RPTLogoTitle from "../Common/RPTLogoTitle";
 import React from "react";
 import ProfileDropdown from "../Common/ProfileDropdown";
+import { useRouter } from "next/navigation";
 
 interface TeacherHeaderProps {
   title?: string;
@@ -9,6 +10,7 @@ interface TeacherHeaderProps {
 }
 
 export default function TeacherHeader({ title, onSearch }: TeacherHeaderProps) {
+  const router = useRouter();
   const [searchQuery, setSearchQuery] = React.useState("");
   const [showDropdown, setShowDropdown] = React.useState(false);
   const [showNotifications, setShowNotifications] = React.useState(false);
@@ -135,10 +137,11 @@ export default function TeacherHeader({ title, onSearch }: TeacherHeaderProps) {
                   email="teacher@gmail.com"
                   name="Teacher"
                   onProfile={() => {
-                    /* handle profile click */ setShowDropdown(false);
+                    setShowDropdown(false);
+                    router.push("/Teacher/profile");
                   }}
                   onLogout={() => {
-                    /* handle logout click */ setShowDropdown(false);
+                    setShowDropdown(false);
                   }}
                 />
               </div>

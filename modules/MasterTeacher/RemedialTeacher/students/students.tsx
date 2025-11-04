@@ -157,7 +157,7 @@ export default function MasterTeacherStudents({ subjectSlug }: MasterTeacherStud
             "
             >
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
                   <SecondaryHeader title={headerTitle} />
                   <HeaderDropdown
                     options={[...TAB_OPTIONS]}

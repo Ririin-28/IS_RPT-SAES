@@ -1,183 +1,295 @@
+"use client";
+
+import { useCallback, useMemo } from "react";
+import type { UseFormReturn } from "react-hook-form";
 import BaseModal, { ModalSection, ModalLabel } from "@/components/Common/Modals/BaseModal";
-import { useState } from "react";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
+
+export interface AddMasterTeacherFormValues {
+  teacherId: string;
+  role: string;
+  firstName: string;
+  middleName: string;
+  lastName: string;
+  suffix: string;
+  email: string;
+  phoneNumber: string;
+  grade: string;
+  // Subjects are always fixed
+  subjects: string[];
+}
 
 interface AddMasterTeacherModalProps {
   show: boolean;
   onClose: () => void;
-  onAdd: (masterTeacher: any) => void;
+  onSubmit: (values: AddMasterTeacherFormValues) => void | Promise<void>;
+  form: UseFormReturn<AddMasterTeacherFormValues>;
+  isSubmitting?: boolean;
+  apiError?: string | null;
 }
 
-export default function AddMasterTeacherModal({ show, onClose, onAdd }: AddMasterTeacherModalProps) {
-  const [formData, setFormData] = useState({
-    teacherId: "",
-    firstName: "",
-    lastName: "",
-    email: "",
-    contactNumber: "",
-    grade: ""
+const PHONE_FORMAT_REGEX = /^\+63-9\d{2}-\d{3}-\d{4}$/;
+const GRADE_OPTIONS = ["1", "2", "3", "4", "5", "6"];
+const FIXED_SUBJECTS = ["English", "Filipino", "Math"];
+
+export default function AddMasterTeacherModal({
+  show,
+  onClose,
+  onSubmit,
+  form,
+  isSubmitting = false,
+  apiError = null,
+}: AddMasterTeacherModalProps) {
+  const {
+    register,
+    handleSubmit,
+    reset,
+    setValue,
+    formState: { errors, isSubmitting: formSubmitting },
+  } = form;
+
+  const phoneRegistration = register("phoneNumber", {
+    required: "Contact number is required",
+    validate: (value) => {
+      if (!value) return "Contact number is required";
+      const trimmed = value.trim();
+      return PHONE_FORMAT_REGEX.test(trimmed)
+        ? true
+        : "Contact number must follow the format +63-9XX-XXX-XXXX";
+    },
   });
 
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const formatPhoneValue = useCallback((input: string) => {
+    const digitsOnly = input.replace(/\D/g, "");
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-    if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: "" }));
-    }
-  };
-
-  const validateForm = () => {
-    const newErrors: Record<string, string> = {};
-
-    if (!formData.teacherId.trim()) newErrors.teacherId = "Teacher ID is required";
-    if (!formData.firstName.trim()) newErrors.firstName = "First name is required";
-    if (!formData.lastName.trim()) newErrors.lastName = "Last name is required";
-    if (!formData.email.trim()) newErrors.email = "Email is required";
-    if (!formData.contactNumber.trim()) newErrors.contactNumber = "Contact number is required";
-    if (!formData.grade) newErrors.grade = "Grade is required";
-
-    if (formData.email && !/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = "Please enter a valid email address";
+    let local = digitsOnly;
+    if (local.startsWith("63")) {
+      local = local.slice(2);
+    } else if (local.startsWith("0")) {
+      local = local.slice(1);
     }
 
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
+    local = local.slice(0, 10);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (validateForm()) {
-      const newMasterTeacher = {
-        ...formData,
-        name: `${formData.firstName} ${formData.lastName}`,
-        id: Date.now().toString()
-      };
-      onAdd(newMasterTeacher);
-      handleClose();
+    let formatted = "+63";
+    if (local.length > 0) {
+      formatted += "-" + local.slice(0, Math.min(3, local.length));
     }
-  };
+    if (local.length > 3) {
+      formatted += "-" + local.slice(3, Math.min(6, local.length));
+    }
+    if (local.length > 6) {
+      formatted += "-" + local.slice(6, 10);
+    }
 
-  const handleClose = () => {
-    setFormData({
-      teacherId: "",
-      firstName: "",
-      lastName: "",
-      email: "",
-      contactNumber: "",
-      grade: ""
-    });
-    setErrors({});
+    return formatted;
+  }, []);
+
+  const handlePhoneInput = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const formatted = formatPhoneValue(event.target.value);
+      setValue("phoneNumber", formatted, { shouldValidate: true, shouldDirty: true });
+    },
+    [formatPhoneValue, setValue],
+  );
+
+  const isBusy = useMemo(() => isSubmitting || formSubmitting, [isSubmitting, formSubmitting]);
+
+  const handleClose = useCallback(() => {
+    reset();
     onClose();
-  };
+  }, [onClose, reset]);
+
+  // Set fixed subjects when form is initialized or reset
+  const handleFormSubmit = useCallback((values: AddMasterTeacherFormValues) => {
+    const valuesWithFixedSubjects = {
+      ...values,
+      subjects: FIXED_SUBJECTS
+    };
+    onSubmit(valuesWithFixedSubjects);
+  }, [onSubmit]);
 
   const footer = (
     <>
-      <DangerButton
-        type="button"
-        onClick={handleClose}>
+      <DangerButton type="button" onClick={handleClose} disabled={isBusy}>
         Cancel
       </DangerButton>
-      <PrimaryButton 
-        onClick={handleSubmit}>
-        Save Master Teacher
+      <PrimaryButton type="submit" form="add-masterteacher-form" disabled={isBusy}>
+        {isBusy ? "Saving…" : "Save Master Teacher"}
       </PrimaryButton>
     </>
   );
 
   return (
-    <BaseModal
-      show={show}
-      onClose={handleClose}
-      title="Add New Master Teacher"
-      footer={footer}
-    >
-      <form id="add-masterteacher-form" onSubmit={handleSubmit} className="space-y-6">
-        <ModalSection title="Personal Information">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <BaseModal show={show} onClose={handleClose} title="Add New Master Teacher" footer={footer}>
+      <form id="add-masterteacher-form" onSubmit={handleSubmit(handleFormSubmit)} className="space-y-6">
+        {apiError && (
+          <div className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+            {apiError}
+          </div>
+        )}
+
+        <ModalSection title="Personal Details">
+          {/* 1st Row: Teacher ID and Role (disabled) */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-1">
-              <ModalLabel required>Teacher ID</ModalLabel>
+              <ModalLabel>Teacher ID</ModalLabel>
               <input
-                className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm"
-                placeholder="Enter teacher ID"
-                name="teacherId"
-                value={formData.teacherId}
-                onChange={handleInputChange}
+                className="w-full cursor-not-allowed rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-500"
+                value="Auto-generated"
+                disabled
+                aria-disabled
               />
-              {errors.teacherId && <span className="text-red-500 text-xs">{errors.teacherId}</span>}
             </div>
             <div className="space-y-1">
+              <ModalLabel>Role</ModalLabel>
+              <input
+                className="w-full cursor-not-allowed rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-500"
+                value="Master Teacher"
+                disabled
+                aria-disabled
+              />
+            </div>
+          </div>
+
+          {/* Second Row: Name fields */}
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-7">
+            <div className="space-y-1 md:col-span-2">
               <ModalLabel required>First Name</ModalLabel>
               <input
-                className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm"
-                placeholder="Enter first name"
-                name="firstName"
-                value={formData.firstName}
-                onChange={handleInputChange}
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                placeholder="First name"
+                {...register("firstName", {
+                  required: "First name is required",
+                  minLength: { value: 2, message: "First name must be at least 2 characters" },
+                })}
               />
-              {errors.firstName && <span className="text-red-500 text-xs">{errors.firstName}</span>}
+              {errors.firstName && (
+                <span className="text-xs text-red-500">{errors.firstName.message as string}</span>
+              )}
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 md:col-span-2">
+              <ModalLabel required>Middle Name</ModalLabel>
+              <input
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                placeholder="Middle name"
+                {...register("middleName", {
+                  required: "Middle name is required",
+                  minLength: { value: 2, message: "Middle name must be at least 2 characters" },
+                })}
+              />
+              {errors.middleName && (
+                <span className="text-xs text-red-500">{errors.middleName.message as string}</span>
+              )}
+            </div>
+            <div className="space-y-1 md:col-span-2">
               <ModalLabel required>Last Name</ModalLabel>
               <input
-                className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm"
-                placeholder="Enter last name"
-                name="lastName"
-                value={formData.lastName}
-                onChange={handleInputChange}
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                placeholder="Last name"
+                {...register("lastName", {
+                  required: "Last name is required",
+                  minLength: { value: 2, message: "Last name must be at least 2 characters" },
+                })}
               />
-              {errors.lastName && <span className="text-red-500 text-xs">{errors.lastName}</span>}
+              {errors.lastName && (
+                <span className="text-xs text-red-500">{errors.lastName.message as string}</span>
+              )}
             </div>
+            <div className="space-y-1 md:col-span-1">
+              <ModalLabel>Suffix</ModalLabel>
+              <input
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                placeholder="Jr., Sr., III"
+                {...register("suffix")}
+              />
+            </div>
+          </div>
+        </ModalSection>
+
+        <ModalSection title="Contact Details">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-1">
               <ModalLabel required>Email</ModalLabel>
               <input
-                className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm"
-                placeholder="Enter email address"
                 type="email"
-                name="email"
-                value={formData.email}
-                onChange={handleInputChange}
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                placeholder="user@example.com"
+                {...register("email", {
+                  required: "Email is required",
+                  pattern: {
+                    value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+                    message: "Invalid email format",
+                  },
+                })}
               />
-              {errors.email && <span className="text-red-500 text-xs">{errors.email}</span>}
+              {!errors.email ? (
+                <p className="text-xs text-gray-500">Please use valid email address</p>
+              ) : (
+                <span className="text-xs text-red-500">{errors.email.message as string}</span>
+              )}
             </div>
-          </div>
-        </ModalSection>
-
-        <ModalSection title="Contact Information">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1">
-              <ModalLabel required>Contact Number</ModalLabel>
+              <ModalLabel required>Phone Number</ModalLabel>
               <input
-                className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm"
-                placeholder="0912-345-6789"
-                type="tel"
-                name="contactNumber"
-                value={formData.contactNumber}
-                onChange={handleInputChange}
+                {...phoneRegistration}
+                onChange={(event) => {
+                  handlePhoneInput(event);
+                  phoneRegistration.onChange?.(event);
+                }}
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                placeholder="+63-9XX-XXX-XXXX"
+                inputMode="numeric"
+                maxLength={16}
               />
-              {errors.contactNumber && <span className="text-red-500 text-xs">{errors.contactNumber}</span>}
+              {!errors.phoneNumber ? (
+                <p className="text-xs text-gray-500">Format: +63-9XX-XXX-XXXX</p>
+              ) : (
+                <span className="text-xs text-red-500">{errors.phoneNumber.message as string}</span>
+              )}
             </div>
           </div>
         </ModalSection>
 
-        <ModalSection title="Teaching Information">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <ModalSection title="Teaching Details">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-1">
-              <ModalLabel required>Grade</ModalLabel>
+              <ModalLabel required>Grade Handled</ModalLabel>
               <select
-                className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm"
-                name="grade"
-                value={formData.grade}
-                onChange={handleInputChange}
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                {...register("grade", { required: "Grade handled is required" })}
               >
-                <option value="" disabled>Select grade</option>
-                {[1, 2, 3, 4, 5, 6].map((grade) => (
-                  <option key={grade} value={grade}>{grade}</option>
+                <option value="" disabled>
+                  Select grade
+                </option>
+                {GRADE_OPTIONS.map((grade) => (
+                  <option key={grade} value={grade}>
+                    Grade {grade}
+                  </option>
                 ))}
               </select>
-              {errors.grade && <span className="text-red-500 text-xs">{errors.grade}</span>}
+              {errors.grade && (
+                <span className="text-xs text-red-500">{errors.grade.message as string}</span>
+              )}
+            </div>
+            <div className="space-y-1">
+              <ModalLabel>Subjects Handled</ModalLabel>
+              <div className="space-y-2 border border-gray-300 rounded-md bg-gray-50 p-3">
+                {FIXED_SUBJECTS.map((subject) => (
+                  <div key={subject} className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      checked={true}
+                      readOnly
+                      disabled
+                      className="rounded border-gray-300 text-blue-600 bg-gray-200"
+                    />
+                    <span className="text-sm text-gray-700">{subject}</span>
+                  </div>
+                ))}
+                <p className="text-xs text-gray-500 mt-2">All master teachers are assigned these three core subjects</p>
+              </div>
             </div>
           </div>
         </ModalSection>

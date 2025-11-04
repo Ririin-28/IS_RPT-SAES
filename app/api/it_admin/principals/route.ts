@@ -14,6 +14,7 @@ class HttpError extends Error {
 }
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_FORMAT_REGEX = /^\+63-9\d{2}-\d{3}-\d{4}$/;
 
 function sanitizeNamePart(value: unknown, field: string): string {
   if (typeof value !== "string") {
@@ -45,15 +46,19 @@ function sanitizeEmail(value: unknown): string {
   return normalized;
 }
 
-function sanitizePhoneNumber(value: unknown): string {
+function sanitizePhoneNumber(value: unknown): { digits: string; formatted: string } {
   if (typeof value !== "string") {
     throw new HttpError(400, "Phone number is required.");
   }
-  const digits = value.replace(/\D/g, "");
-  if (digits.length < 10 || digits.length > 11) {
-    throw new HttpError(400, "Phone number must contain 10 to 11 digits.");
+  const trimmed = value.trim();
+  if (!PHONE_FORMAT_REGEX.test(trimmed)) {
+    throw new HttpError(400, "Phone number must follow the format +63-9XX-XXX-XXXX.");
   }
-  return digits;
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.length !== 12) {
+    throw new HttpError(400, "Phone number must contain 12 digits after formatting.");
+  }
+  return { digits, formatted: trimmed };
 }
 
 function buildFullName(firstName: string, middleName: string | null, lastName: string): string {
@@ -97,7 +102,7 @@ export async function POST(request: NextRequest) {
     const middleName = sanitizeOptionalNamePart(payload?.middleName);
     const lastName = sanitizeNamePart(payload?.lastName, "Last name");
     const email = sanitizeEmail(payload?.email);
-    const phoneNumber = sanitizePhoneNumber(payload?.phoneNumber ?? "");
+  const { digits: phoneNumberDigits, formatted: phoneNumberFormatted } = sanitizePhoneNumber(payload?.phoneNumber ?? "");
     const fullName = buildFullName(firstName, middleName, lastName);
     const temporaryPassword = generateTemporaryPassword();
 
@@ -149,11 +154,11 @@ export async function POST(request: NextRequest) {
         }
         if (userColumns.has("contact_number")) {
           userInsertColumns.push("contact_number");
-          userInsertValues.push(phoneNumber);
+          userInsertValues.push(phoneNumberDigits);
         }
         if (userColumns.has("phone_number")) {
           userInsertColumns.push("phone_number");
-          userInsertValues.push(phoneNumber);
+          userInsertValues.push(phoneNumberDigits);
         }
         if (userColumns.has("role")) {
           userInsertColumns.push("role");
@@ -227,11 +232,11 @@ export async function POST(request: NextRequest) {
           }
           if (principalInfo.columns.has("contact_number")) {
             principalInsertColumns.push("contact_number");
-            principalValues.push(phoneNumber);
+            principalValues.push(phoneNumberDigits);
           }
           if (principalInfo.columns.has("phone_number")) {
             principalInsertColumns.push("phone_number");
-            principalValues.push(phoneNumber);
+            principalValues.push(phoneNumberDigits);
           }
           if (principalInfo.columns.has("status")) {
             principalInsertColumns.push("status");
@@ -271,7 +276,8 @@ export async function POST(request: NextRequest) {
           lastName,
           name: fullName,
           email,
-          contactNumber: phoneNumber,
+          contactNumber: phoneNumberFormatted,
+          contactNumberRaw: phoneNumberDigits,
           status: "Active",
           lastLogin: null,
         };

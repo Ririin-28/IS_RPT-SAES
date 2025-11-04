@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import { FaTimes } from "react-icons/fa";
-import MaterialTabContent from "./MaterialTabContent";
+import MaterialTabContent from "./MaterialsTab";
 
 const SUBJECT_OPTIONS = ["English", "Filipino", "Math"] as const;
 

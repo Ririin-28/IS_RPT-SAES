@@ -27,6 +27,8 @@ type AccountsRow = RowDataPacket & {
   contact?: string | null;
   phone?: string | null;
   mobile?: string | null;
+  user_contact_number?: string | null;
+  user_phone_number?: string | null;
   status?: string | null;
   user_status?: string | null;
   account_status?: string | null;
@@ -133,6 +135,8 @@ function resolveContact(row: AccountsRow): string | null {
     "contact",
     "phone",
     "mobile",
+    "user_contact_number",
+    "user_phone_number",
   ]);
   return contact ? String(contact) : null;
 }
@@ -232,6 +236,8 @@ async function fetchAccounts(role: RoleKey): Promise<AccountsResponse> {
   const roleFilters = ROLE_VARIANTS[role];
   const placeholders = roleFilters.map(() => "?").join(", ");
 
+  const userColumns = await getTableColumns("users");
+
   const baseSelect = [
     "u.user_id AS user_id",
     "u.username AS username",
@@ -242,6 +248,13 @@ async function fetchAccounts(role: RoleKey): Promise<AccountsResponse> {
     "u.created_at AS user_created_at",
     "latest.last_login AS last_login",
   ];
+
+  if (userColumns.has("contact_number")) {
+    baseSelect.push("u.contact_number AS user_contact_number");
+  }
+  if (userColumns.has("phone_number")) {
+    baseSelect.push("u.phone_number AS user_phone_number");
+  }
 
   let joinClause = "";
   let resolvedTable: string | null = null;
