@@ -50,6 +50,16 @@ const RemedialIcon = React.memo(() => (
   </svg>
 ));
 
+const AssessmentIcon = React.memo(() => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+    <rect x="4" y="3" width="16" height="18" rx="2" stroke="#013300" strokeWidth="2" />
+    <path d="M8 7h8" stroke="#013300" strokeWidth="2" strokeLinecap="round" />
+    <path d="M8 11h8" stroke="#013300" strokeWidth="2" strokeLinecap="round" />
+    <path d="M8 15h4" stroke="#013300" strokeWidth="2" strokeLinecap="round" />
+    <circle cx="16" cy="15" r="1.5" stroke="#013300" strokeWidth="1.5" />
+  </svg>
+));
+
 const ReportIcon = React.memo(() => (
   <svg width="24" height="24" fill="none" viewBox="0 0 24 24">
     <rect width="16" height="20" x="4" y="2" rx="2" stroke="#013300" strokeWidth="2" />
@@ -96,6 +106,15 @@ export default function TeacherSidebar() {
           { label: "English", path: "/Teacher/remedial/english" },
           { label: "Filipino", path: "/Teacher/remedial/filipino" },
           { label: "Math", path: "/Teacher/remedial/math" },
+        ],
+      },
+      {
+        label: "Assessment",
+        icon: <AssessmentIcon />,
+        children: [
+          { label: "English", path: "/Teacher/assessment/english" },
+          { label: "Filipino", path: "/Teacher/assessment/filipino" },
+          { label: "Math", path: "/Teacher/assessment/math" },
         ],
       },
       {
