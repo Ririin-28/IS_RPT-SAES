@@ -6,7 +6,8 @@ import Link from "next/link";
 import RPTLogoTitle from "@/components/Common/RPTLogoTitle";
 import Footer from "@/components/Common/Footer";
 
-const HERO_IMAGES = [
+// Default fallback values in case API fails
+const DEFAULT_HERO_IMAGES = [
   "/SAES/Carousel-1.jpg",
   "/SAES/Carousel-2.jpg",
   "/SAES/Carousel-3.jpg",
@@ -16,6 +17,13 @@ const HERO_IMAGES = [
   "/SAES/Carousel-7.jpg",
 ];
 
+const DEFAULT_SCHOOL_DETAILS = {
+  location: "San Agustin Elementary School",
+  contact_no: "(02) 7001 7058",
+  email: "sanagustinelem@gmail.com",
+  facebook: "https://bit.ly/136538_saesfb",
+};
+
 const NAV_LINKS = [
   { label: "Home", href: "#home" },
   { label: "About", href: "#about" },
@@ -24,9 +32,145 @@ const NAV_LINKS = [
   { label: "Login", href: "/auth/login", isRoute: true },
 ];
 
+type LandingContent = {
+  carouselImages: Array<{
+    id: string;
+    dataUrl: string | null;
+    name: string | null;
+  }>;
+  logo: {
+    id: string;
+    dataUrl: string | null;
+    name: string | null;
+  } | null;
+  saesDetails: {
+    location: string;
+    contact_no: string;
+    email: string;
+    facebook: string | null;
+  } | null;
+  privacyPolicy: {
+    dataUrl: string | null;
+    name: string | null;
+  } | null;
+};
+
+type ApiLandingPayload = {
+  carouselImages?: Array<{
+    id?: number | string;
+    image?: string | null;
+    dataUrl?: string | null;
+    name?: string | null;
+    createdAt?: string;
+  }>;
+  logo?: {
+    id?: number | string;
+    logo?: string | null;
+    dataUrl?: string | null;
+    name?: string | null;
+  } | null;
+  saesDetails?: {
+    location?: string | null;
+    contact_no?: string | null;
+    email?: string | null;
+    facebook?: string | null;
+  } | null;
+  privacyPolicy?: {
+    id?: number | string;
+    file?: string | null;
+    dataUrl?: string | null;
+    name?: string | null;
+  } | null;
+};
+
+const createFallbackLandingContent = (): LandingContent => ({
+  carouselImages: DEFAULT_HERO_IMAGES.map((url, index) => ({
+    id: `fallback-${index}`,
+    dataUrl: url,
+    name: `Carousel-${index + 1}.jpg`,
+  })),
+  logo: {
+    id: "fallback-logo",
+    dataUrl: "/SAES/SAESLogo.png",
+    name: "SAESLogo.png",
+  },
+  saesDetails: {
+    location: DEFAULT_SCHOOL_DETAILS.location,
+    contact_no: DEFAULT_SCHOOL_DETAILS.contact_no,
+    email: DEFAULT_SCHOOL_DETAILS.email,
+    facebook: DEFAULT_SCHOOL_DETAILS.facebook,
+  },
+  privacyPolicy: {
+    dataUrl: "/RPT-SAES_Privacy-Policy.docx",
+    name: "RPT-SAES_Privacy-Policy.docx",
+  },
+});
+
+const normalizeLandingContent = (data: ApiLandingPayload | undefined | null): LandingContent => {
+  const fallback = createFallbackLandingContent();
+
+  if (!data) {
+    return fallback;
+  }
+
+  const safeCarousel = Array.isArray(data.carouselImages)
+    ? data.carouselImages
+        .map((item, index) => {
+          if (!item) return null;
+          const dataUrl = typeof item.dataUrl === "string" ? item.dataUrl : typeof item.image === "string" ? item.image : null;
+          const name = typeof item.name === "string" ? item.name : null;
+          const id = String(item.id ?? index);
+          return { id, dataUrl, name };
+        })
+        .filter((item): item is { id: string; dataUrl: string | null; name: string | null } => Boolean(item))
+    : [];
+
+  const safeLogo = data.logo
+    ? {
+        id: String(data.logo.id ?? "logo"),
+        dataUrl:
+          typeof data.logo.dataUrl === "string"
+            ? data.logo.dataUrl
+            : typeof data.logo.logo === "string"
+              ? data.logo.logo
+              : fallback.logo?.dataUrl ?? null,
+        name: typeof data.logo.name === "string" ? data.logo.name : fallback.logo?.name ?? null,
+      }
+    : fallback.logo;
+
+  const safeDetails = data.saesDetails
+    ? {
+        location: data.saesDetails.location ?? fallback.saesDetails?.location ?? DEFAULT_SCHOOL_DETAILS.location,
+        contact_no: data.saesDetails.contact_no ?? fallback.saesDetails?.contact_no ?? DEFAULT_SCHOOL_DETAILS.contact_no,
+        email: data.saesDetails.email ?? fallback.saesDetails?.email ?? DEFAULT_SCHOOL_DETAILS.email,
+        facebook: data.saesDetails.facebook ?? fallback.saesDetails?.facebook ?? DEFAULT_SCHOOL_DETAILS.facebook,
+      }
+    : fallback.saesDetails;
+
+  const safePolicy = data.privacyPolicy
+    ? {
+        dataUrl:
+          typeof data.privacyPolicy.dataUrl === "string"
+            ? data.privacyPolicy.dataUrl
+            : typeof data.privacyPolicy.file === "string"
+              ? data.privacyPolicy.file
+              : fallback.privacyPolicy?.dataUrl ?? null,
+        name: typeof data.privacyPolicy.name === "string" ? data.privacyPolicy.name : fallback.privacyPolicy?.name ?? null,
+      }
+    : fallback.privacyPolicy;
+
+  return {
+    carouselImages: safeCarousel.length > 0 ? safeCarousel : fallback.carouselImages,
+    logo: safeLogo,
+    saesDetails: safeDetails,
+    privacyPolicy: safePolicy,
+  };
+};
+
 export default function Home() {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [mounted, setMounted] = useState(false);
+  const [landingContent, setLandingContent] = useState<LandingContent | null>(null);
   const [visibleSections, setVisibleSections] = useState({
     hero: false,
     about: false,
@@ -35,17 +179,44 @@ export default function Home() {
     mobile: false
   });
   
-  const slideCount = HERO_IMAGES.length;
-  
-  // Refs for sections
   const heroRef = useRef(null);
   const aboutRef = useRef(null);
   const missionRef = useRef(null);
   const featuresRef = useRef(null);
   const mobileRef = useRef(null);
 
+  // Fetch landing page content from your existing API
   useEffect(() => {
-    setMounted(true);
+    const fetchLandingContent = async () => {
+      try {
+        const response = await fetch("/api/it_admin/landing");
+        if (!response.ok) {
+          throw new Error(`Failed to load landing configuration (${response.status})`);
+        }
+
+        const result = await response.json();
+        const normalized = normalizeLandingContent(result?.data);
+        setLandingContent(normalized);
+      } catch (error) {
+        console.error('Failed to fetch landing content:', error);
+        setLandingContent(createFallbackLandingContent());
+      } finally {
+        setMounted(true);
+      }
+    };
+
+    fetchLandingContent();
+  }, []);
+
+  // Get hero images from API or use defaults
+  const HERO_IMAGES = landingContent?.carouselImages
+    .filter((img) => typeof img.dataUrl === "string" && img.dataUrl.length > 0)
+    .map((img) => img.dataUrl as string) || DEFAULT_HERO_IMAGES;
+  
+  const slideCount = HERO_IMAGES.length;
+
+  useEffect(() => {
+    if (!mounted) return;
     
     const timer = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % slideCount);
@@ -82,7 +253,7 @@ export default function Home() {
       clearInterval(timer);
       observer.disconnect();
     };
-  }, [slideCount]);
+  }, [mounted, slideCount]);
 
   const goToSlide = (index: number) => {
     setCurrentSlide((index + slideCount) % slideCount);
@@ -100,7 +271,6 @@ export default function Home() {
   const isSectionVisible = (section: string) => {
     return mounted && visibleSections[section as keyof typeof visibleSections];
   };
-
   return (
     <div className="min-h-screen text-[#013300] relative overflow-hidden scroll-smooth">
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,_rgba(209,255,222,0.45),_transparent_16%),radial-gradient(circle_at_bottom_right,_rgba(188,240,214,0.35),_transparent_22%),linear-gradient(180deg,_rgba(255,255,255,0.98),_rgba(242,249,245,0.95))]" />
@@ -111,33 +281,11 @@ export default function Home() {
       <header className={`fixed top-0 left-0 w-full z-30 bg-white shadow-md scroll-smooth transition-all duration-500 ${
         mounted ? 'translate-y-0 opacity-100' : '-translate-y-4 opacity-0'
       }`}>
-        <div
-          className="
-          /* Mobile */
-          flex items-center justify-between px-6 py-4
-          
-          /* Tablet */
-          md:px-8 md:py-4 md:justify-center md:relative
-          
-          /* Desktop */
-          lg:px-10
-        "
-        >
+        <div className="flex items-center justify-between px-6 py-4 md:px-8 md:py-4 md:justify-center md:relative lg:px-10">
           <div className="flex items-center gap-3 md:absolute md:left-8 lg:left-10">
             <RPTLogoTitle small />
           </div>
-          <nav
-            className="
-            /* Mobile  */
-            hidden
-            
-            /* Tablet - show and adjust spacing */
-            md:flex md:gap-10
-            
-            /* Desktop - wider spacing */
-            lg:gap-16
-          "
-          >
+          <nav className="hidden md:flex md:gap-10 lg:gap-16">
             {NAV_LINKS.map((item, index) => (
               <Link
                 key={item.label}
@@ -145,8 +293,7 @@ export default function Home() {
                 scroll={!item.isRoute}
                 className={`
                   font-bold text-[#013300] hover:text-green-800 transition-all duration-300 transform hover:scale-105
-                  md:text-lg
-                  lg:text-lg
+                  md:text-lg lg:text-lg
                   ${mounted ? 'translate-y-0 opacity-100' : '-translate-y-2 opacity-0'}
                 `}
                 style={{ transitionDelay: `${index * 100 + 200}ms` }}
@@ -158,56 +305,30 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Hero Section - Always visible when mounted */}
+      {/* Hero Section */}
       <main
         ref={heroRef}
         id="home"
-        className="
-        /* Mobile */
-        relative pt-24 px-6 py-8 overflow-hidden
-        
-        /* Tablet */
-        md:pt-28 md:px-8 md:py-12
-        
-        /* Desktop */
-        lg:pt-20 lg:px-12
-      "
+        className="relative pt-24 px-6 py-8 overflow-hidden md:pt-28 md:px-8 md:py-12 lg:pt-20 lg:px-12"
       >
         {/* Soft gradients behind the hero */}
         <div className="absolute inset-x-0 top-12 h-[420px] bg-gradient-to-br from-green-100 via-white to-green-50 blur-3xl opacity-70" />
         <div className="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-gradient-to-br from-green-500/20 to-green-300/10 blur-2xl" />
         <div className="absolute bottom-0 -left-20 h-64 w-64 rounded-full bg-green-200/30 blur-2xl" />
 
-        <div
-          className="
-          /* Mobile */
-          relative max-w-7xl mx-auto py-8 grid 
-          
-          /* Tablet */
-          md:gap-10
-          
-          /* Desktop */
-          lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:items-center lg:py-16 lg:gap-15
-        "
-        >
+        <div className="relative max-w-7xl mx-auto py-8 grid md:gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:items-center lg:py-16 lg:gap-15">
           {/* Text Content */}
           <div
             className={`
-            /* Mobile */
-            w-full flex flex-col justify-center items-start
-            
-            /* Desktop */
-            lg:-ml-12
+            w-full flex flex-col justify-center items-start lg:-ml-12
             transition-all duration-700 transform
             ${mounted ? 'translate-x-0 opacity-100 scale-100' : '-translate-x-8 opacity-0 scale-95'}
             `}
             style={{ minHeight: "350px" }}
           >
-            <div
-              className="flex items-center gap-3 mb-4 md:gap-4 md:mb-6"
-            >
+            <div className="flex items-center gap-3 mb-4 md:gap-4 md:mb-6">
               <Image
-                src="/SAES/SAESLogo.png"
+                src={landingContent?.logo?.dataUrl || "/SAES/SAESLogo.png"}
                 alt="San Agustin Elementary School logo"
                 width={64}
                 height={64}
@@ -223,14 +344,8 @@ export default function Home() {
             </p>
             <h1
               className={`
-              /* Mobile */
               text-3xl font-extrabold text-[#013300] mb-4 leading-tight
-              
-              /* Tablet */
-              md:text-4xl md:mb-5
-              
-              /* Desktop */
-              lg:text-5xl
+              md:text-4xl md:mb-5 lg:text-5xl
               transition-all duration-800 delay-200 transform
               ${mounted ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}
             `}
@@ -241,14 +356,7 @@ export default function Home() {
             </h1>
             <p
               className={`
-              /* Mobile */
-              text-base text-green-900 mb-2
-              
-              /* Tablet */
-              md:text-lg md:mb-2
-              
-              /* Desktop */
-              lg:text-xl lg:mb-2
+              text-base text-green-900 mb-2 md:text-lg md:mb-2 lg:text-xl lg:mb-2
               transition-all duration-800 delay-300 transform
               ${mounted ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}
             `}
@@ -259,14 +367,8 @@ export default function Home() {
               mounted ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-6 opacity-0 scale-95'
             }`}>
               <Link href="/auth/login" className="
-                /* Mobile */
                 flex items-center pl-4 pr-2 py-2 bg-[#013300] text-white text-base font-bold rounded-lg hover:bg-green-900 transition-all duration-300 transform hover:scale-105
-                
-                /* Tablet */
-                md:pl-4 md:py-3 md:text-lg
-                
-                /* Desktop */
-                lg:text-xl
+                md:pl-4 md:py-3 md:text-lg lg:text-xl
               ">
                 Get Started
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 ml-2 md:w-6 md:h-6">
@@ -279,11 +381,7 @@ export default function Home() {
           {/* Image Carousel with Caption */}
           <div
             className={`
-            /* Mobile */
-            w-full mt-4
-
-            /* Desktop */
-            lg:w-[120%] lg:mt-0 lg:-ml-20
+            w-full mt-4 lg:w-[120%] lg:mt-0 lg:-ml-20
             transition-all duration-800 delay-400 transform
             ${mounted ? 'translate-x-0 opacity-100 scale-100' : 'translate-x-8 opacity-0 scale-95'}
           `}
@@ -317,16 +415,7 @@ export default function Home() {
                     aria-label="Previous slide"
                     className="rounded-full bg-white/80 p-2 text-[#013300] shadow hover:bg-white transition-all duration-300 transform hover:scale-110"
                   >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="h-5 w-5"
-                    >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
                       <path d="m15 18-6-6 6-6" />
                     </svg>
                   </button>
@@ -336,23 +425,16 @@ export default function Home() {
                     aria-label="Next slide"
                     className="rounded-full bg-white/80 p-2 text-[#013300] shadow hover:bg-white transition-all duration-300 transform hover:scale-110"
                   >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="h-5 w-5"
-                    >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
                       <path d="m9 18 6-6-6-6" />
                     </svg>
                   </button>
                 </div>
 
                 <div className="absolute bottom-0 left-0 right-0 px-6 py-5 bg-gradient-to-t from-[#013300]/80 via-[#013300]/35 to-transparent rounded-b-[32px]">
-                  <h3 className="text-lg font-bold text-white">San Agustin Elementary School</h3>
+                  <h3 className="text-lg font-bold text-white">
+                    {landingContent?.saesDetails?.location || "San Agustin Elementary School"}
+                  </h3>
                   <p className="mt-1 text-sm text-white/85">Supporting remedial excellence through technology</p>
                 </div>
 
@@ -379,37 +461,13 @@ export default function Home() {
       <section
         ref={aboutRef}
         id="about"
-        className="
-        /* Mobile */
-        px-6 py-16
-        
-        /* Tablet */
-        md:px-8 md:py-20
-        
-        /* Desktop */
-        lg:px-12 lg:py-24
-      "
+        className="px-6 py-16 md:px-8 md:py-20 lg:px-12 lg:py-24"
       >
-        <div
-          className="
-          /* Mobile */
-          mb-12 w-full max-w-6xl mx-auto px-4
-          
-          /* Tablet */
-          md:mb-16
-        "
-        >
-          {/* Updated Title with Hero Section Style */}
+        <div className="mb-12 w-full max-w-6xl mx-auto px-4 md:mb-16">
           <h2
             className={`
-            /* Mobile */
             text-3xl font-extrabold text-[#013300] mb-4 text-center leading-tight
-            
-            /* Tablet */
-            md:text-4xl md:mb-5
-            
-            /* Desktop */
-            lg:text-5xl
+            md:text-4xl md:mb-5 lg:text-5xl
             transition-all duration-800 delay-200 transform
             ${isSectionVisible('about') ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-6 opacity-0 scale-95'}
           `}
@@ -425,7 +483,7 @@ export default function Home() {
               }`}
             >
             </h3>
-            {/* Animated Circles */}
+            
             <div className={`
               absolute -left-20 top-1/2 -translate-y-1/2 w-40 h-40 rounded-full
               bg-gradient-to-br from-green-500/20 to-green-300/10 blur-2xl
@@ -440,7 +498,6 @@ export default function Home() {
               ${isSectionVisible('mission') ? 'translate-x-0 opacity-100 scale-100' : 'translate-x-20 opacity-0 scale-50'}
             `}></div>
 
-            {/* Mission Text Container */}
             <div className="relative z-10">
               <div className={`
                 bg-gradient-to-r from-green-50/60 to-green-100/40 
@@ -450,10 +507,7 @@ export default function Home() {
                 ${isSectionVisible('mission') ? 'scale-100 opacity-100' : 'scale-95 opacity-0'}
               `}>
                 <p className={`
-                  /* Mobile */
                   text-green-900 leading-relaxed text-lg px-6 py-8 text-center
-                  
-                  /* Tablet */
                   md:text-xl md:px-10 md:py-10
                   transition-all duration-700 delay-900
                   ${isSectionVisible('mission') ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}
@@ -467,10 +521,7 @@ export default function Home() {
           {/* Key Features Title */}
           <div ref={featuresRef} id="features" className="mt-16">
             <h3 className={`
-              /* Mobile */
               text-2xl font-semibold text-[#013300] mb-8 text-center
-              
-              /* Tablet */
               md:text-3xl md:mb-12
               transition-all duration-700 delay-200 transform
               ${isSectionVisible('features') ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}
@@ -522,7 +573,6 @@ export default function Home() {
                 `}
                 style={{ transitionDelay: `${isSectionVisible('features') ? 300 + index * 150 : 0}ms` }}
               >
-                {/* Default State - Icon and Title Only */}
                 <div className="
                   flex flex-col items-center justify-center h-full
                   group-hover:opacity-0 group-hover:scale-90
@@ -536,7 +586,6 @@ export default function Home() {
                     className="w-20 h-20 object-contain mb-6"
                   />
                   
-                  {/* Title */}
                   <h4 className="
                     font-bold text-[#013300] text-xl leading-tight px-2
                   ">
@@ -544,7 +593,6 @@ export default function Home() {
                   </h4>
                 </div>
 
-                {/* Hover State - Full Description */}
                 <div className="
                   absolute inset-0 p-8 flex flex-col items-center justify-center
                   opacity-0 scale-95
@@ -560,7 +608,6 @@ export default function Home() {
                     className="w-16 h-16 object-contain mb-6"
                   />
                   
-                  {/* Title in Hover State */}
                   <h4 className="
                     font-bold text-[#013300] text-lg leading-tight mb-4 px-2
                     group-hover:text-green-800
@@ -568,7 +615,6 @@ export default function Home() {
                     {feature.title}
                   </h4>
                   
-                  {/* Description */}
                   <p className="
                     text-green-800 text-base leading-relaxed text-center
                     opacity-0 translate-y-2
@@ -580,7 +626,6 @@ export default function Home() {
                   </p>
                 </div>
 
-                {/* Card Scale Effect */}
                 <div className="
                   absolute inset-0 rounded-2xl
                   scale-100 group-hover:scale-105
@@ -593,112 +638,55 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Quiz Section - With three decorative circles */}
+      {/* Quiz Section */}
       <section
         ref={mobileRef}
         id="mobile"
-        className="
-        /* Mobile */
-        px-6 py-12
-        
-        /* Tablet */
-        md:px-8 md:py-16
-        
-        /* Desktop */
-        lg:px-12 lg:py-20
-      "
+        className="px-6 py-12 md:px-8 md:py-16 lg:px-12 lg:py-20"
       >
-        <div
-          className="
-          /* Mobile */
-          mb-12
-          
-          /* Tablet */
-          md:mb-16
-        "
-        >
-          <div
-            className="
-            /* Mobile */
-            flex flex-col items-center justify-center gap-8
-            
-            /* Tablet */
-            md:flex-row md:gap-12
-            
-            /* Desktop */
-            lg:gap-16
-          "
-          >
-            {/* Phone Image with three decorative circles */}
+        <div className="mb-12 md:mb-16">
+          <div className="flex flex-col items-center justify-center gap-8 md:flex-row md:gap-12 lg:gap-16">
             <div className="flex-shrink-0 relative">
-              {/* Three decorative circles - BEHIND EVERYTHING */}
               <div className={`
-                /* Mobile */
                 absolute -top-12 -left-12 w-64 h-64 rounded-full bg-green-700/10 z-0
-                
-                /* Tablet */
                 md:-top-16 md:-left-16 md:w-96 md:h-96
-                
-                /* Desktop */
                 lg:-top-5 lg:-left-20 lg:w-[23rem] lg:h-[23rem]
                 transition-all duration-1000 delay-300
                 ${isSectionVisible('mobile') ? 'scale-100 opacity-100' : 'scale-50 opacity-0'}
               `}></div>
               
               <div className={`
-                /* Mobile */
                 absolute -bottom-12 -right-12 w-60 h-60 rounded-full bg-green-500/15 z-0
-                
-                /* Tablet */
                 md:-bottom-16 md:-right-16 md:w-80 md:h-80
-                
-                /* Desktop */
                 lg:-bottom-2 lg:-right-12 lg:w-[24rem] lg:h-[24rem]
                 transition-all duration-1000 delay-500
                 ${isSectionVisible('mobile') ? 'scale-100 opacity-100' : 'scale-50 opacity-0'}
               `}></div>
               
               <div className={`
-                /* Mobile */
                 absolute top-1/2 -right-14 w-52 h-52 rounded-full bg-green-300/20 transform -translate-y-1/2 z-0
-                
-                /* Tablet */
                 md:-right-20 md:w-72 md:h-72
-                
-                /* Desktop */
                 lg:-right-8 lg:w-80 lg:h-80
                 transition-all duration-1000 delay-700
                 ${isSectionVisible('mobile') ? 'scale-100 opacity-100' : 'scale-50 opacity-0'}
               `}></div>
               
-              {/* Phone Image - Should be above circles */}
               <Image
                 width={200}
                 height={400}
                 src="/RPT-SAES/RPT-SAES Mobile.png"
                 alt="Quiz Mobile"
                 className={`
-                  /* Mobile */
-                  w-56 relative z-10
-                  
-                  /* Tablet */
-                  md:w-72
-                  
-                  /* Desktop */
-                  lg:w-80
+                  w-56 relative z-10 md:w-72 lg:w-80
                   transition-all duration-800 delay-900 transform
                   ${isSectionVisible('mobile') ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-8 opacity-0 scale-95'}
                 `}
               />
             </div>
             
-            {/* Right Content - Should also be above circles */}
             <div
               className={`
-              /* Mobile */
               flex flex-col items-center text-center relative z-20
-              
-              /* Tablet */
               md:items-start md:text-left 
               transition-all duration-800 delay-200
               ${isSectionVisible('mobile') ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}
@@ -710,28 +698,15 @@ export default function Home() {
                 src="/RPT-SAES/RPT-SAES Full Logo.png"
                 alt="Quiz Logo"
                 className={`
-                  /* Mobile */
-                  w-48 mb-6
-                  
-                  /* Tablet */
-                  md:w-56 md:mb-8
-                  
-                  /* Desktop */
-                  lg:w-90 lg:mb-0
+                  w-48 mb-6 md:w-56 md:mb-8 lg:w-90 lg:mb-0
                   transition-all duration-700 delay-400 transform
                   ${isSectionVisible('mobile') ? 'scale-100 opacity-100' : 'scale-90 opacity-0'}
                 `}
               />
               <h3
                 className={`
-                /* Mobile */
                 text-2xl font-extrabold text-[#013300] mb-5
-                
-                /* Tablet */
-                md:text-3xl
-                
-                /* Desktop */
-                lg:text-4xl
+                md:text-3xl lg:text-4xl
                 transition-all duration-700 delay-600 transform
                 ${isSectionVisible('mobile') ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}
               `}
@@ -741,11 +716,7 @@ export default function Home() {
               </h3>
               <p
                 className={`
-                /* Mobile */
-                text-base text-green-900 mb-6
-                
-                /* Tablet */
-                md:text-lg md:mb-6
+                text-base text-green-900 mb-6 md:text-lg md:mb-6
                 transition-all duration-700 delay-800 transform
                 ${isSectionVisible('mobile') ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}
               `}
@@ -755,14 +726,8 @@ export default function Home() {
               </p>
               <a
                 className={`
-                  /* Mobile */
                   flex items-center px-4 py-2 bg-[#013300] text-white cursor-pointer text-base font-bold rounded-lg hover:bg-green-900
-                  
-                  /* Tablet */
-                  md:px-6 md:py-3 md:text-lg
-                  
-                  /* Desktop */
-                  lg:text-xl
+                  md:px-6 md:py-3 md:text-lg lg:text-xl
                   ${isSectionVisible('mobile') ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-6 opacity-0 scale-95'}
                 `}
               >
@@ -781,7 +746,7 @@ export default function Home() {
         mounted ? 'opacity-100' : 'opacity-0'
       }`} />
       
-      <Footer />
+      <Footer schoolDetails={landingContent?.saesDetails} />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import PrincipalHeader from "@/components/Principal/Header";
 import PrincipalSidebar from "@/components/Principal/Sidebar";
@@ -42,6 +42,32 @@ type OverviewCardProps = {
   onClick?: () => void;
 };
 
+type DashboardTotals = {
+  students: number;
+  teachers: number;
+  breakdown: {
+    teachers: number;
+    masterTeachers: number;
+  };
+};
+
+type ReportMonthStat = {
+  label: string;
+  month: number;
+  year: number | null;
+  total: number;
+  submitted: number;
+  pending: number;
+};
+
+type DashboardApiResponse = {
+  totals: DashboardTotals;
+  reports: {
+    monthStats: ReportMonthStat[];
+    currentMonth: ReportMonthStat;
+  };
+};
+
 function OverviewCard({ value, label, icon, className = "", onClick }: OverviewCardProps) {
   const baseClasses = `bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg flex flex-col items-center justify-center p-5 min-w-[160px] min-h-[110px] transition-transform duration-200 hover:scale-105 sm:p-6 sm:min-w-[180px] sm:min-h-[120px] lg:p-7 ${className}`;
 
@@ -79,15 +105,96 @@ export default function PrincipalDashboard() {
     'Jul.', 'Aug.', 'Sep.', 'Oct.', 'Nov.', 'Dec.'
   ];
   const dateToday = `${monthShort[today.getMonth()]} ${today.getDate()}, ${today.getFullYear()}`;
+  const currentMonthName = today.toLocaleString('default', { month: 'long' });
 
   // State for view mode (summary or detailed)
   const [viewMode, setViewMode] = useState('summary');
-  const [selectedMonth, setSelectedMonth] = useState('March');
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthName);
   const [selectedLevel, setSelectedLevel] = useState('All Levels');
   const [selectedSubject, setSelectedSubject] = useState('English');
+  const [overviewTotals, setOverviewTotals] = useState<DashboardTotals | null>(null);
+  const [reportStats, setReportStats] = useState<{ currentMonth: ReportMonthStat | null; monthStats: ReportMonthStat[] }>(
+    {
+      currentMonth: null,
+      monthStats: [],
+    },
+  );
+  const [isDashboardLoading, setIsDashboardLoading] = useState(true);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
 
   // Months data
   const months = ['September', 'October', 'November', 'December', 'January', 'February', 'March'];
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadDashboard() {
+      setIsDashboardLoading(true);
+      try {
+        const response = await fetch('/api/principal/dashboard');
+        if (!response.ok) {
+          throw new Error(`Failed to load dashboard data (status ${response.status})`);
+        }
+
+        const data: DashboardApiResponse = await response.json();
+        if (!isMounted) {
+          return;
+        }
+
+        setOverviewTotals(data?.totals ?? null);
+        const currentMonthStat = data?.reports?.currentMonth ?? null;
+        const monthStats = data?.reports?.monthStats ?? [];
+        setReportStats({ currentMonth: currentMonthStat, monthStats });
+
+        if (currentMonthStat?.label) {
+          setSelectedMonth(currentMonthStat.label);
+        } else if (monthStats.length > 0 && monthStats[0]?.label) {
+          setSelectedMonth(monthStats[0].label);
+        }
+
+        setDashboardError(null);
+      } catch (error) {
+        console.error('Failed to load principal dashboard overview', error);
+        if (isMounted) {
+          setOverviewTotals(null);
+          setReportStats({ currentMonth: null, monthStats: [] });
+          setDashboardError('Unable to load dashboard overview. Please try again later.');
+        }
+      } finally {
+        if (isMounted) {
+          setIsDashboardLoading(false);
+        }
+      }
+    }
+
+    loadDashboard();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const formatCount = (value?: number | null) =>
+    typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString() : '—';
+
+  const currentReport = reportStats.currentMonth;
+  const submittedReports = currentReport?.submitted ?? 0;
+  const pendingReports = currentReport?.pending ?? Math.max((currentReport?.total ?? 0) - (currentReport?.submitted ?? 0), 0);
+  const totalReports = currentReport?.total ?? submittedReports + pendingReports;
+  const submissionRate = totalReports > 0 ? Math.round((submittedReports / totalReports) * 100) : 0;
+  const submissionRateDisplay = isDashboardLoading ? '...' : `${submissionRate}%`;
+  const teachersBreakdown = overviewTotals?.breakdown ?? { teachers: 0, masterTeachers: 0 };
+  const combinedTeachersCount = typeof overviewTotals?.teachers === 'number'
+    ? overviewTotals.teachers
+    : (teachersBreakdown.teachers ?? 0) + (teachersBreakdown.masterTeachers ?? 0);
+  const totalStudentsDisplay = isDashboardLoading ? '...' : formatCount(overviewTotals?.students);
+  const totalTeachersDisplay = isDashboardLoading ? '...' : formatCount(combinedTeachersCount);
+  const monthlyReportsDisplay = isDashboardLoading ? '...' : formatCount(submittedReports);
+  const submittedTeachersDisplay = isDashboardLoading ? '...' : formatCount(submittedReports);
+  const pendingTeachersDisplay = isDashboardLoading ? '...' : formatCount(pendingReports);
+  const totalTeachersExpectedDisplay = isDashboardLoading ? '...' : formatCount(totalReports);
+  const submittedProgressWidth = totalReports > 0 ? `${Math.min(100, Math.round((submittedReports / totalReports) * 100))}%` : '0%';
+  const pendingProgressWidth = totalReports > 0 ? `${Math.min(100, Math.round((pendingReports / totalReports) * 100))}%` : '0%';
 
   // Grade levels for student progress chart
   const gradeLevels = ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6'];
@@ -357,11 +464,11 @@ export default function PrincipalDashboard() {
   };
 
   // Teacher Report Submissions Data for Donut Chart
-  const [reportData] = useState({
+  const reportData = useMemo(() => ({
     labels: ['Submitted', 'Pending'],
     datasets: [
       {
-        data: [75, 25],
+        data: [submittedReports, pendingReports],
         backgroundColor: [
           'rgba(34, 197, 94, 0.8)',
           'rgba(239, 68, 68, 0.8)',
@@ -374,7 +481,7 @@ export default function PrincipalDashboard() {
         cutout: '70%',
       },
     ],
-  });
+  }), [submittedReports, pendingReports]);
 
   // Get current subject progress data based on selection
   const getSubjectProgressData = () => {
@@ -564,7 +671,7 @@ export default function PrincipalDashboard() {
   };
 
   // Donut Chart Options for Teacher Submission
-  const donutOptions = {
+  const donutOptions = useMemo(() => ({
     responsive: true,
     plugins: {
       legend: {
@@ -572,17 +679,23 @@ export default function PrincipalDashboard() {
       },
       tooltip: {
         callbacks: {
-          label: function(context: any) {
+          label: (context: any) => {
             const label = context.label || '';
-            const value = context.parsed;
-            return `${label}: ${value}%`;
-          }
-        }
-      }
+            const value = typeof context.parsed === 'number' ? context.parsed : Number(context.parsed ?? 0);
+            const data = Array.isArray(context.dataset?.data) ? context.dataset.data : [];
+            const total = data.reduce((sum: number, entry: any) => {
+              const numericEntry = typeof entry === 'number' ? entry : Number(entry ?? 0);
+              return sum + (Number.isFinite(numericEntry) ? numericEntry : 0);
+            }, 0);
+            const percent = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
+            return `${label}: ${value} (${percent}%)`;
+          },
+        },
+      },
     },
     cutout: '70%',
     maintainAspectRatio: false,
-  };
+  }), [submittedReports, pendingReports, totalReports]);
 
   const monthlyBarOptions = {
     responsive: true,
@@ -633,10 +746,16 @@ export default function PrincipalDashboard() {
                 {/* No action buttons */}
               </div>
 
+              {dashboardError && (
+                <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {dashboardError}
+                </div>
+              )}
+
               {/* Overview Cards Section */}
               <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2 sm:gap-5 sm:mb-7 lg:grid-cols-4 lg:gap-6 lg:mb-8">
                 <OverviewCard
-                  value={120}
+                  value={totalStudentsDisplay}
                   label="Total Students"
                   icon={
                     <svg width="42" height="42" fill="none" viewBox="0 0 24 24">
@@ -647,7 +766,7 @@ export default function PrincipalDashboard() {
                   onClick={() => handleNavigate("/Principal/students")}
                 />
                 <OverviewCard
-                  value={15}
+                  value={totalTeachersDisplay}
                   label="Total Teachers"
                   icon={
                     <svg width="40" height="40" fill="none" viewBox="0 0 24 24">
@@ -659,8 +778,8 @@ export default function PrincipalDashboard() {
                   onClick={() => handleNavigate("/Principal/teachers")}
                 />
                 <OverviewCard
-                  value={8}
-                  label="Monthly Reports"
+                  value={monthlyReportsDisplay}
+                  label={currentReport?.label ? `Monthly Reports (${currentReport.label})` : 'Monthly Reports'}
                   icon={
                     <svg width="40" height="40" fill="none" viewBox="0 0 24 24">
                       <rect x="3" y="7" width="18" height="14" rx="2" stroke="#013300" strokeWidth="2" />
@@ -740,7 +859,7 @@ export default function PrincipalDashboard() {
                         <Doughnut options={donutOptions} data={reportData} />
                         <div className="absolute inset-0 flex items-center justify-center">
                           <div className="text-center">
-                            <div className="text-2xl font-bold text-green-900">75%</div>
+                            <div className="text-2xl font-bold text-green-900">{submissionRateDisplay}</div>
                             <div className="text-sm text-gray-600 font-medium">Submitted</div>
                           </div>
                         </div>
@@ -758,12 +877,12 @@ export default function PrincipalDashboard() {
                               <span className="text-sm font-semibold text-gray-700">Submitted</span>
                             </div>
                             <div className="text-right">
-                              <div className="text-2xl font-bold text-green-600">6</div>
+                              <div className="text-2xl font-bold text-green-600">{submittedTeachersDisplay}</div>
                               <div className="text-xs text-gray-500 font-medium">Teachers</div>
                             </div>
                           </div>
                           <div className="mt-3 w-full bg-gray-200 rounded-full h-2">
-                            <div className="bg-green-500 h-2 rounded-full" style={{width: '75%'}}></div>
+                            <div className="bg-green-500 h-2 rounded-full" style={{ width: submittedProgressWidth }}></div>
                           </div>
                         </div>
                         
@@ -775,12 +894,12 @@ export default function PrincipalDashboard() {
                               <span className="text-sm font-semibold text-gray-700">Pending</span>
                             </div>
                             <div className="text-right">
-                              <div className="text-2xl font-bold text-red-600">2</div>
+                              <div className="text-2xl font-bold text-red-600">{pendingTeachersDisplay}</div>
                               <div className="text-xs text-gray-500 font-medium">Teachers</div>
                             </div>
                           </div>
                           <div className="mt-3 w-full bg-gray-200 rounded-full h-2">
-                            <div className="bg-red-500 h-2 rounded-full" style={{width: '25%'}}></div>
+                            <div className="bg-red-500 h-2 rounded-full" style={{ width: pendingProgressWidth }}></div>
                           </div>
                         </div>
                         
@@ -792,7 +911,7 @@ export default function PrincipalDashboard() {
                               <span className="text-sm font-semibold text-gray-700">Total</span>
                             </div>
                             <div className="text-right">
-                              <div className="text-2xl font-bold text-blue-600">8</div>
+                              <div className="text-2xl font-bold text-blue-600">{totalTeachersExpectedDisplay}</div>
                               <div className="text-xs text-gray-500 font-medium">Teachers</div>
                             </div>
                           </div>

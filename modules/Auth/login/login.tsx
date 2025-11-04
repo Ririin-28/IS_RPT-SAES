@@ -1,34 +1,50 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { getSession } from "next-auth/react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { FaEye, FaEyeSlash, FaInfoCircle } from "react-icons/fa";
 import RPTLogoTitle from "@/components/Common/RPTLogoTitle";
 import { clearOAuthState } from "@/lib/utils/clear-oauth-state";
 import { storeUserProfile } from "@/lib/utils/user-profile";
 
-export default function Login() {
+type LoginProps = {
+  infoMessage?: string;
+  requireUserId?: boolean;
+};
+
+export default function Login({
+  infoMessage = "For San Agustin Elementary School authorized accounts only.",
+  requireUserId = false,
+}: LoginProps = {}) {
   const [showErrorModal, setShowErrorModal] = useState(false);
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [userId, setUserId] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(false);
+  const sanitizedUserId = useMemo(() => userId.trim(), [userId]);
   
   // Live credential check
   useEffect(() => {
     let active = true;
-    if (email && password) {
+  const hasValidUserId = sanitizedUserId && !Number.isNaN(Number(sanitizedUserId));
+  const canVerify = requireUserId ? Boolean(email && password && hasValidUserId) : Boolean(email && password);
+    if (canVerify) {
       setVerifying(true);
       setSuccess(false);
       setError(false);
       fetch("/api/auth/check-credentials", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({
+          email,
+          password,
+          userId: requireUserId ? sanitizedUserId : undefined,
+        }),
       })
         .then(async res => {
           const data = await res.json();
@@ -58,7 +74,7 @@ export default function Login() {
     return () => {
       active = false;
     };
-  }, [email, password]);
+  }, [email, password, requireUserId, sanitizedUserId]);
 
   useEffect(() => {
     const checkSession = async () => {
@@ -92,6 +108,18 @@ export default function Login() {
     e.preventDefault();
     setIsLoading(true);
     try {
+      if (requireUserId) {
+        if (!sanitizedUserId) {
+          setShowErrorModal(true);
+          setIsLoading(false);
+          return;
+        }
+        if (Number.isNaN(Number(sanitizedUserId))) {
+          setShowErrorModal(true);
+          setIsLoading(false);
+          return;
+        }
+      }
       const deviceToken = localStorage.getItem("deviceToken") || "";
       const deviceName = navigator.userAgent;
       console.log("[LOGIN] deviceToken sent:", deviceToken);
@@ -99,7 +127,13 @@ export default function Login() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, deviceToken, deviceName }),
+        body: JSON.stringify({
+          email,
+          password,
+          userId: requireUserId ? sanitizedUserId : undefined,
+          deviceToken,
+          deviceName,
+        }),
       });
       const data = await res.json();
       console.log("[LOGIN] backend response:", data);
@@ -208,11 +242,29 @@ export default function Login() {
             <div className="flex items-center justify-center mb-6 bg-green-50 py-2 px-3 rounded-lg border border-green-200">
               <FaInfoCircle className="text-green-700 mr-2 flex-shrink-0" />
               <p className="text-xs text-green-800 text-center">
-                For San Agustin Elementary School authorized accounts only.
+                {infoMessage}
               </p>
             </div>
 
             <form onSubmit={handleLogin}>
+              {requireUserId && (
+                <div className="mb-3">
+                  <label htmlFor="userId" className="block text-sm font-medium text-[#013300] mb-1 sm:text-base">User ID</label>
+                  <input
+                    id="userId"
+                    type="text"
+                    inputMode="numeric"
+                    value={userId}
+                    onChange={e => setUserId(e.target.value)}
+                    placeholder="Enter your user ID"
+                    className="w-full px-4 py-2 border-2 border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#013300] focus:border-transparent transition placeholder-gray-400 text-[#013300] sm:py-2"
+                    required={requireUserId}
+                  />
+                  {sanitizedUserId && Number.isNaN(Number(sanitizedUserId)) && (
+                    <div className="text-xs text-red-700 mt-1">User ID must be a valid number.</div>
+                  )}
+                </div>
+              )}
               {/* Email Field */}
               <div className="mb-3">
                 <label htmlFor="email" className="block text-sm font-medium text-[#013300] mb-1 sm:text-base">Email Address</label>
