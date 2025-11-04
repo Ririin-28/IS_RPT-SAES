@@ -174,10 +174,11 @@ export default function MasterTeacherHeader({ title, onSearch }: HeaderProps) {
                   email="juandelacruz@gmail.com"
                   name="Dela Cruz"
                   onProfile={() => {
-                    /* handle profile click */ setShowDropdown(false);
+                    setShowDropdown(false);
+                    router.push("/MasterTeacher/RemedialTeacher/profile");
                   }}
                   onLogout={() => {
-                    /* handle logout click */ setShowDropdown(false);
+                    setShowDropdown(false);
                   }}
                   roleOptions={roleOptions}
                 />

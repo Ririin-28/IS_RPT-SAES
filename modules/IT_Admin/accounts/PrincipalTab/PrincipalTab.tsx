@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, type Dispatch, type SetStateAction } from "react";
 import { useForm } from "react-hook-form";
 import TableList from "@/components/Common/Tables/TableList";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
@@ -19,6 +19,58 @@ function toStringOrNull(value: unknown): string | null {
   }
   const str = String(value).trim();
   return str.length > 0 ? str : null;
+}
+
+function normalizeContact(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const asString = typeof value === "string" ? value : String(value);
+  const digits = asString.replace(/\D/g, "");
+  return digits.length > 0 ? digits : null;
+}
+
+function formatContactNumberForDisplay(value: unknown): string | null {
+  const digits = normalizeContact(value);
+  if (digits && digits.length === 11) {
+    if (digits.startsWith("6332")) {
+      const local = digits.slice(4);
+      const firstSegment = local.slice(0, 3);
+      const secondSegment = local.slice(3, 7);
+      return `+63 32 ${firstSegment} ${secondSegment}`;
+    }
+
+    const country = digits.slice(0, 2);
+    const area = digits.slice(2, 5);
+    const remainder = digits.slice(5);
+    const middle = remainder.slice(0, Math.max(remainder.length - 4, 0));
+    const tail = remainder.slice(Math.max(remainder.length - 4, 0));
+    if (middle.length > 0 && tail.length > 0) {
+      return `+${country} ${area} ${middle} ${tail}`;
+    }
+    return `+${country} ${area} ${remainder}`.trim();
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  return null;
+}
+
+function extractNumericId(value: unknown): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const numeric = Number(value);
+  if (!Number.isInteger(numeric) || numeric <= 0) {
+    return null;
+  }
+
+  return numeric;
 }
 
 function sortPrincipals(records: any[]) {
@@ -45,7 +97,7 @@ function sortPrincipals(records: any[]) {
 
 interface PrincipalTabProps {
   principals: any[];
-  setPrincipals: (principals: any[]) => void;
+  setPrincipals: Dispatch<SetStateAction<any[]>>;
   searchTerm: string;
 }
 
@@ -59,6 +111,8 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+  const [isArchiving, setIsArchiving] = useState(false);
 
   const addPrincipalForm = useForm<AddPrincipalFormValues>({
     mode: "onTouched",
@@ -80,27 +134,62 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
     if (action === "principal:add") {
       setSubmitError(null);
       setSuccessMessage(null);
+      setArchiveError(null);
       addPrincipalForm.reset();
       setShowAddModal(true);
       return;
     }
     if (action === "principal:select") {
+      setArchiveError(null);
+      setSuccessMessage(null);
       setSelectMode(true);
       return;
     }
   }, [addPrincipalForm]);
 
   const handleAddPrincipal = useCallback(async (values: AddPrincipalFormValues) => {
+    const formattedPhone = values.phoneNumber.trim();
+    const normalizedPhoneDigits = normalizeContact(formattedPhone);
+    if (!normalizedPhoneDigits) {
+      setSubmitError("Phone number is required.");
+      return;
+    }
+
     const payload = {
       firstName: values.firstName.trim(),
       middleName: values.middleName.trim() || null,
       lastName: values.lastName.trim(),
       email: values.email.trim().toLowerCase(),
-      phoneNumber: values.phoneNumber.replace(/\D/g, ""),
+      phoneNumber: formattedPhone,
     };
 
-    setIsSubmitting(true);
     setSubmitError(null);
+    setSuccessMessage(null);
+    setArchiveError(null);
+    const emailToCheck = payload.email;
+    const phoneToCheck = normalizedPhoneDigits;
+
+    const hasDuplicate = principals.some((principal: any) => {
+      const emailMatch = typeof principal.email === "string" && principal.email.trim().toLowerCase() === emailToCheck;
+      const existingDigits =
+        typeof principal.contactNumberRaw === "string"
+          ? normalizeContact(principal.contactNumberRaw)
+          : normalizeContact(
+              principal.contactNumber ??
+                principal.contact_number ??
+                principal.phoneNumber ??
+                principal.phone_number,
+            );
+      const phoneMatch = existingDigits && phoneToCheck ? existingDigits === phoneToCheck : false;
+      return emailMatch || phoneMatch;
+    });
+
+    if (hasDuplicate) {
+      setSubmitError("A principal with the same email or contact number already exists.");
+      return;
+    }
+
+    setIsSubmitting(true);
     try {
       const response = await fetch("/api/it_admin/principals", {
         method: "POST",
@@ -116,6 +205,7 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
       const result = await response.json();
       const record = result?.record ?? null;
       const userId = result?.userId ?? record?.userId ?? null;
+      const contactNumberRaw = normalizeContact(record?.contactNumberRaw ?? record?.contactNumber ?? formattedPhone) ?? normalizedPhoneDigits;
 
       const fallbackRecord = {
         userId,
@@ -123,13 +213,21 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
         middleName: payload.middleName,
         lastName: payload.lastName,
         email: payload.email,
-        contactNumber: payload.phoneNumber,
+        contactNumber: formattedPhone,
+        contactNumberRaw,
         principalId: userId != null ? String(userId) : undefined,
         lastLogin: null,
         name: [payload.firstName, payload.middleName, payload.lastName].filter(Boolean).join(" "),
       };
 
-      const normalizedRecord = record ?? fallbackRecord;
+      const normalizedRecord: any = record ? { ...record } : fallbackRecord;
+
+      if (!normalizedRecord.contactNumberRaw) {
+        normalizedRecord.contactNumberRaw = contactNumberRaw;
+      }
+      if (!normalizedRecord.contactNumber) {
+        normalizedRecord.contactNumber = formattedPhone;
+      }
 
       const withoutExisting = principals.filter((principal: any) => {
         if (normalizedRecord.userId == null) {
@@ -210,23 +308,90 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
   const handleCancelSelect = useCallback(() => {
     setSelectMode(false);
     setSelectedPrincipalKeys(new Set());
+    setArchiveError(null);
   }, []);
 
-  const handleDeleteSelected = useCallback(() => {
+  const handleArchiveSelected = useCallback(() => {
     if (selectedPrincipalKeys.size === 0) return;
+    setArchiveError(null);
+    setSuccessMessage(null);
     setShowDeleteModal(true);
   }, [selectedPrincipalKeys]);
 
-  const handleConfirmDeleteSelected = useCallback(() => {
-    const remaining = principals.filter((principal: any) => !selectedPrincipalKeys.has(getPrincipalKey(principal)));
-    setPrincipals(remaining);
-    setSelectedPrincipalKeys(new Set());
-    setSelectMode(false);
-    setShowDeleteModal(false);
+  const handleConfirmArchiveSelected = useCallback(async () => {
+    if (selectedPrincipalKeys.size === 0) {
+      return;
+    }
+
+    const selectedRecords = principals.filter((principal: any) => selectedPrincipalKeys.has(getPrincipalKey(principal)));
+    const userIds = selectedRecords
+      .map((principal: any) => {
+        return (
+          extractNumericId(principal.userId ?? principal.user_id) ??
+          extractNumericId(principal.principalId ?? principal.principal_id)
+        );
+      })
+      .filter((value): value is number => value !== null);
+
+    const uniqueUserIds = Array.from(new Set(userIds));
+
+    if (uniqueUserIds.length === 0) {
+      setArchiveError("Unable to determine user IDs for the selected principals.");
+      return;
+    }
+
+    setIsArchiving(true);
+    setArchiveError(null);
+    try {
+      const response = await fetch("/api/it_admin/principals/archive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userIds: uniqueUserIds }),
+      });
+
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => ({}));
+        throw new Error(errorPayload?.error ?? `Failed to archive principals (status ${response.status}).`);
+      }
+
+      const payload = await response.json().catch(() => ({}));
+      const archivedIds = Array.isArray(payload?.archived)
+        ? payload.archived
+            .map((item: any) => extractNumericId(item?.userId ?? item?.user_id))
+            .filter((value: number | null): value is number => value !== null)
+        : uniqueUserIds;
+
+      const effectiveIds = archivedIds.length > 0 ? archivedIds : uniqueUserIds;
+
+      setPrincipals((prev) => {
+        const remaining = prev.filter((principal: any) => {
+          const candidateId =
+            extractNumericId(principal.userId ?? principal.user_id) ??
+            extractNumericId(principal.principalId ?? principal.principal_id);
+          if (candidateId === null) {
+            return true;
+          }
+          return !effectiveIds.includes(candidateId);
+        });
+        return sortPrincipals(remaining);
+      });
+
+      const archivedCount = effectiveIds.length;
+      setSuccessMessage(`Archived ${archivedCount} principal${archivedCount === 1 ? "" : "s"} successfully.`);
+      setSelectedPrincipalKeys(new Set());
+      setSelectMode(false);
+      setShowDeleteModal(false);
+    } catch (error) {
+      setArchiveError(error instanceof Error ? error.message : "Failed to archive the selected principals.");
+    } finally {
+      setIsArchiving(false);
+    }
   }, [getPrincipalKey, principals, selectedPrincipalKeys, setPrincipals]);
 
   const handleCloseDeleteModal = useCallback(() => {
     setShowDeleteModal(false);
+    setArchiveError(null);
+    setIsArchiving(false);
   }, []);
 
   const handleShowDetails = (principal: any) => {
@@ -248,11 +413,11 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
               </SecondaryButton>
               <DangerButton
                 small
-                onClick={handleDeleteSelected}
+                onClick={handleArchiveSelected}
                 disabled={selectedPrincipalKeys.size === 0}
                 className={selectedPrincipalKeys.size === 0 ? "opacity-60 cursor-not-allowed" : ""}
               >
-                Delete ({selectedPrincipalKeys.size})
+                Archive ({selectedPrincipalKeys.size})
               </DangerButton>
             </>
           ) : (
@@ -298,11 +463,32 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
           { key: "email", title: "Email" },
           { key: "contactNumber", title: "Contact Number" },
         ]}
-        data={filteredPrincipals.map((principal: any, idx: number) => ({
-          ...principal,
-          id: getPrincipalKey(principal),
-          no: idx + 1,
-        }))}
+        data={filteredPrincipals.map((principal: any, idx: number) => {
+          const rawDigits =
+            typeof principal.contactNumberRaw === "string"
+              ? normalizeContact(principal.contactNumberRaw)
+              : normalizeContact(
+                  principal.contactNumber ??
+                    principal.contact_number ??
+                    principal.phoneNumber ??
+                    principal.phone_number,
+                );
+
+          return {
+            ...principal,
+            contactNumberRaw: rawDigits ?? principal.contactNumberRaw ?? null,
+            id: getPrincipalKey(principal),
+            no: idx + 1,
+            contactNumber: formatContactNumberForDisplay(
+              principal.contactNumber ??
+                principal.contact_number ??
+                principal.contactNumberRaw ??
+                principal.phoneNumber ??
+                principal.phone_number ??
+                rawDigits ?? undefined,
+            ) ?? "—",
+          };
+        })}
         actions={(row: any) => (
           <UtilityButton small onClick={() => handleShowDetails(row)}>
             View Details
@@ -318,9 +504,13 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
       <DeleteConfirmationModal
         isOpen={showDeleteModal}
         onClose={handleCloseDeleteModal}
-        onConfirm={handleConfirmDeleteSelected}
-        title="Confirm Delete Selected"
-        message={`Are you sure you want to delete ${selectedPrincipalKeys.size} selected principal${selectedPrincipalKeys.size === 1 ? "" : "s"}? This action cannot be undone.`}
+        onConfirm={handleConfirmArchiveSelected}
+        title="Confirm Archive Selected"
+        message={`Are you sure you want to archive ${selectedPrincipalKeys.size} selected principal${selectedPrincipalKeys.size === 1 ? "" : "s"}? This will move them to the archive.`}
+        confirmLabel="Archive"
+        confirmDisabled={selectedPrincipalKeys.size === 0}
+        isProcessing={isArchiving}
+        errorMessage={archiveError}
       />
     </div>
   );

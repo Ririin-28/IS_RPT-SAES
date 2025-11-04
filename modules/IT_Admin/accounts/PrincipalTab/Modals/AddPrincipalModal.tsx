@@ -1,15 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useCallback } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import BaseModal, { ModalLabel, ModalSection } from "@/components/Common/Modals/BaseModal";
 
 export interface AddPrincipalFormValues {
+  itAdminId: string;
+  role: string;
   firstName: string;
   middleName: string;
   lastName: string;
+  suffix: string;
   email: string;
   phoneNumber: string;
 }
@@ -23,16 +26,11 @@ interface AddPrincipalModalProps {
   apiError?: string | null;
 }
 
-function formatPhoneOnInput(raw: string): string {
-  const digits = raw.replace(/\D/g, "");
-  if (digits.length <= 4) {
-    return digits;
-  }
-  if (digits.length <= 7) {
-    return `${digits.slice(0, 4)}-${digits.slice(4)}`;
-  }
-  return `${digits.slice(0, 4)}-${digits.slice(4, 7)}-${digits.slice(7, 11)}`;
-}
+/**
+ * Strict format: +63-9XX-XXX-XXXX
+ * Example: +63-912-345-6789
+ */
+const PHONE_FORMAT_REGEX = /^\+63-9\d{2}-\d{3}-\d{4}$/;
 
 export default function AddPrincipalModal({
   show,
@@ -45,40 +43,67 @@ export default function AddPrincipalModal({
   const {
     register,
     handleSubmit,
-    watch,
-    setValue,
     reset,
+    setValue,
     formState: { errors, isSubmitting: formSubmitting },
   } = form;
 
-  const {
-    ref: phoneRef,
-    onBlur: phoneBlur,
-    name: phoneName,
-  } = register("phoneNumber", {
+  // Register validation (keeps react-hook-form validation)
+  const phoneRegistration = register("phoneNumber", {
     required: "Phone number is required",
     validate: (value) => {
-      if (!value) {
-        return "Phone number is required";
-      }
-      return /^\d{10,11}$/.test(value)
-        ? true
-        : "Phone number must contain 10 to 11 digits";
+      if (!value) return "Phone number is required";
+      const trimmed = value.trim();
+      return PHONE_FORMAT_REGEX.test(trimmed)
+      ? true
+      : "Phone number must follow the format +63-9XX-XXX-XXXX";
     },
   });
 
-  const phoneWatch = watch("phoneNumber") || "";
-  const [displayPhone, setDisplayPhone] = useState("");
+  const formatPhoneValue = useCallback((input: string) => {
+    // Keep digits only
+    const digitsOnly = input.replace(/\D/g, "");
 
-  useEffect(() => {
-    setDisplayPhone(formatPhoneOnInput(phoneWatch));
-  }, [phoneWatch]);
+    // Normalize: drop leading 0 or 63 if present to obtain 10-digit local number
+    let local = digitsOnly;
+    if (local.startsWith("63")) {
+      local = local.slice(2);
+    } else if (local.startsWith("0")) {
+      local = local.slice(1);
+    }
+
+    // Limit to 10 digits (mobile local number)
+    local = local.slice(0, 10);
+
+    // Build formatted string progressively (so user sees dashes inserted)
+    let formatted = "+63";
+    if (local.length > 0) {
+      formatted += "-" + local.slice(0, Math.min(3, local.length));
+    }
+    if (local.length > 3) {
+      formatted += "-" + local.slice(3, Math.min(6, local.length));
+    }
+    if (local.length > 6) {
+      formatted += "-" + local.slice(6, 10);
+    }
+
+    return formatted;
+  }, []);
+
+  const handlePhoneInput = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const raw = e.target.value;
+      const formatted = formatPhoneValue(raw);
+      // Update react-hook-form value - mark as dirty/validate
+      setValue("phoneNumber", formatted, { shouldValidate: true, shouldDirty: true });
+    },
+    [formatPhoneValue, setValue],
+  );
 
   const isBusy = useMemo(() => isSubmitting || formSubmitting, [isSubmitting, formSubmitting]);
 
   const handleClose = () => {
     reset();
-    setDisplayPhone("");
     onClose();
   };
 
@@ -101,9 +126,33 @@ export default function AddPrincipalModal({
             {apiError}
           </div>
         )}
-        <ModalSection title="Personal Information">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        
+        <ModalSection title="Personal Details">
+          {/* 1st Row: IT Admin ID and Role (disabled) */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-1">
+              <ModalLabel>IT Admin ID</ModalLabel>
+              <input
+                className="w-full cursor-not-allowed rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-500"
+                value="Auto-generated"
+                disabled
+                aria-disabled
+              />
+            </div>
+            <div className="space-y-1">
+              <ModalLabel>Role</ModalLabel>
+              <input
+                className="w-full cursor-not-allowed rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-500"
+                value="Principal"
+                disabled
+                aria-disabled
+              />
+            </div>
+          </div>
+
+          {/* Second Row: Name fields */}
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-7">
+            <div className="space-y-1 md:col-span-2">
               <ModalLabel required>First Name</ModalLabel>
               <input
                 className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
@@ -117,15 +166,21 @@ export default function AddPrincipalModal({
                 <span className="text-xs text-red-500">{errors.firstName.message as string}</span>
               )}
             </div>
-            <div className="space-y-1">
-              <ModalLabel>Middle Name</ModalLabel>
+            <div className="space-y-1 md:col-span-2">
+              <ModalLabel required>Middle Name</ModalLabel>
               <input
                 className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
                 placeholder="Middle name"
-                {...register("middleName")}
+                {...register("middleName", {
+                  required: "Middle name is required",
+                  minLength: { value: 2, message: "Middle name must be at least 2 characters" },
+                })}
               />
+              {errors.middleName && (
+                <span className="text-xs text-red-500">{errors.middleName.message as string}</span>
+              )}
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 md:col-span-2">
               <ModalLabel required>Last Name</ModalLabel>
               <input
                 className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
@@ -138,6 +193,14 @@ export default function AddPrincipalModal({
               {errors.lastName && (
                 <span className="text-xs text-red-500">{errors.lastName.message as string}</span>
               )}
+            </div>
+            <div className="space-y-1 md:col-span-1">
+              <ModalLabel>Suffix</ModalLabel>
+              <input
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                placeholder="Jr., Sr., III"
+                {...register("suffix")}
+              />
             </div>
           </div>
         </ModalSection>
@@ -158,54 +221,30 @@ export default function AddPrincipalModal({
                   },
                 })}
               />
-              {errors.email && (
+              {!errors.email ? (
+                <p className="text-xs text-gray-500">Please use valid email address</p>
+              ) : (
                 <span className="text-xs text-red-500">{errors.email.message as string}</span>
               )}
             </div>
             <div className="space-y-1">
               <ModalLabel required>Phone Number</ModalLabel>
               <input
+                {...phoneRegistration}
+                onChange={(e) => {
+                  handlePhoneInput(e);
+                  phoneRegistration.onChange?.(e);
+                }}
                 className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
-                placeholder="0912-345-6789"
-                name={phoneName}
-                ref={phoneRef}
-                value={displayPhone}
-                onChange={(event) => {
-                  const digitsOnly = event.target.value.replace(/\D/g, "");
-                  setDisplayPhone(formatPhoneOnInput(digitsOnly));
-                  setValue("phoneNumber", digitsOnly, {
-                    shouldValidate: true,
-                    shouldDirty: true,
-                  });
-                }}
-                onBlur={(event) => {
-                  const digitsOnly = event.target.value.replace(/\D/g, "");
-                  setValue("phoneNumber", digitsOnly, {
-                    shouldValidate: true,
-                    shouldDirty: true,
-                  });
-                  setDisplayPhone(formatPhoneOnInput(digitsOnly));
-                  phoneBlur(event);
-                }}
+                placeholder="+63-9XX-XXX-XXXX"
+                inputMode="numeric"
+                maxLength={16}
               />
-              {errors.phoneNumber && (
+              {!errors.phoneNumber ? (
+                <p className="text-xs text-gray-500">Format: +63-9XX-XXX-XXXX</p>
+              ) : (
                 <span className="text-xs text-red-500">{errors.phoneNumber.message as string}</span>
               )}
-            </div>
-          </div>
-        </ModalSection>
-
-        <ModalSection title="Account">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="space-y-1">
-              <ModalLabel required>Role</ModalLabel>
-              <input
-                className="w-full cursor-not-allowed rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-black"
-                value="Principal"
-                readOnly
-                aria-readonly
-              />
-              <p className="text-xs text-gray-500">Role is fixed for this form. Principal ID is generated automatically.</p>
             </div>
           </div>
         </ModalSection>

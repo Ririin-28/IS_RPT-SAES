@@ -5,22 +5,10 @@ import { useCallback, useEffect, useState } from "react";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import { FaTimes } from "react-icons/fa";
-// Teacher Tabs
-import TeacherAllGradesTab from "./TeacherTab/AllGradesTab";
-import TeacherGradeOneTab from "./TeacherTab/GradeOneTab";
-import TeacherGradeTwoTab from "./TeacherTab/GradeTwoTab";
-import TeacherGradeThreeTab from "./TeacherTab/GradeThreeTab"; 
-import TeacherGradeFourTab from "./TeacherTab/GradeFourTab";
-import TeacherGradeFiveTab from "./TeacherTab/GradeFiveTab";
-import TeacherGradeSixTab from "./TeacherTab/GradeSixTab";
-// Master Teacher Tabs
-import MasterTeacherAllGradesTab from "./MasterTeacherTab/AllGradesTab";
-import MasterTeacherGradeOneTab from "./MasterTeacherTab/GradeOneTab";
-import MasterTeacherGradeTwoTab from "./MasterTeacherTab/GradeTwoTab";
-import MasterTeacherGradeThreeTab from "./MasterTeacherTab/GradeThreeTab"; 
-import MasterTeacherGradeFourTab from "./MasterTeacherTab/GradeFourTab";
-import MasterTeacherGradeFiveTab from "./MasterTeacherTab/GradeFiveTab";
-import MasterTeacherGradeSixTab from "./MasterTeacherTab/GradeSixTab";
+// Teacher Tab
+import TeacherTab from "./TeacherTab/TeacherTab";
+// Master Teacher Tab
+import MasterTeacherTab from "./MasterTeacherTab/MasterTeacherTab";
 // IT Admin Tab
 import ITAdminTab from "./ITAdminTab/ITAdminTab";
 // Principal Tab
@@ -38,12 +26,43 @@ const ACCOUNT_TYPE_TO_ROLE: Record<AccountType, ApiRole> = {
 
 const NAME_COLLATOR = new Intl.Collator("en", { sensitivity: "base", numeric: true });
 
+const parseGradeFilter = (label: string): number | undefined => {
+  const match = /^Grade\s+(\d+)$/i.exec(label.trim());
+  if (!match) {
+    return undefined;
+  }
+  const value = Number.parseInt(match[1], 10);
+  return Number.isNaN(value) ? undefined : value;
+};
+
 function toStringOrNull(value: unknown): string | null {
   if (value === null || value === undefined) {
     return null;
   }
   const str = String(value).trim();
   return str.length > 0 ? str : null;
+}
+
+function toDigitsOrNull(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  let digits = String(value).replace(/\D/g, "");
+  if (digits.length === 0) {
+    return null;
+  }
+
+  if (digits.startsWith("63") && digits.length >= 12) {
+    digits = digits.slice(2);
+  } else if (digits.startsWith("0") && digits.length >= 11) {
+    digits = digits.slice(1);
+  }
+
+  if (digits.length > 10) {
+    digits = digits.slice(-10);
+  }
+
+  return digits.length > 0 ? digits : null;
 }
 
 function formatTimestamp(value: string | null | undefined): string {
@@ -119,7 +138,24 @@ function normalizeAccountRecord(record: any) {
 
   normalized.name = buildFullName(record);
   normalized.email = toStringOrNull(record.email ?? record.user_email);
-  normalized.contactNumber = toStringOrNull(record.contactNumber ?? record.contact_number);
+  const contactValue = record.contactNumber ??
+    record.contact_number ??
+    record.contactNo ??
+    record.contact_no ??
+    record.phone ??
+    record.phoneNumber ??
+    record.phone_number ??
+    record.mobile ??
+    record.user_contact_number ??
+    record.user_phone_number ??
+    null;
+
+  normalized.contactNumber = toStringOrNull(contactValue);
+  normalized.contactNumberRaw = toDigitsOrNull(contactValue);
+  normalized.contactNumberLocal =
+    normalized.contactNumberRaw && normalized.contactNumberRaw.length === 10
+      ? `0${normalized.contactNumberRaw}`
+      : normalized.contactNumber;
   normalized.status = toStringOrNull(record.status) ?? "Active";
   normalized.grade = record.grade != null ? String(record.grade) : null;
   normalized.section = record.section != null ? String(record.section) : null;
@@ -301,26 +337,24 @@ export default function ITAdminAccounts() {
                 )}
 
                 {accountType === "Master Teachers" && (
-                  <>
-                    {activeTab === "All Grades" && <MasterTeacherAllGradesTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 1" && <MasterTeacherGradeOneTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 2" && <MasterTeacherGradeTwoTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 3" && <MasterTeacherGradeThreeTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 4" && <MasterTeacherGradeFourTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 5" && <MasterTeacherGradeFiveTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 6" && <MasterTeacherGradeSixTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                  </>
+                  <MasterTeacherTab
+                    teachers={accounts}
+                    setTeachers={setAccounts}
+                    searchTerm={searchTerm}
+                    gradeFilter={parseGradeFilter(activeTab)}
+                    gradeLabel={activeTab}
+                    enableExport={activeTab === "All Grades"}
+                  />
                 )}
                 {accountType === "Teachers" && (
-                  <>
-                    {activeTab === "All Grades" && <TeacherAllGradesTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 1" && <TeacherGradeOneTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 2" && <TeacherGradeTwoTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 3" && <TeacherGradeThreeTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 4" && <TeacherGradeFourTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 5" && <TeacherGradeFiveTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 6" && <TeacherGradeSixTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                  </>
+                  <TeacherTab
+                    teachers={accounts}
+                    setTeachers={setAccounts}
+                    searchTerm={searchTerm}
+                    gradeFilter={parseGradeFilter(activeTab)}
+                    gradeLabel={activeTab}
+                    enableExport={activeTab === "All Grades"}
+                  />
                 )}
               </div>
             </div>

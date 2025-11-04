@@ -144,7 +144,7 @@ export default function Home() {
                 href={item.href}
                 scroll={!item.isRoute}
                 className={`
-                  font-bold text-[#013300] hover:text-green-800 transition-all duration-300 transform hover:scale-105
+                  font-bold text-[#013300] hover:text-green-800 transition-all duration-300 transform
                   md:text-lg
                   lg:text-lg
                   ${mounted ? 'translate-y-0 opacity-100' : '-translate-y-2 opacity-0'}

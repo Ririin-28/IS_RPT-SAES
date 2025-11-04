@@ -1,11 +1,16 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useRef, type ChangeEvent } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { useForm } from "react-hook-form";
+import * as XLSX from "xlsx";
 import TableList from "@/components/Common/Tables/TableList";
 import ITAdminDetailsModal from "./Modals/ITAdminDetailsModal";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import AccountActionsMenu, { type AccountActionKey } from "../components/AccountActionsMenu";
 import AddITAdminModal, { type AddITAdminFormValues } from "./Modals/AddITAdminModal";
+import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
+import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
+import DangerButton from "@/components/Common/Buttons/DangerButton";
+import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
 import { exportAccountRows, IT_ADMIN_EXPORT_COLUMNS } from "../utils/export-columns";
 
 const NAME_COLLATOR = new Intl.Collator("en", { sensitivity: "base", numeric: true });
@@ -95,6 +100,19 @@ function sortItAdmins(records: any[]) {
   });
 }
 
+function extractNumericId(value: unknown): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const numeric = Number(value);
+  if (!Number.isInteger(numeric) || numeric <= 0) {
+    return null;
+  }
+
+  return numeric;
+}
+
 interface ITAdminTabProps {
   itAdmins: any[];
   setITAdmins: Dispatch<SetStateAction<any[]>>;
@@ -108,6 +126,14 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedITAdminKeys, setSelectedITAdminKeys] = useState<Set<string>>(new Set());
+  const [showArchiveModal, setShowArchiveModal] = useState(false);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+  const [isArchiving, setIsArchiving] = useState(false);
 
   const addITAdminForm = useForm<AddITAdminFormValues>({
     mode: "onTouched",
@@ -120,12 +146,35 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
     },
   });
 
+  const getItAdminKey = useCallback((admin: any) => {
+    const fallbackIndex = itAdmins.indexOf(admin);
+    return String(
+      admin.userId ??
+        admin.user_id ??
+        admin.adminId ??
+        admin.admin_id ??
+        admin.email ??
+        fallbackIndex,
+    );
+  }, [itAdmins]);
+
   const handleMenuAction = useCallback((action: AccountActionKey) => {
     if (action === "it_admin:add") {
       setSubmitError(null);
       setSuccessMessage(null);
+      setArchiveError(null);
       addITAdminForm.reset();
       setShowAddModal(true);
+      return;
+    }
+    if (action === "it_admin:upload") {
+      uploadInputRef.current?.click();
+      return;
+    }
+    if (action === "it_admin:select") {
+      setArchiveError(null);
+      setSuccessMessage(null);
+      setSelectMode(true);
       return;
     }
 
@@ -232,6 +281,175 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
     }
   }, [addITAdminForm, setITAdmins]);
 
+  const handleFileChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const validTypes = [".xlsx", ".xls"];
+    const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf("."));
+    if (!validTypes.includes(fileExtension)) {
+      alert("Please upload only Excel files (.xlsx or .xls)");
+      return;
+    }
+
+    setSelectedFile(file);
+    setShowConfirmModal(true);
+  }, []);
+
+  const handleUploadConfirm = useCallback(() => {
+    if (!selectedFile) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: "array" });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+        const newAdmins = jsonData.map((row: any, index: number) => {
+          const fullName = `${row.FIRSTNAME || ""} ${row.MIDDLENAME || ""} ${row.LASTNAME || ""}`.trim();
+          
+          return normalizeItAdminRecord({
+            userId: Date.now() + index,
+            adminId: row["ADMIN ID"] || "",
+            name: fullName,
+            email: row["EMAIL"] || "",
+            contactNumber: row["CONTACT NUMBER"] || "",
+            status: "Active",
+            lastLogin: null,
+          });
+        });
+
+        setITAdmins((prev) => sortItAdmins([...prev, ...newAdmins]));
+        alert(`Successfully imported ${newAdmins.length} IT Admins`);
+      } catch (error) {
+        console.error(error);
+        alert("Error reading Excel file. Please check the format and column headers.");
+      }
+    };
+    reader.readAsArrayBuffer(selectedFile);
+    setSelectedFile(null);
+    setShowConfirmModal(false);
+    if (uploadInputRef.current) {
+      uploadInputRef.current.value = "";
+    }
+  }, [selectedFile, setITAdmins]);
+
+  const handleUploadCancel = useCallback(() => {
+    setSelectedFile(null);
+    setShowConfirmModal(false);
+    if (uploadInputRef.current) {
+      uploadInputRef.current.value = "";
+    }
+  }, []);
+
+  const handleSelectItAdmin = useCallback((id: string, checked: boolean) => {
+    setSelectedITAdminKeys((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleSelectAll = useCallback((checked: boolean) => {
+    if (checked) {
+      const keys = new Set(filteredITAdmins.map((admin: any) => getItAdminKey(admin)));
+      setSelectedITAdminKeys(keys);
+      return;
+    }
+    setSelectedITAdminKeys(new Set());
+  }, [filteredITAdmins, getItAdminKey]);
+
+  const handleCancelSelect = useCallback(() => {
+    setSelectMode(false);
+    setSelectedITAdminKeys(new Set());
+    setArchiveError(null);
+  }, []);
+
+  const handleArchiveSelected = useCallback(() => {
+    if (selectedITAdminKeys.size === 0) {
+      return;
+    }
+    setArchiveError(null);
+    setSuccessMessage(null);
+    setShowArchiveModal(true);
+  }, [selectedITAdminKeys]);
+
+  const handleConfirmArchiveSelected = useCallback(async () => {
+    if (selectedITAdminKeys.size === 0) {
+      return;
+    }
+
+    const selectedRecords = itAdmins.filter((admin: any) => selectedITAdminKeys.has(getItAdminKey(admin)));
+    const userIds = selectedRecords
+      .map((admin: any) => extractNumericId(admin.userId ?? admin.user_id ?? admin.adminId ?? admin.admin_id))
+      .filter((value): value is number => value !== null);
+
+    const uniqueUserIds = Array.from(new Set(userIds));
+
+    if (uniqueUserIds.length === 0) {
+      setArchiveError("Unable to determine user IDs for the selected IT Admins.");
+      return;
+    }
+
+    setIsArchiving(true);
+    setArchiveError(null);
+    try {
+      const response = await fetch("/api/it_admin/accounts/archive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userIds: uniqueUserIds }),
+      });
+
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => ({}));
+        throw new Error(errorPayload?.error ?? `Failed to archive IT Admins (status ${response.status}).`);
+      }
+
+      const payload = await response.json().catch(() => ({}));
+      const archivedIds = Array.isArray(payload?.archived)
+        ? payload.archived
+            .map((item: any) => extractNumericId(item?.userId ?? item?.user_id))
+            .filter((value: number | null): value is number => value !== null)
+        : uniqueUserIds;
+
+      const effectiveIds = archivedIds.length > 0 ? archivedIds : uniqueUserIds;
+
+      setITAdmins((prev) => {
+        const remaining = prev.filter((admin: any) => {
+          const candidateId = extractNumericId(admin.userId ?? admin.user_id ?? admin.adminId ?? admin.admin_id);
+          if (candidateId === null) {
+            return true;
+          }
+          return !effectiveIds.includes(candidateId);
+        });
+        return sortItAdmins(remaining);
+      });
+
+      const archivedCount = effectiveIds.length;
+      setSuccessMessage(`Archived ${archivedCount} IT Admin${archivedCount === 1 ? "" : "s"} successfully.`);
+      setSelectedITAdminKeys(new Set());
+      setSelectMode(false);
+      setShowArchiveModal(false);
+    } catch (error) {
+      setArchiveError(error instanceof Error ? error.message : "Failed to archive the selected IT Admins.");
+    } finally {
+      setIsArchiving(false);
+    }
+  }, [getItAdminKey, itAdmins, selectedITAdminKeys, setITAdmins]);
+
+  const handleCloseArchiveModal = useCallback(() => {
+    setShowArchiveModal(false);
+    setArchiveError(null);
+    setIsArchiving(false);
+  }, []);
+
 
 
   return (
@@ -240,21 +458,51 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
         <p className="text-gray-600 text-md font-medium">
           Total: {itAdmins.length}
         </p>
-        <AccountActionsMenu
-          accountType="IT Admin"
-          onAction={handleMenuAction}
-          buttonAriaLabel="Open IT Admin actions"
-          exportConfig={{
-            onExport: handleExport,
-            disabled: filteredITAdmins.length === 0,
-          }}
+        <div className="flex items-center gap-3">
+          {selectMode ? (
+            <>
+              <SecondaryButton small onClick={handleCancelSelect}>
+                Cancel
+              </SecondaryButton>
+              <DangerButton
+                small
+                onClick={handleArchiveSelected}
+                disabled={selectedITAdminKeys.size === 0}
+                className={selectedITAdminKeys.size === 0 ? "opacity-60 cursor-not-allowed" : ""}
+              >
+                Archive ({selectedITAdminKeys.size})
+              </DangerButton>
+            </>
+          ) : (
+            <AccountActionsMenu
+              accountType="IT Admin"
+              onAction={handleMenuAction}
+              buttonAriaLabel="Open IT Admin actions"
+              exportConfig={{
+                onExport: handleExport,
+                disabled: filteredITAdmins.length === 0,
+              }}
+            />
+          )}
+        </div>
+        <input
+          ref={uploadInputRef}
+          type="file"
+          accept=".xlsx,.xls"
+          onChange={handleFileChange}
+          className="hidden"
         />
-
       </div>
 
       {successMessage && (
         <div className="mb-4 rounded-md border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">
           {successMessage}
+        </div>
+      )}
+
+      {archiveError && !showArchiveModal && (
+        <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+          {archiveError}
         </div>
       )}
 
@@ -273,6 +521,15 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
         itAdmin={selectedITAdmin}
       />
 
+      <ConfirmationModal
+        isOpen={showConfirmModal}
+        onClose={handleUploadCancel}
+        onConfirm={handleUploadConfirm}
+        title="Confirm File Upload"
+        message="Are you sure you want to upload this Excel file? This will import IT Admin data."
+        fileName={selectedFile?.name}
+      />
+
       <TableList
         columns={[
           { key: "no", title: "No#" },
@@ -287,6 +544,7 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
         ]}
         data={filteredITAdmins.map((admin, idx) => ({
           ...admin,
+          id: getItAdminKey(admin),
           no: idx + 1,
         }))}
         actions={(row: any) => (
@@ -294,7 +552,23 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
             View Details
           </UtilityButton>
         )}
+        selectable={selectMode}
+        selectedItems={selectedITAdminKeys}
+        onSelectAll={handleSelectAll}
+        onSelectItem={(id, checked) => handleSelectItAdmin(String(id), checked)}
         pageSize={10}
+      />
+
+      <DeleteConfirmationModal
+        isOpen={showArchiveModal}
+        onClose={handleCloseArchiveModal}
+        onConfirm={handleConfirmArchiveSelected}
+        title="Confirm Archive Selected"
+        message={`Are you sure you want to archive ${selectedITAdminKeys.size} selected IT Admin${selectedITAdminKeys.size === 1 ? "" : "s"}? This will move them to the archive.`}
+        confirmLabel="Archive"
+        confirmDisabled={selectedITAdminKeys.size === 0}
+        isProcessing={isArchiving}
+        errorMessage={archiveError}
       />
     </div>
   );

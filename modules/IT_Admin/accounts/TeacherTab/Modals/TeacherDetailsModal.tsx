@@ -26,19 +26,40 @@ export default function TeacherDetailsModal({ show, onClose, teacher }: TeacherD
       maxWidth="2xl"
       footer={footer}
     >
-      <ModalSection title="Personal Information">
+      <ModalSection title="Personal Details">
+        <div className="space-y-4">
+          {/* 1st Row: Teacher ID and Role */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <ModalInfoItem label="Teacher ID" value={teacher.teacherId} />
+            <ModalInfoItem label="Role" value={teacher.role || "Teacher"} />
+          </div>
+          
+          {/* 2nd Row: Full Name with helper text */}
+          <div className="space-y-1">
+            <ModalInfoItem 
+              label="Full Name" 
+              value={teacher.fullName || teacher.name} 
+            />
+            <p className="text-xs text-gray-500 pl-1">Format: First, Middle, Last, Suffix</p>
+          </div>
+        </div>
+      </ModalSection>
+
+      <ModalSection title="Contact Details">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <ModalInfoItem label="Teacher ID" value={teacher.teacherId} />
-          <ModalInfoItem label="Full Name" value={teacher.name} />
           <ModalInfoItem label="Email" value={teacher.email} />
-          <ModalInfoItem label="Contact Number" value={teacher.contactNumber} />
+          <ModalInfoItem label="Phone Number" value={teacher.phoneNumber || teacher.contactNumber} />
         </div>
       </ModalSection>
 
       <ModalSection title="Teaching Information">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <ModalInfoItem label="Grade" value={teacher.grade} />
-          <ModalInfoItem label="Section" value={teacher.section} />
+          <ModalInfoItem label="Grade Handled" value={teacher.grade || teacher.handledGrade} />
+          <ModalInfoItem label="Subjects Handled" value={
+            Array.isArray(teacher.subjects) 
+              ? teacher.subjects.join(", ") 
+              : (teacher.subjects || teacher.handledSubjects || "—")
+          } />
         </div>
       </ModalSection>
     </BaseModal>

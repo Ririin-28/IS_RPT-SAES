@@ -26,12 +26,29 @@ export default function PrincipalDetailsModal({ show, onClose, principal }: Prin
       maxWidth="2xl"
       footer={footer}
     >
-      <ModalSection title="Personal Information">
+      <ModalSection title="Personal Details">
+        <div className="space-y-4">
+          {/* 1st Row: IT Admin ID and Role */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <ModalInfoItem label="IT Admin ID" value={principal.itAdminId || principal.principalId} />
+            <ModalInfoItem label="Role" value={principal.role || "Principal"} />
+          </div>
+          
+          {/* 2nd Row: Full Name with helper text */}
+          <div className="space-y-1">
+            <ModalInfoItem 
+              label="Full Name" 
+              value={principal.fullName || principal.name} 
+            />
+            <p className="text-xs text-gray-500 pl-1">Format: First, Middle, Last, Suffix</p>
+          </div>
+        </div>
+      </ModalSection>
+
+      <ModalSection title="Contact Details">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <ModalInfoItem label="Principal ID" value={principal.principalId} />
-          <ModalInfoItem label="Full Name" value={principal.name} />
           <ModalInfoItem label="Email" value={principal.email} />
-          <ModalInfoItem label="Contact Number" value={principal.contactNumber} />
+          <ModalInfoItem label="Phone Number" value={principal.phoneNumber || principal.contactNumber} />
         </div>
       </ModalSection>
     </BaseModal>

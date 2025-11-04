@@ -31,6 +31,14 @@ const CalendarIcon = React.memo(() => (
 ));
 CalendarIcon.displayName = "CalendarIcon";
 
+const StudentsIcon = React.memo(() => (
+  <svg width="24" height="24" fill="none" viewBox="0 0 24 24">
+    <circle cx="12" cy="8" r="4" stroke="#013300" strokeWidth="2" />
+    <path d="M4 20c0-3.314 3.582-6 8-6s8 2.686 8 6" stroke="#013300" strokeWidth="2" />
+  </svg>
+));
+StudentsIcon.displayName = "StudentsIcon";
+
 const TeachersIcon = React.memo(() => (
   <svg width="24" height="24" fill="none" viewBox="0 0 24 24">
     <circle cx="8" cy="8" r="4" stroke="#013300" strokeWidth="2" />
@@ -80,6 +88,7 @@ ArchiveIcon.displayName = "ArchiveIcon";
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", path: "/MasterTeacher/Coordinator/dashboard", icon: <DashboardIcon /> },
   { label: "Calendar", path: "/MasterTeacher/Coordinator/calendar", icon: <CalendarIcon /> },
+  { label: "Students", path: "/MasterTeacher/Coordinator/students", icon: <StudentsIcon /> },
   { label: "Teachers", path: "/MasterTeacher/Coordinator/teachers", icon: <TeachersIcon /> },
   { label: "Materials", path: "/MasterTeacher/Coordinator/materials", icon: <MaterialsIcon /> },
   { label: "Remedial", path: "/MasterTeacher/Coordinator/remedial", icon: <RemedialIcon /> },

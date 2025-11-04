@@ -13,14 +13,8 @@ import TeacherGradeThreeTab from "./TeacherTab/GradeThreeTab";
 import TeacherGradeFourTab from "./TeacherTab/GradeFourTab";
 import TeacherGradeFiveTab from "./TeacherTab/GradeFiveTab";
 import TeacherGradeSixTab from "./TeacherTab/GradeSixTab";
-// Master Teacher Tabs
-import MasterTeacherAllGradesTab from "./MasterTeacherTab/AllGradesTab";
-import MasterTeacherGradeOneTab from "./MasterTeacherTab/GradeOneTab";
-import MasterTeacherGradeTwoTab from "./MasterTeacherTab/GradeTwoTab";
-import MasterTeacherGradeThreeTab from "./MasterTeacherTab/GradeThreeTab";
-import MasterTeacherGradeFourTab from "./MasterTeacherTab/GradeFourTab";
-import MasterTeacherGradeFiveTab from "./MasterTeacherTab/GradeFiveTab";
-import MasterTeacherGradeSixTab from "./MasterTeacherTab/GradeSixTab";
+// Master Teacher Tab
+import MasterTeacherTab from "./MasterTeacherTab/MasterTeacherTab";
 // Principal Tab
 import PrincipalTab from "./PrincipalTab/PrincipalTab";
 // IT Admin Tab
@@ -68,6 +62,15 @@ const normalizeRoleKey = (role: string | null | undefined): ArchiveRoleKey | nul
   if (value === "teacher" || value === "faculty") return "teacher";
   if (value === "student") return "student";
   return null;
+};
+
+const parseGradeFilter = (label: string): number | undefined => {
+  const match = /^Grade\s+(\d+)$/.exec(label.trim());
+  if (!match) {
+    return undefined;
+  }
+  const value = Number.parseInt(match[1], 10);
+  return Number.isNaN(value) ? undefined : value;
 };
 
 function toStringOrNull(value: unknown): string | null {
@@ -339,15 +342,13 @@ export default function ITAdminArchive() {
                 )}
 
                 {accountType === "Master Teachers" && (
-                  <>
-                    {activeTab === "All Grades" && <MasterTeacherAllGradesTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 1" && <MasterTeacherGradeOneTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 2" && <MasterTeacherGradeTwoTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 3" && <MasterTeacherGradeThreeTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 4" && <MasterTeacherGradeFourTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 5" && <MasterTeacherGradeFiveTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 6" && <MasterTeacherGradeSixTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                  </>
+                  <MasterTeacherTab
+                    teachers={accounts}
+                    setTeachers={setAccounts}
+                    searchTerm={searchTerm}
+                    gradeFilter={parseGradeFilter(activeTab)}
+                    gradeLabel={activeTab}
+                  />
                 )}
                 
                 {accountType === "Teachers" && (

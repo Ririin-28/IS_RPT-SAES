@@ -2,6 +2,7 @@
 import RPTLogoTitle from "../Common/RPTLogoTitle";
 import React from "react";
 import ProfileDropdown from "../Common/ProfileDropdown";
+import { useRouter } from "next/navigation";
 
 interface PrincipalHeaderProps {
   title?: string;
@@ -9,6 +10,7 @@ interface PrincipalHeaderProps {
 }
 
 export default function PrincipalHeader({ title, onSearch }: PrincipalHeaderProps) {
+  const router = useRouter();
   const [searchQuery, setSearchQuery] = React.useState("");
   const [showDropdown, setShowDropdown] = React.useState(false);
   const [showNotifications, setShowNotifications] = React.useState(false);
@@ -141,10 +143,11 @@ export default function PrincipalHeader({ title, onSearch }: PrincipalHeaderProp
                   email="juandelacruz@gmail.com"
                   name="Dela Cruz"
                   onProfile={() => {
-                    /* handle profile click */ setShowDropdown(false);
+                    setShowDropdown(false);
+                    router.push("/Principal/profile");
                   }}
                   onLogout={() => {
-                    /* handle logout click */ setShowDropdown(false);
+                    setShowDropdown(false);
                   }}
                 />
               </div>
