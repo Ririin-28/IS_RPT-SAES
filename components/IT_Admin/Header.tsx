@@ -1,6 +1,7 @@
 "use client";
 import RPTLogoTitle from "../Common/RPTLogoTitle";
 import React from "react";
+import { useRouter } from "next/navigation";
 import ProfileDropdown from "../Common/ProfileDropdown";
 import { useRouter } from "next/navigation";
 
@@ -14,6 +15,7 @@ export default function AdminHeader({ title, onSearch }: AdminHeaderProps) {
   const [searchQuery, setSearchQuery] = React.useState("");
   const [showDropdown, setShowDropdown] = React.useState(false);
   const [showNotifications, setShowNotifications] = React.useState(false);
+  const router = useRouter();
   const profileBtnRef = React.useRef<HTMLButtonElement>(null);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const notificationBtnRef = React.useRef<HTMLButtonElement>(null);

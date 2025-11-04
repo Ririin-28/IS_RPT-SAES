@@ -3,6 +3,7 @@ import RPTLogoTitle from "../Common/RPTLogoTitle";
 import React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import ProfileDropdown from "../Common/ProfileDropdown";
+import { performClientLogout } from "@/lib/utils/logout";
 
 interface HeaderProps {
   title?: string;
@@ -179,6 +180,7 @@ export default function MasterTeacherHeader({ title, onSearch }: HeaderProps) {
                   }}
                   onLogout={() => {
                     setShowDropdown(false);
+                    performClientLogout(router);
                   }}
                   roleOptions={roleOptions}
                 />
