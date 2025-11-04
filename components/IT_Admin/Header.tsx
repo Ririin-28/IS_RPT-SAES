@@ -3,7 +3,7 @@ import RPTLogoTitle from "../Common/RPTLogoTitle";
 import React from "react";
 import { useRouter } from "next/navigation";
 import ProfileDropdown from "../Common/ProfileDropdown";
-import { useRouter } from "next/navigation";
+import { performClientLogout } from "@/lib/utils/logout";
 
 interface AdminHeaderProps {
   title?: string;
@@ -11,7 +11,6 @@ interface AdminHeaderProps {
 }
 
 export default function AdminHeader({ title, onSearch }: AdminHeaderProps) {
-  const router = useRouter();
   const [searchQuery, setSearchQuery] = React.useState("");
   const [showDropdown, setShowDropdown] = React.useState(false);
   const [showNotifications, setShowNotifications] = React.useState(false);
@@ -142,11 +141,11 @@ export default function AdminHeader({ title, onSearch }: AdminHeaderProps) {
                   email="juandelacruz@gmail.com"
                   name="Dela Cruz"
                   onProfile={() => {
-                    setShowDropdown(false);
-                    router.push("/IT_Admin/profile");
+                    /* handle profile click */ setShowDropdown(false);
                   }}
                   onLogout={() => {
                     setShowDropdown(false);
+                    performClientLogout(router);
                   }}
                 />
               </div>
