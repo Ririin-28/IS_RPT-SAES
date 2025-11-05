@@ -33,7 +33,10 @@ const sharedTeacherColumns: ExportColumn<any>[] = [
   { header: "Section", accessor: (row) => row.section ?? "" },
 ];
 
-export const MASTER_TEACHER_EXPORT_COLUMNS = sharedTeacherColumns;
+export const MASTER_TEACHER_EXPORT_COLUMNS: ExportColumn<any>[] = [
+  ...sharedTeacherColumns,
+  { header: "Coordinator Subject", accessor: (row) => row.coordinatorSubject ?? "" },
+];
 export const TEACHER_EXPORT_COLUMNS = sharedTeacherColumns;
 
 interface ExportAccountRowsOptions<T> {

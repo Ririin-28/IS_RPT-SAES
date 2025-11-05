@@ -1,18 +1,21 @@
-import { useState, useRef, useCallback, useMemo, type ChangeEvent, type Dispatch, type SetStateAction } from "react";
+import { useState, useCallback, useMemo, useRef, type ChangeEvent } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import { useForm } from "react-hook-form";
 import * as XLSX from "xlsx";
 import TableList from "@/components/Common/Tables/TableList";
+import MasterTeacherDetailsModal from "./Modals/MasterTeacherDetailsModal";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import AccountActionsMenu, { type AccountActionKey } from "../components/AccountActionsMenu";
+import AddMasterTeacherModal, { type AddMasterTeacherFormValues } from "./Modals/AddMasterTeacherModal";
 import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
-import MasterTeacherDetailsModal from "./Modals/MasterTeacherDetailsModal";
-import AddMasterTeacherModal, { type AddMasterTeacherFormValues } from "./Modals/AddMasterTeacherModal";
-import { MASTER_TEACHER_EXPORT_COLUMNS, exportAccountRows } from "../utils/export-columns";
+import { exportAccountRows, MASTER_TEACHER_EXPORT_COLUMNS } from "../utils/export-columns";
 
 const NAME_COLLATOR = new Intl.Collator("en", { sensitivity: "base", numeric: true });
+const COORDINATOR_SUBJECT_OPTIONS = ["English", "Filipino", "Math"] as const;
+type CoordinatorSubject = (typeof COORDINATOR_SUBJECT_OPTIONS)[number];
 
 function toStringOrNull(value: unknown): string | null {
   if (value === null || value === undefined) {
@@ -22,75 +25,130 @@ function toStringOrNull(value: unknown): string | null {
   return str.length > 0 ? str : null;
 }
 
-function normalizeContactDigits(value: unknown): string | null {
-  if (value === null || value === undefined) {
-    return null;
+function formatTimestamp(value: string | Date | null | undefined): string {
+  if (!value) {
+    return "—";
   }
 
-  const digits = String(value).replace(/\D/g, "");
-  if (digits.length === 0) {
-    return null;
-  }
+  try {
+    const parsed = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return "Invalid Date";
+    }
 
-  let local = digits;
-  if (local.startsWith("63")) {
-    local = local.slice(2);
-  } else if (local.startsWith("0")) {
-    local = local.slice(1);
+    return parsed.toLocaleString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
+    });
+  } catch {
+    return "Invalid Date";
   }
-
-  if (local.length > 10) {
-    local = local.slice(-10);
-  }
-
-  return local.length > 0 ? local : null;
 }
 
-function extractInternationalDigits(value: string): string | null {
-  const digits = value.replace(/\D/g, "");
-  if (digits.length === 0) {
+function formatLocalPhoneNumber(value: string | null): string | null {
+  if (!value) {
     return null;
   }
 
-  if (digits.startsWith("63")) {
-    return digits.slice(0, 12);
-  }
-
-  if (digits.startsWith("0")) {
-    return `63${digits.slice(1, 11)}`;
-  }
-
-  if (digits.length === 10) {
-    return `63${digits}`;
-  }
-
-  return digits;
-}
-
-function formatContactNumberForDisplay(value: unknown): string | null {
-  const digits = normalizeContactDigits(value);
-  if (digits && digits.length >= 9) {
-    const local = digits.padStart(10, digits);
-    const area = local.slice(0, 3);
-    const middle = local.slice(3, 6);
-    const tail = local.slice(6, 10);
-    return `+63 ${area} ${middle} ${tail}`.trim();
-  }
-
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  }
-
-  return null;
-}
-
-function extractNumericId(value: unknown): number | null {
-  if (value === null || value === undefined) {
+  const digitsOnly = value.replace(/\D/g, "");
+  if (digitsOnly.length === 0) {
     return null;
   }
-  const numeric = Number(value);
-  return Number.isInteger(numeric) && numeric > 0 ? numeric : null;
+
+  let normalized = digitsOnly;
+  if (normalized.startsWith("63") && normalized.length >= 12) {
+    normalized = `0${normalized.slice(2)}`;
+  }
+  if (normalized.length === 10 && normalized.startsWith("9")) {
+    normalized = `0${normalized}`;
+  }
+  if (normalized.length > 11) {
+    normalized = normalized.slice(-11);
+  }
+
+  if (!normalized.startsWith("09") || normalized.length !== 11) {
+    return normalized;
+  }
+
+  const part1 = normalized.slice(0, 4);
+  const part2 = normalized.slice(4, 7);
+  const part3 = normalized.slice(7);
+  return `${part1}-${part2}-${part3}`;
+}
+
+function normalizeCoordinatorSubject(value: string | null | undefined): CoordinatorSubject | null {
+  if (!value) {
+    return null;
+  }
+  const normalized = value.trim().toLowerCase();
+  return COORDINATOR_SUBJECT_OPTIONS.find((option) => option.toLowerCase() === normalized) ?? null;
+}
+
+function normalizeMasterTeacherRecord(record: any) {
+  const userId = record.userId ?? record.user_id ?? null;
+  const normalized: any = {
+    ...record,
+    userId,
+  };
+
+  const suffix = toStringOrNull(record.suffix ?? record.suf ?? record.suffix_name);
+
+  normalized.name = toStringOrNull(record.name ?? record.fullName ?? record.full_name) ?? (() => {
+    const first = toStringOrNull(record.firstName ?? record.first_name);
+    const middle = toStringOrNull(record.middleName ?? record.middle_name);
+    const last = toStringOrNull(record.lastName ?? record.last_name);
+    const parts = [first, middle, last].filter(Boolean);
+    if (suffix) {
+      parts.push(suffix);
+    }
+    return parts.join(" ") || toStringOrNull(record.email ?? record.user_email) || (userId != null ? `User ${userId}` : "Unknown User");
+  })();
+  normalized.suffix = suffix;
+  normalized.fullName = normalized.name;
+
+  normalized.email = toStringOrNull(record.email ?? record.user_email);
+  const contactRaw = toStringOrNull(
+    record.contactNumber ?? record.contact_number ?? record.phoneNumber ?? record.phone_number,
+  );
+  normalized.contactNumber = contactRaw;
+  const contactDisplay = formatLocalPhoneNumber(contactRaw);
+  normalized.contactNumberDisplay = contactDisplay ?? contactRaw;
+  normalized.phoneNumber = contactRaw;
+  normalized.grade = toStringOrNull(record.grade ?? record.handledGrade ?? record.handled_grade);
+  normalized.section = toStringOrNull(record.section);
+  normalized.subjects = toStringOrNull(record.subjects ?? record.handledSubjects ?? record.handled_subjects);
+  const coordinatorSubject = normalizeCoordinatorSubject(
+    toStringOrNull(
+      record.coordinatorSubject ??
+        record.mt_coordinator ??
+        record.coordinator ??
+        record.coordinator_subject ??
+        record.mt_coordinator_subject ??
+        record.mt_coordinator_generic ??
+        record.mt_coordinator_camel ??
+        record.coordinatorSubjectHandled,
+    ),
+  );
+  normalized.coordinatorSubject = coordinatorSubject;
+  normalized.status = toStringOrNull(record.status) ?? "Active";
+  normalized.lastLogin = record.lastLogin ?? null;
+  normalized.lastLoginDisplay = formatTimestamp(record.lastLogin ?? null);
+
+  if (userId !== null && userId !== undefined) {
+    const userIdString = String(userId);
+    normalized.masterTeacherId = toStringOrNull(record.masterTeacherId) ?? userIdString;
+    normalized.teacherId = toStringOrNull(record.teacherId) ?? userIdString;
+  } else {
+    normalized.masterTeacherId = toStringOrNull(record.masterTeacherId);
+    normalized.teacherId = toStringOrNull(record.teacherId);
+  }
+
+  return normalized;
 }
 
 function sortMasterTeachers(records: any[]) {
@@ -115,264 +173,201 @@ function sortMasterTeachers(records: any[]) {
   });
 }
 
-const matchesGrade = (teacher: any, gradeFilter?: number) => {
-  if (gradeFilter === undefined) {
-    return true;
+function extractNumericId(value: unknown): number | null {
+  if (value === null || value === undefined) {
+    return null;
   }
-  const gradeValue = teacher.grade;
-  return gradeValue === gradeFilter || gradeValue === String(gradeFilter);
-};
+
+  const numeric = Number(value);
+  if (!Number.isInteger(numeric) || numeric <= 0) {
+    return null;
+  }
+
+  return numeric;
+}
 
 interface MasterTeacherTabProps {
   teachers: any[];
   setTeachers: Dispatch<SetStateAction<any[]>>;
   searchTerm: string;
-  gradeFilter?: number;
-  gradeLabel?: string;
-  enableExport?: boolean;
 }
 
-export default function MasterTeacherTab({
-  teachers,
-  setTeachers,
-  searchTerm,
-  gradeFilter,
-  gradeLabel,
-  enableExport,
-}: MasterTeacherTabProps) {
+export default function MasterTeacherTab({ teachers, setTeachers, searchTerm }: MasterTeacherTabProps) {
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [selectedTeacher, setSelectedTeacher] = useState<any>(null);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [selectedMasterTeacher, setSelectedMasterTeacher] = useState<any>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [selectMode, setSelectMode] = useState(false);
-  const [selectedTeacherKeys, setSelectedTeacherKeys] = useState<Set<string>>(new Set());
-  const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedTeacherKeys, setSelectedTeacherKeys] = useState<Set<string>>(new Set());
+  const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [isArchiving, setIsArchiving] = useState(false);
-  const uploadInputRef = useRef<HTMLInputElement>(null);
-
-  const normalizedLabel = gradeLabel ?? (gradeFilter ? `Grade ${gradeFilter}` : "All Grades");
+  const [uploadedPasswords, setUploadedPasswords] = useState<Array<{name: string; email: string; password: string}>>([]);
 
   const addMasterTeacherForm = useForm<AddMasterTeacherFormValues>({
     mode: "onTouched",
     defaultValues: {
-      teacherId: "",
       firstName: "",
       middleName: "",
       lastName: "",
+      suffix: "",
       email: "",
       phoneNumber: "",
-      grade: gradeFilter ? String(gradeFilter) : "",
+      grade: "",
+      coordinatorSubject: "",
       subjects: ["English", "Filipino", "Math"],
     },
   });
 
-  const getTeacherKey = useCallback(
-    (teacher: any) => {
-      const fallbackIndex = teachers.indexOf(teacher);
-      return String(
-        teacher.id ??
-          teacher.masterTeacherId ??
-          teacher.teacherId ??
-          teacher.email ??
-          teacher.contactNumber ??
-          teacher.name ??
-          fallbackIndex,
-      );
-    },
-    [teachers],
-  );
+  const getTeacherKey = useCallback((teacher: any) => {
+    const fallbackIndex = teachers.indexOf(teacher);
+    return String(
+      teacher.userId ??
+        teacher.user_id ??
+        teacher.masterTeacherId ??
+        teacher.teacher_id ??
+        teacher.email ??
+        fallbackIndex,
+    );
+  }, [teachers]);
 
-  const handleMenuAction = useCallback(
-    (action: AccountActionKey) => {
-      if (action === "master-teacher:upload") {
-        uploadInputRef.current?.click();
-        return;
-      }
-      if (action === "master-teacher:add") {
-        setSubmitError(null);
-        setSuccessMessage(null);
-        setArchiveError(null);
-        addMasterTeacherForm.reset({
-          teacherId: "",
-          firstName: "",
-          middleName: "",
-          lastName: "",
-          email: "",
-          phoneNumber: "",
-          grade: gradeFilter ? String(gradeFilter) : "",
-          subjects: ["English", "Filipino", "Math"],
-        });
-        setShowAddModal(true);
-        return;
-      }
-      if (action === "master-teacher:select") {
-        setArchiveError(null);
-        setSuccessMessage(null);
-        setSelectMode(true);
-        return;
-      }
-      console.log(`[Master Teacher ${normalizedLabel}] Action triggered: ${action}`);
-    },
-    [addMasterTeacherForm, gradeFilter, normalizedLabel],
-  );
+  const handleMenuAction = useCallback((action: AccountActionKey) => {
+  if (action === "master-teacher:add") {
+      setSubmitError(null);
+      setSuccessMessage(null);
+      setArchiveError(null);
+      addMasterTeacherForm.reset();
+      setShowAddModal(true);
+      return;
+    }
+  if (action === "master-teacher:upload") {
+      uploadInputRef.current?.click();
+      return;
+    }
+  if (action === "master-teacher:select") {
+      setArchiveError(null);
+      setSuccessMessage(null);
+      setSelectMode(true);
+      return;
+    }
+
+    console.log(`[Master Teacher Tab] Action triggered: ${action}`);
+  }, [addMasterTeacherForm]);
+
+  const filteredTeachers = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    if (query.length === 0) {
+      return teachers;
+    }
+
+    return teachers.filter((teacher) => {
+      const nameMatch = teacher.name?.toLowerCase().includes(query);
+      const emailMatch = teacher.email?.toLowerCase().includes(query);
+      const idMatch = (teacher.masterTeacherId ?? "").toLowerCase().includes(query);
+      const coordinatorMatch = teacher.coordinatorSubject?.toLowerCase().includes(query);
+
+      return Boolean(nameMatch || emailMatch || idMatch || coordinatorMatch);
+    });
+  }, [teachers, searchTerm]);
+
+  const handleExport = useCallback(() => {
+    void exportAccountRows({
+      rows: filteredTeachers,
+      columns: MASTER_TEACHER_EXPORT_COLUMNS,
+      baseFilename: "master-teacher-accounts",
+      sheetName: "Master Teacher Accounts",
+      emptyMessage: "No master teacher accounts available to export.",
+    });
+  }, [filteredTeachers]);
+
+  const handleShowDetails = (teacher: any) => {
+    setSelectedTeacher(teacher);
+    setShowDetailModal(true);
+  };
 
   const handleCloseAddModal = useCallback(() => {
     setShowAddModal(false);
     setSubmitError(null);
-    addMasterTeacherForm.reset({
-      teacherId: "",
-      firstName: "",
-      middleName: "",
-      lastName: "",
-      email: "",
-      phoneNumber: "",
-      grade: gradeFilter ? String(gradeFilter) : "",
-      subjects: ["English", "Filipino", "Math"],
-    });
-  }, [addMasterTeacherForm, gradeFilter]);
+    addMasterTeacherForm.reset();
+  }, [addMasterTeacherForm]);
 
-  const handleAddMasterTeacher = useCallback(
-    async (values: AddMasterTeacherFormValues) => {
-      const payload = {
-        firstName: values.firstName.trim(),
-        middleName: values.middleName.trim() || null,
-        lastName: values.lastName.trim(),
-        email: values.email.trim().toLowerCase(),
-        phoneNumber: values.phoneNumber.trim(),
-        grade: values.grade.trim(),
-        subjects: values.subjects || ["English", "Filipino", "Math"],
-        teacherId: values.teacherId.trim() || null,
-      };
+  const handleSubmitAdd = useCallback(async (values: AddMasterTeacherFormValues) => {
+    const coordinatorSubject =
+      normalizeCoordinatorSubject(values.coordinatorSubject) ?? values.coordinatorSubject.trim();
+    const payload = {
+      firstName: values.firstName.trim(),
+      middleName: values.middleName.trim() || null,
+      lastName: values.lastName.trim(),
+      suffix: values.suffix.trim() || null,
+      email: values.email.trim().toLowerCase(),
+      phoneNumber: values.phoneNumber.replace(/\D/g, ""),
+      grade: values.grade.trim(),
+      subjects: values.subjects.join(", "),
+      coordinatorSubject,
+    };
 
-      const normalizedPhoneDigits = normalizeContactDigits(payload.phoneNumber);
-      if (!normalizedPhoneDigits) {
-        setSubmitError("Contact number is required.");
-        return;
-      }
-
-      const emailToCheck = payload.email;
-
-      const hasDuplicate = teachers.some((teacher: any) => {
-        const emailMatch =
-          typeof teacher.email === "string" && teacher.email.trim().toLowerCase() === emailToCheck;
-        const existingDigits = normalizeContactDigits(
-          teacher.contactNumberRaw ??
-            teacher.contactNumber ??
-            teacher.phoneNumber ??
-            teacher.phone_number ??
-            teacher.contact_number,
-        );
-        const phoneMatch = existingDigits && normalizedPhoneDigits ? existingDigits === normalizedPhoneDigits : false;
-        return emailMatch || phoneMatch;
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      const response = await fetch("/api/it_admin/accounts/masterteacher", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
 
-      if (hasDuplicate) {
-        setSubmitError("A master teacher with the same email or contact number already exists.");
-        return;
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => ({}));
+        throw new Error(errorPayload?.error ?? `Unable to add Master Teacher (status ${response.status}).`);
       }
 
-      setIsSubmitting(true);
-      setSubmitError(null);
-      setSuccessMessage(null);
-      setArchiveError(null);
+      const result = await response.json();
+      const record = result?.record ?? null;
+      const userId = result?.userId ?? record?.userId ?? null;
+      const temporaryPassword = result?.temporaryPassword ?? null;
 
-      try {
-        const response = await fetch("/api/it_admin/master-teachers", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
+      const fallbackRecord = {
+        userId,
+        firstName: payload.firstName,
+        middleName: payload.middleName,
+        lastName: payload.lastName,
+        suffix: payload.suffix,
+        email: payload.email,
+        contactNumber: payload.phoneNumber,
+        phoneNumber: payload.phoneNumber,
+        grade: payload.grade,
+        subjects: payload.subjects,
+  coordinatorSubject,
+        masterTeacherId: userId != null ? String(userId) : undefined,
+        teacherId: userId != null ? String(userId) : undefined,
+        lastLogin: null,
+      };
 
-        if (!response.ok) {
-          const errorPayload = await response.json().catch(() => ({}));
-          throw new Error(errorPayload?.error ?? `Unable to add Master Teacher (status ${response.status}).`);
-        }
+      const normalizedRecord = normalizeMasterTeacherRecord(record ?? fallbackRecord);
 
-        const result = await response.json();
-        const record = result?.record ?? null;
-        const userId = result?.userId ?? record?.userId ?? null;
-        const temporaryPassword = result?.temporaryPassword ?? null;
-        const internationalDigits = extractInternationalDigits(payload.phoneNumber) ?? "";
-        const fallbackRecord = {
-          userId,
-          teacherId: payload.teacherId ?? (userId != null ? String(userId) : undefined),
-          masterTeacherId: payload.teacherId ?? (userId != null ? String(userId) : undefined),
-          firstName: payload.firstName,
-          middleName: payload.middleName,
-          lastName: payload.lastName,
-          name: [payload.firstName, payload.middleName, payload.lastName].filter(Boolean).join(" "),
-          email: payload.email,
-          contactNumber: payload.phoneNumber,
-          contactNumberRaw: normalizedPhoneDigits,
-          contactNumberInternational: internationalDigits,
-          grade: payload.grade,
-          subjects: payload.subjects,
-          status: "Active",
-          lastLogin: null,
-        };
+      setTeachers((prev: any[]) => {
+        const withoutExisting = prev.filter((item: any) => item?.userId !== normalizedRecord.userId);
+        return sortMasterTeachers([...withoutExisting, normalizedRecord]);
+      });
 
-        const normalizedRecord: any = record ? { ...record } : fallbackRecord;
-
-        const recordDigits = normalizeContactDigits(
-          normalizedRecord.contactNumberRaw ??
-            normalizedRecord.contactNumber ??
-            normalizedRecord.phoneNumber ??
-            normalizedRecord.phone_number,
+      setShowAddModal(false);
+      if (temporaryPassword) {
+        setSuccessMessage(
+          `${normalizedRecord.name ?? "New Master Teacher"} added successfully. Temporary password: ${temporaryPassword}`,
         );
-
-        if (!normalizedRecord.contactNumberRaw && recordDigits) {
-          normalizedRecord.contactNumberRaw = recordDigits;
-        }
-
-        if (!normalizedRecord.contactNumber) {
-          normalizedRecord.contactNumber = payload.phoneNumber;
-        }
-
-        if (!normalizedRecord.grade) {
-          normalizedRecord.grade = payload.grade;
-        }
-
-        setTeachers((prev: any[]) => {
-          const withoutExisting = prev.filter((item: any) => {
-            if (normalizedRecord.userId == null) {
-              return true;
-            }
-            return item.userId !== normalizedRecord.userId;
-          });
-          return sortMasterTeachers([...withoutExisting, normalizedRecord]);
-        });
-
-        addMasterTeacherForm.reset({
-          teacherId: "",
-          firstName: "",
-          middleName: "",
-          lastName: "",
-          email: "",
-          phoneNumber: "",
-          grade: gradeFilter ? String(gradeFilter) : "",
-          subjects: ["English", "Filipino", "Math"],
-        });
-        setShowAddModal(false);
-        if (temporaryPassword) {
-          setSuccessMessage(
-            `${normalizedRecord.name ?? "New Master Teacher"} added successfully. Temporary password: ${temporaryPassword}`,
-          );
-        } else {
-          setSuccessMessage(`${normalizedRecord.name ?? "New Master Teacher"} added successfully.`);
-        }
-      } catch (error) {
-        setSubmitError(error instanceof Error ? error.message : "Unable to add Master Teacher.");
-      } finally {
-        setIsSubmitting(false);
+      } else {
+        setSuccessMessage(`${normalizedRecord.name ?? "New Master Teacher"} added successfully.`);
       }
-    },
-    [addMasterTeacherForm, gradeFilter, setTeachers, teachers],
-  );
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Unable to add Master Teacher.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [setTeachers]);
 
   const handleFileChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -390,47 +385,225 @@ export default function MasterTeacherTab({
   }, []);
 
   const handleUploadConfirm = useCallback(() => {
-    if (!selectedFile) return;
+    if (!selectedFile) {
+      return;
+    }
 
     const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: "array" });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet);
+    reader.onload = (event) => {
+      void (async () => {
+        try {
+          const data = new Uint8Array(event.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: "array" });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          const jsonData = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: "" });
 
-        const newTeachers = jsonData.map((row: any, index: number) => {
-          const fullName = `${row.FIRSTNAME || ""} ${row.MIDDLENAME || ""} ${row.SURNAME || ""}`.trim();
-          const derivedGrade = gradeFilter !== undefined ? gradeFilter : row["HANDLED GRADE"] || row.grade;
-
-          return {
-            id: Date.now() + index,
-            teacherId: row["TEACHER ID"] || "",
-            name: fullName,
-            email: row["EMAIL"] || "",
-            contactNumber: row["CONTACT NUMBER"] || "",
-            grade: derivedGrade ?? "",
-            handledGrade: row["HANDLED GRADE"] || "",
-            handledSubjects: row["HANDLED SUBJECTS"] || "",
+          const readField = (row: Record<string, any>, keys: string[]): string => {
+            for (const key of keys) {
+              if (row[key] !== undefined && row[key] !== null) {
+                const value = String(row[key]).trim();
+                if (value.length > 0) {
+                  return value;
+                }
+              }
+            }
+            return "";
           };
-        });
 
-        setTeachers((prev) => sortMasterTeachers([...prev, ...newTeachers]));
-        alert(`Successfully imported ${newTeachers.length} teachers`);
-      } catch (error) {
-        console.error(error);
-        alert("Error reading Excel file. Please check the format and column headers.");
-      }
+          let invalidRows = 0;
+          const teachersPayload = jsonData
+            .map((row) => {
+              const firstName = readField(row, [
+                "FIRSTNAME",
+                "FIRST_NAME",
+                "FIRST NAME",
+                "First Name",
+                "firstName",
+              ]);
+              const middleName = readField(row, [
+                "MIDDLENAME",
+                "MIDDLE_NAME",
+                "MIDDLE NAME",
+                "Middle Name",
+                "middleName",
+              ]);
+              const lastName = readField(row, [
+                "LASTNAME",
+                "LAST_NAME",
+                "LAST NAME",
+                "Last Name",
+                "lastName",
+                "SURNAME",
+              ]);
+              const suffix = readField(row, [
+                "SUFFIX",
+                "Suffix",
+                "suffix",
+              ]);
+              const email = readField(row, ["EMAIL", "Email", "email"]).toLowerCase();
+              const contactRaw = readField(row, [
+                "CONTACT NUMBER",
+                "CONTACT_NUMBER",
+                "CONTACTNUMBER",
+                "Contact Number",
+                "contactNumber",
+                "CONTACT",
+                "Contact",
+              ]);
+              const grade = readField(row, [
+                "GRADE",
+                "Grade",
+                "grade",
+                "HANDLED GRADE",
+                "handled_grade",
+                "handledGrade",
+              ]);
+              const subjects = readField(row, [
+                "HANDLED SUBJECTS",
+                "HANDLED_SUBJECTS",
+                "HANDLEDSUBJECTS",
+                "Handled Subjects",
+                "handledSubjects",
+                "SUBJECTS",
+                "Subjects",
+                "subjects",
+              ]);
+              const coordinatorSubjectRaw = readField(row, [
+                "COORDINATOR SUBJECT",
+                "Coordinator Subject",
+                "coordinatorSubject",
+                "COORDINATOR",
+                "Coordinator",
+                "mt_coordinator",
+              ]);
+              const coordinatorSubject = normalizeCoordinatorSubject(coordinatorSubjectRaw);
+              const phoneNumber = contactRaw.replace(/\D/g, "");
+
+              if (!firstName || !lastName || !email || !grade || phoneNumber.length < 10 || !coordinatorSubject) {
+                invalidRows += 1;
+                return null;
+              }
+
+              return {
+                firstName,
+                middleName: middleName || null,
+                lastName,
+                suffix: suffix || null,
+                email,
+                phoneNumber,
+                grade,
+                subjects: subjects || null,
+                coordinatorSubject,
+              };
+            })
+            .filter((payload): payload is Required<typeof payload> => payload !== null);
+
+          if (teachersPayload.length === 0) {
+            setSuccessMessage(null);
+            setArchiveError(
+              invalidRows > 0
+                ? "No valid rows found in the uploaded file. Check required columns (First Name, Last Name, Email, Grade, Coordinator Subject, Contact Number)."
+                : "The uploaded file does not contain any data.",
+            );
+            return;
+          }
+
+          setArchiveError(null);
+          setSuccessMessage(null);
+
+          const response = await fetch("/api/it_admin/accounts/masterteacher/upload", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ teachers: teachersPayload }),
+          });
+
+          const result = await response.json().catch(() => ({}));
+          const inserted = Array.isArray(result?.inserted) ? result.inserted : [];
+          const failures = Array.isArray(result?.failures) ? result.failures : [];
+          const normalizedRecords = inserted
+            .map((entry: any) => normalizeMasterTeacherRecord(entry?.record ?? {}))
+            .filter((record: any) => record.userId !== null && record.userId !== undefined);
+
+          if (normalizedRecords.length > 0) {
+            setTeachers((prev) => {
+              const existingIds = new Set(normalizedRecords.map((record: any) => String(record.userId)));
+              const remaining = prev.filter((item: any) => !existingIds.has(String(item.userId ?? item.masterTeacherId ?? item.email ?? "")));
+              return sortMasterTeachers([...remaining, ...normalizedRecords]);
+            });
+          }
+
+          if (inserted.length > 0) {
+            const passwordMap = inserted
+              .map((entry: any) => {
+                const rec = entry?.record ?? {};
+                const nameFromRecord =
+                  typeof rec.name === "string" && rec.name.trim().length > 0
+                    ? rec.name.trim()
+                    : ((rec.firstName || rec.lastName)
+                        ? `${rec.firstName ?? ""} ${rec.lastName ?? ""}`.trim()
+                        : "");
+                return {
+                  name: nameFromRecord || "Unknown",
+                  email: rec.email ?? "",
+                  password: entry?.temporaryPassword ?? "",
+                };
+              })
+              .filter((item: any) => item.email && item.password);
+            if (passwordMap.length > 0) {
+              setUploadedPasswords(passwordMap);
+              console.info("Temporary passwords for imported Master Teacher accounts:", passwordMap);
+            }
+          }
+
+          const successCount = normalizedRecords.length;
+          const failureCount = failures.length + invalidRows;
+
+          if (successCount > 0) {
+            const parts: string[] = [];
+            parts.push(`Imported ${successCount} Master Teacher${successCount === 1 ? "" : "s"} successfully.`);
+            if (failureCount > 0) {
+              parts.push(`${failureCount} row${failureCount === 1 ? "" : "s"} skipped.`);
+            }
+            if (inserted.length > 0) {
+              parts.push("Download the CSV file to view passwords.");
+            }
+            setSuccessMessage(parts.join(" "));
+          }
+
+          if (!response.ok || (successCount === 0 && failureCount > 0)) {
+            const responseError = typeof result?.error === "string" && result.error.trim().length > 0
+              ? result.error
+              : "Failed to import Master Teacher accounts.";
+            setArchiveError(failureCount > 0 ? `${responseError} (${failureCount} row${failureCount === 1 ? "" : "s"} failed).` : responseError);
+          } else if (failureCount > 0) {
+            setArchiveError(`${failureCount} row${failureCount === 1 ? "" : "s"} could not be imported. Check for duplicate emails or missing data.`);
+          } else {
+            setArchiveError(null);
+          }
+        } catch (error) {
+          console.error("Failed to process upload", error);
+          setSuccessMessage(null);
+          setArchiveError("Error reading Excel file. Please check the format and column headers.");
+        } finally {
+          setSelectedFile(null);
+          setShowConfirmModal(false);
+          if (uploadInputRef.current) {
+            uploadInputRef.current.value = "";
+          }
+        }
+      })();
     };
+
     reader.readAsArrayBuffer(selectedFile);
-    setSelectedFile(null);
-    setShowConfirmModal(false);
-    if (uploadInputRef.current) {
-      uploadInputRef.current.value = "";
-    }
-  }, [gradeFilter, selectedFile, setTeachers]);
+  }, [
+    selectedFile,
+    setTeachers,
+    setArchiveError,
+    setSuccessMessage,
+    setSelectedFile,
+    setShowConfirmModal,
+  ]);
 
   const handleUploadCancel = useCallback(() => {
     setSelectedFile(null);
@@ -439,30 +612,6 @@ export default function MasterTeacherTab({
       uploadInputRef.current.value = "";
     }
   }, []);
-
-  const scopedTeachers = useMemo(
-    () => teachers.filter((teacher: any) => matchesGrade(teacher, gradeFilter)),
-    [teachers, gradeFilter],
-  );
-
-  const filteredTeachers = useMemo(() => {
-    return scopedTeachers.filter((teacher: any) => {
-      const loweredSearch = searchTerm.toLowerCase();
-      const matchSearch =
-        searchTerm === "" ||
-        teacher.name?.toLowerCase().includes(loweredSearch) ||
-        teacher.email?.toLowerCase().includes(loweredSearch) ||
-        teacher.teacherId?.toLowerCase().includes(loweredSearch) ||
-        teacher.masterTeacherId?.toLowerCase().includes(loweredSearch);
-
-      return matchSearch;
-    });
-  }, [scopedTeachers, searchTerm]);
-
-  const handleShowDetails = (teacher: any) => {
-    setSelectedMasterTeacher(teacher);
-    setShowDetailModal(true);
-  };
 
   const handleSelectTeacher = useCallback((id: string, checked: boolean) => {
     setSelectedTeacherKeys((prev) => {
@@ -476,17 +625,14 @@ export default function MasterTeacherTab({
     });
   }, []);
 
-  const handleSelectAll = useCallback(
-    (checked: boolean) => {
-      if (checked) {
-        const keys = new Set(filteredTeachers.map((teacher: any) => getTeacherKey(teacher)));
-        setSelectedTeacherKeys(keys);
-        return;
-      }
-      setSelectedTeacherKeys(new Set());
-    },
-    [filteredTeachers, getTeacherKey],
-  );
+  const handleSelectAll = useCallback((checked: boolean) => {
+    if (checked) {
+      const keys = new Set(filteredTeachers.map((teacher: any) => getTeacherKey(teacher)));
+      setSelectedTeacherKeys(keys);
+      return;
+    }
+    setSelectedTeacherKeys(new Set());
+  }, [filteredTeachers, getTeacherKey]);
 
   const handleCancelSelect = useCallback(() => {
     setSelectMode(false);
@@ -495,7 +641,9 @@ export default function MasterTeacherTab({
   }, []);
 
   const handleArchiveSelected = useCallback(() => {
-    if (selectedTeacherKeys.size === 0) return;
+    if (selectedTeacherKeys.size === 0) {
+      return;
+    }
     setArchiveError(null);
     setSuccessMessage(null);
     setShowArchiveModal(true);
@@ -508,25 +656,20 @@ export default function MasterTeacherTab({
 
     const selectedRecords = teachers.filter((teacher: any) => selectedTeacherKeys.has(getTeacherKey(teacher)));
     const userIds = selectedRecords
-      .map((teacher: any) => {
-        return (
-          extractNumericId(teacher.userId ?? teacher.user_id) ??
-          extractNumericId(teacher.masterTeacherId ?? teacher.master_teacher_id ?? teacher.teacherId)
-        );
-      })
+      .map((teacher: any) => extractNumericId(teacher.userId ?? teacher.user_id ?? teacher.masterTeacherId ?? teacher.teacher_id))
       .filter((value): value is number => value !== null);
 
     const uniqueUserIds = Array.from(new Set(userIds));
 
     if (uniqueUserIds.length === 0) {
-      setArchiveError("Unable to determine user IDs for the selected master teachers.");
+      setArchiveError("Unable to determine user IDs for the selected Master Teachers.");
       return;
     }
 
     setIsArchiving(true);
     setArchiveError(null);
     try {
-      const response = await fetch("/api/it_admin/master-teachers/archive", {
+      const response = await fetch("/api/it_admin/accounts/masterteacher/archive", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userIds: uniqueUserIds }),
@@ -534,7 +677,7 @@ export default function MasterTeacherTab({
 
       if (!response.ok) {
         const errorPayload = await response.json().catch(() => ({}));
-        throw new Error(errorPayload?.error ?? `Failed to archive master teachers (status ${response.status}).`);
+        throw new Error(errorPayload?.error ?? `Failed to archive Master Teachers (status ${response.status}).`);
       }
 
       const payload = await response.json().catch(() => ({}));
@@ -548,9 +691,7 @@ export default function MasterTeacherTab({
 
       setTeachers((prev) => {
         const remaining = prev.filter((teacher: any) => {
-          const candidateId =
-            extractNumericId(teacher.userId ?? teacher.user_id) ??
-            extractNumericId(teacher.masterTeacherId ?? teacher.master_teacher_id ?? teacher.teacherId);
+          const candidateId = extractNumericId(teacher.userId ?? teacher.user_id ?? teacher.masterTeacherId ?? teacher.teacher_id);
           if (candidateId === null) {
             return true;
           }
@@ -560,16 +701,16 @@ export default function MasterTeacherTab({
       });
 
       const archivedCount = effectiveIds.length;
-      setSuccessMessage(`Archived ${archivedCount} master teacher${archivedCount === 1 ? "" : "s"} successfully.`);
+      setSuccessMessage(`Archived ${archivedCount} Master Teacher${archivedCount === 1 ? "" : "s"} successfully.`);
       setSelectedTeacherKeys(new Set());
       setSelectMode(false);
       setShowArchiveModal(false);
     } catch (error) {
-      setArchiveError(error instanceof Error ? error.message : "Failed to archive the selected master teachers.");
+      setArchiveError(error instanceof Error ? error.message : "Failed to archive the selected Master Teachers.");
     } finally {
       setIsArchiving(false);
     }
-  }, [getTeacherKey, selectedTeacherKeys, setTeachers, teachers]);
+  }, [getTeacherKey, teachers, selectedTeacherKeys, setTeachers]);
 
   const handleCloseArchiveModal = useCallback(() => {
     setShowArchiveModal(false);
@@ -577,25 +718,35 @@ export default function MasterTeacherTab({
     setIsArchiving(false);
   }, []);
 
-  const handleExport = useCallback(() => {
-    void exportAccountRows({
-      rows: filteredTeachers,
-      columns: MASTER_TEACHER_EXPORT_COLUMNS,
-      baseFilename: "master-teacher-accounts",
-      sheetName: "Master Teacher Accounts",
-      emptyMessage: "No master teacher accounts available to export.",
-    });
-  }, [filteredTeachers]);
+  const handleDownloadPasswords = useCallback(() => {
+    if (uploadedPasswords.length === 0) return;
 
-  const totalLabel = gradeFilter ? `Total` : "Total";
+    const csvContent = [
+      ['Name', 'Email', 'Temporary Password'].join(','),
+      ...uploadedPasswords.map(item => 
+        [item.name, item.email, item.password].map(val => `"${val}"`).join(',')
+      )
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `master-teacher-passwords-${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setUploadedPasswords([]);
+  }, [uploadedPasswords]);
 
   return (
     <div>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+      <div className="flex flex-row justify-between items-center mb-4 gap-4">
         <p className="text-gray-600 text-md font-medium">
-          {totalLabel}: {scopedTeachers.length}
+          Total: {teachers.length}
         </p>
-        <div className="flex items-center justify-end gap-3">
+        <div className="flex items-center gap-3">
           {selectMode ? (
             <>
               <SecondaryButton small onClick={handleCancelSelect}>
@@ -614,25 +765,25 @@ export default function MasterTeacherTab({
             <AccountActionsMenu
               accountType="Master Teachers"
               onAction={handleMenuAction}
-              buttonAriaLabel="Open master teacher actions"
-              exportConfig={
-                enableExport
-                  ? {
-                      onExport: handleExport,
-                      disabled: filteredTeachers.length === 0,
-                    }
-                  : undefined
-              }
+              buttonAriaLabel="Open Master Teacher actions"
+              exportConfig={{
+                onExport: handleExport,
+                disabled: filteredTeachers.length === 0,
+              }}
+              downloadPasswordsConfig={{
+                onDownload: handleDownloadPasswords,
+                disabled: uploadedPasswords.length === 0,
+              }}
             />
           )}
-          <input
-            ref={uploadInputRef}
-            type="file"
-            accept=".xlsx,.xls"
-            onChange={handleFileChange}
-            className="hidden"
-          />
         </div>
+        <input
+          ref={uploadInputRef}
+          type="file"
+          accept=".xlsx,.xls"
+          onChange={handleFileChange}
+          className="hidden"
+        />
       </div>
 
       {successMessage && (
@@ -641,19 +792,25 @@ export default function MasterTeacherTab({
         </div>
       )}
 
-      <MasterTeacherDetailsModal
-        show={showDetailModal}
-        onClose={() => setShowDetailModal(false)}
-        masterTeacher={selectedMasterTeacher}
-      />
+      {archiveError && !showArchiveModal && (
+        <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+          {archiveError}
+        </div>
+      )}
 
       <AddMasterTeacherModal
         show={showAddModal}
         onClose={handleCloseAddModal}
-        onSubmit={handleAddMasterTeacher}
+        onSubmit={handleSubmitAdd}
         form={addMasterTeacherForm}
         isSubmitting={isSubmitting}
         apiError={submitError}
+      />
+      
+      <MasterTeacherDetailsModal
+        show={showDetailModal}
+        onClose={() => setShowDetailModal(false)}
+        masterTeacher={selectedTeacher}
       />
 
       <ConfirmationModal
@@ -661,44 +818,33 @@ export default function MasterTeacherTab({
         onClose={handleUploadCancel}
         onConfirm={handleUploadConfirm}
         title="Confirm File Upload"
-        message="Are you sure you want to upload this Excel file? This will import teacher data."
+        message="Are you sure you want to upload this Excel file? This will import Master Teacher data."
         fileName={selectedFile?.name}
       />
 
       <TableList
         columns={[
           { key: "no", title: "No#" },
-          { key: "teacherId", title: "Teacher ID" },
-          { key: "name", title: "Full Name" },
-          { key: "email", title: "Email" },
+          { key: "masterTeacherId", title: "Teacher ID", render: (row: any) => row.masterTeacherId ?? "—" },
+          { key: "name", title: "Full Name", render: (row: any) => row.name ?? "—" },
+          { key: "email", title: "Email", render: (row: any) => row.email ?? "—" },
           { key: "grade", title: "Grade", render: (row: any) => row.grade ?? "—" },
-          { key: "contactNumber", title: "Contact Number" },
+          {
+            key: "coordinatorSubject",
+            title: "Coordinator Subject",
+            render: (row: any) => row.coordinatorSubject ?? "—",
+          },
+          {
+            key: "lastLogin",
+            title: "Last Login",
+            render: (row: any) => row.lastLoginDisplay ?? "—",
+          },
         ]}
-        data={filteredTeachers.map((teacher: any, idx: number) => {
-          const contactDigits = normalizeContactDigits(
-            teacher.contactNumberRaw ??
-              teacher.contactNumber ??
-              teacher.phoneNumber ??
-              teacher.phone_number ??
-              teacher.contact_number,
-          );
-
-          return {
-            ...teacher,
-            id: getTeacherKey(teacher),
-            no: idx + 1,
-            grade: teacher.grade ?? teacher.handledGrade ?? teacher.handled_grade ?? "—",
-            contactNumber: formatContactNumberForDisplay(
-              teacher.contactNumber ??
-                teacher.contact_number ??
-                teacher.phoneNumber ??
-                teacher.phone_number ??
-                teacher.contactNumberRaw ??
-                contactDigits ??
-                undefined,
-            ) ?? "—",
-          };
-        })}
+        data={filteredTeachers.map((teacher, idx) => ({
+          ...teacher,
+          id: getTeacherKey(teacher),
+          no: idx + 1,
+        }))}
         actions={(row: any) => (
           <UtilityButton small onClick={() => handleShowDetails(row)}>
             View Details
@@ -716,7 +862,7 @@ export default function MasterTeacherTab({
         onClose={handleCloseArchiveModal}
         onConfirm={handleConfirmArchiveSelected}
         title="Confirm Archive Selected"
-        message={`Are you sure you want to archive ${selectedTeacherKeys.size} selected master teacher${selectedTeacherKeys.size === 1 ? "" : "s"}? This will move them to the archive.`}
+        message={`Are you sure you want to archive ${selectedTeacherKeys.size} selected Master Teacher${selectedTeacherKeys.size === 1 ? "" : "s"}? This will move them to the archive.`}
         confirmLabel="Archive"
         confirmDisabled={selectedTeacherKeys.size === 0}
         isProcessing={isArchiving}

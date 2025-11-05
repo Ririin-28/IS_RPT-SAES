@@ -1,15 +1,17 @@
-import { useState, useCallback, useMemo, type Dispatch, type SetStateAction } from "react";
+import { useState, useCallback, useMemo, useRef, type ChangeEvent } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import { useForm } from "react-hook-form";
+import * as XLSX from "xlsx";
 import TableList from "@/components/Common/Tables/TableList";
+import PrincipalDetailsModal from "./Modals/PrincipalDetailsModal";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import AccountActionsMenu, { type AccountActionKey } from "../components/AccountActionsMenu";
 import AddPrincipalModal, { type AddPrincipalFormValues } from "./Modals/AddPrincipalModal";
-import PrincipalDetailsModal from "./Modals/PrincipalDetailsModal";
+import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
-import { exportRowsToExcel } from "@/lib/utils/export-to-excel";
-import { buildAccountsExportFilename, PRINCIPAL_EXPORT_COLUMNS } from "../utils/export-columns";
+import { exportAccountRows, PRINCIPAL_EXPORT_COLUMNS } from "../utils/export-columns";
 
 const NAME_COLLATOR = new Intl.Collator("en", { sensitivity: "base", numeric: true });
 
@@ -21,56 +23,104 @@ function toStringOrNull(value: unknown): string | null {
   return str.length > 0 ? str : null;
 }
 
-function normalizeContact(value: unknown): string | null {
-  if (value === null || value === undefined) {
-    return null;
+function formatTimestamp(value: string | Date | null | undefined): string {
+  if (!value) {
+    return "—";
   }
 
-  const asString = typeof value === "string" ? value : String(value);
-  const digits = asString.replace(/\D/g, "");
-  return digits.length > 0 ? digits : null;
-}
-
-function formatContactNumberForDisplay(value: unknown): string | null {
-  const digits = normalizeContact(value);
-  if (digits && digits.length === 11) {
-    if (digits.startsWith("6332")) {
-      const local = digits.slice(4);
-      const firstSegment = local.slice(0, 3);
-      const secondSegment = local.slice(3, 7);
-      return `+63 32 ${firstSegment} ${secondSegment}`;
+  try {
+    const parsed = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return "Invalid Date";
     }
 
-    const country = digits.slice(0, 2);
-    const area = digits.slice(2, 5);
-    const remainder = digits.slice(5);
-    const middle = remainder.slice(0, Math.max(remainder.length - 4, 0));
-    const tail = remainder.slice(Math.max(remainder.length - 4, 0));
-    if (middle.length > 0 && tail.length > 0) {
-      return `+${country} ${area} ${middle} ${tail}`;
-    }
-    return `+${country} ${area} ${remainder}`.trim();
+    return parsed.toLocaleString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
+    });
+  } catch {
+    return "Invalid Date";
   }
-
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  }
-
-  return null;
 }
 
-function extractNumericId(value: unknown): number | null {
-  if (value === null || value === undefined) {
+function formatLocalPhoneNumber(value: string | null): string | null {
+  if (!value) {
     return null;
   }
 
-  const numeric = Number(value);
-  if (!Number.isInteger(numeric) || numeric <= 0) {
+  const digitsOnly = value.replace(/\D/g, "");
+  if (digitsOnly.length === 0) {
     return null;
   }
 
-  return numeric;
+  let normalized = digitsOnly;
+  if (normalized.startsWith("63") && normalized.length >= 12) {
+    normalized = `0${normalized.slice(2)}`;
+  }
+  if (normalized.length === 10 && normalized.startsWith("9")) {
+    normalized = `0${normalized}`;
+  }
+  if (normalized.length > 11) {
+    normalized = normalized.slice(-11);
+  }
+
+  if (!normalized.startsWith("09") || normalized.length !== 11) {
+    return normalized;
+  }
+
+  const part1 = normalized.slice(0, 4);
+  const part2 = normalized.slice(4, 7);
+  const part3 = normalized.slice(7);
+  return `${part1}-${part2}-${part3}`;
+}
+
+function normalizePrincipalRecord(record: any) {
+  const userId = record.userId ?? record.user_id ?? null;
+  const normalized: any = {
+    ...record,
+    userId,
+  };
+
+  const suffix = toStringOrNull(record.suffix ?? record.suf ?? record.suffix_name);
+
+  normalized.name = toStringOrNull(record.name ?? record.fullName ?? record.full_name) ?? (() => {
+    const first = toStringOrNull(record.firstName ?? record.first_name);
+    const middle = toStringOrNull(record.middleName ?? record.middle_name);
+    const last = toStringOrNull(record.lastName ?? record.last_name);
+    const parts = [first, middle, last].filter(Boolean);
+    if (suffix) {
+      parts.push(suffix);
+    }
+    return parts.join(" ") || toStringOrNull(record.email ?? record.user_email) || (userId != null ? `User ${userId}` : "Unknown User");
+  })();
+  normalized.suffix = suffix;
+  normalized.fullName = normalized.name;
+
+  normalized.email = toStringOrNull(record.email ?? record.user_email);
+  const contactRaw = toStringOrNull(
+    record.contactNumber ?? record.contact_number ?? record.phoneNumber ?? record.phone_number,
+  );
+  normalized.contactNumber = contactRaw;
+  const contactDisplay = formatLocalPhoneNumber(contactRaw);
+  normalized.contactNumberDisplay = contactDisplay ?? contactRaw;
+  normalized.phoneNumber = contactRaw;
+  normalized.status = toStringOrNull(record.status) ?? "Active";
+  normalized.lastLogin = record.lastLogin ?? null;
+  normalized.lastLoginDisplay = formatTimestamp(record.lastLogin ?? null);
+
+  if (userId !== null && userId !== undefined) {
+    const userIdString = String(userId);
+    normalized.principalId = toStringOrNull(record.principalId) ?? userIdString;
+  } else {
+    normalized.principalId = toStringOrNull(record.principalId);
+  }
+
+  return normalized;
 }
 
 function sortPrincipals(records: any[]) {
@@ -95,6 +145,19 @@ function sortPrincipals(records: any[]) {
   });
 }
 
+function extractNumericId(value: unknown): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const numeric = Number(value);
+  if (!Number.isInteger(numeric) || numeric <= 0) {
+    return null;
+  }
+
+  return numeric;
+}
+
 interface PrincipalTabProps {
   principals: any[];
   setPrincipals: Dispatch<SetStateAction<any[]>>;
@@ -103,16 +166,20 @@ interface PrincipalTabProps {
 
 export default function PrincipalTab({ principals, setPrincipals, searchTerm }: PrincipalTabProps) {
   const [showDetailModal, setShowDetailModal] = useState(false);
-  const [showAddModal, setShowAddModal] = useState(false);
   const [selectedPrincipal, setSelectedPrincipal] = useState<any>(null);
-  const [selectMode, setSelectMode] = useState(false);
-  const [selectedPrincipalKeys, setSelectedPrincipalKeys] = useState<Set<string>>(new Set());
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedPrincipalKeys, setSelectedPrincipalKeys] = useState<Set<string>>(new Set());
+  const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [isArchiving, setIsArchiving] = useState(false);
+  const [uploadedPasswords, setUploadedPasswords] = useState<Array<{name: string; email: string; password: string}>>([]);
 
   const addPrincipalForm = useForm<AddPrincipalFormValues>({
     mode: "onTouched",
@@ -120,6 +187,7 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
       firstName: "",
       middleName: "",
       lastName: "",
+      suffix: "",
       email: "",
       phoneNumber: "",
     },
@@ -127,7 +195,14 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
 
   const getPrincipalKey = useCallback((principal: any) => {
     const fallbackIndex = principals.indexOf(principal);
-    return String(principal.id ?? principal.principalId ?? principal.email ?? principal.contactNumber ?? principal.name ?? fallbackIndex);
+    return String(
+      principal.userId ??
+        principal.user_id ??
+        principal.principalId ??
+        principal.principal_id ??
+        principal.email ??
+        fallbackIndex,
+    );
   }, [principals]);
 
   const handleMenuAction = useCallback((action: AccountActionKey) => {
@@ -139,59 +214,70 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
       setShowAddModal(true);
       return;
     }
+    if (action === "principal:upload") {
+      uploadInputRef.current?.click();
+      return;
+    }
     if (action === "principal:select") {
       setArchiveError(null);
       setSuccessMessage(null);
       setSelectMode(true);
       return;
     }
+
+    console.log(`[Principal Tab] Action triggered: ${action}`);
   }, [addPrincipalForm]);
 
-  const handleAddPrincipal = useCallback(async (values: AddPrincipalFormValues) => {
-    const formattedPhone = values.phoneNumber.trim();
-    const normalizedPhoneDigits = normalizeContact(formattedPhone);
-    if (!normalizedPhoneDigits) {
-      setSubmitError("Phone number is required.");
-      return;
+  const filteredPrincipals = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    if (query.length === 0) {
+      return principals;
     }
 
+    return principals.filter((principal) => {
+      const nameMatch = principal.name?.toLowerCase().includes(query);
+      const emailMatch = principal.email?.toLowerCase().includes(query);
+      const idMatch = (principal.principalId ?? "").toLowerCase().includes(query);
+
+      return Boolean(nameMatch || emailMatch || idMatch);
+    });
+  }, [principals, searchTerm]);
+
+  const handleExport = useCallback(() => {
+    void exportAccountRows({
+      rows: filteredPrincipals,
+      columns: PRINCIPAL_EXPORT_COLUMNS,
+      baseFilename: "principal-accounts",
+      sheetName: "Principal Accounts",
+      emptyMessage: "No principal accounts available to export.",
+    });
+  }, [filteredPrincipals]);
+
+  const handleShowDetails = (principal: any) => {
+    setSelectedPrincipal(principal);
+    setShowDetailModal(true);
+  };
+
+  const handleCloseAddModal = useCallback(() => {
+    setShowAddModal(false);
+    setSubmitError(null);
+    addPrincipalForm.reset();
+  }, [addPrincipalForm]);
+
+  const handleSubmitAdd = useCallback(async (values: AddPrincipalFormValues) => {
     const payload = {
       firstName: values.firstName.trim(),
       middleName: values.middleName.trim() || null,
       lastName: values.lastName.trim(),
+      suffix: values.suffix.trim() || null,
       email: values.email.trim().toLowerCase(),
-      phoneNumber: formattedPhone,
+      phoneNumber: values.phoneNumber.replace(/\D/g, ""),
     };
 
-    setSubmitError(null);
-    setSuccessMessage(null);
-    setArchiveError(null);
-    const emailToCheck = payload.email;
-    const phoneToCheck = normalizedPhoneDigits;
-
-    const hasDuplicate = principals.some((principal: any) => {
-      const emailMatch = typeof principal.email === "string" && principal.email.trim().toLowerCase() === emailToCheck;
-      const existingDigits =
-        typeof principal.contactNumberRaw === "string"
-          ? normalizeContact(principal.contactNumberRaw)
-          : normalizeContact(
-              principal.contactNumber ??
-                principal.contact_number ??
-                principal.phoneNumber ??
-                principal.phone_number,
-            );
-      const phoneMatch = existingDigits && phoneToCheck ? existingDigits === phoneToCheck : false;
-      return emailMatch || phoneMatch;
-    });
-
-    if (hasDuplicate) {
-      setSubmitError("A principal with the same email or contact number already exists.");
-      return;
-    }
-
     setIsSubmitting(true);
+    setSubmitError(null);
     try {
-      const response = await fetch("/api/it_admin/principals", {
+      const response = await fetch("/api/it_admin/accounts/principal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -205,44 +291,32 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
       const result = await response.json();
       const record = result?.record ?? null;
       const userId = result?.userId ?? record?.userId ?? null;
-      const contactNumberRaw = normalizeContact(record?.contactNumberRaw ?? record?.contactNumber ?? formattedPhone) ?? normalizedPhoneDigits;
+      const temporaryPassword = result?.temporaryPassword ?? null;
 
       const fallbackRecord = {
         userId,
         firstName: payload.firstName,
         middleName: payload.middleName,
         lastName: payload.lastName,
+        suffix: payload.suffix,
         email: payload.email,
-        contactNumber: formattedPhone,
-        contactNumberRaw,
+        contactNumber: payload.phoneNumber,
+        phoneNumber: payload.phoneNumber,
         principalId: userId != null ? String(userId) : undefined,
         lastLogin: null,
-        name: [payload.firstName, payload.middleName, payload.lastName].filter(Boolean).join(" "),
       };
 
-      const normalizedRecord: any = record ? { ...record } : fallbackRecord;
+      const normalizedRecord = normalizePrincipalRecord(record ?? fallbackRecord);
 
-      if (!normalizedRecord.contactNumberRaw) {
-        normalizedRecord.contactNumberRaw = contactNumberRaw;
-      }
-      if (!normalizedRecord.contactNumber) {
-        normalizedRecord.contactNumber = formattedPhone;
-      }
-
-      const withoutExisting = principals.filter((principal: any) => {
-        if (normalizedRecord.userId == null) {
-          return true;
-        }
-        return principal.userId !== normalizedRecord.userId;
+      setPrincipals((prev: any[]) => {
+        const withoutExisting = prev.filter((item: any) => item?.userId !== normalizedRecord.userId);
+        return sortPrincipals([...withoutExisting, normalizedRecord]);
       });
-      const updated = sortPrincipals([...withoutExisting, normalizedRecord]);
-      setPrincipals(updated);
 
-      addPrincipalForm.reset();
       setShowAddModal(false);
-      if (result?.temporaryPassword) {
+      if (temporaryPassword) {
         setSuccessMessage(
-          `${normalizedRecord.name ?? "New Principal"} added successfully. Temporary password: ${result.temporaryPassword}`,
+          `${normalizedRecord.name ?? "New Principal"} added successfully. Temporary password: ${temporaryPassword}`,
         );
       } else {
         setSuccessMessage(`${normalizedRecord.name ?? "New Principal"} added successfully.`);
@@ -252,38 +326,221 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
     } finally {
       setIsSubmitting(false);
     }
-  }, [addPrincipalForm, principals, setPrincipals]);
+  }, [setPrincipals]);
 
-  const handleCloseAddModal = useCallback(() => {
-    setShowAddModal(false);
-    setSubmitError(null);
-    addPrincipalForm.reset();
-  }, [addPrincipalForm]);
+  const handleFileChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
 
-  const filteredPrincipals = useMemo(() => principals.filter((principal) => {
-    const matchSearch = searchTerm === "" || 
-      principal.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      principal.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      principal.principalId?.toLowerCase().includes(searchTerm.toLowerCase());
-      
-    return matchSearch;
-  }), [principals, searchTerm]);
-
-
-  const handleExport = useCallback(() => {
-    if (filteredPrincipals.length === 0) {
-      window.alert("No principal accounts available to export.");
+    const validTypes = [".xlsx", ".xls"];
+    const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf("."));
+    if (!validTypes.includes(fileExtension)) {
+      alert("Please upload only Excel files (.xlsx or .xls)");
       return;
     }
 
-    const filename = buildAccountsExportFilename("principal-accounts");
-    void exportRowsToExcel({
-      rows: filteredPrincipals,
-      columns: PRINCIPAL_EXPORT_COLUMNS,
-      filename,
-      sheetName: "Principal Accounts",
-    });
-  }, [filteredPrincipals]);
+    setSelectedFile(file);
+    setShowConfirmModal(true);
+  }, []);
+
+  const handleUploadConfirm = useCallback(() => {
+    if (!selectedFile) {
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      void (async () => {
+        try {
+          const data = new Uint8Array(event.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: "array" });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          const jsonData = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: "" });
+
+          const readField = (row: Record<string, any>, keys: string[]): string => {
+            for (const key of keys) {
+              if (row[key] !== undefined && row[key] !== null) {
+                const value = String(row[key]).trim();
+                if (value.length > 0) {
+                  return value;
+                }
+              }
+            }
+            return "";
+          };
+
+          let invalidRows = 0;
+          const principalsPayload = jsonData
+            .map((row) => {
+              const firstName = readField(row, [
+                "FIRSTNAME",
+                "FIRST_NAME",
+                "FIRST NAME",
+                "First Name",
+                "firstName",
+              ]);
+              const middleName = readField(row, [
+                "MIDDLENAME",
+                "MIDDLE_NAME",
+                "MIDDLE NAME",
+                "Middle Name",
+                "middleName",
+              ]);
+              const lastName = readField(row, [
+                "LASTNAME",
+                "LAST_NAME",
+                "LAST NAME",
+                "Last Name",
+                "lastName",
+                "SURNAME",
+              ]);
+              const suffix = readField(row, [
+                "SUFFIX",
+                "Suffix",
+                "suffix",
+              ]);
+              const email = readField(row, ["EMAIL", "Email", "email"]).toLowerCase();
+              const contactRaw = readField(row, [
+                "CONTACT NUMBER",
+                "CONTACT_NUMBER",
+                "CONTACTNUMBER",
+                "Contact Number",
+                "contactNumber",
+                "CONTACT",
+                "Contact",
+              ]);
+              const phoneNumber = contactRaw.replace(/\D/g, "");
+
+              if (!firstName || !lastName || !email || phoneNumber.length < 10) {
+                invalidRows += 1;
+                return null;
+              }
+
+              return {
+                firstName,
+                middleName: middleName || null,
+                lastName,
+                suffix: suffix || null,
+                email,
+                phoneNumber,
+              };
+            })
+            .filter((payload): payload is Required<typeof payload> => payload !== null);
+
+          if (principalsPayload.length === 0) {
+            setSuccessMessage(null);
+            setArchiveError(
+              invalidRows > 0
+                ? "No valid rows found in the uploaded file. Check required columns (First Name, Last Name, Email, Contact Number)."
+                : "The uploaded file does not contain any data.",
+            );
+            return;
+          }
+
+          setArchiveError(null);
+          setSuccessMessage(null);
+
+          const response = await fetch("/api/it_admin/accounts/principal/upload", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ principals: principalsPayload }),
+          });
+
+          const result = await response.json().catch(() => ({}));
+          const inserted = Array.isArray(result?.inserted) ? result.inserted : [];
+          const failures = Array.isArray(result?.failures) ? result.failures : [];
+          const normalizedRecords = inserted
+            .map((entry: any) => normalizePrincipalRecord(entry?.record ?? {}))
+            .filter((record: any) => record.userId !== null && record.userId !== undefined);
+
+          if (normalizedRecords.length > 0) {
+            setPrincipals((prev) => {
+              const existingIds = new Set(normalizedRecords.map((record: any) => String(record.userId)));
+              const remaining = prev.filter((item: any) => !existingIds.has(String(item.userId ?? item.principalId ?? item.email ?? "")));
+              return sortPrincipals([...remaining, ...normalizedRecords]);
+            });
+          }
+
+          if (inserted.length > 0) {
+            const passwordMap = inserted
+              .map((entry: any) => ({
+                name:
+                  entry?.record?.name ??
+                  (
+                    ( (entry?.record?.firstName ?? entry?.record?.first_name ?? '').toString().trim() ||
+                      (entry?.record?.lastName ?? entry?.record?.last_name ?? '').toString().trim()
+                    )
+                      ? `${(entry?.record?.firstName ?? entry?.record?.first_name ?? '').toString().trim()} ${(entry?.record?.lastName ?? entry?.record?.last_name ?? '').toString().trim()}`.trim()
+                      : 'Unknown'
+                  ),
+                email: entry?.record?.email ?? '',
+                password: entry?.temporaryPassword ?? '',
+              }))
+              .filter((item: any) => item.email && item.password);
+            if (passwordMap.length > 0) {
+              setUploadedPasswords(passwordMap);
+              console.info("Temporary passwords for imported Principal accounts:", passwordMap);
+            }
+          }
+
+          const successCount = normalizedRecords.length;
+          const failureCount = failures.length + invalidRows;
+
+          if (successCount > 0) {
+            const parts: string[] = [];
+            parts.push(`Imported ${successCount} Principal${successCount === 1 ? "" : "s"} successfully.`);
+            if (failureCount > 0) {
+              parts.push(`${failureCount} row${failureCount === 1 ? "" : "s"} skipped.`);
+            }
+            if (inserted.length > 0) {
+              parts.push("Download the CSV file to view passwords.");
+            }
+            setSuccessMessage(parts.join(" "));
+          }
+
+          if (!response.ok || (successCount === 0 && failureCount > 0)) {
+            const responseError = typeof result?.error === "string" && result.error.trim().length > 0
+              ? result.error
+              : "Failed to import Principal accounts.";
+            setArchiveError(failureCount > 0 ? `${responseError} (${failureCount} row${failureCount === 1 ? "" : "s"} failed).` : responseError);
+          } else if (failureCount > 0) {
+            setArchiveError(`${failureCount} row${failureCount === 1 ? "" : "s"} could not be imported. Check for duplicate emails or missing data.`);
+          } else {
+            setArchiveError(null);
+          }
+        } catch (error) {
+          console.error("Failed to process upload", error);
+          setSuccessMessage(null);
+          setArchiveError("Error reading Excel file. Please check the format and column headers.");
+        } finally {
+          setSelectedFile(null);
+          setShowConfirmModal(false);
+          if (uploadInputRef.current) {
+            uploadInputRef.current.value = "";
+          }
+        }
+      })();
+    };
+
+    reader.readAsArrayBuffer(selectedFile);
+  }, [
+    selectedFile,
+    setPrincipals,
+    setArchiveError,
+    setSuccessMessage,
+    setSelectedFile,
+    setShowConfirmModal,
+  ]);
+
+  const handleUploadCancel = useCallback(() => {
+    setSelectedFile(null);
+    setShowConfirmModal(false);
+    if (uploadInputRef.current) {
+      uploadInputRef.current.value = "";
+    }
+  }, []);
+
   const handleSelectPrincipal = useCallback((id: string, checked: boolean) => {
     setSelectedPrincipalKeys((prev) => {
       const next = new Set(prev);
@@ -312,10 +569,12 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
   }, []);
 
   const handleArchiveSelected = useCallback(() => {
-    if (selectedPrincipalKeys.size === 0) return;
+    if (selectedPrincipalKeys.size === 0) {
+      return;
+    }
     setArchiveError(null);
     setSuccessMessage(null);
-    setShowDeleteModal(true);
+    setShowArchiveModal(true);
   }, [selectedPrincipalKeys]);
 
   const handleConfirmArchiveSelected = useCallback(async () => {
@@ -325,25 +584,20 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
 
     const selectedRecords = principals.filter((principal: any) => selectedPrincipalKeys.has(getPrincipalKey(principal)));
     const userIds = selectedRecords
-      .map((principal: any) => {
-        return (
-          extractNumericId(principal.userId ?? principal.user_id) ??
-          extractNumericId(principal.principalId ?? principal.principal_id)
-        );
-      })
+      .map((principal: any) => extractNumericId(principal.userId ?? principal.user_id ?? principal.principalId ?? principal.principal_id))
       .filter((value): value is number => value !== null);
 
     const uniqueUserIds = Array.from(new Set(userIds));
 
     if (uniqueUserIds.length === 0) {
-      setArchiveError("Unable to determine user IDs for the selected principals.");
+      setArchiveError("Unable to determine user IDs for the selected Principals.");
       return;
     }
 
     setIsArchiving(true);
     setArchiveError(null);
     try {
-      const response = await fetch("/api/it_admin/principals/archive", {
+      const response = await fetch("/api/it_admin/accounts/principal/archive", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userIds: uniqueUserIds }),
@@ -351,7 +605,7 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
 
       if (!response.ok) {
         const errorPayload = await response.json().catch(() => ({}));
-        throw new Error(errorPayload?.error ?? `Failed to archive principals (status ${response.status}).`);
+        throw new Error(errorPayload?.error ?? `Failed to archive Principals (status ${response.status}).`);
       }
 
       const payload = await response.json().catch(() => ({}));
@@ -365,9 +619,7 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
 
       setPrincipals((prev) => {
         const remaining = prev.filter((principal: any) => {
-          const candidateId =
-            extractNumericId(principal.userId ?? principal.user_id) ??
-            extractNumericId(principal.principalId ?? principal.principal_id);
+          const candidateId = extractNumericId(principal.userId ?? principal.user_id ?? principal.principalId ?? principal.principal_id);
           if (candidateId === null) {
             return true;
           }
@@ -377,27 +629,44 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
       });
 
       const archivedCount = effectiveIds.length;
-      setSuccessMessage(`Archived ${archivedCount} principal${archivedCount === 1 ? "" : "s"} successfully.`);
+      setSuccessMessage(`Archived ${archivedCount} Principal${archivedCount === 1 ? "" : "s"} successfully.`);
       setSelectedPrincipalKeys(new Set());
       setSelectMode(false);
-      setShowDeleteModal(false);
+      setShowArchiveModal(false);
     } catch (error) {
-      setArchiveError(error instanceof Error ? error.message : "Failed to archive the selected principals.");
+      setArchiveError(error instanceof Error ? error.message : "Failed to archive the selected Principals.");
     } finally {
       setIsArchiving(false);
     }
   }, [getPrincipalKey, principals, selectedPrincipalKeys, setPrincipals]);
 
-  const handleCloseDeleteModal = useCallback(() => {
-    setShowDeleteModal(false);
+  const handleCloseArchiveModal = useCallback(() => {
+    setShowArchiveModal(false);
     setArchiveError(null);
     setIsArchiving(false);
   }, []);
 
-  const handleShowDetails = (principal: any) => {
-    setSelectedPrincipal(principal);
-    setShowDetailModal(true);
-  };
+  const handleDownloadPasswords = useCallback(() => {
+    if (uploadedPasswords.length === 0) return;
+
+    const csvContent = [
+      ['Name', 'Email', 'Temporary Password'].join(','),
+      ...uploadedPasswords.map(item => 
+        [item.name, item.email, item.password].map(val => `"${val}"`).join(',')
+      )
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `principal-passwords-${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setUploadedPasswords([]);
+  }, [uploadedPasswords]);
 
   return (
     <div>
@@ -424,30 +693,26 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
             <AccountActionsMenu
               accountType="Principal"
               onAction={handleMenuAction}
-              buttonAriaLabel="Open principal actions"
+              buttonAriaLabel="Open Principal actions"
               exportConfig={{
                 onExport: handleExport,
                 disabled: filteredPrincipals.length === 0,
               }}
+              downloadPasswordsConfig={{
+                onDownload: handleDownloadPasswords,
+                disabled: uploadedPasswords.length === 0,
+              }}
             />
           )}
         </div>
+        <input
+          ref={uploadInputRef}
+          type="file"
+          accept=".xlsx,.xls"
+          onChange={handleFileChange}
+          className="hidden"
+        />
       </div>
-      
-      <PrincipalDetailsModal
-        show={showDetailModal}
-        onClose={() => setShowDetailModal(false)}
-        principal={selectedPrincipal}
-      />
-
-      <AddPrincipalModal
-        show={showAddModal}
-        onClose={handleCloseAddModal}
-        onSubmit={handleAddPrincipal}
-        form={addPrincipalForm}
-        isSubmitting={isSubmitting}
-        apiError={submitError}
-      />
 
       {successMessage && (
         <div className="mb-4 rounded-md border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">
@@ -455,40 +720,53 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
         </div>
       )}
 
+      {archiveError && !showArchiveModal && (
+        <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+          {archiveError}
+        </div>
+      )}
+
+      <AddPrincipalModal
+        show={showAddModal}
+        onClose={handleCloseAddModal}
+        onSubmit={handleSubmitAdd}
+        form={addPrincipalForm}
+        isSubmitting={isSubmitting}
+        apiError={submitError}
+      />
+      
+      <PrincipalDetailsModal
+        show={showDetailModal}
+        onClose={() => setShowDetailModal(false)}
+        principal={selectedPrincipal}
+      />
+
+      <ConfirmationModal
+        isOpen={showConfirmModal}
+        onClose={handleUploadCancel}
+        onConfirm={handleUploadConfirm}
+        title="Confirm File Upload"
+        message="Are you sure you want to upload this Excel file? This will import Principal data."
+        fileName={selectedFile?.name}
+      />
+
       <TableList
         columns={[
           { key: "no", title: "No#" },
-          { key: "principalId", title: "Principal ID" },
-          { key: "name", title: "Full Name" },
-          { key: "email", title: "Email" },
-          { key: "contactNumber", title: "Contact Number" },
+          { key: "principalId", title: "Principal ID", render: (row: any) => row.principalId ?? "—" },
+          { key: "name", title: "Full Name", render: (row: any) => row.name ?? "—" },
+          { key: "email", title: "Email", render: (row: any) => row.email ?? "—" },
+          {
+            key: "lastLogin",
+            title: "Last Login",
+            render: (row: any) => row.lastLoginDisplay ?? "—",
+          },
         ]}
-        data={filteredPrincipals.map((principal: any, idx: number) => {
-          const rawDigits =
-            typeof principal.contactNumberRaw === "string"
-              ? normalizeContact(principal.contactNumberRaw)
-              : normalizeContact(
-                  principal.contactNumber ??
-                    principal.contact_number ??
-                    principal.phoneNumber ??
-                    principal.phone_number,
-                );
-
-          return {
-            ...principal,
-            contactNumberRaw: rawDigits ?? principal.contactNumberRaw ?? null,
-            id: getPrincipalKey(principal),
-            no: idx + 1,
-            contactNumber: formatContactNumberForDisplay(
-              principal.contactNumber ??
-                principal.contact_number ??
-                principal.contactNumberRaw ??
-                principal.phoneNumber ??
-                principal.phone_number ??
-                rawDigits ?? undefined,
-            ) ?? "—",
-          };
-        })}
+        data={filteredPrincipals.map((principal, idx) => ({
+          ...principal,
+          id: getPrincipalKey(principal),
+          no: idx + 1,
+        }))}
         actions={(row: any) => (
           <UtilityButton small onClick={() => handleShowDetails(row)}>
             View Details
@@ -502,11 +780,11 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
       />
 
       <DeleteConfirmationModal
-        isOpen={showDeleteModal}
-        onClose={handleCloseDeleteModal}
+        isOpen={showArchiveModal}
+        onClose={handleCloseArchiveModal}
         onConfirm={handleConfirmArchiveSelected}
         title="Confirm Archive Selected"
-        message={`Are you sure you want to archive ${selectedPrincipalKeys.size} selected principal${selectedPrincipalKeys.size === 1 ? "" : "s"}? This will move them to the archive.`}
+        message={`Are you sure you want to archive ${selectedPrincipalKeys.size} selected Principal${selectedPrincipalKeys.size === 1 ? "" : "s"}? This will move them to the archive.`}
         confirmLabel="Archive"
         confirmDisabled={selectedPrincipalKeys.size === 0}
         isProcessing={isArchiving}

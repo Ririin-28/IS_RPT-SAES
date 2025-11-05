@@ -15,7 +15,6 @@ export default function TeacherHeader({ title, onSearch }: TeacherHeaderProps) {
   const [searchQuery, setSearchQuery] = React.useState("");
   const [showDropdown, setShowDropdown] = React.useState(false);
   const [showNotifications, setShowNotifications] = React.useState(false);
-  const router = useRouter();
   const profileBtnRef = React.useRef<HTMLButtonElement>(null);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const notificationBtnRef = React.useRef<HTMLButtonElement>(null);

@@ -27,21 +27,10 @@ interface AddITAdminModalProps {
 }
 
 /**
- * Strict format: +63-9XX-XXX-XXXX
- * Example: +63-912-345-6789
+ * Strict format: 09XX-XXX-XXXX
+ * Example: 0912-345-6789
  */
-const PHONE_FORMAT_REGEX = /^\+63-9\d{2}-\d{3}-\d{4}$/;
-
-function formatPhoneOnInput(raw: string): string {
-  const digits = raw.replace(/\D/g, "");
-  if (digits.length <= 4) {
-    return digits;
-  }
-  if (digits.length <= 7) {
-    return `${digits.slice(0, 4)}-${digits.slice(4)}`;
-  }
-  return `${digits.slice(0, 4)}-${digits.slice(4, 7)}-${digits.slice(7, 11)}`;
-}
+const PHONE_FORMAT_REGEX = /^09\d{2}-\d{3}-\d{4}$/;
 
 export default function AddITAdminModal({
   show,
@@ -60,7 +49,7 @@ export default function AddITAdminModal({
     formState: { errors, isSubmitting: formSubmitting },
   } = form;
 
-  // Register validation for phone number with international format
+  // Register validation for phone number with local format
   const phoneRegistration = register("phoneNumber", {
     required: "Phone number is required",
     validate: (value) => {
@@ -68,7 +57,7 @@ export default function AddITAdminModal({
       const trimmed = value.trim();
       return PHONE_FORMAT_REGEX.test(trimmed)
       ? true
-      : "Phone number must follow the format +63-9XX-XXX-XXXX";
+      : "Phone number must follow the format 09XX-XXX-XXXX";
     },
   });
 
@@ -76,27 +65,32 @@ export default function AddITAdminModal({
     // Keep digits only
     const digitsOnly = input.replace(/\D/g, "");
 
-    // Normalize: drop leading 0 or 63 if present to obtain 10-digit local number
+    // Remove leading 0 if duplicated
     let local = digitsOnly;
-    if (local.startsWith("63")) {
-      local = local.slice(2);
-    } else if (local.startsWith("0")) {
-      local = local.slice(1);
+    if (local.startsWith("09") && local.length > 2) {
+      local = "09" + local.slice(2).replace(/^0+/, '');
+    } else if (local.startsWith("9") && local.length >= 10) {
+      local = "09" + local.slice(1);
+    } else {
+      local = local.replace(/^0+/, '');
+      if (local.length > 0) {
+        local = "09" + local;
+      }
     }
 
-    // Limit to 10 digits (mobile local number)
-    local = local.slice(0, 10);
+    // Limit to 11 digits (09 + 9 digits)
+    local = local.slice(0, 11);
 
-    // Build formatted string progressively (so user sees dashes inserted)
-    let formatted = "+63";
+    // Build formatted string progressively
+    let formatted = "";
     if (local.length > 0) {
-      formatted += "-" + local.slice(0, Math.min(3, local.length));
+      formatted = local.slice(0, Math.min(4, local.length));
     }
-    if (local.length > 3) {
-      formatted += "-" + local.slice(3, Math.min(6, local.length));
+    if (local.length > 4) {
+      formatted += "-" + local.slice(4, Math.min(7, local.length));
     }
-    if (local.length > 6) {
-      formatted += "-" + local.slice(6, 10);
+    if (local.length > 7) {
+      formatted += "-" + local.slice(7, 11);
     }
 
     return formatted;
@@ -253,12 +247,12 @@ export default function AddITAdminModal({
                   phoneRegistration.onChange?.(e);
                 }}
                 className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
-                placeholder="+63-9XX-XXX-XXXX"
+                placeholder="09XX-XXX-XXXX"
                 inputMode="numeric"
-                maxLength={16}
+                maxLength={13} // "09XX-XXX-XXXX" is 13 chars
               />
               {!errors.phoneNumber ? (
-                <p className="text-xs text-gray-500">Format: +63-9XX-XXX-XXXX</p>
+                <p className="text-xs text-gray-500">Format: 09XX-XXX-XXXX</p>
               ) : (
                 <span className="text-xs text-red-500">{errors.phoneNumber.message as string}</span>
               )}

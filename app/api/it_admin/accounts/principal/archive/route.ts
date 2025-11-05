@@ -1,19 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import { runWithConnection } from "@/lib/db";
+import { HttpError } from "../validation/validation"; // Fixed import
 
 export const dynamic = "force-dynamic";
 
-class HttpError extends Error {
-  status: number;
+// Remove the duplicate HttpError class since we're importing it
 
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
-
-const IT_ADMIN_TABLE_CANDIDATES = ["it_admin", "it_admins", "admin", "admins"] as const;
+const PRINCIPAL_TABLE_CANDIDATES = ["principal", "principals", "principal_info"] as const;
 
 interface ArchiveResult {
   userId: number;
@@ -34,8 +28,8 @@ async function tryFetchTableColumns(connection: PoolConnection, tableName: strin
   }
 }
 
-async function resolveItAdminTable(connection: PoolConnection): Promise<{ table: string | null; columns: Set<string> }> {
-  for (const candidate of IT_ADMIN_TABLE_CANDIDATES) {
+async function resolvePrincipalTable(connection: PoolConnection): Promise<{ table: string | null; columns: Set<string> }> {
+  for (const candidate of PRINCIPAL_TABLE_CANDIDATES) {
     const columns = await tryFetchTableColumns(connection, candidate);
     if (columns && columns.size > 0) {
       return { table: candidate, columns };
@@ -79,15 +73,7 @@ function computeFullName(userRow: RowDataPacket): string | null {
 }
 
 function normalizeContact(userRow: RowDataPacket): string | null {
-  const contactKeys = [
-    "contact_number",
-    "phone_number",
-    "contact_no",
-    "contact",
-    "mobile",
-    "user_contact_number",
-    "user_phone_number",
-  ];
+  const contactKeys = ["contact_number", "phone_number", "mobile", "contact"];
   for (const key of contactKeys) {
     const value = userRow[key];
     if (typeof value === "string" && value.trim().length > 0) {
@@ -128,7 +114,7 @@ export async function POST(request: NextRequest) {
         throw new HttpError(500, "Archive table is not available.");
       }
 
-      const { table: itAdminTable, columns: itAdminColumns } = await resolveItAdminTable(connection);
+      const { table: principalTable, columns: principalColumns } = await resolvePrincipalTable(connection);
       const accountLogsColumns = await tryFetchTableColumns(connection, "account_logs");
       const canDeleteAccountLogs = !!accountLogsColumns && accountLogsColumns.has("user_id");
 
@@ -151,7 +137,7 @@ export async function POST(request: NextRequest) {
           const name = computeFullName(userRow);
           const email = typeof userRow.email === "string" ? userRow.email : null;
           const contactNumber = normalizeContact(userRow);
-          const role = typeof userRow.role === "string" && userRow.role.trim().length > 0 ? userRow.role : "admin";
+          const role = typeof userRow.role === "string" && userRow.role.trim().length > 0 ? userRow.role : "principal";
 
           const [existingArchive] = await connection.query<RowDataPacket[]>(
             "SELECT archive_id FROM archive_users WHERE user_id = ? LIMIT 1",
@@ -196,15 +182,15 @@ export async function POST(request: NextRequest) {
             );
           }
 
-          if (itAdminTable) {
-            if (itAdminColumns.has("user_id")) {
+          if (principalTable) {
+            if (principalColumns.has("user_id")) {
               await connection.query<ResultSetHeader>(
-                `DELETE FROM \`${itAdminTable}\` WHERE user_id = ?`,
+                `DELETE FROM \`${principalTable}\` WHERE user_id = ?`,
                 [userId]
               );
-            } else if (itAdminColumns.has("admin_id")) {
+            } else if (principalColumns.has("principal_id")) {
               await connection.query<ResultSetHeader>(
-                `DELETE FROM \`${itAdminTable}\` WHERE admin_id = ?`,
+                `DELETE FROM \`${principalTable}\` WHERE principal_id = ?`,
                 [userId]
               );
             }
@@ -240,7 +226,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
 
-    console.error("Failed to archive IT Admins", error);
-    return NextResponse.json({ error: "Failed to archive IT Admins." }, { status: 500 });
+    console.error("Failed to archive principals", error);
+    return NextResponse.json({ error: "Failed to archive principals." }, { status: 500 });
   }
 }

@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
-import type { UseFormReturn } from "react-hook-form";
-import BaseModal, { ModalSection, ModalLabel } from "@/components/Common/Modals/BaseModal";
+import BaseModal, { ModalLabel, ModalSection } from "@/components/Common/Modals/BaseModal";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
+import { useEffect, useMemo, useState } from "react";
+import type { UseFormReturn } from "react-hook-form";
 
 export interface AddMasterTeacherFormValues {
   teacherId: string;
@@ -16,7 +16,7 @@ export interface AddMasterTeacherFormValues {
   email: string;
   phoneNumber: string;
   grade: string;
-  // Subjects are always fixed
+  coordinatorSubject: string;
   subjects: string[];
 }
 
@@ -29,9 +29,14 @@ interface AddMasterTeacherModalProps {
   apiError?: string | null;
 }
 
-const PHONE_FORMAT_REGEX = /^\+63-9\d{2}-\d{3}-\d{4}$/;
+/**
+ * Strict format: 09XX-XXX-XXXX
+ * Example: 0912-345-6789
+ */
+const PHONE_FORMAT_REGEX = /^09\d{2}-\d{3}-\d{4}$/;
 const GRADE_OPTIONS = ["1", "2", "3", "4", "5", "6"];
 const FIXED_SUBJECTS = ["English", "Filipino", "Math"];
+const COORDINATOR_SUBJECT_OPTIONS = ["English", "Filipino", "Math"];
 
 export default function AddMasterTeacherModal({
   show,
@@ -44,71 +49,89 @@ export default function AddMasterTeacherModal({
   const {
     register,
     handleSubmit,
-    reset,
+    watch,
     setValue,
+    reset,
     formState: { errors, isSubmitting: formSubmitting },
   } = form;
 
+  // Register validation for phone number with local format
   const phoneRegistration = register("phoneNumber", {
-    required: "Contact number is required",
+    required: "Phone number is required",
     validate: (value) => {
-      if (!value) return "Contact number is required";
+      if (!value) return "Phone number is required";
       const trimmed = value.trim();
       return PHONE_FORMAT_REGEX.test(trimmed)
-        ? true
-        : "Contact number must follow the format +63-9XX-XXX-XXXX";
+      ? true
+      : "Phone number must follow the format 09XX-XXX-XXXX";
     },
   });
 
-  const formatPhoneValue = useCallback((input: string) => {
+  const formatPhoneValue = (input: string) => {
+    // Keep digits only
     const digitsOnly = input.replace(/\D/g, "");
 
+    // Remove leading 0 if duplicated
     let local = digitsOnly;
-    if (local.startsWith("63")) {
-      local = local.slice(2);
-    } else if (local.startsWith("0")) {
-      local = local.slice(1);
+    if (local.startsWith("09") && local.length > 2) {
+      local = "09" + local.slice(2).replace(/^0+/, '');
+    } else if (local.startsWith("9") && local.length >= 10) {
+      local = "09" + local.slice(1);
+    } else {
+      local = local.replace(/^0+/, '');
+      if (local.length > 0) {
+        local = "09" + local;
+      }
     }
 
-    local = local.slice(0, 10);
+    // Limit to 11 digits (09 + 9 digits)
+    local = local.slice(0, 11);
 
-    let formatted = "+63";
+    // Build formatted string progressively
+    let formatted = "";
     if (local.length > 0) {
-      formatted += "-" + local.slice(0, Math.min(3, local.length));
+      formatted = local.slice(0, Math.min(4, local.length));
     }
-    if (local.length > 3) {
-      formatted += "-" + local.slice(3, Math.min(6, local.length));
+    if (local.length > 4) {
+      formatted += "-" + local.slice(4, Math.min(7, local.length));
     }
-    if (local.length > 6) {
-      formatted += "-" + local.slice(6, 10);
+    if (local.length > 7) {
+      formatted += "-" + local.slice(7, 11);
     }
 
     return formatted;
-  }, []);
+  };
 
-  const handlePhoneInput = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      const formatted = formatPhoneValue(event.target.value);
-      setValue("phoneNumber", formatted, { shouldValidate: true, shouldDirty: true });
-    },
-    [formatPhoneValue, setValue],
-  );
+  const phoneWatch = watch("phoneNumber") || "";
+  const [displayPhone, setDisplayPhone] = useState("");
+
+  useEffect(() => {
+    setDisplayPhone(formatPhoneValue(phoneWatch));
+  }, [phoneWatch]);
+
+  const handlePhoneInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    const formatted = formatPhoneValue(raw);
+    setDisplayPhone(formatted);
+    setValue("phoneNumber", formatted, { shouldValidate: true, shouldDirty: true });
+  };
 
   const isBusy = useMemo(() => isSubmitting || formSubmitting, [isSubmitting, formSubmitting]);
 
-  const handleClose = useCallback(() => {
+  const handleClose = () => {
     reset();
+    setDisplayPhone("");
     onClose();
-  }, [onClose, reset]);
+  };
 
   // Set fixed subjects when form is initialized or reset
-  const handleFormSubmit = useCallback((values: AddMasterTeacherFormValues) => {
+  const handleFormSubmit = (values: AddMasterTeacherFormValues) => {
     const valuesWithFixedSubjects = {
       ...values,
       subjects: FIXED_SUBJECTS
     };
     onSubmit(valuesWithFixedSubjects);
-  }, [onSubmit]);
+  };
 
   const footer = (
     <>
@@ -116,13 +139,13 @@ export default function AddMasterTeacherModal({
         Cancel
       </DangerButton>
       <PrimaryButton type="submit" form="add-masterteacher-form" disabled={isBusy}>
-        {isBusy ? "Saving…" : "Save Master Teacher"}
+        {isBusy ? "Adding…" : "Add Master Teacher"}
       </PrimaryButton>
     </>
   );
 
   return (
-    <BaseModal show={show} onClose={handleClose} title="Add New Master Teacher" footer={footer}>
+    <BaseModal show={show} onClose={handleClose} title="Add Master Teacher" footer={footer}>
       <form id="add-masterteacher-form" onSubmit={handleSubmit(handleFormSubmit)} className="space-y-6">
         {apiError && (
           <div className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
@@ -234,17 +257,17 @@ export default function AddMasterTeacherModal({
               <ModalLabel required>Phone Number</ModalLabel>
               <input
                 {...phoneRegistration}
-                onChange={(event) => {
-                  handlePhoneInput(event);
-                  phoneRegistration.onChange?.(event);
+                onChange={(e) => {
+                  handlePhoneInput(e);
+                  phoneRegistration.onChange?.(e);
                 }}
                 className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
-                placeholder="+63-9XX-XXX-XXXX"
+                placeholder="09XX-XXX-XXXX"
                 inputMode="numeric"
-                maxLength={16}
+                maxLength={13} // "09XX-XXX-XXXX" is 13 chars
               />
               {!errors.phoneNumber ? (
-                <p className="text-xs text-gray-500">Format: +63-9XX-XXX-XXXX</p>
+                <p className="text-xs text-gray-500">Format: 09XX-XXX-XXXX</p>
               ) : (
                 <span className="text-xs text-red-500">{errors.phoneNumber.message as string}</span>
               )}
@@ -271,6 +294,25 @@ export default function AddMasterTeacherModal({
               </select>
               {errors.grade && (
                 <span className="text-xs text-red-500">{errors.grade.message as string}</span>
+              )}
+            </div>
+            <div className="space-y-1">
+              <ModalLabel required>Coordinator Subject</ModalLabel>
+              <select
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                {...register("coordinatorSubject", { required: "Coordinator subject is required" })}
+              >
+                <option value="" disabled>
+                  Select subject
+                </option>
+                {COORDINATOR_SUBJECT_OPTIONS.map((subject) => (
+                  <option key={subject} value={subject}>
+                    {subject}
+                  </option>
+                ))}
+              </select>
+              {errors.coordinatorSubject && (
+                <span className="text-xs text-red-500">{errors.coordinatorSubject.message as string}</span>
               )}
             </div>
             <div className="space-y-1">

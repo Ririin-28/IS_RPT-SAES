@@ -48,7 +48,10 @@ export default function ITAdminDetailsModal({ show, onClose, itAdmin }: ITAdminD
       <ModalSection title="Contact Details">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <ModalInfoItem label="Email" value={itAdmin.email} />
-          <ModalInfoItem label="Phone Number" value={itAdmin.phoneNumber} />
+          <ModalInfoItem
+            label="Phone Number"
+            value={itAdmin.contactNumberDisplay || itAdmin.contactNumber || itAdmin.phoneNumber || "—"}
+          />
         </div>
       </ModalSection>
     </BaseModal>

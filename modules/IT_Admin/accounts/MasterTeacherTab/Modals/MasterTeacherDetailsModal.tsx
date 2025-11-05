@@ -55,6 +55,7 @@ export default function MasterTeacherDetailsModal({ show, onClose, masterTeacher
       <ModalSection title="Teaching Information">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <ModalInfoItem label="Grade Handled" value={masterTeacher.grade || masterTeacher.handledGrade || masterTeacher.handled_grade} />
+          <ModalInfoItem label="Coordinator Subject" value={masterTeacher.coordinatorSubject || "—"} />
           <ModalInfoItem label="Subjects Handled" value={
             Array.isArray(masterTeacher.subjects) 
               ? masterTeacher.subjects.join(", ") 
