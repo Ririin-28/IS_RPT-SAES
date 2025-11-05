@@ -23,6 +23,35 @@ function toStringOrNull(value: unknown): string | null {
   return str.length > 0 ? str : null;
 }
 
+function normalizePhoneDigits(raw: string | null | undefined): string | null {
+  if (raw === null || raw === undefined) {
+    return null;
+  }
+
+  let digits = String(raw).replace(/\D/g, "");
+  if (digits.length === 0) {
+    return null;
+  }
+
+  if (digits.startsWith("63")) {
+    digits = digits.slice(2);
+  }
+
+  if (digits.startsWith("0")) {
+    digits = digits.slice(1);
+  }
+
+  if (digits.length > 10) {
+    digits = digits.slice(-10);
+  }
+
+  if (digits.length !== 10) {
+    return null;
+  }
+
+  return `0${digits}`;
+}
+
 function formatTimestamp(value: string | Date | null | undefined): string {
   if (!value) {
     return "—";
@@ -48,6 +77,37 @@ function formatTimestamp(value: string | Date | null | undefined): string {
   }
 }
 
+function formatLocalPhoneNumber(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const digitsOnly = value.replace(/\D/g, "");
+  if (digitsOnly.length === 0) {
+    return null;
+  }
+
+  let normalized = digitsOnly;
+  if (normalized.startsWith("63") && normalized.length >= 12) {
+    normalized = `0${normalized.slice(2)}`;
+  }
+  if (normalized.length === 10 && normalized.startsWith("9")) {
+    normalized = `0${normalized}`;
+  }
+  if (normalized.length > 11) {
+    normalized = normalized.slice(-11);
+  }
+
+  if (!normalized.startsWith("09") || normalized.length !== 11) {
+    return normalized;
+  }
+
+  const part1 = normalized.slice(0, 4);
+  const part2 = normalized.slice(4, 7);
+  const part3 = normalized.slice(7);
+  return `${part1}-${part2}-${part3}`;
+}
+
 function normalizeItAdminRecord(record: any) {
   const userId = record.userId ?? record.user_id ?? null;
   const normalized: any = {
@@ -55,15 +115,29 @@ function normalizeItAdminRecord(record: any) {
     userId,
   };
 
+  const suffix = toStringOrNull(record.suffix ?? record.suf ?? record.suffix_name);
+
   normalized.name = toStringOrNull(record.name ?? record.fullName ?? record.full_name) ?? (() => {
     const first = toStringOrNull(record.firstName ?? record.first_name);
     const middle = toStringOrNull(record.middleName ?? record.middle_name);
     const last = toStringOrNull(record.lastName ?? record.last_name);
-    return [first, middle, last].filter(Boolean).join(" ") || toStringOrNull(record.email ?? record.user_email) || (userId != null ? `User ${userId}` : "Unknown User");
+    const parts = [first, middle, last].filter(Boolean);
+    if (suffix) {
+      parts.push(suffix);
+    }
+    return parts.join(" ") || toStringOrNull(record.email ?? record.user_email) || (userId != null ? `User ${userId}` : "Unknown User");
   })();
+  normalized.suffix = suffix;
+  normalized.fullName = normalized.name;
 
   normalized.email = toStringOrNull(record.email ?? record.user_email);
-  normalized.contactNumber = toStringOrNull(record.contactNumber ?? record.contact_number ?? record.phoneNumber);
+  const contactRaw = toStringOrNull(
+    record.contactNumber ?? record.contact_number ?? record.phoneNumber ?? record.phone_number,
+  );
+  normalized.contactNumber = contactRaw;
+  const contactDisplay = formatLocalPhoneNumber(contactRaw);
+  normalized.contactNumberDisplay = contactDisplay ?? contactRaw;
+  normalized.phoneNumber = contactRaw;
   normalized.status = toStringOrNull(record.status) ?? "Active";
   normalized.lastLogin = record.lastLogin ?? null;
   normalized.lastLoginDisplay = formatTimestamp(record.lastLogin ?? null);
@@ -134,6 +208,7 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [isArchiving, setIsArchiving] = useState(false);
+  const [uploadedPasswords, setUploadedPasswords] = useState<Array<{name: string; email: string; password: string}>>([]);
 
   const addITAdminForm = useForm<AddITAdminFormValues>({
     mode: "onTouched",
@@ -141,6 +216,7 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
       firstName: "",
       middleName: "",
       lastName: "",
+      suffix: "",
       email: "",
       phoneNumber: "",
     },
@@ -223,14 +299,15 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
       firstName: values.firstName.trim(),
       middleName: values.middleName.trim() || null,
       lastName: values.lastName.trim(),
-      email: values.email.trim().toLowerCase(),
-      phoneNumber: values.phoneNumber.replace(/\D/g, ""),
+  suffix: values.suffix.trim() || null,
+  email: values.email.trim().toLowerCase(),
+  phoneNumber: normalizePhoneDigits(values.phoneNumber) ?? "",
     };
 
     setIsSubmitting(true);
     setSubmitError(null);
     try {
-      const response = await fetch("/api/it_admin/accounts", {
+      const response = await fetch("/api/it_admin/accounts/it_admin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -251,21 +328,21 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
         firstName: payload.firstName,
         middleName: payload.middleName,
         lastName: payload.lastName,
+        suffix: payload.suffix,
         email: payload.email,
         contactNumber: payload.phoneNumber,
+        phoneNumber: payload.phoneNumber,
         adminId: userId != null ? String(userId) : undefined,
         lastLogin: null,
       };
 
-      const normalizedRecord = normalizeItAdminRecord(record ?? fallbackRecord);
+  const normalizedRecord = normalizeItAdminRecord(record ?? fallbackRecord);
 
       setITAdmins((prev: any[]) => {
         const withoutExisting = prev.filter((item: any) => item?.userId !== normalizedRecord.userId);
-        const updated = sortItAdmins([...withoutExisting, normalizedRecord]);
-        return updated;
+        return sortItAdmins([...withoutExisting, normalizedRecord]);
       });
 
-      addITAdminForm.reset();
       setShowAddModal(false);
       if (temporaryPassword) {
         setSuccessMessage(
@@ -297,45 +374,208 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
   }, []);
 
   const handleUploadConfirm = useCallback(() => {
-    if (!selectedFile) return;
+    if (!selectedFile) {
+      return;
+    }
 
     const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: "array" });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet);
+    reader.onload = (event) => {
+      void (async () => {
+        try {
+          const data = new Uint8Array(event.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: "array" });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          const jsonData = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: "" });
 
-        const newAdmins = jsonData.map((row: any, index: number) => {
-          const fullName = `${row.FIRSTNAME || ""} ${row.MIDDLENAME || ""} ${row.LASTNAME || ""}`.trim();
-          
-          return normalizeItAdminRecord({
-            userId: Date.now() + index,
-            adminId: row["ADMIN ID"] || "",
-            name: fullName,
-            email: row["EMAIL"] || "",
-            contactNumber: row["CONTACT NUMBER"] || "",
-            status: "Active",
-            lastLogin: null,
+          const readField = (row: Record<string, any>, keys: string[]): string => {
+            for (const key of keys) {
+              if (row[key] !== undefined && row[key] !== null) {
+                const value = String(row[key]).trim();
+                if (value.length > 0) {
+                  return value;
+                }
+              }
+            }
+            return "";
+          };
+
+          let invalidRows = 0;
+          const adminsPayload = jsonData
+            .map((row) => {
+              const firstName = readField(row, [
+                "FIRSTNAME",
+                "FIRST_NAME",
+                "FIRST NAME",
+                "First Name",
+                "firstName",
+              ]);
+              const middleName = readField(row, [
+                "MIDDLENAME",
+                "MIDDLE_NAME",
+                "MIDDLE NAME",
+                "Middle Name",
+                "middleName",
+              ]);
+              const lastName = readField(row, [
+                "LASTNAME",
+                "LAST_NAME",
+                "LAST NAME",
+                "Last Name",
+                "lastName",
+                "SURNAME",
+              ]);
+              const suffix = readField(row, [
+                "SUFFIX",
+                "Suffix",
+                "suffix",
+              ]);
+              const email = readField(row, ["EMAIL", "Email", "email"]).toLowerCase();
+              const contactRaw = readField(row, [
+                "CONTACT NUMBER",
+                "CONTACT_NUMBER",
+                "CONTACTNUMBER",
+                "Contact Number",
+                "contactNumber",
+                "CONTACT",
+                "Contact",
+              ]);
+              const normalizedPhone = normalizePhoneDigits(contactRaw);
+
+              if (!firstName || !lastName || !email || !normalizedPhone) {
+                invalidRows += 1;
+                return null;
+              }
+
+              return {
+                firstName,
+                middleName: middleName || null,
+                lastName,
+                suffix: suffix || null,
+                email,
+                phoneNumber: normalizedPhone,
+              };
+            })
+            .filter((payload): payload is Required<typeof payload> => payload !== null);
+
+          if (adminsPayload.length === 0) {
+            setSuccessMessage(null);
+            setArchiveError(
+              invalidRows > 0
+                ? "No valid rows found in the uploaded file. Check required columns (First Name, Last Name, Email, Contact Number)."
+                : "The uploaded file does not contain any data.",
+            );
+            return;
+          }
+
+          setArchiveError(null);
+          setSuccessMessage(null);
+
+          const response = await fetch("/api/it_admin/accounts/it_admin/upload", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ admins: adminsPayload }),
           });
-        });
 
-        setITAdmins((prev) => sortItAdmins([...prev, ...newAdmins]));
-        alert(`Successfully imported ${newAdmins.length} IT Admins`);
-      } catch (error) {
-        console.error(error);
-        alert("Error reading Excel file. Please check the format and column headers.");
-      }
+          const result = await response.json().catch(() => ({}));
+          const inserted = Array.isArray(result?.inserted) ? result.inserted : [];
+          const failures = Array.isArray(result?.failures) ? result.failures : [];
+          
+          if (failures.length > 0) {
+            console.warn("IT Admin upload skipped rows:", failures);
+          }
+          const normalizedRecords = inserted
+            .map((entry: any) => normalizeItAdminRecord(entry?.record ?? {}))
+            .filter((record: any) => record.userId !== null && record.userId !== undefined);
+
+          if (normalizedRecords.length > 0) {
+            setITAdmins((prev) => {
+              const existingIds = new Set(normalizedRecords.map((record: any) => String(record.userId)));
+              const remaining = prev.filter((item: any) => !existingIds.has(String(item.userId ?? item.adminId ?? item.email ?? "")));
+              return sortItAdmins([...remaining, ...normalizedRecords]);
+            });
+          }
+
+          if (inserted.length > 0) {
+            const passwordMap = inserted
+                .map((entry: any) => ({
+                  name: (() => {
+                    const rec = entry?.record ?? {};
+                    const explicitName = toStringOrNull(rec.name);
+                    if (explicitName) return explicitName;
+                    const first = toStringOrNull(rec.firstName ?? rec.first_name) ?? "";
+                    const last = toStringOrNull(rec.lastName ?? rec.last_name) ?? "";
+                    const composed = `${first} ${last}`.trim();
+                    return composed.length > 0 ? composed : "Unknown";
+                  })(),
+                  email: entry?.record?.email ?? '',
+                  password: entry?.temporaryPassword ?? '',
+                }))
+                .filter((item: any) => item.email && item.password);
+            if (passwordMap.length > 0) {
+              setUploadedPasswords(passwordMap);
+              console.info("Temporary passwords for imported IT Admin accounts:", passwordMap);
+            }
+          }
+
+          const successCount = normalizedRecords.length;
+          const failureCount = failures.length + invalidRows;
+
+          if (successCount > 0) {
+            const parts: string[] = [];
+            parts.push(`Imported ${successCount} IT Admin${successCount === 1 ? "" : "s"} successfully.`);
+            if (failureCount > 0) {
+              parts.push(`${failureCount} row${failureCount === 1 ? "" : "s"} skipped.`);
+            }
+            if (inserted.length > 0) {
+              parts.push("Download the CSV file to view passwords.");
+            }
+            setSuccessMessage(parts.join(" "));
+          }
+
+          if (!response.ok || (successCount === 0 && failureCount > 0)) {
+            const responseError = typeof result?.error === "string" && result.error.trim().length > 0
+              ? result.error
+              : "Failed to import IT Admin accounts.";
+            const failurePreview = failures.slice(0, 3).map((failure: any) => {
+              const label = failure?.email ? `${failure.email}` : `Row ${Number(failure?.index ?? 0) + 1}`;
+              return `${label}: ${failure?.error ?? "Unknown error"}`;
+            });
+            const details = failurePreview.length > 0 ? ` Details: ${failurePreview.join("; ")}` : "";
+            setArchiveError(`${responseError} (${failureCount} row${failureCount === 1 ? "" : "s"} failed).${details}`.trim());
+          } else if (failureCount > 0) {
+            const failurePreview = failures.slice(0, 3).map((failure: any) => {
+              const label = failure?.email ? `${failure.email}` : `Row ${Number(failure?.index ?? 0) + 1}`;
+              return `${label}: ${failure?.error ?? "Unknown error"}`;
+            });
+            const detailText = failurePreview.length > 0 ? ` Details: ${failurePreview.join("; ")}` : "";
+            setArchiveError(`${failureCount} row${failureCount === 1 ? "" : "s"} could not be imported. Check for duplicate emails or missing data.${detailText}`.trim());
+          } else {
+            setArchiveError(null);
+          }
+        } catch (error) {
+          console.error("Failed to process upload", error);
+          setSuccessMessage(null);
+          setArchiveError("Error reading Excel file. Please check the format and column headers.");
+        } finally {
+          setSelectedFile(null);
+          setShowConfirmModal(false);
+          if (uploadInputRef.current) {
+            uploadInputRef.current.value = "";
+          }
+        }
+      })();
     };
+
     reader.readAsArrayBuffer(selectedFile);
-    setSelectedFile(null);
-    setShowConfirmModal(false);
-    if (uploadInputRef.current) {
-      uploadInputRef.current.value = "";
-    }
-  }, [selectedFile, setITAdmins]);
+  }, [
+    selectedFile,
+    setITAdmins,
+    setArchiveError,
+    setSuccessMessage,
+    setSelectedFile,
+    setShowConfirmModal,
+  ]);
 
   const handleUploadCancel = useCallback(() => {
     setSelectedFile(null);
@@ -401,7 +641,7 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
     setIsArchiving(true);
     setArchiveError(null);
     try {
-      const response = await fetch("/api/it_admin/accounts/archive", {
+  const response = await fetch("/api/it_admin/accounts/it_admin/archive", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userIds: uniqueUserIds }),
@@ -450,6 +690,28 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
     setIsArchiving(false);
   }, []);
 
+  const handleDownloadPasswords = useCallback(() => {
+    if (uploadedPasswords.length === 0) return;
+
+    const csvContent = [
+      ['Name', 'Email', 'Temporary Password'].join(','),
+      ...uploadedPasswords.map(item => 
+        [item.name, item.email, item.password].map(val => `"${val}"`).join(',')
+      )
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `it-admin-passwords-${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setUploadedPasswords([]);
+  }, [uploadedPasswords]);
+
 
 
   return (
@@ -481,6 +743,10 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
               exportConfig={{
                 onExport: handleExport,
                 disabled: filteredITAdmins.length === 0,
+              }}
+              downloadPasswordsConfig={{
+                onDownload: handleDownloadPasswords,
+                disabled: uploadedPasswords.length === 0,
               }}
             />
           )}

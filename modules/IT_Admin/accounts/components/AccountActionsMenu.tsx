@@ -7,6 +7,7 @@ export type AccountType = "Principal" | "IT Admin" | "Master Teachers" | "Teache
 
 export type AccountActionKey =
   | "principal:add"
+  | "principal:upload"
   | "principal:select"
   | "it_admin:add"
   | "it_admin:upload"
@@ -57,6 +58,7 @@ const ExportIcon = () => (
 const ACCOUNT_ACTIONS: Record<AccountType, ActionConfig[]> = {
   Principal: [
     { label: "Add Principal", action: "principal:add", icon: <AddIcon /> },
+    { label: "Upload file", action: "principal:upload", icon: <UploadIcon /> },
     { label: "Select", action: "principal:select", icon: <SelectIcon /> },
   ],
   "IT Admin": [
@@ -86,6 +88,10 @@ interface AccountActionsMenuProps {
     disabled?: boolean;
     onExport: () => void;
   };
+  downloadPasswordsConfig?: {
+    disabled?: boolean;
+    onDownload: () => void;
+  };
 }
 
 export default function AccountActionsMenu({
@@ -94,6 +100,7 @@ export default function AccountActionsMenu({
   buttonAriaLabel = "Open menu",
   className = "",
   exportConfig,
+  downloadPasswordsConfig,
 }: AccountActionsMenuProps) {
   const handleAction = useCallback(
     (action: AccountActionKey, close: () => void) => {
@@ -142,25 +149,48 @@ export default function AccountActionsMenu({
               </button>
             ))}
             {exportConfig && (uploadIndex >= 0 || addIndex >= 0) && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (exportConfig.disabled) {
-                    return;
-                  }
-                  exportConfig.onExport();
-                  close();
-                }}
-                className={`flex w-full items-center gap-2 px-4 py-2 text-left text-sm ${
-                  exportConfig.disabled
-                    ? "text-gray-300 cursor-not-allowed"
-                    : "text-[#013300] hover:bg-gray-50"
-                }`}
-                aria-disabled={exportConfig.disabled}
-              >
-                <ExportIcon />
-                {exportConfig.label ?? "Export to Excel"}
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (exportConfig.disabled) {
+                      return;
+                    }
+                    exportConfig.onExport();
+                    close();
+                  }}
+                  className={`flex w-full items-center gap-2 px-4 py-2 text-left text-sm ${
+                    exportConfig.disabled
+                      ? "text-gray-300 cursor-not-allowed"
+                      : "text-[#013300] hover:bg-gray-50"
+                  }`}
+                  aria-disabled={exportConfig.disabled}
+                >
+                  <ExportIcon />
+                  {exportConfig.label ?? "Export to Excel"}
+                </button>
+                {downloadPasswordsConfig && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (downloadPasswordsConfig.disabled) {
+                        return;
+                      }
+                      downloadPasswordsConfig.onDownload();
+                      close();
+                    }}
+                    className={`flex w-full items-center gap-2 px-4 py-2 text-left text-sm ${
+                      downloadPasswordsConfig.disabled
+                        ? "text-gray-300 cursor-not-allowed"
+                        : "text-[#013300] hover:bg-gray-50"
+                    }`}
+                    aria-disabled={downloadPasswordsConfig.disabled}
+                  >
+                    <ExportIcon />
+                    Download Passwords CSV
+                  </button>
+                )}
+              </>
             )}
             {afterExport.map(({ label, action, icon }) => (
               <button
@@ -173,25 +203,48 @@ export default function AccountActionsMenu({
               </button>
             ))}
             {exportConfig && uploadIndex < 0 && addIndex < 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (exportConfig.disabled) {
-                    return;
-                  }
-                  exportConfig.onExport();
-                  close();
-                }}
-                className={`flex w-full items-center gap-2 px-4 py-2 text-left text-sm ${
-                  exportConfig.disabled
-                    ? "text-gray-300 cursor-not-allowed"
-                    : "text-[#013300] hover:bg-gray-50"
-                }`}
-                aria-disabled={exportConfig.disabled}
-              >
-                <ExportIcon />
-                {exportConfig.label ?? "Export to Excel"}
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (exportConfig.disabled) {
+                      return;
+                    }
+                    exportConfig.onExport();
+                    close();
+                  }}
+                  className={`flex w-full items-center gap-2 px-4 py-2 text-left text-sm ${
+                    exportConfig.disabled
+                      ? "text-gray-300 cursor-not-allowed"
+                      : "text-[#013300] hover:bg-gray-50"
+                  }`}
+                  aria-disabled={exportConfig.disabled}
+                >
+                  <ExportIcon />
+                  {exportConfig.label ?? "Export to Excel"}
+                </button>
+                {downloadPasswordsConfig && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (downloadPasswordsConfig.disabled) {
+                        return;
+                      }
+                      downloadPasswordsConfig.onDownload();
+                      close();
+                    }}
+                    className={`flex w-full items-center gap-2 px-4 py-2 text-left text-sm ${
+                      downloadPasswordsConfig.disabled
+                        ? "text-gray-300 cursor-not-allowed"
+                        : "text-[#013300] hover:bg-gray-50"
+                    }`}
+                    aria-disabled={downloadPasswordsConfig.disabled}
+                  >
+                    <ExportIcon />
+                    Download Passwords CSV
+                  </button>
+                )}
+              </>
             )}
           </div>
         );

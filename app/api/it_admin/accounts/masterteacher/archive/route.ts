@@ -1,36 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import { runWithConnection } from "@/lib/db";
+import { HttpError } from "../validation/validation";
 
 export const dynamic = "force-dynamic";
 
-class HttpError extends Error {
-  status: number;
+const MASTER_TEACHER_PRIMARY_TABLES = [
+  "master_teacher",
+  "master_teachers",
+  "masterteacher",
+  "master_teacher_info",
+  "master_teacher_tbl",
+  "mt_coordinator",
+];
 
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
+const MASTER_TEACHER_RELATED_TABLES = [
+  "remedial_teacher",
+  "remedial_teachers",
+  "remedial_teacher_info",
+  "remedial_teacher_tbl",
+  "master_teacher_assignment",
+];
 
-const TEACHER_TABLE_CANDIDATES = [
-  "teacher",
-  "teachers",
-  "teacher_info",
-  "teacher_accounts",
-  "faculty",
-  "teacher_tbl",
-] as const;
+const MASTER_TEACHER_TABLE_CANDIDATES = Array.from(
+  new Set<string>([...MASTER_TEACHER_PRIMARY_TABLES, ...MASTER_TEACHER_RELATED_TABLES]),
+);
 
 interface ArchiveResult {
   userId: number;
   name: string | null;
   email: string | null;
-}
-
-interface ReferencingEntry {
-  column: string;
-  referencedColumn: string;
 }
 
 async function fetchTableColumns(connection: PoolConnection, tableName: string): Promise<Set<string>> {
@@ -46,14 +45,27 @@ async function tryFetchTableColumns(connection: PoolConnection, tableName: strin
   }
 }
 
-async function resolveTeacherTable(connection: PoolConnection): Promise<{ table: string | null; columns: Set<string> }> {
-  for (const candidate of TEACHER_TABLE_CANDIDATES) {
+interface TableInfo {
+  table: string;
+  columns: Set<string>;
+}
+
+async function resolveMasterTeacherTables(connection: PoolConnection): Promise<TableInfo[]> {
+  const resolved: TableInfo[] = [];
+
+  for (const candidate of MASTER_TEACHER_TABLE_CANDIDATES) {
     const columns = await tryFetchTableColumns(connection, candidate);
     if (columns && columns.size > 0) {
-      return { table: candidate, columns };
+      resolved.push({ table: candidate, columns });
     }
   }
-  return { table: null, columns: new Set<string>() };
+
+  return resolved;
+}
+
+interface ReferencingEntry {
+  column: string;
+  referencedColumn: string;
 }
 
 async function fetchReferencingMap(connection: PoolConnection, targetTable: string): Promise<Map<string, ReferencingEntry[]>> {
@@ -126,6 +138,25 @@ function normalizeContact(userRow: RowDataPacket): string | null {
   return null;
 }
 
+function getColumnValue(row: RowDataPacket | null, column: string): any {
+  if (!row) {
+    return undefined;
+  }
+
+  if (column in row) {
+    return row[column as keyof typeof row];
+  }
+
+  const normalized = column.toLowerCase();
+  for (const key of Object.keys(row)) {
+    if (key.toLowerCase() === normalized) {
+      return row[key as keyof typeof row];
+    }
+  }
+
+  return undefined;
+}
+
 export async function POST(request: NextRequest) {
   let payload: any;
   try {
@@ -157,11 +188,14 @@ export async function POST(request: NextRequest) {
         throw new HttpError(500, "Archive table is not available.");
       }
 
-      const { table: teacherTable, columns: teacherColumns } = await resolveTeacherTable(connection);
+      const masterTeacherTables = await resolveMasterTeacherTables(connection);
       const accountLogsColumns = await tryFetchTableColumns(connection, "account_logs");
       const canDeleteAccountLogs = !!accountLogsColumns && accountLogsColumns.has("user_id");
       const userReferencingMap = await fetchReferencingMap(connection, "users");
-      const teacherReferencingMap = teacherTable ? await fetchReferencingMap(connection, teacherTable) : new Map<string, ReferencingEntry[]>();
+      const masterTeacherReferencingMaps = new Map<string, Map<string, ReferencingEntry[]>>();
+      for (const { table } of masterTeacherTables) {
+        masterTeacherReferencingMaps.set(table, await fetchReferencingMap(connection, table));
+      }
 
       await connection.beginTransaction();
       try {
@@ -182,15 +216,29 @@ export async function POST(request: NextRequest) {
           const name = computeFullName(userRow);
           const email = typeof userRow.email === "string" ? userRow.email : null;
           const contactNumber = normalizeContact(userRow);
-          const role = typeof userRow.role === "string" && userRow.role.trim().length > 0 ? userRow.role : "teacher";
+          const role = typeof userRow.role === "string" && userRow.role.trim().length > 0 ? userRow.role : "master_teacher";
 
-          let teacherRow: RowDataPacket | null = null;
-          if (teacherTable) {
-            const [rows] = await connection.query<RowDataPacket[]>(
-              `SELECT * FROM \`${teacherTable}\` WHERE user_id = ? LIMIT 1`,
-              [userId],
+          const masterTeacherRows = new Map<string, RowDataPacket>();
+          for (const { table, columns } of masterTeacherTables) {
+            const lookupColumns = ["user_id", "master_teacher_id", "masterteacher_id", "teacher_id"].filter((column) =>
+              columns.has(column),
             );
-            teacherRow = rows.length > 0 ? rows[0] : null;
+
+            let fetchedRow: RowDataPacket | null = null;
+            for (const column of lookupColumns) {
+              const [rows] = await connection.query<RowDataPacket[]>(
+                `SELECT * FROM \`${table}\` WHERE \`${column}\` = ? LIMIT 1`,
+                [userId],
+              );
+              if (rows.length > 0) {
+                fetchedRow = rows[0];
+                break;
+              }
+            }
+
+            if (fetchedRow) {
+              masterTeacherRows.set(table, fetchedRow);
+            }
           }
 
           const [existingArchive] = await connection.query<RowDataPacket[]>(
@@ -236,48 +284,78 @@ export async function POST(request: NextRequest) {
             );
           }
 
-          if (teacherRow) {
-            for (const [tableName, entries] of teacherReferencingMap) {
-              if (!entries.length) {
-                continue;
-              }
+          for (const { table, columns } of masterTeacherTables) {
+            const masterTeacherRow = masterTeacherRows.get(table);
+            if (!masterTeacherRow) {
+              continue;
+            }
 
-              if (teacherTable && tableName.toLowerCase() === teacherTable.toLowerCase()) {
-                continue;
-              }
-
-              for (const { column, referencedColumn } of entries) {
-                if (!column || !referencedColumn) {
+            const referencingMap = masterTeacherReferencingMaps.get(table);
+            if (referencingMap) {
+              for (const [tableName, entries] of referencingMap) {
+                if (!entries.length) {
                   continue;
                 }
-                const value = teacherRow[referencedColumn];
-                if (value === null || value === undefined) {
+
+                const normalizedReferencedTable = tableName.toLowerCase();
+                if (normalizedReferencedTable === table.toLowerCase()) {
                   continue;
                 }
-                await connection.query<ResultSetHeader>(
-                  `DELETE FROM \`${tableName}\` WHERE \`${column}\` = ?`,
-                  [value],
-                );
+                if (normalizedReferencedTable === "archive_users" || normalizedReferencedTable === "account_logs") {
+                  continue;
+                }
+
+                for (const { column, referencedColumn } of entries) {
+                  if (!column || !referencedColumn) {
+                    continue;
+                  }
+                  const value = getColumnValue(masterTeacherRow, referencedColumn);
+                  if (value === null || value === undefined) {
+                    continue;
+                  }
+                  await connection.query<ResultSetHeader>(
+                    `DELETE FROM \`${tableName}\` WHERE \`${column}\` = ?`,
+                    [value],
+                  );
+                }
               }
             }
-          }
 
-          if (teacherTable) {
-            if (teacherColumns.has("user_id")) {
+            const deletionCandidates: Array<{ column: string; useUserId: boolean }> = [
+              { column: "user_id", useUserId: true },
+              { column: "master_teacher_id", useUserId: false },
+              { column: "masterteacher_id", useUserId: false },
+              { column: "teacher_id", useUserId: false },
+              { column: "coord_id", useUserId: false },
+              { column: "remedial_teacher_id", useUserId: false },
+              { column: "remedial_id", useUserId: false },
+            ];
+
+            let deletedFromTable = false;
+            for (const { column, useUserId } of deletionCandidates) {
+              if (!columns.has(column)) {
+                continue;
+              }
+              const deleteValue = useUserId ? userId : getColumnValue(masterTeacherRow, column);
+              if (deleteValue === null || deleteValue === undefined) {
+                continue;
+              }
               await connection.query<ResultSetHeader>(
-                `DELETE FROM \`${teacherTable}\` WHERE user_id = ?`,
-                [userId],
+                `DELETE FROM \`${table}\` WHERE \`${column}\` = ?`,
+                [deleteValue],
               );
-            } else if (teacherColumns.has("teacher_id")) {
-              await connection.query<ResultSetHeader>(
-                `DELETE FROM \`${teacherTable}\` WHERE teacher_id = ?`,
-                [userId],
-              );
-            } else if (teacherColumns.has("employee_id")) {
-              await connection.query<ResultSetHeader>(
-                `DELETE FROM \`${teacherTable}\` WHERE employee_id = ?`,
-                [userId],
-              );
+              deletedFromTable = true;
+              break;
+            }
+
+            if (!deletedFromTable && columns.has("id")) {
+              const idValue = getColumnValue(masterTeacherRow, "id");
+              if (idValue !== null && idValue !== undefined) {
+                await connection.query<ResultSetHeader>(
+                  `DELETE FROM \`${table}\` WHERE \`id\` = ?`,
+                  [idValue],
+                );
+              }
             }
           }
 
@@ -292,7 +370,10 @@ export async function POST(request: NextRequest) {
             if (normalizedTableName === "account_logs") {
               continue;
             }
-            if (teacherTable && normalizedTableName === teacherTable.toLowerCase()) {
+            const matchesMasterTeacherTables = masterTeacherTables.some(
+              ({ table }) => table.toLowerCase() === normalizedTableName,
+            );
+            if (matchesMasterTeacherTables) {
               continue;
             }
 
@@ -334,7 +415,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
 
-    console.error("Failed to archive teachers", error);
-    return NextResponse.json({ error: "Failed to archive teachers." }, { status: 500 });
+    console.error("Failed to archive master teachers", error);
+    return NextResponse.json({ error: "Failed to archive master teachers." }, { status: 500 });
   }
 }

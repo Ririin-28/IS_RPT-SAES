@@ -1,24 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import { runWithConnection } from "@/lib/db";
+import { HttpError } from "../validation/validation";
 
 export const dynamic = "force-dynamic";
 
-class HttpError extends Error {
-  status: number;
-
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
-
-const PRINCIPAL_TABLE_CANDIDATES = ["principal", "principals", "principal_info"] as const;
+const TEACHER_TABLE_CANDIDATES = [
+  "teacher",
+  "teachers",
+  "teacher_info",
+  "teacher_accounts",
+  "faculty",
+  "teacher_tbl",
+] as const;
 
 interface ArchiveResult {
   userId: number;
   name: string | null;
   email: string | null;
+}
+
+interface ReferencingEntry {
+  column: string;
+  referencedColumn: string;
 }
 
 async function fetchTableColumns(connection: PoolConnection, tableName: string): Promise<Set<string>> {
@@ -34,15 +38,42 @@ async function tryFetchTableColumns(connection: PoolConnection, tableName: strin
   }
 }
 
-async function resolvePrincipalTable(connection: PoolConnection): Promise<{ table: string | null; columns: Set<string> }> {
-  for (const candidate of PRINCIPAL_TABLE_CANDIDATES) {
+async function resolveTeacherTable(connection: PoolConnection): Promise<{ table: string | null; columns: Set<string> }> {
+  for (const candidate of TEACHER_TABLE_CANDIDATES) {
     const columns = await tryFetchTableColumns(connection, candidate);
     if (columns && columns.size > 0) {
       return { table: candidate, columns };
     }
   }
-
   return { table: null, columns: new Set<string>() };
+}
+
+async function fetchReferencingMap(connection: PoolConnection, targetTable: string): Promise<Map<string, ReferencingEntry[]>> {
+  const [rows] = await connection.query<RowDataPacket[]>(
+    "SELECT TABLE_NAME, COLUMN_NAME, REFERENCED_COLUMN_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE REFERENCED_TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME = ?",
+    [targetTable],
+  );
+
+  const tableMap = new Map<string, ReferencingEntry[]>();
+  for (const row of rows) {
+    const tableNameRaw = (row.TABLE_NAME ?? row.table_name) as string | null | undefined;
+    const columnNameRaw = (row.COLUMN_NAME ?? row.column_name) as string | null | undefined;
+    const referencedColumnRaw = (row.REFERENCED_COLUMN_NAME ?? row.referenced_column_name) as string | null | undefined;
+
+    const tableName = tableNameRaw ? String(tableNameRaw).trim() : "";
+    const columnName = columnNameRaw ? String(columnNameRaw).trim() : "";
+    const referencedColumn = referencedColumnRaw ? String(referencedColumnRaw).trim() : "";
+
+    if (!tableName || !columnName || !referencedColumn) {
+      continue;
+    }
+
+    const entries = tableMap.get(tableName) ?? [];
+    entries.push({ column: columnName, referencedColumn });
+    tableMap.set(tableName, entries);
+  }
+
+  return tableMap;
 }
 
 function computeFullName(userRow: RowDataPacket): string | null {
@@ -52,8 +83,7 @@ function computeFullName(userRow: RowDataPacket): string | null {
   }
 
   const parts: string[] = [];
-  const candidateKeys = ["first_name", "middle_name", "last_name"];
-  for (const key of candidateKeys) {
+  for (const key of ["first_name", "middle_name", "last_name"]) {
     const value = userRow[key];
     if (typeof value === "string" && value.trim().length > 0) {
       parts.push(value.trim());
@@ -79,8 +109,7 @@ function computeFullName(userRow: RowDataPacket): string | null {
 }
 
 function normalizeContact(userRow: RowDataPacket): string | null {
-  const contactKeys = ["contact_number", "phone_number", "mobile", "contact"];
-  for (const key of contactKeys) {
+  for (const key of ["contact_number", "phone_number", "mobile", "contact"]) {
     const value = userRow[key];
     if (typeof value === "string" && value.trim().length > 0) {
       return value.trim();
@@ -120,9 +149,11 @@ export async function POST(request: NextRequest) {
         throw new HttpError(500, "Archive table is not available.");
       }
 
-      const { table: principalTable, columns: principalColumns } = await resolvePrincipalTable(connection);
+      const { table: teacherTable, columns: teacherColumns } = await resolveTeacherTable(connection);
       const accountLogsColumns = await tryFetchTableColumns(connection, "account_logs");
       const canDeleteAccountLogs = !!accountLogsColumns && accountLogsColumns.has("user_id");
+      const userReferencingMap = await fetchReferencingMap(connection, "users");
+      const teacherReferencingMap = teacherTable ? await fetchReferencingMap(connection, teacherTable) : new Map<string, ReferencingEntry[]>();
 
       await connection.beginTransaction();
       try {
@@ -132,7 +163,7 @@ export async function POST(request: NextRequest) {
         for (const userId of userIds) {
           const [userRows] = await connection.query<RowDataPacket[]>(
             "SELECT * FROM users WHERE user_id = ? LIMIT 1",
-            [userId]
+            [userId],
           );
 
           if (userRows.length === 0) {
@@ -143,11 +174,20 @@ export async function POST(request: NextRequest) {
           const name = computeFullName(userRow);
           const email = typeof userRow.email === "string" ? userRow.email : null;
           const contactNumber = normalizeContact(userRow);
-          const role = typeof userRow.role === "string" && userRow.role.trim().length > 0 ? userRow.role : "principal";
+          const role = typeof userRow.role === "string" && userRow.role.trim().length > 0 ? userRow.role : "teacher";
+
+          let teacherRow: RowDataPacket | null = null;
+          if (teacherTable) {
+            const [rows] = await connection.query<RowDataPacket[]>(
+              `SELECT * FROM \`${teacherTable}\` WHERE user_id = ? LIMIT 1`,
+              [userId],
+            );
+            teacherRow = rows.length > 0 ? rows[0] : null;
+          }
 
           const [existingArchive] = await connection.query<RowDataPacket[]>(
             "SELECT archive_id FROM archive_users WHERE user_id = ? LIMIT 1",
-            [userId]
+            [userId],
           );
 
           if (existingArchive.length === 0) {
@@ -184,30 +224,83 @@ export async function POST(request: NextRequest) {
 
             await connection.query<ResultSetHeader>(
               `INSERT INTO archive_users (${columnsSql}) VALUES (${placeholders})`,
-              values
+              values,
             );
           }
 
-          if (principalTable) {
-            if (principalColumns.has("user_id")) {
+          if (teacherRow) {
+            for (const [tableName, entries] of teacherReferencingMap) {
+              if (!entries.length) {
+                continue;
+              }
+
+              if (teacherTable && tableName.toLowerCase() === teacherTable.toLowerCase()) {
+                continue;
+              }
+
+              for (const { column, referencedColumn } of entries) {
+                if (!column || !referencedColumn) {
+                  continue;
+                }
+                const value = teacherRow[referencedColumn];
+                if (value === null || value === undefined) {
+                  continue;
+                }
+                await connection.query<ResultSetHeader>(
+                  `DELETE FROM \`${tableName}\` WHERE \`${column}\` = ?`,
+                  [value],
+                );
+              }
+            }
+          }
+
+          if (teacherTable) {
+            if (teacherColumns.has("user_id")) {
               await connection.query<ResultSetHeader>(
-                `DELETE FROM \`${principalTable}\` WHERE user_id = ?`,
-                [userId]
+                `DELETE FROM \`${teacherTable}\` WHERE user_id = ?`,
+                [userId],
               );
-            } else if (principalColumns.has("principal_id")) {
+            } else if (teacherColumns.has("teacher_id")) {
               await connection.query<ResultSetHeader>(
-                `DELETE FROM \`${principalTable}\` WHERE principal_id = ?`,
-                [userId]
+                `DELETE FROM \`${teacherTable}\` WHERE teacher_id = ?`,
+                [userId],
+              );
+            } else if (teacherColumns.has("employee_id")) {
+              await connection.query<ResultSetHeader>(
+                `DELETE FROM \`${teacherTable}\` WHERE employee_id = ?`,
+                [userId],
+              );
+            }
+          }
+
+          for (const [tableName, entries] of userReferencingMap) {
+            const normalizedTableName = tableName.toLowerCase();
+            if (normalizedTableName === "users") {
+              continue;
+            }
+            if (normalizedTableName === "archive_users") {
+              continue;
+            }
+            if (normalizedTableName === "account_logs") {
+              continue;
+            }
+            if (teacherTable && normalizedTableName === teacherTable.toLowerCase()) {
+              continue;
+            }
+
+            for (const { column } of entries) {
+              if (!column) {
+                continue;
+              }
+              await connection.query<ResultSetHeader>(
+                `DELETE FROM \`${tableName}\` WHERE \`${column}\` = ?`,
+                [userId],
               );
             }
           }
 
           if (canDeleteAccountLogs) {
-            // Satisfy FK constraint before removing the user row.
-            await connection.query<ResultSetHeader>(
-              "DELETE FROM `account_logs` WHERE user_id = ?",
-              [userId]
-            );
+            await connection.query<ResultSetHeader>("DELETE FROM `account_logs` WHERE user_id = ?", [userId]);
           }
 
           await connection.query<ResultSetHeader>("DELETE FROM users WHERE user_id = ?", [userId]);
@@ -233,7 +326,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
 
-    console.error("Failed to archive principals", error);
-    return NextResponse.json({ error: "Failed to archive principals." }, { status: 500 });
+    console.error("Failed to archive teachers", error);
+    return NextResponse.json({ error: "Failed to archive teachers." }, { status: 500 });
   }
 }

@@ -232,7 +232,11 @@ export default function ITAdminAccounts() {
       setIsLoading(true);
       setError(null);
       try {
-  const response = await fetch(`/api/it_admin/accounts?role=${role}`, {
+        const endpoint = accountType === "IT Admin"
+          ? "/api/it_admin/accounts/it_admin"
+          : `/api/it_admin/accounts?role=${role}`;
+
+        const response = await fetch(endpoint, {
           cache: "no-store",
           signal: controller.signal,
         });
@@ -341,9 +345,6 @@ export default function ITAdminAccounts() {
                     teachers={accounts}
                     setTeachers={setAccounts}
                     searchTerm={searchTerm}
-                    gradeFilter={parseGradeFilter(activeTab)}
-                    gradeLabel={activeTab}
-                    enableExport={activeTab === "All Grades"}
                   />
                 )}
                 {accountType === "Teachers" && (
@@ -351,9 +352,6 @@ export default function ITAdminAccounts() {
                     teachers={accounts}
                     setTeachers={setAccounts}
                     searchTerm={searchTerm}
-                    gradeFilter={parseGradeFilter(activeTab)}
-                    gradeLabel={activeTab}
-                    enableExport={activeTab === "All Grades"}
                   />
                 )}
               </div>
