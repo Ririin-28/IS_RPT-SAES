@@ -68,6 +68,7 @@ export async function POST(req) {
           first_name: user.first_name,
           middle_name: user.middle_name,
           last_name: user.last_name,
+          email: user.email,
         }),
         { status: 200 }
       );
@@ -83,6 +84,7 @@ export async function POST(req) {
         first_name: user.first_name,
         middle_name: user.middle_name,
         last_name: user.last_name,
+        email: user.email,
       }),
       { status: 200 }
     );

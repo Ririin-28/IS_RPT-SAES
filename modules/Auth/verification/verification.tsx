@@ -22,19 +22,31 @@ function VerificationContent() {
 		role = params.get("role") || "";
 	}
 
+	const resolveWelcomePath = useCallback((rawRole: string | null | undefined): string => {
+		const normalized = (rawRole ?? "").toLowerCase();
+		switch (normalized) {
+			case "it_admin":
+			case "admin":
+				return "/IT_Admin/welcome";
+			case "principal":
+				return "/Principal/welcome";
+			case "parent":
+				return "/Parent/welcome";
+			case "teacher":
+				return "/Teacher/welcome";
+			case "master_teacher":
+			case "masterteacher":
+				return "/MasterTeacher/welcome";
+			default:
+				return "/";
+		}
+	}, []);
+
 	const handleVerified = useCallback((device_token: string) => {
 		localStorage.setItem("device_token", device_token);
-		let path = "/";
-		switch (role) {
-			case "admin": path = "/IT_Admin/welcome"; break;
-			case "principal": path = "/Principal/welcome"; break;
-			case "parent": path = "/Parent/welcome"; break;
-			case "teacher": path = "/Teacher/welcome"; break;
-			case "master_teacher": path = "/MasterTeacher/welcome"; break;
-			default: path = "/";
-		}
+		const path = resolveWelcomePath(role);
 		router.push(path);
-	}, [role, router]);
+	}, [resolveWelcomePath, role, router]);
 
 	return (
 		<VerificationForm email={email} user_id={user_id} role={role} onVerified={handleVerified} />

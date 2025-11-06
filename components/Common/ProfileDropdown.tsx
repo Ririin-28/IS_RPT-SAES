@@ -2,6 +2,7 @@
 import React from "react";
 import { useRouter } from "next/navigation";
 import { performClientLogout } from "@/lib/utils/logout";
+import { getStoredUserProfile, formatFullNameWithMiddleInitial } from "@/lib/utils/user-profile";
 type RoleSwitchOption = {
   label: string;
   description?: string;
@@ -10,8 +11,8 @@ type RoleSwitchOption = {
 };
 
 interface ProfileDropdownProps {
-  email: string;
-  name: string;
+  email?: string;
+  name?: string;
   onProfile?: () => void;
   onLogout?: () => void;
   roleOptions?: RoleSwitchOption[];
@@ -19,6 +20,38 @@ interface ProfileDropdownProps {
 
 export default function ProfileDropdown({ email, name, onProfile, onLogout, roleOptions }: ProfileDropdownProps) {
   const router = useRouter();
+
+  const storedProfile = React.useMemo(() => getStoredUserProfile(), []);
+
+  const resolvedEmail = React.useMemo(() => {
+    if (email && email.trim().length > 0) {
+      return email.trim();
+    }
+    const storedEmail = storedProfile?.email;
+    if (typeof storedEmail === "string" && storedEmail.trim().length > 0) {
+      return storedEmail.trim();
+    }
+    return "No email on file";
+  }, [email, storedProfile]);
+
+  const resolvedName = React.useMemo(() => {
+    if (name && name.trim().length > 0) {
+      return name.trim();
+    }
+    const lastName = storedProfile?.lastName;
+    if (typeof lastName === "string" && lastName.trim().length > 0) {
+      return lastName.trim();
+    }
+    const formatted = formatFullNameWithMiddleInitial(storedProfile);
+    if (formatted && formatted.trim().length > 0) {
+      return formatted.trim();
+    }
+    const firstName = storedProfile?.firstName;
+    if (typeof firstName === "string" && firstName.trim().length > 0) {
+      return firstName.trim();
+    }
+    return "User";
+  }, [name, storedProfile]);
 
   const handleProfileClick = () => {
     if (onProfile) {
@@ -47,14 +80,14 @@ export default function ProfileDropdown({ email, name, onProfile, onLogout, role
       md:w-80 md:p-8
     "
     >
-      <span className="text-sm text-[#013300] font-semibold mb-2">{email}</span>
+      <span className="text-sm text-[#013300] font-semibold mb-2">{resolvedEmail}</span>
       <div className="my-2">
         <svg width="56" height="56" fill="none" stroke="#013300" strokeWidth="2" viewBox="0 0 24 24">
           <circle cx="12" cy="8" r="6" />
           <path d="M4 20v-2c0-3.5 5-5 8-5s8 1.5 8 5v2" />
         </svg>
       </div>
-      <div className="text-lg font-bold text-[#013300] mb-2 sm:text-xl md:text-2xl">Hi! {name}!</div>
+      <div className="text-lg font-bold text-[#013300] mb-2 sm:text-xl md:text-2xl">Hi! {resolvedName}!</div>
       <hr className="w-full my-2 border-gray-300" />
       <button
         className="w-full text-left px-2 py-2 rounded text-[#013300] hover:bg-green-50 font-medium sm:px-4 sm:py-3 md:px-6 md:py-4"
