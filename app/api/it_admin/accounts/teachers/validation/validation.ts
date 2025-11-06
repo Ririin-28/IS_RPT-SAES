@@ -168,6 +168,10 @@ const TEACHER_TABLE_CANDIDATES = [
   "teacher_accounts",
   "faculty",
   "teacher_tbl",
+  "remedial_teacher",
+  "remedial_teachers",
+  "remedial_teacher_info",
+  "remedial_teacher_tbl",
 ] as const;
 
 async function resolveTeacherTable(connection: PoolConnection): Promise<{ table: string | null; columns: Set<string> }> {

@@ -38,8 +38,13 @@ type RawTeacherRow = RowDataPacket & {
   teacher_contact_number?: string | null;
   teacher_phone_number?: string | null;
   teacher_grade?: string | null;
+  teacher_grade_level?: string | null;
+  teacher_year_level?: string | null;
+  teacher_handled_grade?: string | null;
   teacher_section?: string | null;
   teacher_subjects?: string | null;
+  teacher_handled_subjects?: string | null;
+  teacher_subject?: string | null;
   teacher_status?: string | null;
   last_login?: Date | null;
 };
@@ -90,6 +95,10 @@ const TEACHER_TABLE_CANDIDATES = [
   "teacher_accounts",
   "faculty",
   "teacher_tbl",
+  "remedial_teacher",
+  "remedial_teachers",
+  "remedial_teacher_info",
+  "remedial_teacher_tbl",
 ] as const;
 
 async function resolveTeacherTable(): Promise<{ table: string | null; columns: Set<string> }> {
@@ -153,8 +162,13 @@ export async function GET() {
     addTeacherColumn("contact_number", "teacher_contact_number");
     addTeacherColumn("phone_number", "teacher_phone_number");
     addTeacherColumn("grade", "teacher_grade");
+  addTeacherColumn("grade_level", "teacher_grade_level");
+  addTeacherColumn("year_level", "teacher_year_level");
+  addTeacherColumn("handled_grade", "teacher_handled_grade");
     addTeacherColumn("section", "teacher_section");
     addTeacherColumn("subjects", "teacher_subjects");
+  addTeacherColumn("handled_subjects", "teacher_handled_subjects");
+  addTeacherColumn("subject", "teacher_subject");
     addTeacherColumn("status", "teacher_status");
 
     if (canJoinAccountLogs) {
@@ -216,9 +230,18 @@ export async function GET() {
         row.user_contact_number,
         row.user_phone_number,
       );
-      const grade = coalesce(row.teacher_grade);
+      const grade = coalesce(
+        row.teacher_grade,
+        row.teacher_grade_level,
+        row.teacher_year_level,
+        row.teacher_handled_grade,
+      );
       const section = coalesce(row.teacher_section);
-      const subjects = coalesce(row.teacher_subjects);
+      const subjects = coalesce(
+        row.teacher_subjects,
+        row.teacher_handled_subjects,
+        row.teacher_subject,
+      );
       const status = coalesce(row.user_status, row.teacher_status, "Active") ?? "Active";
       const createdAt = row.user_created_at instanceof Date ? row.user_created_at.toISOString() : null;
       const lastLogin = row.last_login instanceof Date ? row.last_login.toISOString() : null;

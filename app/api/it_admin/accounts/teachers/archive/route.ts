@@ -12,6 +12,10 @@ const TEACHER_TABLE_CANDIDATES = [
   "teacher_accounts",
   "faculty",
   "teacher_tbl",
+  "remedial_teacher",
+  "remedial_teachers",
+  "remedial_teacher_info",
+  "remedial_teacher_tbl",
 ] as const;
 
 interface ArchiveResult {
