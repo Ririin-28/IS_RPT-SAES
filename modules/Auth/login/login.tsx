@@ -1,7 +1,7 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { getSession } from "next-auth/react";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { FaEye, FaEyeSlash, FaInfoCircle } from "react-icons/fa";
 import RPTLogoTitle from "@/components/Common/RPTLogoTitle";
 import { clearOAuthState } from "@/lib/utils/clear-oauth-state";
@@ -27,6 +27,26 @@ export default function Login({
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(false);
   const sanitizedUserId = useMemo(() => userId.trim(), [userId]);
+
+  const resolveWelcomePath = useCallback((role: string | null | undefined): string => {
+    const normalized = (role ?? "").toLowerCase();
+    switch (normalized) {
+      case "it_admin":
+      case "admin":
+        return "/IT_Admin/welcome";
+      case "principal":
+        return "/Principal/welcome";
+      case "parent":
+        return "/Parent/welcome";
+      case "teacher":
+        return "/Teacher/welcome";
+      case "master_teacher":
+      case "masterteacher":
+        return "/MasterTeacher/welcome";
+      default:
+        return "/";
+    }
+  }, []);
   
   // Live credential check
   useEffect(() => {
@@ -146,30 +166,12 @@ export default function Login({
           lastName: data.last_name,
           role: data.role,
           userId: data.user_id,
+          email: data.email ?? email,
         });
 
         if (data.skipOtp) {
           // Device is trusted, redirect to welcome page
-          let welcomePath = "/";
-          switch (data.role) {
-            case "it_admin":
-              welcomePath = "/IT_Admin/welcome";
-              break;
-            case "principal":
-              welcomePath = "/Principal/welcome";
-              break;
-            case "parent":
-              welcomePath = "/Parent/welcome";
-              break;
-            case "teacher":
-              welcomePath = "/Teacher/welcome";
-              break;
-            case "masterteacher":
-              welcomePath = "/MasterTeacher/welcome";
-              break;
-            default:
-              welcomePath = "/";
-          }
+          const welcomePath = resolveWelcomePath(data.role);
           console.log("[LOGIN] redirecting to:", welcomePath);
           router.push(welcomePath);
         } else {

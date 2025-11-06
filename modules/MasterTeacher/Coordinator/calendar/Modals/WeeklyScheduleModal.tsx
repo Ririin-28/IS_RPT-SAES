@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import Flatpickr from "react-flatpickr";
 import type { Instance as FlatpickrInstance } from "flatpickr/dist/types/instance";
@@ -26,6 +26,11 @@ interface WeeklyScheduleModalProps {
   onSave: (data: WeeklyScheduleFormData) => void;
   initialData?: WeeklyScheduleFormData | null;
   gradeLevel: string;
+  allowedSubjects: string[];
+  scheduleWindowLabel?: string | null;
+  scheduleStartDate?: string | null;
+  scheduleEndDate?: string | null;
+  scheduleActive?: boolean;
 }
 
 const SUBJECT_OPTIONS = ["English", "Filipino", "Math", "Assessment"];
@@ -60,12 +65,32 @@ const EMPTY_SUBJECTS: Record<Weekday, string> = {
   Friday: "",
 };
 
+const parseBoundaryDate = (value?: string | null, mode: "start" | "end" = "start") => {
+  if (!value) {
+    return null;
+  }
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  date.setHours(0, 0, 0, 0);
+  if (mode === "end") {
+    date.setHours(23, 59, 59, 999);
+  }
+  return date;
+};
+
 export default function WeeklyScheduleModal({
   show,
   onClose,
   onSave,
   initialData,
   gradeLevel,
+  allowedSubjects,
+  scheduleWindowLabel,
+  scheduleStartDate,
+  scheduleEndDate,
+  scheduleActive = false,
 }: WeeklyScheduleModalProps) {
   const [weekStart, setWeekStart] = useState(getMondayForToday());
   const [startTime, setStartTime] = useState("");
@@ -74,6 +99,10 @@ export default function WeeklyScheduleModal({
   const [error, setError] = useState<string | null>(null);
   const startPickerRef = useRef<FlatpickrInstance | null>(null);
   const endPickerRef = useRef<FlatpickrInstance | null>(null);
+  const subjectOptions = allowedSubjects.length > 0 ? allowedSubjects : SUBJECT_OPTIONS;
+  const subjectLocked = allowedSubjects.length === 1;
+  const rangeStart = useMemo(() => parseBoundaryDate(scheduleStartDate, "start"), [scheduleStartDate]);
+  const rangeEnd = useMemo(() => parseBoundaryDate(scheduleEndDate, "end"), [scheduleEndDate]);
 
   const convertTo24Hour = (input: string, fallbackMeridiem?: "AM" | "PM") => {
     const trimmed = input.trim().toUpperCase();
@@ -184,13 +213,42 @@ export default function WeeklyScheduleModal({
 
   useEffect(() => {
     if (show) {
-      setWeekStart(initialData?.weekStart ?? getMondayForToday());
+      const baseline = initialData?.weekStart ?? getMondayForToday();
+      const baselineDate = alignToMonday(new Date(baseline));
+      let resolved = new Date(baselineDate);
+      if (scheduleActive && rangeStart) {
+        while (resolved < rangeStart) {
+          resolved.setDate(resolved.getDate() + 7);
+        }
+      }
+      if (scheduleActive && rangeEnd) {
+        const friday = new Date(resolved);
+        friday.setDate(friday.getDate() + 4);
+        while (friday > rangeEnd) {
+          resolved.setDate(resolved.getDate() - 7);
+          friday.setDate(friday.getDate() - 7);
+          if (scheduleActive && rangeStart && resolved < rangeStart) {
+            resolved = alignToMonday(new Date(rangeStart));
+            friday.setTime(resolved.getTime());
+            friday.setDate(friday.getDate() + 4);
+            break;
+          }
+        }
+      }
+      setWeekStart(formatDateInputValue(resolved));
       setStartTime(initialData?.startTime ?? "");
       setEndTime(initialData?.endTime ?? "");
-      setSubjects(initialData?.subjects ?? EMPTY_SUBJECTS);
+      const baselineSubjects = initialData?.subjects
+        ?? (subjectLocked && allowedSubjects[0]
+          ? WEEKDAY_ORDER.reduce<Record<Weekday, string>>((acc, day) => {
+              acc[day] = allowedSubjects[0];
+              return acc;
+            }, { ...EMPTY_SUBJECTS })
+          : { ...EMPTY_SUBJECTS });
+      setSubjects(baselineSubjects);
       setError(null);
     }
-  }, [show, initialData]);
+  }, [show, initialData, subjectLocked, allowedSubjects, rangeEnd, rangeStart, scheduleActive]);
 
   useEffect(() => {
     if (endPickerRef.current) {
@@ -217,12 +275,51 @@ export default function WeeklyScheduleModal({
 
   if (!show) return null;
 
+  const handleWeekStartInputChange = (value: string) => {
+    if (!value) {
+      setWeekStart(value);
+      return;
+    }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return;
+    }
+    let resolved = alignToMonday(parsed);
+    if (scheduleActive && rangeStart) {
+      while (resolved < rangeStart) {
+        resolved.setDate(resolved.getDate() + 7);
+      }
+    }
+    if (scheduleActive && rangeEnd) {
+      const friday = new Date(resolved);
+      friday.setDate(friday.getDate() + 4);
+      while (friday > rangeEnd) {
+        resolved.setDate(resolved.getDate() - 7);
+        friday.setDate(friday.getDate() - 7);
+        if (scheduleActive && rangeStart && resolved < rangeStart) {
+          resolved = alignToMonday(new Date(rangeStart));
+          break;
+        }
+      }
+    }
+    setWeekStart(formatDateInputValue(resolved));
+  };
+
   const handleSubjectChange = (day: Weekday, value: string) => {
+    if (subjectLocked && allowedSubjects[0]) {
+      setSubjects((prev) => ({ ...prev, [day]: allowedSubjects[0] }));
+      return;
+    }
     setSubjects((prev) => ({ ...prev, [day]: value }));
   };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (allowedSubjects.length === 0) {
+      setError("Subject assignment is required before planning a schedule.");
+      return;
+    }
+
     if (!startTime || !endTime) {
       setError("Please select both start and end time.");
       return;
@@ -242,6 +339,29 @@ export default function WeeklyScheduleModal({
     if (hasUnassignedSubject) {
       setError("Please assign a subject for every weekday.");
       return;
+    }
+
+    if (scheduleActive && (rangeStart || rangeEnd)) {
+      const monday = alignToMonday(new Date(weekStart));
+      const outsideDay = WEEKDAY_ORDER.find((_, index) => {
+        const candidate = new Date(monday);
+        candidate.setDate(candidate.getDate() + index);
+        if (rangeStart && candidate < rangeStart) {
+          return true;
+        }
+        if (rangeEnd && candidate > rangeEnd) {
+          return true;
+        }
+        return false;
+      });
+      if (outsideDay) {
+        setError(
+          scheduleWindowLabel
+            ? `${outsideDay} falls outside the remedial window (${scheduleWindowLabel}).`
+            : `${outsideDay} falls outside the remedial window.`,
+        );
+        return;
+      }
     }
 
     setError(null);
@@ -273,6 +393,36 @@ export default function WeeklyScheduleModal({
       <form id="weekly-schedule-form" onSubmit={handleSubmit} className="space-y-6">
         <ModalSection title="Grade Level Handled">
           <ModalInfoItem label="Grade Level" value={gradeLevel} />
+        </ModalSection>
+
+        <ModalSection title="Week Selection">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1">
+              <ModalLabel required>Week Starts On</ModalLabel>
+              <input
+                type="date"
+                value={weekStart}
+                min={scheduleStartDate ?? undefined}
+                max={scheduleEndDate ?? undefined}
+                onChange={(event) => handleWeekStartInputChange(event.target.value)}
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black focus:outline-none focus:ring-2 focus:ring-[#013300] focus:ring-offset-0"
+              />
+              <p className="text-xs text-gray-500">
+                {scheduleWindowLabel
+                  ? `Weeks must stay within ${scheduleWindowLabel}.`
+                  : "Select the Monday that starts the remediation week."}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <ModalLabel>Remedial Window</ModalLabel>
+              <div className="w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+                {scheduleWindowLabel ?? "Not yet configured"}
+              </div>
+              {!scheduleActive && (
+                <p className="text-xs text-amber-600">Remedial window must be active before weekly schedules can be applied.</p>
+              )}
+            </div>
+          </div>
         </ModalSection>
 
         <ModalSection title="Time Slot">
@@ -349,11 +499,14 @@ export default function WeeklyScheduleModal({
                   onChange={(event) => handleSubjectChange(day, event.target.value)}
                   className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black transition-all"
                   required
+                  disabled={subjectLocked}
                 >
-                  <option value="" disabled>
-                    Select Subject
-                  </option>
-                  {SUBJECT_OPTIONS.map((subject) => (
+                  {!subjectLocked && (
+                    <option value="" disabled>
+                      Select Subject
+                    </option>
+                  )}
+                  {subjectOptions.map((subject) => (
                     <option key={subject} value={subject}>
                       {subject}
                     </option>

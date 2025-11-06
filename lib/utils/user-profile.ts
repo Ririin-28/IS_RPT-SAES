@@ -6,6 +6,7 @@ export type StoredUserProfile = {
   lastName?: string | null;
   role?: string | null;
   userId?: string | number | null;
+  email?: string | null;
 };
 
 const sanitize = (value?: string | null): string => {
