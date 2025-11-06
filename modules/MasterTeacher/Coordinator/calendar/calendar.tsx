@@ -1,7 +1,7 @@
 "use client";
 import Sidebar from "@/components/MasterTeacher/Coordinator/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 // Button Components
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
@@ -10,7 +10,8 @@ import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import AddScheduleModal from "./Modals/AddScheduleModal";
 import ActivityDetailModal from "./Modals/ActivityDetailModal";
 import DeleteConfirmationModal from "./Modals/DeleteConfirmationModal";
-import WeeklyScheduleModal, { WEEKDAY_ORDER, WeeklyScheduleFormData } from "./Modals/WeeklyScheduleModal";
+import WeeklyScheduleModal, { WEEKDAY_ORDER, WeeklyScheduleFormData, Weekday } from "./Modals/WeeklyScheduleModal";
+import { getStoredUserProfile } from "@/lib/utils/user-profile";
 
 interface Activity {
   id: number;
@@ -27,8 +28,119 @@ interface Activity {
   weekRef?: string;
 }
 
-const GRADE_LEVEL = "Grade 3";
-const DEFAULT_ROOM = "Grade 3 Classroom";
+type CalendarFormValues = {
+  title: string;
+  date: string;
+  roomNo: string;
+  description: string;
+  teachers: string[];
+  subject: string;
+};
+
+const FALLBACK_GRADE_LEVEL = "Grade 3";
+const FALLBACK_ROOM_LABEL = `${FALLBACK_GRADE_LEVEL} Classroom`;
+
+interface RemedialScheduleWindow {
+  quarter: string | null;
+  startDate: string;
+  endDate: string;
+  active: boolean;
+}
+
+const SUBJECT_SYNONYM_MAP: Record<string, string> = {
+  english: "English",
+  math: "Math",
+  mathematics: "Math",
+  filipino: "Filipino",
+  science: "Science",
+  "araling panlipunan": "Araling Panlipunan",
+  ap: "Araling Panlipunan",
+  mapeh: "MAPEH",
+  values: "Values Education",
+  "values education": "Values Education",
+  ede: "Values Education",
+};
+
+const normalizeSubjectValue = (raw: string): string | null => {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const cleaned = trimmed
+    .replace(/\b(coordinator|subject|subjects|teacher|handled)\b/gi, "")
+    .replace(/\bgrade\s*\d+\b/gi, "")
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned) {
+    return null;
+  }
+
+  const lower = cleaned.toLowerCase();
+  const synonym = SUBJECT_SYNONYM_MAP[lower];
+  if (synonym) {
+    return synonym;
+  }
+
+  return cleaned
+    .split(" ")
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase())
+    .join(" ")
+    .trim();
+};
+
+const deriveAllowedSubjects = (raw: string | null): string[] => {
+  if (!raw) {
+    return [];
+  }
+
+  const normalized = raw
+    .replace(/\band\b/gi, ",")
+    .replace(/&/g, ",")
+    .replace(/\//g, ",")
+    .replace(/\+/g, ",")
+    .replace(/;/g, ",")
+    .replace(/\s+/g, " ");
+
+  const unique = new Set<string>();
+  for (const segment of normalized.split(",")) {
+    const subject = normalizeSubjectValue(segment);
+    if (subject) {
+      unique.add(subject);
+    }
+  }
+
+  return Array.from(unique);
+};
+
+const sanitizeSubjectSelection = (input: string | null | undefined, allowedSubjects: string[]): string | null => {
+  if (allowedSubjects.length === 0) {
+    return null;
+  }
+
+  const raw = typeof input === "string" ? input.trim() : "";
+  if (!raw) {
+    return allowedSubjects[0] ?? null;
+  }
+
+  const match = allowedSubjects.find((subject) => subject.toLowerCase() === raw.toLowerCase());
+  if (match) {
+    return match;
+  }
+
+  const derived = deriveAllowedSubjects(raw);
+  for (const candidate of derived) {
+    const intersection = allowedSubjects.find((subject) => subject.toLowerCase() === candidate.toLowerCase());
+    if (intersection) {
+      return intersection;
+    }
+  }
+
+  return allowedSubjects[0] ?? null;
+};
 
 const parseDateInput = (value: string): Date => {
   const [year, month, day] = value.split("-").map(Number);
@@ -54,6 +166,37 @@ const formatLongDate = (date: Date): string =>
 
 const buildWeekKey = (gradeLevel: string, weekStart: string) => `${gradeLevel}-${weekStart}`;
 
+const normalizeGradeLabel = (value: unknown): string | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const trimmed = String(value).trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  const gradePattern = /^grade\s+(.*)$/i;
+  const gradeMatch = gradePattern.exec(trimmed.replace(/\s+/g, " "));
+  if (gradeMatch) {
+    const remainder = gradeMatch[1]?.trim();
+    return remainder && remainder.length > 0 ? `Grade ${remainder}` : "Grade";
+  }
+  if (/^\d+$/.test(trimmed)) {
+    return `Grade ${trimmed}`;
+  }
+  return trimmed;
+};
+
+const deriveDefaultRoomLabel = (gradeLabel: string | null): string => {
+  const label = gradeLabel ?? FALLBACK_GRADE_LEVEL;
+  if (!label) {
+    return FALLBACK_ROOM_LABEL;
+  }
+  if (/classroom$/i.test(label)) {
+    return label;
+  }
+  return `${label} Classroom`;
+};
+
 export default function MasterTeacherCalendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState("month");
@@ -66,19 +209,465 @@ export default function MasterTeacherCalendar() {
   const [weeklySchedule, setWeeklySchedule] = useState<WeeklyScheduleFormData | null>(null);
 
   // React Hook Form setup
-  const formMethods = useForm({
+  const formMethods = useForm<CalendarFormValues>({
     defaultValues: {
       title: "",
       date: "",
       roomNo: "",
       description: "",
       teachers: [],
+      subject: "",
     },
   });
-  const { reset, setValue } = formMethods;
+  const { reset, setValue, setError, clearErrors } = formMethods;
 
-  // Activities data in state - Start with empty array
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [gradeLevel, setGradeLevel] = useState<string | null>(null);
+  const [coordinatorSubject, setCoordinatorSubject] = useState<string | null>(null);
+  const [allowedSubjects, setAllowedSubjects] = useState<string[]>([]);
+  const [profileLoading, setProfileLoading] = useState<boolean>(true);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [remedialWindow, setRemedialWindow] = useState<RemedialScheduleWindow | null>(null);
+  const [remedialWindowLoading, setRemedialWindowLoading] = useState<boolean>(true);
+  const [remedialWindowError, setRemedialWindowError] = useState<string | null>(null);
+  const [remedialGuardMessage, setRemedialGuardMessage] = useState<string | null>(null);
+
+  const scheduleRange = useMemo(() => {
+    if (!remedialWindow?.startDate || !remedialWindow?.endDate) {
+      return null;
+    }
+    const start = new Date(`${remedialWindow.startDate}T00:00:00`);
+    const end = new Date(`${remedialWindow.endDate}T23:59:59`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return null;
+    }
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+    return { start, end } as const;
+  }, [remedialWindow?.startDate, remedialWindow?.endDate]);
+
+  const remedialWindowStatus = useMemo(() => {
+    if (!scheduleRange || !remedialWindow?.active) {
+      return "inactive" as const;
+    }
+    const now = new Date();
+    if (now < scheduleRange.start) {
+      return "upcoming" as const;
+    }
+    if (now > scheduleRange.end) {
+      return "completed" as const;
+    }
+    return "active" as const;
+  }, [scheduleRange, remedialWindow?.active]);
+
+  const hasActiveRemedialWindow = remedialWindowStatus === "active";
+
+  const scheduleWindowLabel = useMemo(() => {
+    if (!scheduleRange) {
+      return null;
+    }
+    const startLabel = scheduleRange.start.toLocaleDateString("en-US", {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+    const endLabel = scheduleRange.end.toLocaleDateString("en-US", {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+    return `${startLabel} – ${endLabel}`;
+  }, [scheduleRange]);
+
+  const gradeLabel = gradeLevel ?? FALLBACK_GRADE_LEVEL;
+  const defaultRoomLabel = deriveDefaultRoomLabel(gradeLevel);
+  const hasAssignedGrade = Boolean(gradeLevel);
+  const canPlanActivities =
+    hasAssignedGrade &&
+    !profileLoading &&
+    !profileError &&
+    allowedSubjects.length > 0 &&
+    hasActiveRemedialWindow;
+  const missingAssignments: string[] = [];
+  if (!hasAssignedGrade) {
+    missingAssignments.push("grade level");
+  }
+  if (allowedSubjects.length === 0) {
+    missingAssignments.push("coordinator subject");
+  }
+  const schedulingLocked = !profileLoading && !profileError && missingAssignments.length > 0;
+  const assignmentsDescription =
+    missingAssignments.length > 1
+      ? `${missingAssignments.slice(0, -1).join(", ")} and ${missingAssignments[missingAssignments.length - 1]}`
+      : missingAssignments[0] ?? "";
+  const remediationPlanTitle = hasAssignedGrade
+    ? `${gradeLabel} Remediation Plan`
+    : "Remediation Plan (grade assignment pending)";
+
+  const scheduleBlockingReason = useMemo(() => {
+    if (remedialWindowLoading) {
+      return null;
+    }
+    if (hasActiveRemedialWindow) {
+      return null;
+    }
+    if (!remedialWindow) {
+      return "Waiting for the principal to enable a remedial period.";
+    }
+    if (remedialWindowStatus === "upcoming" && scheduleWindowLabel) {
+      const [startLabel] = scheduleWindowLabel.split(" – ");
+      return `Remedial window starts on ${startLabel}.`;
+    }
+    if (remedialWindowStatus === "completed" && scheduleWindowLabel) {
+      const [, endLabel] = scheduleWindowLabel.split(" – ");
+      return `The last remedial window ended on ${endLabel ?? scheduleWindowLabel}.`;
+    }
+    return "The configured remedial window is not active.";
+  }, [hasActiveRemedialWindow, remedialWindowLoading, remedialWindow, remedialWindowStatus, scheduleWindowLabel]);
+
+  const remedialStatusBanner = useMemo(() => {
+    if (remedialWindowError) {
+      return null;
+    }
+
+    if (remedialWindowStatus === "active") {
+      const subjectDescriptor =
+        allowedSubjects.length === 1
+          ? allowedSubjects[0]
+          : allowedSubjects.length > 1
+          ? `${allowedSubjects.length} assigned subjects`
+          : "your assigned subjects";
+      return {
+        tone: "success" as const,
+        message: scheduleWindowLabel
+          ? `Principal enabled the remedial window (${scheduleWindowLabel}). Plan ${gradeLabel} activities for ${subjectDescriptor}.`
+          : "Principal enabled the remedial window. Plan your remediation activities.",
+      };
+    }
+
+    if (remedialWindowStatus === "upcoming") {
+      const [startLabel] = (scheduleWindowLabel ?? "").split(" – ");
+      return {
+        tone: "info" as const,
+        message: startLabel
+          ? `Remedial window starts on ${startLabel}. Scheduling opens once it is active.`
+          : "Remedial window will start soon. Scheduling opens once it is active.",
+      };
+    }
+
+    if (remedialWindowStatus === "completed") {
+      const [, endLabel] = (scheduleWindowLabel ?? "").split(" – ");
+      return {
+        tone: "info" as const,
+        message: endLabel
+          ? `Last remedial window ended on ${endLabel}. Await the principal's next activation.`
+          : "The previous remedial window has ended. Await the principal's next activation.",
+      };
+    }
+
+    if (!remedialWindowLoading) {
+      return {
+        tone: "info" as const,
+        message: "Awaiting a remedial window from the principal.",
+      };
+    }
+
+    return null;
+  }, [allowedSubjects, gradeLabel, remedialWindowError, remedialWindowLoading, remedialWindowStatus, scheduleWindowLabel]);
+
+  useEffect(() => {
+    if (hasActiveRemedialWindow) {
+      setRemedialGuardMessage(null);
+    }
+  }, [hasActiveRemedialWindow]);
+
+  const loadRemedialWindow = useCallback(async () => {
+    setRemedialWindowLoading(true);
+    setRemedialWindowError(null);
+    try {
+  const response = await fetch("/api/master_teacher/coordinator/remedial-schedule", { cache: "no-store" });
+      if (response.status === 404) {
+        setRemedialWindow(null);
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+      const payload = (await response.json()) as {
+        success: boolean;
+        schedule: { quarter: string | null; startDate: string | null; endDate: string | null; active?: boolean | null } | null;
+      };
+      if (!payload.success) {
+        throw new Error("Server indicated failure.");
+      }
+      const schedule = payload.schedule;
+      if (schedule?.startDate && schedule?.endDate) {
+        setRemedialWindow({
+          quarter: schedule.quarter ?? null,
+          startDate: schedule.startDate,
+          endDate: schedule.endDate,
+          active: schedule.active !== false,
+        });
+      } else {
+        setRemedialWindow(null);
+      }
+    } catch (error) {
+      console.error("Failed to load remedial window", error);
+      setRemedialWindowError("Unable to load the remedial window. Try refreshing the page.");
+    } finally {
+      setRemedialWindowLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadRemedialWindow();
+  }, [loadRemedialWindow]);
+
+  useEffect(() => {
+    if (allowedSubjects.length > 0) {
+      setValue("subject", allowedSubjects[0], { shouldValidate: false, shouldDirty: false });
+      clearErrors("subject");
+    } else {
+      setValue("subject", "", { shouldValidate: false, shouldDirty: false });
+    }
+  }, [allowedSubjects, setValue, clearErrors]);
+
+  useEffect(() => {
+    const profile = getStoredUserProfile();
+    if (!profile?.userId) {
+      setProfileError("Coordinator profile is unavailable. Please sign in again.");
+      setProfileLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    const fetchMasterTeacherProfile = async (userId: string, signal: AbortSignal) => {
+      try {
+        const response = await fetch(`/api/master_teacher/profile?userId=${encodeURIComponent(userId)}`, {
+          signal,
+        });
+        if (!response.ok) {
+          throw new Error(`Request failed with status ${response.status}`);
+        }
+        const payload = await response.json();
+        if (!payload?.success) {
+          return null;
+        }
+        return payload.profile ?? null;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return null;
+        }
+        console.warn("Fallback master teacher profile lookup failed", error);
+        return null;
+      }
+    };
+
+    const extractSubject = (value: unknown): string | null => {
+      if (Array.isArray(value)) {
+        const joined = value
+          .map((entry) => (entry === null || entry === undefined ? "" : String(entry).trim()))
+          .filter(Boolean)
+          .join(", ");
+        return joined.length > 0 ? joined : null;
+      }
+      if (value === null || value === undefined) {
+        return null;
+      }
+      const trimmed = String(value).trim();
+      return trimmed.length > 0 ? trimmed : null;
+    };
+
+    const loadCoordinatorContext = async () => {
+      setProfileLoading(true);
+      try {
+        const encodedUserId = encodeURIComponent(String(profile.userId));
+        const response = await fetch(`/api/master_teacher/coordinator/profile?userId=${encodedUserId}`, {
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Request failed with status ${response.status}`);
+        }
+
+        const payload = await response.json();
+
+        if (!payload?.success) {
+          setProfileError(payload?.error ?? "Unable to load coordinator details.");
+          setAllowedSubjects([]);
+          setActivities([]);
+          return;
+        }
+
+        const coordinator = payload.coordinator ?? {};
+        const gradeCandidates: Array<string | null> = [
+          normalizeGradeLabel(coordinator.gradeLevel ?? coordinator.grade ?? null),
+        ];
+
+        const coordinatorSubjectValue = extractSubject(
+          coordinator.coordinatorSubject ??
+            coordinator.subjectsHandled ??
+            coordinator.subject ??
+            null,
+        );
+        const subjectSet = new Set<string>(deriveAllowedSubjects(coordinatorSubjectValue));
+
+        let fallbackProfile: Record<string, unknown> | null = null;
+
+        if (!gradeCandidates[0] || subjectSet.size === 0) {
+          fallbackProfile = await fetchMasterTeacherProfile(String(profile.userId), controller.signal);
+          if (fallbackProfile) {
+            gradeCandidates.push(normalizeGradeLabel(fallbackProfile.grade as string | null));
+
+            const fallbackSubjectValue = extractSubject(
+              fallbackProfile.subjectHandled ??
+                fallbackProfile.subject ??
+                fallbackProfile.subjects ??
+                fallbackProfile.coordinatorSubject ??
+                null,
+            );
+            if (fallbackSubjectValue) {
+              for (const subject of deriveAllowedSubjects(fallbackSubjectValue)) {
+                subjectSet.add(subject);
+              }
+            }
+          }
+        }
+
+        const resolvedGrade = gradeCandidates.find((grade): grade is string => Boolean(grade)) ?? null;
+        setGradeLevel(resolvedGrade);
+
+        const subjectArray = Array.from(subjectSet);
+        setAllowedSubjects(subjectArray);
+        setCoordinatorSubject(
+          subjectArray.length > 0
+            ? subjectArray.join(", ")
+            : coordinatorSubjectValue ?? null,
+        );
+
+        if (Array.isArray(payload.activities)) {
+          const gradeForActivities = resolvedGrade ?? gradeLevel ?? FALLBACK_GRADE_LEVEL;
+          const defaultRoomForActivities = deriveDefaultRoomLabel(resolvedGrade ?? gradeLevel ?? null);
+
+          const parsedActivities: Activity[] = (payload.activities as Array<Record<string, unknown>>)
+            .map((item, index): Activity | null => {
+              if (!item) return null;
+              const rawStart =
+                (item.startDate as string | null | undefined) ??
+                (item.start as string | null | undefined) ??
+                (item.date as string | null | undefined) ??
+                (item.start_time as string | null | undefined) ??
+                (item.startTime as string | null | undefined) ??
+                null;
+              if (!rawStart) {
+                return null;
+              }
+              const start = new Date(rawStart);
+              if (Number.isNaN(start.getTime())) {
+                return null;
+              }
+              const rawEnd =
+                (item.endDate as string | null | undefined) ??
+                (item.end as string | null | undefined) ??
+                (item.finish as string | null | undefined) ??
+                (item.end_time as string | null | undefined) ??
+                (item.endTime as string | null | undefined) ??
+                null;
+              const end = rawEnd ? new Date(rawEnd) : new Date(start.getTime() + 60 * 60 * 1000);
+              if (Number.isNaN(end.getTime())) {
+                end.setTime(start.getTime() + 60 * 60 * 1000);
+              }
+
+              const resolvedGrade =
+                normalizeGradeLabel(
+                  (item.gradeLevel as string | null | undefined) ??
+                    (item.grade as string | null | undefined) ??
+                    null,
+                ) ?? gradeForActivities;
+
+              const roomLabel =
+                typeof item.roomNo === "string" && item.roomNo.trim().length > 0
+                  ? item.roomNo.trim()
+                  : typeof item.room === "string" && item.room.trim().length > 0
+                  ? item.room.trim()
+                  : defaultRoomForActivities;
+
+              const subjectValueRaw =
+                extractSubject(item.subject) ?? extractSubject(item.title) ?? coordinatorSubjectValue;
+              const sanitizedSubject = subjectArray.length > 0
+                ? sanitizeSubjectSelection(subjectValueRaw, subjectArray)
+                : subjectValueRaw ?? undefined;
+
+              if (subjectArray.length > 0 && !sanitizedSubject) {
+                return null;
+              }
+
+              return {
+                id: Number.isFinite(Number(item.id)) ? Number(item.id) : index + 1,
+                title:
+                  typeof item.title === "string" && item.title.trim().length > 0
+                    ? item.title.trim()
+                    : sanitizedSubject ?? "Remediation Session",
+                day: start.toLocaleDateString("en-US", { weekday: "long" }),
+                roomNo: roomLabel,
+                description:
+                  typeof item.description === "string" && item.description.trim().length > 0
+                    ? item.description.trim()
+                    : undefined,
+                date: start,
+                end,
+                type:
+                  typeof item.type === "string" && item.type.trim().length > 0
+                    ? item.type.trim()
+                    : "class",
+                gradeLevel: resolvedGrade ?? undefined,
+                subject: sanitizedSubject ?? undefined,
+                isWeeklyTemplate: Boolean(item.isWeeklyTemplate ?? item.is_template),
+                weekRef:
+                  typeof item.weekRef === "string" && item.weekRef.trim().length > 0
+                    ? item.weekRef.trim()
+                    : undefined,
+              } satisfies Activity;
+            })
+            .filter((activity): activity is Activity => {
+              if (!activity) {
+                return false;
+              }
+              if (resolvedGrade && activity.gradeLevel && activity.gradeLevel !== gradeForActivities) {
+                return false;
+              }
+              if (subjectArray.length > 0) {
+                const subjectValue = activity.subject;
+                if (!subjectValue) {
+                  return false;
+                }
+                return subjectArray.some((subject) => subject.toLowerCase() === subjectValue.toLowerCase());
+              }
+              return true;
+            });
+
+          setActivities(parsedActivities);
+        } else {
+          setActivities([]);
+        }
+
+        setProfileError(null);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+  console.error("Failed to load coordinator calendar context", error);
+  setAllowedSubjects([]);
+  setProfileError("Unable to load coordinator details right now. Please refresh to retry.");
+      } finally {
+        setProfileLoading(false);
+      }
+    };
+
+    loadCoordinatorContext();
+    return () => controller.abort();
+  }, []);
 
   // Get week number for a date
   const getWeekNumber = (date: Date): number => {
@@ -135,55 +724,166 @@ export default function MasterTeacherCalendar() {
     setCurrentDate(new Date());
   };
 
+  const isDateWithinRemedialWindow = useCallback(
+    (date: Date | null | undefined) => {
+      if (!date || !scheduleRange) {
+        return false;
+      }
+      if (remedialWindowStatus !== "active") {
+        return false;
+      }
+      const candidate = new Date(date);
+      candidate.setHours(12, 0, 0, 0);
+      return candidate >= scheduleRange.start && candidate <= scheduleRange.end;
+    },
+    [remedialWindowStatus, scheduleRange],
+  );
+
   // Handle double click on date
   const handleDateDoubleClick = (date: Date) => {
+    if (!canPlanActivities) {
+      if (!hasActiveRemedialWindow && scheduleBlockingReason) {
+        setRemedialGuardMessage(scheduleBlockingReason);
+      }
+      return;
+    }
+    if (!isDateWithinRemedialWindow(date)) {
+      setRemedialGuardMessage(
+        scheduleWindowLabel
+          ? `Remedial window runs from ${scheduleWindowLabel}. Choose a date within this range.`
+          : "Selected date is outside the active remedial window.",
+      );
+      return;
+    }
+    setRemedialGuardMessage(null);
     setSelectedDate(date);
     setValue("date", date.toLocaleDateString("en-CA")); 
+    if (allowedSubjects.length > 0) {
+      setValue("subject", allowedSubjects[0], { shouldValidate: false, shouldDirty: false });
+    }
     setShowAddModal(true);
   };
 
   // Add new schedule from modal (single)
-  const handleAddSchedule = (data: any) => {
+  const handleAddSchedule = (data: CalendarFormValues) => {
+    if (!canPlanActivities) {
+      return;
+    }
+
+    if (!data.date) {
+      setError("date", {
+        type: "required",
+        message: "Date is required.",
+      });
+      return;
+    }
+    clearErrors("date");
+
+    const sanitizedSubject = sanitizeSubjectSelection(data.subject, allowedSubjects);
+    if (!sanitizedSubject) {
+      setError("subject", {
+        type: "validate",
+        message: "You can only schedule activities for your assigned subject.",
+      });
+      return;
+    }
+    clearErrors("subject");
+
     const [year, month, day] = data.date.split("-").map(Number);
     const startDate = new Date(year, month - 1, day, 9, 0, 0);
+    if (!isDateWithinRemedialWindow(startDate)) {
+      setError("date", {
+        type: "validate",
+        message: scheduleWindowLabel
+          ? `Remedial window runs from ${scheduleWindowLabel}.`
+          : "Date must fall within the active remedial window.",
+      });
+      setRemedialGuardMessage(
+        scheduleWindowLabel
+          ? `Remedial window runs from ${scheduleWindowLabel}.`
+          : "The principal has not enabled a remedial window for this date.",
+      );
+      return;
+    }
     const endDate = new Date(year, month - 1, day, 10, 0, 0);
+    const normalizedRoom =
+      typeof data.roomNo === "string" && data.roomNo.trim().length > 0
+        ? data.roomNo
+        : defaultRoomLabel;
+    const normalizedTitle = data.title.trim().length > 0 ? data.title.trim() : `${sanitizedSubject} Remediation`;
+    const descriptionSource = data.description.trim().length > 0 ? data.description : `${sanitizedSubject} remediation for ${gradeLabel}`;
 
     const newActivity: Activity = {
       id: activities.length > 0 ? Math.max(...activities.map((a) => a.id)) + 1 : 1,
       ...data,
+      roomNo: normalizedRoom,
       day: startDate.toLocaleDateString("en-US", { weekday: "long" }),
       date: startDate,
       end: endDate,
       type: "class",
+      gradeLevel: gradeLabel,
+      title: normalizedTitle,
+      description: descriptionSource,
+      subject: sanitizedSubject,
     };
 
     setActivities((prev) => [...prev, newActivity]);
     setShowAddModal(false);
-    reset();
+    setSelectedDate(null);
+    reset({
+      title: "",
+      date: "",
+      roomNo: "",
+      description: "",
+      teachers: [],
+      subject: allowedSubjects[0] ?? "",
+    });
+    clearErrors();
   };
 
-  const generateActivitiesForWeek = (schedule: WeeklyScheduleFormData): Activity[] => {
+  const generateActivitiesForWeek = (schedule: WeeklyScheduleFormData): Activity[] | null => {
     const baseId = activities.length > 0 ? Math.max(...activities.map((a) => a.id)) + 1 : 1;
     const mondayDate = parseDateInput(schedule.weekStart);
-    const weekKey = buildWeekKey(GRADE_LEVEL, schedule.weekStart);
+    const weekKey = buildWeekKey(gradeLabel, schedule.weekStart);
+
+    const outsideDay = WEEKDAY_ORDER.find((day, index) => {
+      const checkDate = new Date(mondayDate);
+      checkDate.setDate(checkDate.getDate() + index);
+      return !isDateWithinRemedialWindow(checkDate);
+    });
+
+    if (outsideDay) {
+      setRemedialGuardMessage(
+        scheduleWindowLabel
+          ? `${outsideDay} falls outside the active remedial window (${scheduleWindowLabel}).`
+          : `${outsideDay} is outside the active remedial window.`,
+      );
+      return null;
+    }
+    setRemedialGuardMessage(null);
 
     return WEEKDAY_ORDER.map((day, index) => {
       const activityDate = new Date(mondayDate);
       activityDate.setDate(activityDate.getDate() + index);
       const startDate = createDateWithTime(activityDate, schedule.startTime);
       const endDate = createDateWithTime(activityDate, schedule.endTime);
+      const subjectForDay = sanitizeSubjectSelection(schedule.subjects[day], allowedSubjects) ?? schedule.subjects[day];
+      const title = subjectForDay ? `${subjectForDay} Remediation Session` : "Remediation Session";
+      const description = subjectForDay
+        ? `${subjectForDay} remediation for ${gradeLabel}`
+        : `Remediation for ${gradeLabel}`;
 
       return {
         id: baseId + index,
-        title: `${schedule.subjects[day]} Remediation Session`,
+        title,
         day,
-        roomNo: DEFAULT_ROOM,
-        description: `${schedule.subjects[day]} remediation for ${GRADE_LEVEL}`,
+        roomNo: defaultRoomLabel,
+        description,
         date: startDate,
         end: endDate,
         type: "class",
-        gradeLevel: GRADE_LEVEL,
-        subject: schedule.subjects[day],
+        gradeLevel: gradeLabel,
+        subject: subjectForDay,
         isWeeklyTemplate: true,
         weekRef: weekKey,
       } satisfies Activity;
@@ -191,21 +891,41 @@ export default function MasterTeacherCalendar() {
   };
 
   const handleWeeklySave = (data: WeeklyScheduleFormData) => {
-    const weekActivities = generateActivitiesForWeek(data);
-    const weekKey = buildWeekKey(GRADE_LEVEL, data.weekStart);
+    if (!canPlanActivities) {
+      if (!hasActiveRemedialWindow && scheduleBlockingReason) {
+        setRemedialGuardMessage(scheduleBlockingReason);
+      }
+      return;
+    }
+    const normalizedSubjects = WEEKDAY_ORDER.reduce<Record<Weekday, string>>((acc, day) => {
+      const subject = sanitizeSubjectSelection(data.subjects[day], allowedSubjects) ?? data.subjects[day];
+      acc[day] = subject;
+      return acc;
+    }, { ...data.subjects });
+
+    const normalizedSchedule: WeeklyScheduleFormData = {
+      ...data,
+      subjects: normalizedSubjects,
+    };
+
+    const weekActivities = generateActivitiesForWeek(normalizedSchedule);
+    if (!weekActivities) {
+      return;
+    }
+    const weekKey = buildWeekKey(gradeLabel, normalizedSchedule.weekStart);
 
     setActivities((prev) => {
       const filtered = prev.filter((activity) => activity.weekRef !== weekKey);
       return [...filtered, ...weekActivities];
     });
 
-    setWeeklySchedule(data);
+  setWeeklySchedule(normalizedSchedule);
     setShowWeeklyModal(false);
   };
 
   const clearWeeklyPlan = () => {
     if (weeklySchedule) {
-      const weekKey = buildWeekKey(GRADE_LEVEL, weeklySchedule.weekStart);
+      const weekKey = buildWeekKey(gradeLabel, weeklySchedule.weekStart);
       setActivities((prev) => prev.filter((activity) => activity.weekRef !== weekKey));
     }
     setWeeklySchedule(null);
@@ -289,7 +1009,7 @@ export default function MasterTeacherCalendar() {
                           {activity.end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                         </div>
                         <div className="text-xs text-gray-500 mt-1">
-                          {(activity.gradeLevel ?? GRADE_LEVEL) + " · " + activity.roomNo}
+                          {(activity.gradeLevel ?? gradeLabel) + " · " + activity.roomNo}
                         </div>
                       </div>
                       <button
@@ -375,7 +1095,7 @@ export default function MasterTeacherCalendar() {
                       </button>
                     </div>
                     <div className="mt-0.5 flex items-center justify-between text-[0.65rem] text-gray-600">
-                      <span className="truncate">{activity.gradeLevel ?? GRADE_LEVEL}</span>
+                      <span className="truncate">{activity.gradeLevel ?? gradeLabel}</span>
                       <span>
                         {activity.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                       </span>
@@ -474,7 +1194,7 @@ export default function MasterTeacherCalendar() {
                         {activity.end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                       </div>
                       <div className="text-xs text-gray-500 mt-1">
-                        {(activity.gradeLevel ?? GRADE_LEVEL) + " · " + activity.roomNo}
+                        {(activity.gradeLevel ?? gradeLabel) + " · " + activity.roomNo}
                       </div>
                     </div>
                     <button
@@ -515,6 +1235,42 @@ export default function MasterTeacherCalendar() {
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-full min-h-[400px] overflow-y-auto p-4 sm:p-5 md:p-6">
               {/* Calendar Controls */}
               <div className="flex flex-col gap-3 mb-4">
+                {profileLoading && !profileError && (
+                  <div className="rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                    Syncing coordinator schedule…
+                  </div>
+                )}
+                {profileError && (
+                  <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {profileError}
+                  </div>
+                )}
+                {remedialWindowError && (
+                  <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {remedialWindowError}
+                  </div>
+                )}
+                {remedialStatusBanner && (
+                  <div
+                    className={`rounded-md border px-3 py-2 text-sm ${
+                      remedialStatusBanner.tone === "success"
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                        : "border-blue-200 bg-blue-50 text-blue-800"
+                    }`}
+                  >
+                    {remedialStatusBanner.message}
+                  </div>
+                )}
+                {schedulingLocked && (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    Calendar scheduling is locked until your {assignmentsDescription} {missingAssignments.length > 1 ? "assignments are" : "assignment is"} configured. Please contact the IT Administrator for assistance.
+                  </div>
+                )}
+                {remedialGuardMessage && (
+                  <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                    {remedialGuardMessage}
+                  </div>
+                )}
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center space-x-2 sm:space-x-3">
                     <div className="flex items-center space-x-1">
@@ -571,7 +1327,16 @@ export default function MasterTeacherCalendar() {
                       type="button"
                       small
                       className="px-4"
-                      onClick={() => setShowWeeklyModal(true)}
+                      disabled={!canPlanActivities}
+                      onClick={() => {
+                        if (!canPlanActivities) {
+                          if (!hasActiveRemedialWindow && scheduleBlockingReason) {
+                            setRemedialGuardMessage(scheduleBlockingReason);
+                          }
+                          return;
+                        }
+                        setShowWeeklyModal(true);
+                      }}
                     >
                       {weeklySchedule ? "Update Weekly Schedule" : "Set Schedule"}
                     </PrimaryButton>
@@ -581,18 +1346,22 @@ export default function MasterTeacherCalendar() {
                 <div className="rounded-lg border border-gray-200 bg-gray-50/80 p-4">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <p className="text-xl font-semibold text-gray-800">{GRADE_LEVEL} Remediation Plan</p>
-                      {weeklySchedule ? (
-                        <>
-                          <p className="text-sm text-gray-600">
-                            Week of {weeklyWeekStartLabel} · {weeklyTimeLabel}
+                      <p className="text-xl font-semibold text-gray-800">{remediationPlanTitle}</p>
+                      <div className="mt-1 space-y-1 text-sm text-gray-600">
+                        {coordinatorSubject ? (
+                          <p>Coordinator Subject: {coordinatorSubject}</p>
+                        ) : (
+                          <p className="italic text-gray-500">Coordinator subject not assigned yet.</p>
+                        )}
+                        {weeklySchedule ? (
+                          <p>
+                            Week of {weeklyWeekStartLabel}
+                            {weeklyTimeLabel ? ` · ${weeklyTimeLabel}` : ""}
                           </p>
-                        </>
-                      ) : (
-                        <p className="text-sm text-gray-600">
-                          Click Plan Weekly Schedule to add schedule for {GRADE_LEVEL}
-                        </p>
-                      )}
+                        ) : (
+                          <p>Click Plan Weekly Schedule to add schedule for {gradeLabel}</p>
+                        )}
+                      </div>
                     </div>
                     {weeklySchedule && (
                       <SecondaryButton
@@ -624,10 +1393,18 @@ export default function MasterTeacherCalendar() {
 
               <WeeklyScheduleModal
                 show={showWeeklyModal}
-                onClose={() => setShowWeeklyModal(false)}
+                onClose={() => {
+                  setShowWeeklyModal(false);
+                  setRemedialGuardMessage(null);
+                }}
                 onSave={handleWeeklySave}
                 initialData={weeklySchedule}
-                gradeLevel={GRADE_LEVEL}
+                gradeLevel={gradeLabel}
+                allowedSubjects={allowedSubjects}
+                scheduleWindowLabel={scheduleWindowLabel}
+                scheduleStartDate={remedialWindow?.startDate ?? null}
+                scheduleEndDate={remedialWindow?.endDate ?? null}
+                scheduleActive={hasActiveRemedialWindow}
               />
 
               {/* Add Schedule Modal */}
@@ -635,11 +1412,28 @@ export default function MasterTeacherCalendar() {
                 show={showAddModal}
                 onClose={() => {
                   setShowAddModal(false);
-                  reset();
+                  setSelectedDate(null);
+                  reset({
+                    title: "",
+                    date: "",
+                    roomNo: "",
+                    description: "",
+                    teachers: [],
+                    subject: allowedSubjects[0] ?? "",
+                  });
+                  clearErrors();
+                  setRemedialGuardMessage(null);
                 }}
                 form={formMethods}
                 onSubmit={handleAddSchedule}
                 selectedDate={selectedDate}
+                gradeLabel={gradeLabel}
+                allowedSubjects={allowedSubjects}
+                defaultRoomLabel={defaultRoomLabel}
+                canSchedule={canPlanActivities}
+                scheduleWindowLabel={scheduleWindowLabel}
+                scheduleStartDate={remedialWindow?.startDate ?? null}
+                scheduleEndDate={remedialWindow?.endDate ?? null}
               />
 
               {/* Activity Detail Modal */}

@@ -9,12 +9,12 @@ type FooterProps = {
   schoolDetails?: SchoolDetails | null;
 };
 
-const FALLBACK_DETAILS: Required<SchoolDetails> = {
+const FALLBACK_DETAILS = {
   location: "Heavenly Drive St., San Agustin, Novaliches, Quezon City",
   contact_no: "(02) 7001 7058",
   email: "sanagustinelem@gmail.com",
   facebook: "https://bit.ly/136538_saesfb",
-};
+} as const satisfies Record<keyof SchoolDetails, string>;
 
 const getSafeValue = (value: string | null | undefined, fallback: string) => {
   if (typeof value !== "string") return fallback;

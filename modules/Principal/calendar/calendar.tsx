@@ -1,7 +1,7 @@
 "use client";
 import Sidebar from "@/components/Principal/Sidebar";
 import Header from "@/components/Principal/Header";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
@@ -25,6 +25,10 @@ interface RemedialPeriod {
 }
 
 const STORAGE_KEY = "principalRemedialPeriod";
+const API_ENDPOINT = "/api/master_teacher/coordinator/remedial-schedule";
+
+const resolveQuarterValue = (value: string | null | undefined): RemedialPeriod["quarter"] =>
+  value === "2nd Quarter" ? "2nd Quarter" : "1st Quarter";
 
 const getActivityColor = (type: string) => {
   switch (type) {
@@ -119,6 +123,9 @@ export default function PrincipalCalendar() {
   const [remedialPeriod, setRemedialPeriod] = useState<RemedialPeriod | null>(null);
   const [showPeriodModal, setShowPeriodModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [scheduleLoading, setScheduleLoading] = useState(true);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [isMutating, setIsMutating] = useState(false);
 
   useEffect(() => {
     const stored = typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEY) : null;
@@ -141,6 +148,43 @@ export default function PrincipalCalendar() {
     }
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(remedialPeriod));
   }, [remedialPeriod]);
+
+  const loadRemedialSchedule = useCallback(async () => {
+    setScheduleLoading(true);
+    setScheduleError(null);
+    try {
+      const response = await fetch(API_ENDPOINT, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+      const data = (await response.json()) as {
+        success: boolean;
+        schedule: { quarter: string | null; startDate: string | null; endDate: string | null } | null;
+      };
+      if (!data.success) {
+        throw new Error("Server responded with an error");
+      }
+      const schedule = data.schedule;
+      if (schedule?.startDate && schedule?.endDate) {
+        setRemedialPeriod({
+          quarter: resolveQuarterValue(schedule.quarter),
+          startDate: schedule.startDate,
+          endDate: schedule.endDate,
+        });
+      } else {
+        setRemedialPeriod(null);
+      }
+    } catch (error) {
+      console.error("Failed to load remedial schedule", error);
+      setScheduleError("Unable to load the remedial schedule. Showing the last saved version.");
+    } finally {
+      setScheduleLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadRemedialSchedule();
+  }, [loadRemedialSchedule]);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -262,22 +306,73 @@ export default function PrincipalCalendar() {
     );
   };
 
-  const handleSavePeriod = (values: RemedialPeriodFormValues) => {
-    setRemedialPeriod({
-      quarter: values.quarter as RemedialPeriod["quarter"],
-      startDate: values.startDate,
-      endDate: values.endDate,
-    });
-    setShowPeriodModal(false);
+  const handleSavePeriod = async (values: RemedialPeriodFormValues) => {
+    if (isMutating) return;
+    setIsMutating(true);
+    setScheduleError(null);
+    try {
+      const response = await fetch(API_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          quarter: values.quarter,
+          startDate: values.startDate,
+          endDate: values.endDate,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+      const data = (await response.json()) as {
+        success: boolean;
+        schedule: { quarter: string | null; startDate: string | null; endDate: string | null } | null;
+      };
+      if (!data.success) {
+        throw new Error("Server responded with an error");
+      }
+      const schedule = data.schedule;
+      if (!schedule?.startDate || !schedule?.endDate) {
+        throw new Error("Incomplete schedule returned by the server");
+      }
+      setRemedialPeriod({
+        quarter: resolveQuarterValue(schedule.quarter ?? values.quarter),
+        startDate: schedule.startDate,
+        endDate: schedule.endDate,
+      });
+      setShowPeriodModal(false);
+    } catch (error) {
+      console.error("Failed to save remedial schedule", error);
+      setScheduleError("Unable to save the remedial schedule. Please try again.");
+    } finally {
+      setIsMutating(false);
+    }
   };
 
   const openCancelModal = () => {
     setShowCancelModal(true);
   };
 
-  const handleConfirmCancel = () => {
-    setRemedialPeriod(null);
-    setShowCancelModal(false);
+  const handleConfirmCancel = async () => {
+    if (isMutating) return;
+    setIsMutating(true);
+    setScheduleError(null);
+    try {
+      const response = await fetch(API_ENDPOINT, { method: "DELETE" });
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+      const data = (await response.json()) as { success: boolean };
+      if (!data.success) {
+        throw new Error("Server responded with an error");
+      }
+      setRemedialPeriod(null);
+      setShowCancelModal(false);
+    } catch (error) {
+      console.error("Failed to cancel remedial schedule", error);
+      setScheduleError("Unable to cancel the remedial schedule. Please try again.");
+    } finally {
+      setIsMutating(false);
+    }
   };
 
   const handleCloseCancelModal = () => {
@@ -324,6 +419,7 @@ export default function PrincipalCalendar() {
                         small
                         className="px-4"
                         onClick={openCancelModal}
+                        disabled={isMutating}
                       >
                         Cancel Schedule
                       </DangerButton>
@@ -333,6 +429,7 @@ export default function PrincipalCalendar() {
                       small
                       className="px-4"
                       onClick={() => setShowPeriodModal(true)}
+                      disabled={isMutating}
                     >
                       {remedialPeriod ? "Update Schedule" : "Set Schedule"}
                     </PrimaryButton>
@@ -344,6 +441,12 @@ export default function PrincipalCalendar() {
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div className="flex-1">
                       <p className="text-xl font-semibold text-gray-800">Remedial Period Schedule</p>
+                      {scheduleLoading && (
+                        <p className="text-sm text-gray-500 mt-1">Loading latest schedule…</p>
+                      )}
+                      {scheduleError && (
+                        <p className="text-sm text-amber-600 mt-1">{scheduleError}</p>
+                      )}
                       {remedialPeriod ? (
                         <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-1">
                           <p className="text-sm text-gray-600">
