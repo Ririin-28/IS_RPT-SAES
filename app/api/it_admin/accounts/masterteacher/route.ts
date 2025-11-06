@@ -154,9 +154,11 @@ export async function GET() {
     addMasterTeacherColumn("email", "mt_email");
     addMasterTeacherColumn("contact_number", "mt_contact_number");
     addMasterTeacherColumn("phone_number", "mt_phone_number");
+    addMasterTeacherColumn("remedial_teacher_grade", "mt_remedial_grade");
     addMasterTeacherColumn("grade", "mt_grade");
     addMasterTeacherColumn("section", "mt_section");
     addMasterTeacherColumn("subjects", "mt_subjects");
+    addMasterTeacherColumn("subject_handled", "mt_subject_handled");
   addMasterTeacherColumn("mt_coordinator", "mt_coordinator");
   addMasterTeacherColumn("coordinator_subject", "mt_coordinator_subject");
   addMasterTeacherColumn("coordinator", "mt_coordinator_generic");
@@ -219,10 +221,12 @@ export async function GET() {
         row.user_contact_number,
         row.user_phone_number,
       );
-      const grade = coalesce(row.mt_grade);
+      const grade = coalesce(row.mt_remedial_grade, row.mt_grade);
       const section = coalesce(row.mt_section);
-      const subjects = coalesce(row.mt_subjects);
+      const subjects = coalesce(row.mt_subjects) || "English, Filipino, Math";
+      const subjectHandled = coalesce(row.mt_subject_handled);
       const coordinatorSubject = coalesce(
+        subjectHandled,
         row.mt_coordinator,
         row.mt_coordinator_subject,
         row.mt_coordinator_generic,

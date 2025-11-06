@@ -351,6 +351,10 @@ export async function createMasterTeacher(input: CreateMasterTeacherInput): Prom
           masterTeacherInsertColumns.push("phone_number");
           masterTeacherValues.push(phoneNumber);
         }
+        if (masterTeacherInfo.columns.has("remedial_teacher_grade")) {
+          masterTeacherInsertColumns.push("remedial_teacher_grade");
+          masterTeacherValues.push(grade);
+        }
         if (masterTeacherInfo.columns.has("grade")) {
           masterTeacherInsertColumns.push("grade");
           masterTeacherValues.push(grade);
@@ -378,6 +382,10 @@ export async function createMasterTeacher(input: CreateMasterTeacherInput): Prom
               masterTeacherValues.push(subjects);
             }
           }
+        }
+        if (masterTeacherInfo.columns.has("subject_handled")) {
+          masterTeacherInsertColumns.push("subject_handled");
+          masterTeacherValues.push(coordinatorSubject);
         }
         for (const column of ["mt_coordinator", "coordinator_subject", "coordinator", "coordinatorSubject"]) {
           if (masterTeacherInfo.columns.has(column)) {
