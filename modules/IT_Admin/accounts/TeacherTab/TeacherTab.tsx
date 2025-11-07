@@ -14,6 +14,8 @@ import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmati
 import { exportAccountRows, TEACHER_EXPORT_COLUMNS } from "../utils/export-columns";
 
 const NAME_COLLATOR = new Intl.Collator("en", { sensitivity: "base", numeric: true });
+const DEFAULT_SUBJECTS = ["English", "Filipino", "Math"] as const;
+const DEFAULT_SUBJECTS_STRING = DEFAULT_SUBJECTS.join(", ");
 
 function toStringOrNull(value: unknown): string | null {
   if (value === null || value === undefined) {
@@ -109,9 +111,20 @@ function normalizeTeacherRecord(record: any) {
   const contactDisplay = formatLocalPhoneNumber(contactRaw);
   normalized.contactNumberDisplay = contactDisplay ?? contactRaw;
   normalized.phoneNumber = contactRaw;
-  normalized.grade = toStringOrNull(record.grade ?? record.handledGrade ?? record.handled_grade);
+  normalized.grade = toStringOrNull(
+    record.grade ??
+      record.handledGrade ??
+      record.handled_grade ??
+      record.gradeLevel ??
+      record.grade_level ??
+      record.yearLevel ??
+      record.year_level ??
+      record.remedialGrade ??
+      record.remedial_grade ??
+      record.remedial_teacher_grade,
+  );
   normalized.section = toStringOrNull(record.section);
-  normalized.subjects = toStringOrNull(record.subjects ?? record.handledSubjects ?? record.handled_subjects);
+  normalized.subjects = DEFAULT_SUBJECTS_STRING;
   normalized.status = toStringOrNull(record.status) ?? "Active";
   normalized.lastLogin = record.lastLogin ?? null;
   normalized.lastLoginDisplay = formatTimestamp(record.lastLogin ?? null);
@@ -194,7 +207,7 @@ export default function TeacherTab({ teachers, setTeachers, searchTerm }: Teache
       email: "",
       phoneNumber: "",
       grade: "",
-      subjects: ["English", "Filipino", "Math"],
+      subjects: [...DEFAULT_SUBJECTS],
     },
   });
 
@@ -278,7 +291,7 @@ export default function TeacherTab({ teachers, setTeachers, searchTerm }: Teache
       email: values.email.trim().toLowerCase(),
       phoneNumber: values.phoneNumber.replace(/\D/g, ""),
       grade: values.grade.trim(),
-      subjects: values.subjects.join(", "),
+  subjects: DEFAULT_SUBJECTS_STRING,
     };
 
     setIsSubmitting(true);
@@ -427,16 +440,6 @@ export default function TeacherTab({ teachers, setTeachers, searchTerm }: Teache
                 "handled_grade",
                 "handledGrade",
               ]);
-              const subjects = readField(row, [
-                "HANDLED SUBJECTS",
-                "HANDLED_SUBJECTS",
-                "HANDLEDSUBJECTS",
-                "Handled Subjects",
-                "handledSubjects",
-                "SUBJECTS",
-                "Subjects",
-                "subjects",
-              ]);
               const phoneNumber = contactRaw.replace(/\D/g, "");
 
               if (!firstName || !lastName || !email || !grade || phoneNumber.length < 10) {
@@ -452,7 +455,7 @@ export default function TeacherTab({ teachers, setTeachers, searchTerm }: Teache
                 email,
                 phoneNumber,
                 grade,
-                subjects: subjects || null,
+                subjects: DEFAULT_SUBJECTS_STRING,
               };
             })
             .filter((payload): payload is Required<typeof payload> => payload !== null);

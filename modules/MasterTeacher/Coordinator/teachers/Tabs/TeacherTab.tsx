@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import React from "react";
 import TeacherDetailModal from "../Modals/TeacherDetailModal";
+import type { CoordinatorTeacher } from "../useCoordinatorTeachers";
 // Button Components
 
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
@@ -77,12 +77,11 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
 };
 
 interface TeacherTabProps {
-  teachers: any[];
-  setTeachers: React.Dispatch<React.SetStateAction<any[]>>;
+  teachers: CoordinatorTeacher[];
   searchTerm: string;
 }
 
-export default function TeacherTab({ teachers, setTeachers, searchTerm }: TeacherTabProps) {
+export default function TeacherTab({ teachers, searchTerm }: TeacherTabProps) {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedTeacher, setSelectedTeacher] = useState<any>(null);
   const [filter, setFilter] = useState({ section: "All Sections" });
