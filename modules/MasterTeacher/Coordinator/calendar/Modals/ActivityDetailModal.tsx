@@ -5,10 +5,39 @@ import BaseModal, {
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 
+const parseTimestamp = (value: string | null | undefined): Date | null => {
+  if (!value) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const primary = new Date(trimmed);
+  if (!Number.isNaN(primary.getTime())) {
+    return primary;
+  }
+  const fallback = new Date(trimmed.replace(/\s/, "T"));
+  if (!Number.isNaN(fallback.getTime())) {
+    return fallback;
+  }
+  return null;
+};
+
+const formatDateLabel = (value: Date | null): string | null => {
+  if (!value) {
+    return null;
+  }
+  return value.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+};
+
 interface Activity {
   id: number;
   title: string;
-  roomNo: string;
   description?: string;
   date: Date;
   end: Date;
@@ -16,6 +45,12 @@ interface Activity {
   gradeLevel?: string;
   subject?: string;
   day?: string;
+  status?: string | null;
+  requestedAt?: string | null;
+  approvedAt?: string | null;
+  approvedBy?: string | null;
+  sourceTable?: string | null;
+  requester?: string | null;
 }
 
 interface ActivityDetailModalProps {
@@ -30,6 +65,18 @@ export default function ActivityDetailModal({ activity, onClose, onDelete }: Act
   const subjectLabel = activity.subject ?? activity.title;
   const timeRange = `${activity.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} - ${activity.end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
   const dayLabel = activity.day ?? activity.date.toLocaleDateString("en-US", { weekday: "long" });
+  const statusLabel = activity.status ?? "Draft";
+  const isLocked = statusLabel.toLowerCase().includes("approve");
+  const statusDisplay = isLocked ? `${statusLabel} (View Only)` : statusLabel;
+  const requestedDate = formatDateLabel(parseTimestamp(activity.requestedAt ?? null));
+  const approvedDate = formatDateLabel(parseTimestamp(activity.approvedAt ?? null));
+  const requestApprovalItems = [
+    { label: "Submitted On", value: requestedDate },
+    { label: "Submitted By", value: activity.requester },
+    { label: "Approved On", value: approvedDate },
+    { label: "Approved By", value: activity.approvedBy },
+    { label: "Source", value: activity.sourceTable },
+  ].filter((entry) => Boolean(entry.value && String(entry.value).trim().length));
   
   return (
     <BaseModal
@@ -39,13 +86,15 @@ export default function ActivityDetailModal({ activity, onClose, onDelete }: Act
       maxWidth="lg"
       footer={(
         <>
-          <DangerButton
-            type="button"
-            onClick={() => onDelete && onDelete(activity.id)}
-            className="px-5 py-2.5"
-          >
-            Delete
-          </DangerButton>
+          {!isLocked && onDelete && (
+            <DangerButton
+              type="button"
+              onClick={() => onDelete(activity.id)}
+              className="px-5 py-2.5"
+            >
+              Delete
+            </DangerButton>
+          )}
           <SecondaryButton type="button" onClick={onClose} className="px-5 py-2.5">
             Close
           </SecondaryButton>
@@ -56,6 +105,7 @@ export default function ActivityDetailModal({ activity, onClose, onDelete }: Act
         <div className="grid gap-4 sm:grid-cols-2">
           <ModalInfoItem label="Subject" value={subjectLabel} />
           <ModalInfoItem label="Grade Level" value={gradeLabel} />
+          <ModalInfoItem label="Status" value={statusDisplay} />
         </div>
       </ModalSection>
 
@@ -73,6 +123,24 @@ export default function ActivityDetailModal({ activity, onClose, onDelete }: Act
           <ModalInfoItem label="Time Slot" value={timeRange} />
         </div>
       </ModalSection>
+
+      {activity.description && (
+        <ModalSection title="Description">
+          <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 whitespace-pre-line">
+            {activity.description}
+          </div>
+        </ModalSection>
+      )}
+
+      {requestApprovalItems.length > 0 && (
+        <ModalSection title="Request & Approval">
+          <div className="grid gap-4 sm:grid-cols-2">
+            {requestApprovalItems.map((item) => (
+              <ModalInfoItem key={item.label} label={item.label} value={item.value} />
+            ))}
+          </div>
+        </ModalSection>
+      )}
     </BaseModal>
   );
 }

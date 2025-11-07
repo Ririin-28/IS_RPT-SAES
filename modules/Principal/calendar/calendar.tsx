@@ -6,8 +6,14 @@ import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
 import RemedialPeriodModal, {
+  type QuarterMonths,
+  type QuarterOption,
   type RemedialPeriodFormValues,
 } from "./Modals/RemedialPeriodModal";
+import SubjectScheduleModal, {
+  SUBJECT_WEEKDAYS,
+  type SubjectScheduleFormValues,
+} from "./Modals/SubjectScheduleModal";
 
 interface Activity {
   id: number;
@@ -24,11 +30,83 @@ interface RemedialPeriod {
   endDate: string;
 }
 
+interface ScheduleResponsePayload {
+  quarter: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  months?: QuarterMonths | null;
+}
+
+interface ScheduleResponse {
+  success: boolean;
+  schedule: ScheduleResponsePayload | null;
+}
+
 const STORAGE_KEY = "principalRemedialPeriod";
 const API_ENDPOINT = "/api/master_teacher/coordinator/remedial-schedule";
+const MONTHS_STORAGE_KEY = "principalRemedialQuarterMonths";
+const SUBJECT_SCHEDULE_ENDPOINT = "/api/principal/subject-schedule";
 
 const resolveQuarterValue = (value: string | null | undefined): RemedialPeriod["quarter"] =>
   value === "2nd Quarter" ? "2nd Quarter" : "1st Quarter";
+
+const MONTH_LABELS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+] as const;
+
+const uniqueSortedMonths = (values: number[]) =>
+  Array.from(
+    new Set(
+      values
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value) && value >= 0 && value <= 11)
+    )
+  ).sort((a, b) => a - b);
+
+const normalizeQuarterMonths = (input: Partial<QuarterMonths> | null | undefined): QuarterMonths => ({
+  "1st Quarter": uniqueSortedMonths(input?.["1st Quarter"] ?? []),
+  "2nd Quarter": uniqueSortedMonths(input?.["2nd Quarter"] ?? []),
+});
+
+const deriveMonthsFromRange = (start: string, end: string) => {
+  const startDate = parseDateString(start);
+  const endDate = parseDateString(end);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+    return [];
+  }
+
+  const cursor = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+  cursor.setHours(0, 0, 0, 0);
+  const months: number[] = [];
+
+  while (cursor <= endDate) {
+    months.push(cursor.getMonth());
+    cursor.setMonth(cursor.getMonth() + 1);
+    cursor.setDate(1);
+  }
+
+  return uniqueSortedMonths(months);
+};
+
+const formatMonthList = (months: number[]) => {
+  if (!months.length) return "No months selected";
+  const formatted = months
+    .map((month) => MONTH_LABELS[month] ?? "")
+    .filter((label) => label.length > 0)
+    .join(", ");
+  return formatted || "No months selected";
+};
 
 const getActivityColor = (type: string) => {
   switch (type) {
@@ -44,6 +122,51 @@ const getActivityColor = (type: string) => {
       return "bg-gray-100 text-gray-800 border-gray-200";
   }
 };
+
+const DEFAULT_SUBJECT_OPTIONS = [
+  "English",
+  "Filipino",
+  "Math",
+  "Science",
+  "Araling Panlipunan",
+  "MAPEH",
+  "Values Education",
+  "Assessment",
+] as const;
+
+const buildEmptySubjectSchedule = (): SubjectScheduleFormValues =>
+  SUBJECT_WEEKDAYS.reduce<SubjectScheduleFormValues>((acc, day) => {
+    acc[day] = "";
+    return acc;
+  }, {} as SubjectScheduleFormValues);
+
+const normalizeSubjectSchedule = (
+  input: Partial<SubjectScheduleFormValues> | null | undefined,
+): SubjectScheduleFormValues => {
+  const baseline = buildEmptySubjectSchedule();
+  if (!input) {
+    return baseline;
+  }
+  for (const day of SUBJECT_WEEKDAYS) {
+    const raw = input[day];
+    baseline[day] = typeof raw === "string" ? raw.trim() : "";
+  }
+  return baseline;
+};
+
+const dedupeSubjects = (subjects: readonly string[]): string[] => {
+  const unique = new Set<string>();
+  for (const subject of subjects) {
+    const trimmed = subject?.trim();
+    if (trimmed) {
+      unique.add(trimmed);
+    }
+  }
+  return Array.from(unique);
+};
+
+const subjectScheduleHasAssignments = (schedule: SubjectScheduleFormValues): boolean =>
+  SUBJECT_WEEKDAYS.some((day) => Boolean(schedule[day]?.trim().length));
 
 const parseDateString = (value: string) => {
   if (!value) return new Date(NaN);
@@ -121,23 +244,63 @@ export default function PrincipalCalendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [activities] = useState<Activity[]>([]);
   const [remedialPeriod, setRemedialPeriod] = useState<RemedialPeriod | null>(null);
+  const [quarterMonths, setQuarterMonths] = useState<QuarterMonths>(() => normalizeQuarterMonths(null));
   const [showPeriodModal, setShowPeriodModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [scheduleLoading, setScheduleLoading] = useState(true);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [isMutating, setIsMutating] = useState(false);
+  const [subjectSchedule, setSubjectSchedule] = useState<SubjectScheduleFormValues>(() => buildEmptySubjectSchedule());
+  const [subjectScheduleLoading, setSubjectScheduleLoading] = useState(true);
+  const [subjectScheduleError, setSubjectScheduleError] = useState<string | null>(null);
+  const [subjectOptions, setSubjectOptions] = useState<string[]>(() => dedupeSubjects(DEFAULT_SUBJECT_OPTIONS));
+  const [showSubjectModal, setShowSubjectModal] = useState(false);
+  const [subjectMutating, setSubjectMutating] = useState(false);
+  const [subjectMutationError, setSubjectMutationError] = useState<string | null>(null);
 
   useEffect(() => {
-    const stored = typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEY) : null;
-    if (!stored) return;
-    try {
-      const parsed = JSON.parse(stored) as RemedialPeriod;
-      if (parsed?.quarter && parsed?.startDate && parsed?.endDate) {
-        setRemedialPeriod(parsed);
+    if (typeof window === "undefined") return;
+
+    let initialMonths = normalizeQuarterMonths(null);
+
+    const storedMonths = window.localStorage.getItem(MONTHS_STORAGE_KEY);
+    if (storedMonths) {
+      try {
+        initialMonths = normalizeQuarterMonths(JSON.parse(storedMonths) as Partial<QuarterMonths>);
+      } catch (error) {
+        console.error("Failed to parse remedial month selections from storage", error);
       }
-    } catch (error) {
-      console.error("Failed to parse remedial period from storage", error);
     }
+
+    const storedPeriod = window.localStorage.getItem(STORAGE_KEY);
+    if (storedPeriod) {
+      try {
+        const parsed = JSON.parse(storedPeriod) as (RemedialPeriod & { months?: Partial<QuarterMonths> }) | null;
+        if (parsed?.quarter && parsed?.startDate && parsed?.endDate) {
+          const resolvedQuarter = resolveQuarterValue(parsed.quarter);
+          setRemedialPeriod({
+            quarter: resolvedQuarter,
+            startDate: parsed.startDate,
+            endDate: parsed.endDate,
+          });
+
+          const parsedMonths = parsed.months ? normalizeQuarterMonths(parsed.months) : initialMonths;
+          const derivedActiveMonths =
+            parsedMonths[resolvedQuarter].length > 0
+              ? parsedMonths[resolvedQuarter]
+              : deriveMonthsFromRange(parsed.startDate, parsed.endDate);
+
+          initialMonths = normalizeQuarterMonths({
+            ...parsedMonths,
+            [resolvedQuarter]: derivedActiveMonths,
+          });
+        }
+      } catch (error) {
+        console.error("Failed to parse remedial period from storage", error);
+      }
+    }
+
+    setQuarterMonths(initialMonths);
   }, []);
 
   useEffect(() => {
@@ -146,8 +309,52 @@ export default function PrincipalCalendar() {
       window.localStorage.removeItem(STORAGE_KEY);
       return;
     }
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(remedialPeriod));
-  }, [remedialPeriod]);
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ ...remedialPeriod, months: quarterMonths })
+    );
+  }, [remedialPeriod, quarterMonths]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const isEmpty =
+      (quarterMonths["1st Quarter"]?.length ?? 0) === 0 &&
+      (quarterMonths["2nd Quarter"]?.length ?? 0) === 0;
+    if (isEmpty) {
+      window.localStorage.removeItem(MONTHS_STORAGE_KEY);
+    } else {
+      window.localStorage.setItem(MONTHS_STORAGE_KEY, JSON.stringify(quarterMonths));
+    }
+  }, [quarterMonths]);
+
+  const loadSubjectSchedule = useCallback(async () => {
+    setSubjectScheduleLoading(true);
+    setSubjectScheduleError(null);
+    try {
+      const response = await fetch(SUBJECT_SCHEDULE_ENDPOINT, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+      const payload = (await response.json()) as {
+        success: boolean;
+        schedule: Partial<SubjectScheduleFormValues> | null;
+        options?: { subjects?: string[] } | null;
+        error?: string | null;
+      };
+      if (!payload.success) {
+        throw new Error(payload.error ?? "Subject schedule request failed.");
+      }
+      const schedule = normalizeSubjectSchedule(payload.schedule ?? null);
+      setSubjectSchedule(schedule);
+      const optionSeeds = Array.isArray(payload.options?.subjects) ? payload.options?.subjects : [];
+      setSubjectOptions(dedupeSubjects([...DEFAULT_SUBJECT_OPTIONS, ...optionSeeds]));
+    } catch (error) {
+      console.error("Failed to load subject schedule", error);
+      setSubjectScheduleError("Unable to load the subject schedule. Showing the last saved version.");
+    } finally {
+      setSubjectScheduleLoading(false);
+    }
+  }, []);
 
   const loadRemedialSchedule = useCallback(async () => {
     setScheduleLoading(true);
@@ -157,22 +364,29 @@ export default function PrincipalCalendar() {
       if (!response.ok) {
         throw new Error(`Request failed with status ${response.status}`);
       }
-      const data = (await response.json()) as {
-        success: boolean;
-        schedule: { quarter: string | null; startDate: string | null; endDate: string | null } | null;
-      };
+      const data = (await response.json()) as ScheduleResponse;
       if (!data.success) {
         throw new Error("Server responded with an error");
       }
       const schedule = data.schedule;
       if (schedule?.startDate && schedule?.endDate) {
+        const resolvedQuarter = resolveQuarterValue(schedule.quarter);
+        const startDate = schedule.startDate;
+        const endDate = schedule.endDate;
+        const nextMonths = schedule.months
+          ? normalizeQuarterMonths(schedule.months)
+          : normalizeQuarterMonths({
+              [resolvedQuarter]: deriveMonthsFromRange(startDate, endDate),
+            });
         setRemedialPeriod({
-          quarter: resolveQuarterValue(schedule.quarter),
-          startDate: schedule.startDate,
-          endDate: schedule.endDate,
+          quarter: resolvedQuarter,
+          startDate,
+          endDate,
         });
+        setQuarterMonths(nextMonths);
       } else {
         setRemedialPeriod(null);
+        setQuarterMonths(schedule?.months ? normalizeQuarterMonths(schedule.months) : normalizeQuarterMonths(null));
       }
     } catch (error) {
       console.error("Failed to load remedial schedule", error);
@@ -185,6 +399,15 @@ export default function PrincipalCalendar() {
   useEffect(() => {
     loadRemedialSchedule();
   }, [loadRemedialSchedule]);
+
+  useEffect(() => {
+    loadSubjectSchedule();
+  }, [loadSubjectSchedule]);
+
+  const subjectScheduleConfigured = useMemo(
+    () => subjectScheduleHasAssignments(subjectSchedule),
+    [subjectSchedule],
+  );
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -306,10 +529,66 @@ export default function PrincipalCalendar() {
     );
   };
 
+  const handleOpenSubjectModal = () => {
+    setSubjectMutationError(null);
+    setShowSubjectModal(true);
+  };
+
+  const handleCloseSubjectModal = () => {
+    if (subjectMutating) {
+      return;
+    }
+    setShowSubjectModal(false);
+    setSubjectMutationError(null);
+  };
+
+  const handleSaveSubjectSchedule = async (values: SubjectScheduleFormValues) => {
+    if (subjectMutating) {
+      return;
+    }
+    const normalized = normalizeSubjectSchedule(values);
+    setSubjectMutationError(null);
+    setSubjectMutating(true);
+    try {
+      const response = await fetch(SUBJECT_SCHEDULE_ENDPOINT, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ schedule: normalized }),
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        success: boolean;
+        schedule: Partial<SubjectScheduleFormValues> | null;
+        options?: { subjects?: string[] } | null;
+        error?: string | null;
+      } | null;
+      if (!response.ok) {
+        const message = payload && typeof payload.error === "string"
+          ? payload.error
+          : `Request failed with status ${response.status}`;
+        throw new Error(message);
+      }
+      if (!payload || !payload.success) {
+        throw new Error(payload?.error ?? "Failed to update subject schedule.");
+      }
+      const schedule = normalizeSubjectSchedule(payload.schedule ?? normalized);
+      setSubjectSchedule(schedule);
+      const optionSeeds = Array.isArray(payload.options?.subjects) ? payload.options?.subjects : [];
+      setSubjectOptions(dedupeSubjects([...DEFAULT_SUBJECT_OPTIONS, ...optionSeeds]));
+  setSubjectMutationError(null);
+      setShowSubjectModal(false);
+    } catch (error) {
+      console.error("Failed to update subject schedule", error);
+      setSubjectMutationError("Unable to update the subject schedule. Please try again.");
+    } finally {
+      setSubjectMutating(false);
+    }
+  };
+
   const handleSavePeriod = async (values: RemedialPeriodFormValues) => {
     if (isMutating) return;
     setIsMutating(true);
     setScheduleError(null);
+    const sanitizedMonths = normalizeQuarterMonths(values.months);
     try {
       const response = await fetch(API_ENDPOINT, {
         method: "POST",
@@ -318,15 +597,17 @@ export default function PrincipalCalendar() {
           quarter: values.quarter,
           startDate: values.startDate,
           endDate: values.endDate,
+          months: sanitizedMonths,
         }),
       });
+      const payload = (await response.json().catch(() => null)) as ScheduleResponse | null;
       if (!response.ok) {
-        throw new Error(`Request failed with status ${response.status}`);
+        const message = payload && typeof (payload as any)?.error === "string"
+          ? (payload as any).error
+          : `Request failed with status ${response.status}`;
+        throw new Error(message);
       }
-      const data = (await response.json()) as {
-        success: boolean;
-        schedule: { quarter: string | null; startDate: string | null; endDate: string | null } | null;
-      };
+      const data = payload ?? { success: false, schedule: null };
       if (!data.success) {
         throw new Error("Server responded with an error");
       }
@@ -334,15 +615,23 @@ export default function PrincipalCalendar() {
       if (!schedule?.startDate || !schedule?.endDate) {
         throw new Error("Incomplete schedule returned by the server");
       }
+      const resolvedQuarter = resolveQuarterValue(schedule.quarter ?? values.quarter);
       setRemedialPeriod({
-        quarter: resolveQuarterValue(schedule.quarter ?? values.quarter),
+        quarter: resolvedQuarter,
         startDate: schedule.startDate,
         endDate: schedule.endDate,
       });
+      const nextMonths = schedule.months
+        ? normalizeQuarterMonths(schedule.months)
+        : normalizeQuarterMonths({
+            ...sanitizedMonths,
+            [resolvedQuarter]: deriveMonthsFromRange(schedule.startDate, schedule.endDate),
+          });
+      setQuarterMonths(nextMonths);
       setShowPeriodModal(false);
     } catch (error) {
       console.error("Failed to save remedial schedule", error);
-      setScheduleError("Unable to save the remedial schedule. Please try again.");
+      setScheduleError(error instanceof Error ? error.message : "Unable to save the remedial schedule. Please try again.");
     } finally {
       setIsMutating(false);
     }
@@ -358,18 +647,41 @@ export default function PrincipalCalendar() {
     setScheduleError(null);
     try {
       const response = await fetch(API_ENDPOINT, { method: "DELETE" });
+      const payload = (await response.json().catch(() => null)) as ScheduleResponse | null;
       if (!response.ok) {
-        throw new Error(`Request failed with status ${response.status}`);
+        const message = payload && typeof (payload as any)?.error === "string"
+          ? (payload as any).error
+          : `Request failed with status ${response.status}`;
+        throw new Error(message);
       }
-      const data = (await response.json()) as { success: boolean };
+      const data = payload ?? { success: false, schedule: null };
       if (!data.success) {
         throw new Error("Server responded with an error");
       }
-      setRemedialPeriod(null);
+      const schedule = data.schedule;
+      if (schedule?.startDate && schedule?.endDate) {
+        const resolvedQuarter = resolveQuarterValue(schedule.quarter);
+        setRemedialPeriod({
+          quarter: resolvedQuarter,
+          startDate: schedule.startDate,
+          endDate: schedule.endDate,
+        });
+        setQuarterMonths(
+          normalizeQuarterMonths(schedule.months ?? {
+            [resolvedQuarter]: deriveMonthsFromRange(schedule.startDate, schedule.endDate),
+          }),
+        );
+      } else {
+        setRemedialPeriod(null);
+        setQuarterMonths(normalizeQuarterMonths(null));
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem(MONTHS_STORAGE_KEY);
+        }
+      }
       setShowCancelModal(false);
     } catch (error) {
       console.error("Failed to cancel remedial schedule", error);
-      setScheduleError("Unable to cancel the remedial schedule. Please try again.");
+      setScheduleError(error instanceof Error ? error.message : "Unable to cancel the remedial schedule. Please try again.");
     } finally {
       setIsMutating(false);
     }
@@ -380,6 +692,31 @@ export default function PrincipalCalendar() {
   };
 
   const statusBadge = getPeriodStatus(remedialPeriod);
+
+  const availableQuarterOptions = useMemo<QuarterOption[]>(() => {
+    if (!remedialPeriod || remedialPeriod.quarter !== "1st Quarter") {
+      return ["1st Quarter", "2nd Quarter"];
+    }
+
+    const endDate = parseDateString(remedialPeriod.endDate);
+    if (Number.isNaN(endDate.getTime())) {
+      return ["1st Quarter", "2nd Quarter"];
+    }
+
+    endDate.setHours(23, 59, 59, 999);
+    if (endDate >= new Date()) {
+      return ["1st Quarter"];
+    }
+
+    return ["1st Quarter", "2nd Quarter"];
+  }, [remedialPeriod]);
+
+  const modalInitialData = useMemo<RemedialPeriodFormValues>(() => ({
+    quarter: remedialPeriod?.quarter ?? "",
+    startDate: remedialPeriod?.startDate ?? "",
+    endDate: remedialPeriod?.endDate ?? "",
+    months: quarterMonths,
+  }), [remedialPeriod, quarterMonths]);
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
@@ -436,6 +773,51 @@ export default function PrincipalCalendar() {
                   </div>
                 </div>
 
+                {/* Subject Schedule Card */}
+                <div className="rounded-lg border border-gray-200 bg-white p-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex-1">
+                      <p className="text-xl font-semibold text-gray-800">Weekly Subject Schedule</p>
+                      {subjectScheduleLoading && (
+                        <p className="text-sm text-gray-500 mt-1">Loading latest assignments…</p>
+                      )}
+                      {subjectScheduleError && (
+                        <p className="text-sm text-amber-600 mt-1">{subjectScheduleError}</p>
+                      )}
+                      {!subjectScheduleLoading && !subjectScheduleConfigured && !subjectScheduleError && (
+                        <p className="text-sm text-gray-600 mt-1">
+                          Configure the weekday subjects so teachers know the focus for each day.
+                        </p>
+                      )}
+                    </div>
+                    <PrimaryButton
+                      type="button"
+                      small
+                      className="px-4"
+                      onClick={handleOpenSubjectModal}
+                      disabled={subjectMutating}
+                    >
+                      {subjectScheduleConfigured ? "Edit Subjects" : "Set Subjects"}
+                    </PrimaryButton>
+                  </div>
+
+                  {!subjectScheduleLoading && (
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                      {SUBJECT_WEEKDAYS.map((day) => (
+                        <div
+                          key={day}
+                          className="rounded-xl border border-gray-200 bg-gray-50 px-5 py-4 shadow-sm"
+                        >
+                          <div className="text-sm font-semibold uppercase tracking-wide text-gray-500">{day}</div>
+                          <div className="mt-1 text-lg font-semibold text-black">
+                            {subjectSchedule[day] ? subjectSchedule[day] : "—"}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 {/* Remedial Period Card */}
                 <div className="rounded-lg border border-gray-200 bg-gray-50/80 p-4">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -463,30 +845,15 @@ export default function PrincipalCalendar() {
                         </div>
                       ) : (
                         <p className="text-sm text-gray-600 mt-1">
-                          Click Set Remedial Period to configure the remedial timeframe
+                          Click Set Schedule to configure the remedial timeframe.
                         </p>
                       )}
                     </div>
                   </div>
 
                   {remedialPeriod && (
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                      <div className="rounded-xl border border-gray-200 bg-white px-5 py-4 shadow-sm">
-                        <div className="text-sm font-semibold uppercase tracking-wide text-gray-500">Quarter</div>
-                        <div className="mt-1 text-lg font-semibold text-black">{remedialPeriod.quarter}</div>
-                      </div>
-                      <div className="rounded-xl border border-gray-200 bg-white px-5 py-4 shadow-sm">
-                        <div className="text-sm font-semibold uppercase tracking-wide text-gray-500">Start Date</div>
-                        <div className="mt-1 text-lg font-semibold text-black">
-                          {formatFullDate(remedialPeriod.startDate)}
-                        </div>
-                      </div>
-                      <div className="rounded-xl border border-gray-200 bg-white px-5 py-4 shadow-sm">
-                        <div className="text-sm font-semibold uppercase tracking-wide text-gray-500">End Date</div>
-                        <div className="mt-1 text-lg font-semibold text-black">
-                          {formatFullDate(remedialPeriod.endDate)}
-                        </div>
-                      </div>
+                    <div className="mt-3 text-sm text-gray-700 leading-relaxed">
+                      <span className="font-semibold text-gray-900">Months Covered:</span> {formatMonthList(quarterMonths[remedialPeriod.quarter] ?? [])}
                     </div>
                   )}
                 </div>
@@ -518,19 +885,21 @@ export default function PrincipalCalendar() {
         </main>
       </div>
 
+      <SubjectScheduleModal
+        show={showSubjectModal}
+        onClose={handleCloseSubjectModal}
+        onSave={handleSaveSubjectSchedule}
+        initialValues={subjectSchedule}
+        subjectOptions={subjectOptions}
+        isSaving={subjectMutating}
+        errorMessage={subjectMutationError}
+      />
       <RemedialPeriodModal
         show={showPeriodModal}
         onClose={() => setShowPeriodModal(false)}
         onSave={handleSavePeriod}
-        initialData={
-          remedialPeriod
-            ? {
-                quarter: remedialPeriod.quarter,
-                startDate: remedialPeriod.startDate,
-                endDate: remedialPeriod.endDate,
-              }
-            : undefined
-        }
+        initialData={modalInitialData}
+        availableQuarters={availableQuarterOptions}
       />
       <DeleteConfirmationModal
         isOpen={showCancelModal}

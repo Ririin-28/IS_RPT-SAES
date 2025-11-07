@@ -1,8 +1,13 @@
 "use client";
 import React from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { performClientLogout } from "@/lib/utils/logout";
-import { getStoredUserProfile, formatFullNameWithMiddleInitial } from "@/lib/utils/user-profile";
+import {
+  getStoredUserProfile,
+  formatFullNameWithMiddleInitial,
+  USER_PROFILE_EVENT,
+  StoredUserProfile,
+} from "@/lib/utils/user-profile";
 type RoleSwitchOption = {
   label: string;
   description?: string;
@@ -20,8 +25,53 @@ interface ProfileDropdownProps {
 
 export default function ProfileDropdown({ email, name, onProfile, onLogout, roleOptions }: ProfileDropdownProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const [storedProfile, setStoredProfile] = React.useState<StoredUserProfile | null>(() => getStoredUserProfile());
 
-  const storedProfile = React.useMemo(() => getStoredUserProfile(), []);
+  React.useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleProfileChange = (event: Event) => {
+      const customEvent = event as CustomEvent<StoredUserProfile | null>;
+      setStoredProfile(customEvent.detail ?? getStoredUserProfile());
+    };
+
+    const handleStorage = () => {
+      setStoredProfile(getStoredUserProfile());
+    };
+
+    window.addEventListener(USER_PROFILE_EVENT, handleProfileChange);
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      window.removeEventListener(USER_PROFILE_EVENT, handleProfileChange);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, []);
+
+  const resolveProfileRoute = React.useCallback((rawRole?: string | null) => {
+    if (!rawRole) {
+      return null;
+    }
+    const normalized = rawRole.toLowerCase().replace(/\s+/g, "_");
+    const routeMap: Record<string, string> = {
+      admin: "/IT_Admin/profile",
+      it_admin: "/IT_Admin/profile",
+      itadmin: "/IT_Admin/profile",
+      master_teacher: "/MasterTeacher/RemedialTeacher/profile",
+      masterteacher: "/MasterTeacher/RemedialTeacher/profile",
+      remedial_teacher: "/MasterTeacher/RemedialTeacher/profile",
+      teacher: "/Teacher/profile",
+      principal: "/Principal/profile",
+      parent: "/Parent/profile",
+    };
+    if (routeMap[normalized]) {
+      return routeMap[normalized];
+    }
+    return null;
+  }, []);
 
   const resolvedEmail = React.useMemo(() => {
     if (email && email.trim().length > 0) {
@@ -58,6 +108,20 @@ export default function ProfileDropdown({ email, name, onProfile, onLogout, role
       onProfile();
       return;
     }
+    const fallbackRoute = resolveProfileRoute(storedProfile?.role);
+    if (fallbackRoute) {
+      router.push(fallbackRoute);
+      return;
+    }
+
+    if (pathname) {
+      const segments = pathname.split("/").filter((segment) => segment.length > 0);
+      if (segments.length > 0) {
+        router.push(`/${segments[0]}/profile`);
+        return;
+      }
+    }
+
     router.push("/Proponent/profile");
   };
 

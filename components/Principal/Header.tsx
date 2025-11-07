@@ -15,7 +15,6 @@ export default function PrincipalHeader({ title, onSearch }: PrincipalHeaderProp
   const [searchQuery, setSearchQuery] = React.useState("");
   const [showDropdown, setShowDropdown] = React.useState(false);
   const [showNotifications, setShowNotifications] = React.useState(false);
-  const router = useRouter();
   const profileBtnRef = React.useRef<HTMLButtonElement>(null);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const notificationBtnRef = React.useRef<HTMLButtonElement>(null);
@@ -142,8 +141,6 @@ export default function PrincipalHeader({ title, onSearch }: PrincipalHeaderProp
             {showDropdown && (
               <div ref={dropdownRef}>
                 <ProfileDropdown
-                  email="juandelacruz@gmail.com"
-                  name="Dela Cruz"
                   onProfile={() => {
                     setShowDropdown(false);
                     router.push("/Principal/profile");

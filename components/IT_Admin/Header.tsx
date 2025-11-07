@@ -138,10 +138,9 @@ export default function AdminHeader({ title, onSearch }: AdminHeaderProps) {
             {showDropdown && (
               <div ref={dropdownRef}>
                 <ProfileDropdown
-                  email="juandelacruz@gmail.com"
-                  name="Dela Cruz"
                   onProfile={() => {
-                    /* handle profile click */ setShowDropdown(false);
+                    setShowDropdown(false);
+                    router.push("/IT_Admin/profile");
                   }}
                   onLogout={() => {
                     setShowDropdown(false);
