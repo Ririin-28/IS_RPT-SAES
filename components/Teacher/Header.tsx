@@ -159,8 +159,6 @@ export default function TeacherHeader({ title, onSearch }: TeacherHeaderProps) {
             {showDropdown && (
               <div ref={dropdownRef}>
                 <ProfileDropdown
-                  email={profileData.email}
-                  name={profileData.name}
                   onProfile={() => {
                     setShowDropdown(false);
                     router.push("/Teacher/profile");

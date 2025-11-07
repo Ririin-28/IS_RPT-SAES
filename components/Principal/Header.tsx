@@ -139,8 +139,6 @@ export default function PrincipalHeader({ title }: PrincipalHeaderProps) {
             {showDropdown && (
               <div ref={dropdownRef}>
                 <ProfileDropdown
-                  email="juandelacruz@gmail.com"
-                  name="Dela Cruz"
                   onProfile={() => {
                     setShowDropdown(false);
                     router.push("/Principal/profile");
