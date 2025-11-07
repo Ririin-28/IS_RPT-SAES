@@ -1,7 +1,8 @@
 "use client";
 import Sidebar from "@/components/MasterTeacher/Coordinator/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ChangeEvent } from "react";
 import { useForm } from "react-hook-form";
 // Button Components
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
@@ -11,13 +12,14 @@ import AddScheduleModal from "./Modals/AddScheduleModal";
 import ActivityDetailModal from "./Modals/ActivityDetailModal";
 import DeleteConfirmationModal from "./Modals/DeleteConfirmationModal";
 import WeeklyScheduleModal, { WEEKDAY_ORDER, WeeklyScheduleFormData, Weekday } from "./Modals/WeeklyScheduleModal";
-import { getStoredUserProfile } from "@/lib/utils/user-profile";
+import { getStoredUserProfile, StoredUserProfile } from "@/lib/utils/user-profile";
+import SendActivitiesModal from "./Modals/SendActivitiesModal";
+import * as XLSX from "xlsx";
 
 interface Activity {
   id: number;
   title: string;
   day: string;
-  roomNo: string;
   description?: string;
   date: Date;
   end: Date;
@@ -26,19 +28,24 @@ interface Activity {
   subject?: string;
   isWeeklyTemplate?: boolean;
   weekRef?: string;
+  status?: string | null;
+  planBatchId?: string | null;
+  requestedAt?: string | null;
+  approvedAt?: string | null;
+  approvedBy?: string | null;
+  sourceTable?: string | null;
+  requester?: string | null;
 }
 
 type CalendarFormValues = {
   title: string;
   date: string;
-  roomNo: string;
   description: string;
   teachers: string[];
   subject: string;
 };
 
 const FALLBACK_GRADE_LEVEL = "Grade 3";
-const FALLBACK_ROOM_LABEL = `${FALLBACK_GRADE_LEVEL} Classroom`;
 
 interface RemedialScheduleWindow {
   quarter: string | null;
@@ -59,6 +66,54 @@ const SUBJECT_SYNONYM_MAP: Record<string, string> = {
   values: "Values Education",
   "values education": "Values Education",
   ede: "Values Education",
+};
+
+const TOAST_TONE_STYLES: Record<"success" | "info" | "error", string> = {
+  success: "bg-emerald-600 text-white border border-emerald-500",
+  info: "bg-blue-600 text-white border border-blue-500",
+  error: "bg-red-600 text-white border border-red-500",
+};
+
+const normalizeStatusLabel = (value: string | null | undefined): string | null => {
+  if (!value) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const normalized = trimmed.toLowerCase();
+  if (["1", "approved", "accept", "accepted", "granted", "true", "yes", "ok"].includes(normalized)) {
+    return "Approved";
+  }
+  if (["0", "pending", "awaiting", "submitted", "for approval", "waiting"].includes(normalized)) {
+    return "Pending";
+  }
+  if (["rejected", "declined", "denied", "cancelled", "canceled", "void"].includes(normalized)) {
+    return "Declined";
+  }
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+};
+
+const isActivityLocked = (activity: Activity | null | undefined): boolean => {
+  if (!activity?.status) {
+    return false;
+  }
+  return activity.status.toLowerCase().includes("approve");
+};
+
+const statusBadgeTone = (status: string | null | undefined) => {
+  if (!status) {
+    return "bg-gray-100 text-gray-600 border border-gray-300";
+  }
+  const normalized = status.toLowerCase();
+  if (normalized.includes("approve")) {
+    return "bg-emerald-100 text-emerald-800 border border-emerald-200";
+  }
+  if (normalized.includes("decline") || normalized.includes("reject")) {
+    return "bg-red-100 text-red-700 border border-red-200";
+  }
+  return "bg-amber-100 text-amber-800 border border-amber-200";
 };
 
 const normalizeSubjectValue = (raw: string): string | null => {
@@ -161,10 +216,110 @@ const formatTimeLabel = (time: string): string => {
   return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 };
 
+const parseTimestamp = (value: string | null | undefined): Date | null => {
+  if (!value) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const primary = new Date(trimmed);
+  if (!Number.isNaN(primary.getTime())) {
+    return primary;
+  }
+  const normalized = trimmed.replace(/\s/, "T");
+  const fallback = new Date(normalized);
+  if (!Number.isNaN(fallback.getTime())) {
+    return fallback;
+  }
+  return null;
+};
+
+const formatApprovalMetadata = (
+  approvedAt: string | null | undefined,
+  approvedBy: string | null | undefined,
+): string | null => {
+  const approvedDate = parseTimestamp(approvedAt ?? null);
+  const approvedLabel = approvedDate
+    ? approvedDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    : null;
+
+  if (approvedLabel && approvedBy) {
+    return `${approvedLabel} • ${approvedBy}`;
+  }
+
+  if (approvedLabel) {
+    return approvedLabel;
+  }
+
+  if (approvedBy && approvedBy.trim().length > 0) {
+    return approvedBy.trim();
+  }
+
+  return null;
+};
+
 const formatLongDate = (date: Date): string =>
   date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 
 const buildWeekKey = (gradeLevel: string, weekStart: string) => `${gradeLevel}-${weekStart}`;
+
+const GRADE_WORD_TO_NUMBER: Record<string, number> = {
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+};
+
+const ROMAN_NUMERAL_TO_NUMBER: Record<string, number> = {
+  i: 1,
+  ii: 2,
+  iii: 3,
+  iv: 4,
+  v: 5,
+  vi: 6,
+  vii: 7,
+  viii: 8,
+  ix: 9,
+  x: 10,
+};
+
+const deriveGradeNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const text = String(value).toLowerCase();
+  const digitMatch = text.match(/(\d+)/);
+  if (digitMatch) {
+    const parsed = Number(digitMatch[1]);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  const romanMatch = text.match(/\b(i|ii|iii|iv|v|vi|vii|viii|ix|x)\b/);
+  if (romanMatch) {
+    const parsed = ROMAN_NUMERAL_TO_NUMBER[romanMatch[1]];
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  const wordMatch = text.match(/\b(one|two|three|four|five|six|seven|eight|nine|ten)\b/);
+  if (wordMatch) {
+    const parsed = GRADE_WORD_TO_NUMBER[wordMatch[1]];
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return null;
+};
 
 const normalizeGradeLabel = (value: unknown): string | null => {
   if (value === null || value === undefined) {
@@ -174,30 +329,58 @@ const normalizeGradeLabel = (value: unknown): string | null => {
   if (trimmed.length === 0) {
     return null;
   }
-  const gradePattern = /^grade\s+(.*)$/i;
+
+  const derivedNumber = deriveGradeNumber(trimmed);
+  if (Number.isFinite(derivedNumber) && derivedNumber !== null) {
+    return `Grade ${derivedNumber}`;
+  }
+
+  const gradePattern = /^grade\s*(.*)$/i;
   const gradeMatch = gradePattern.exec(trimmed.replace(/\s+/g, " "));
   if (gradeMatch) {
     const remainder = gradeMatch[1]?.trim();
-    return remainder && remainder.length > 0 ? `Grade ${remainder}` : "Grade";
+    if (!remainder) {
+      return "Grade";
+    }
+    const remainderNumber = deriveGradeNumber(remainder);
+    if (Number.isFinite(remainderNumber) && remainderNumber !== null) {
+      return `Grade ${remainderNumber}`;
+    }
+    return `Grade ${remainder}`;
   }
-  if (/^\d+$/.test(trimmed)) {
-    return `Grade ${trimmed}`;
-  }
+
   return trimmed;
 };
 
-const deriveDefaultRoomLabel = (gradeLabel: string | null): string => {
-  const label = gradeLabel ?? FALLBACK_GRADE_LEVEL;
-  if (!label) {
-    return FALLBACK_ROOM_LABEL;
+const buildStoredProfileName = (profile: StoredUserProfile | null, fallback: string | null): string | null => {
+  if (profile) {
+    const parts: string[] = [];
+    const first = typeof profile.firstName === "string" ? profile.firstName.trim() : "";
+    const middle = typeof profile.middleName === "string" ? profile.middleName.trim() : "";
+    const last = typeof profile.lastName === "string" ? profile.lastName.trim() : "";
+    if (first) {
+      parts.push(first);
+    }
+    if (middle) {
+      parts.push(`${middle.charAt(0).toUpperCase()}.`);
+    }
+    if (last) {
+      parts.push(last);
+    }
+    if (parts.length > 0) {
+      return parts.join(" ").trim();
+    }
   }
-  if (/classroom$/i.test(label)) {
-    return label;
+
+  if (fallback && fallback.trim().length > 0) {
+    return fallback.trim();
   }
-  return `${label} Classroom`;
+
+  return null;
 };
 
 export default function MasterTeacherCalendar() {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState("month");
   const [showAddModal, setShowAddModal] = useState(false);
@@ -213,7 +396,6 @@ export default function MasterTeacherCalendar() {
     defaultValues: {
       title: "",
       date: "",
-      roomNo: "",
       description: "",
       teachers: [],
       subject: "",
@@ -227,10 +409,19 @@ export default function MasterTeacherCalendar() {
   const [allowedSubjects, setAllowedSubjects] = useState<string[]>([]);
   const [profileLoading, setProfileLoading] = useState<boolean>(true);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [coordinatorName, setCoordinatorName] = useState<string | null>(null);
+  const [coordinatorUserId, setCoordinatorUserId] = useState<number | null>(null);
   const [remedialWindow, setRemedialWindow] = useState<RemedialScheduleWindow | null>(null);
   const [remedialWindowLoading, setRemedialWindowLoading] = useState<boolean>(true);
   const [remedialWindowError, setRemedialWindowError] = useState<string | null>(null);
   const [remedialGuardMessage, setRemedialGuardMessage] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [showSendModal, setShowSendModal] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [sendFeedback, setSendFeedback] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; tone: "success" | "info" | "error" } | null>(null);
 
   const scheduleRange = useMemo(() => {
     if (!remedialWindow?.startDate || !remedialWindow?.endDate) {
@@ -262,6 +453,29 @@ export default function MasterTeacherCalendar() {
 
   const hasActiveRemedialWindow = remedialWindowStatus === "active";
 
+  const showToast = useCallback(
+    (message: string, tone: "success" | "info" | "error" = "success") => {
+      const trimmed = message.trim();
+      if (!trimmed) {
+        return;
+      }
+      setToast({ message: trimmed, tone });
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!toast) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setToast(null);
+    }, 2000);
+
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
   const scheduleWindowLabel = useMemo(() => {
     if (!scheduleRange) {
       return null;
@@ -280,7 +494,6 @@ export default function MasterTeacherCalendar() {
   }, [scheduleRange]);
 
   const gradeLabel = gradeLevel ?? FALLBACK_GRADE_LEVEL;
-  const defaultRoomLabel = deriveDefaultRoomLabel(gradeLevel);
   const hasAssignedGrade = Boolean(gradeLevel);
   const canPlanActivities =
     hasAssignedGrade &&
@@ -440,6 +653,10 @@ export default function MasterTeacherCalendar() {
       return;
     }
 
+    const parsedUserId = Number(profile.userId);
+    setCoordinatorUserId(Number.isFinite(parsedUserId) ? parsedUserId : null);
+  setCoordinatorName((prev) => prev ?? buildStoredProfileName(profile, null));
+
     const controller = new AbortController();
 
     const fetchMasterTeacherProfile = async (userId: string, signal: AbortSignal) => {
@@ -546,9 +763,21 @@ export default function MasterTeacherCalendar() {
             : coordinatorSubjectValue ?? null,
         );
 
+        const apiCoordinatorName = typeof coordinator.name === "string" ? coordinator.name.trim() : "";
+        const resolvedCoordinatorName = apiCoordinatorName.length > 0
+          ? apiCoordinatorName
+          : buildStoredProfileName(profile, coordinatorName);
+        setCoordinatorName(resolvedCoordinatorName);
+
+        const coordinatorIdCandidate = Number(
+          coordinator.userId ?? coordinator.masterTeacherId ?? coordinator.master_teacher_id ?? profile.userId,
+        );
+        if (Number.isFinite(coordinatorIdCandidate)) {
+          setCoordinatorUserId(coordinatorIdCandidate);
+        }
+
         if (Array.isArray(payload.activities)) {
-          const gradeForActivities = resolvedGrade ?? gradeLevel ?? FALLBACK_GRADE_LEVEL;
-          const defaultRoomForActivities = deriveDefaultRoomLabel(resolvedGrade ?? gradeLevel ?? null);
+          const gradeForActivities = normalizeGradeLabel(resolvedGrade ?? gradeLevel ?? null);
 
           const parsedActivities: Activity[] = (payload.activities as Array<Record<string, unknown>>)
             .map((item, index): Activity | null => {
@@ -579,19 +808,12 @@ export default function MasterTeacherCalendar() {
                 end.setTime(start.getTime() + 60 * 60 * 1000);
               }
 
-              const resolvedGrade =
+              const activityGrade =
                 normalizeGradeLabel(
                   (item.gradeLevel as string | null | undefined) ??
                     (item.grade as string | null | undefined) ??
                     null,
-                ) ?? gradeForActivities;
-
-              const roomLabel =
-                typeof item.roomNo === "string" && item.roomNo.trim().length > 0
-                  ? item.roomNo.trim()
-                  : typeof item.room === "string" && item.room.trim().length > 0
-                  ? item.room.trim()
-                  : defaultRoomForActivities;
+                );
 
               const subjectValueRaw =
                 extractSubject(item.subject) ?? extractSubject(item.title) ?? coordinatorSubjectValue;
@@ -603,6 +825,32 @@ export default function MasterTeacherCalendar() {
                 return null;
               }
 
+              const statusLabel = normalizeStatusLabel(item.status as string | null | undefined);
+              const planBatchCandidate =
+                typeof item.planBatchId === "string" && item.planBatchId.trim().length > 0
+                  ? item.planBatchId.trim()
+                  : undefined;
+              const weekRefRaw =
+                typeof item.weekRef === "string" && item.weekRef.trim().length > 0
+                  ? item.weekRef.trim()
+                  : undefined;
+              const resolvedPlanBatchId = planBatchCandidate ?? weekRefRaw ?? undefined;
+              const sourceTable =
+                typeof item.sourceTable === "string" && item.sourceTable.trim().length > 0
+                  ? item.sourceTable.trim()
+                  : undefined;
+              const requestedAt = typeof item.requestedAt === "string" ? item.requestedAt : undefined;
+              const approvedAt = typeof item.approvedAt === "string" ? item.approvedAt : undefined;
+              const approvedBy = typeof item.approvedBy === "string" ? item.approvedBy : undefined;
+              const requester =
+                typeof item.requester === "string" && item.requester.trim().length > 0
+                  ? item.requester.trim()
+                  : typeof item.requestedBy === "string" && item.requestedBy.trim().length > 0
+                  ? item.requestedBy.trim()
+                  : typeof item.submittedBy === "string" && item.submittedBy.trim().length > 0
+                  ? item.submittedBy.trim()
+                  : undefined;
+
               return {
                 id: Number.isFinite(Number(item.id)) ? Number(item.id) : index + 1,
                 title:
@@ -610,7 +858,6 @@ export default function MasterTeacherCalendar() {
                     ? item.title.trim()
                     : sanitizedSubject ?? "Remediation Session",
                 day: start.toLocaleDateString("en-US", { weekday: "long" }),
-                roomNo: roomLabel,
                 description:
                   typeof item.description === "string" && item.description.trim().length > 0
                     ? item.description.trim()
@@ -621,21 +868,28 @@ export default function MasterTeacherCalendar() {
                   typeof item.type === "string" && item.type.trim().length > 0
                     ? item.type.trim()
                     : "class",
-                gradeLevel: resolvedGrade ?? undefined,
+                gradeLevel: activityGrade ?? undefined,
                 subject: sanitizedSubject ?? undefined,
                 isWeeklyTemplate: Boolean(item.isWeeklyTemplate ?? item.is_template),
-                weekRef:
-                  typeof item.weekRef === "string" && item.weekRef.trim().length > 0
-                    ? item.weekRef.trim()
-                    : undefined,
+                weekRef: weekRefRaw ?? resolvedPlanBatchId,
+                status: statusLabel,
+                planBatchId: resolvedPlanBatchId ?? null,
+                requestedAt: requestedAt ?? null,
+                approvedAt: approvedAt ?? null,
+                approvedBy: approvedBy ?? null,
+                sourceTable: sourceTable ?? null,
+                requester: requester ?? null,
               } satisfies Activity;
             })
             .filter((activity): activity is Activity => {
               if (!activity) {
                 return false;
               }
-              if (resolvedGrade && activity.gradeLevel && activity.gradeLevel !== gradeForActivities) {
-                return false;
+              if (gradeForActivities && activity.gradeLevel) {
+                const normalizedActivityGrade = normalizeGradeLabel(activity.gradeLevel);
+                if (normalizedActivityGrade && normalizedActivityGrade !== gradeForActivities) {
+                  return false;
+                }
               }
               if (subjectArray.length > 0) {
                 const subjectValue = activity.subject;
@@ -724,6 +978,30 @@ export default function MasterTeacherCalendar() {
     setCurrentDate(new Date());
   };
 
+  const deriveSessionTimes = useCallback(
+    (baseDate: Date) => {
+      const normalized = new Date(baseDate);
+      normalized.setHours(0, 0, 0, 0);
+
+      let start: Date;
+      let end: Date;
+
+      if (weeklySchedule) {
+        start = createDateWithTime(normalized, weeklySchedule.startTime);
+        end = createDateWithTime(normalized, weeklySchedule.endTime);
+        if (end.getTime() <= start.getTime()) {
+          end = new Date(start.getTime() + 60 * 60 * 1000);
+        }
+      } else {
+        start = createDateWithTime(normalized, "09:00");
+        end = new Date(start.getTime() + 60 * 60 * 1000);
+      }
+
+      return { start, end } as const;
+    },
+    [weeklySchedule],
+  );
+
   const isDateWithinRemedialWindow = useCallback(
     (date: Date | null | undefined) => {
       if (!date || !scheduleRange) {
@@ -790,8 +1068,8 @@ export default function MasterTeacherCalendar() {
     clearErrors("subject");
 
     const [year, month, day] = data.date.split("-").map(Number);
-    const startDate = new Date(year, month - 1, day, 9, 0, 0);
-    if (!isDateWithinRemedialWindow(startDate)) {
+    const baseDate = new Date(year, month - 1, day);
+    if (!isDateWithinRemedialWindow(baseDate)) {
       setError("date", {
         type: "validate",
         message: scheduleWindowLabel
@@ -805,18 +1083,13 @@ export default function MasterTeacherCalendar() {
       );
       return;
     }
-    const endDate = new Date(year, month - 1, day, 10, 0, 0);
-    const normalizedRoom =
-      typeof data.roomNo === "string" && data.roomNo.trim().length > 0
-        ? data.roomNo
-        : defaultRoomLabel;
+    const { start: startDate, end: endDate } = deriveSessionTimes(baseDate);
     const normalizedTitle = data.title.trim().length > 0 ? data.title.trim() : `${sanitizedSubject} Remediation`;
     const descriptionSource = data.description.trim().length > 0 ? data.description : `${sanitizedSubject} remediation for ${gradeLabel}`;
 
     const newActivity: Activity = {
       id: activities.length > 0 ? Math.max(...activities.map((a) => a.id)) + 1 : 1,
       ...data,
-      roomNo: normalizedRoom,
       day: startDate.toLocaleDateString("en-US", { weekday: "long" }),
       date: startDate,
       end: endDate,
@@ -827,18 +1100,339 @@ export default function MasterTeacherCalendar() {
       subject: sanitizedSubject,
     };
 
-    setActivities((prev) => [...prev, newActivity]);
+    setActivities((prev) => [...prev, newActivity].sort((a, b) => a.date.getTime() - b.date.getTime()));
     setShowAddModal(false);
     setSelectedDate(null);
     reset({
       title: "",
       date: "",
-      roomNo: "",
       description: "",
       teachers: [],
       subject: allowedSubjects[0] ?? "",
     });
     clearErrors();
+  };
+
+  const parseImportedDateCell = useCallback((value: unknown): Date | null => {
+    if (value instanceof Date) {
+      if (Number.isNaN(value.getTime())) {
+        return null;
+      }
+      const cloned = new Date(value);
+      cloned.setHours(0, 0, 0, 0);
+      return cloned;
+    }
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+      const parsed = XLSX.SSF?.parse_date_code?.(value);
+      if (!parsed) {
+        return null;
+      }
+      const candidate = new Date(parsed.y, (parsed.m ?? 1) - 1, parsed.d ?? 1);
+      if (Number.isNaN(candidate.getTime())) {
+        return null;
+      }
+      candidate.setHours(0, 0, 0, 0);
+      return candidate;
+    }
+
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return null;
+      }
+      const timestamp = Date.parse(trimmed);
+      if (Number.isNaN(timestamp)) {
+        return null;
+      }
+      const candidate = new Date(timestamp);
+      if (Number.isNaN(candidate.getTime())) {
+        return null;
+      }
+      candidate.setHours(0, 0, 0, 0);
+      return candidate;
+    }
+
+    return null;
+  }, []);
+
+  const processImportFile = useCallback(
+    async (file: File) => {
+      if (!canPlanActivities) {
+        if (!hasActiveRemedialWindow && scheduleBlockingReason) {
+          setRemedialGuardMessage(scheduleBlockingReason);
+        }
+        return;
+      }
+
+      setImporting(true);
+      setImportError(null);
+
+      try {
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: "array" });
+
+        if (!workbook.SheetNames.length) {
+          throw new Error("The selected file does not contain any worksheets.");
+        }
+
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        if (!sheet) {
+          throw new Error("Unable to read the first worksheet from the file.");
+        }
+
+        const rows = XLSX.utils.sheet_to_json<Array<string | number | Date | null>>(sheet, {
+          header: 1,
+          raw: true,
+          blankrows: false,
+          defval: null,
+        });
+
+        if (rows.length <= 1) {
+          throw new Error("The worksheet does not contain any activity rows to import.");
+        }
+
+        const headersRow = rows[0] ?? [];
+        const headers = headersRow.map((cell) => (cell === null || cell === undefined ? "" : String(cell).trim().toLowerCase()));
+
+        const matchesHeader = (header: string, candidates: readonly string[]) =>
+          candidates.some((candidate) => header === candidate || header.includes(candidate));
+
+        const dateIndex = headers.findIndex((header) =>
+          matchesHeader(header, ["date", "day", "schedule date", "activity date", "session date"]),
+        );
+        const titleIndex = headers.findIndex((header) =>
+          matchesHeader(header, ["title", "activity", "activity title", "session", "event"]),
+        );
+
+        if (dateIndex === -1 || titleIndex === -1) {
+          throw new Error("Please include both 'Date' and 'Title' columns in the worksheet header before importing.");
+        }
+
+        let added = 0;
+        let skipped = 0;
+        let nextId = activities.length > 0 ? Math.max(...activities.map((activity) => activity.id)) + 1 : 1;
+
+        const existingSignatures = new Set(
+          activities.map(
+            (activity) => `${activity.date.toISOString()}::${activity.title.toLowerCase()}::${activity.subject ?? ""}`,
+          ),
+        );
+
+        const defaultSubject = sanitizeSubjectSelection(allowedSubjects[0], allowedSubjects) ?? allowedSubjects[0] ?? null;
+        const newActivities: Activity[] = [];
+
+        for (let i = 1; i < rows.length; i += 1) {
+          const row = rows[i];
+          if (!Array.isArray(row)) {
+            continue;
+          }
+
+          const rawTitle = row[titleIndex];
+          const title =
+            typeof rawTitle === "string"
+              ? rawTitle.trim()
+              : rawTitle !== null && rawTitle !== undefined
+              ? String(rawTitle).trim()
+              : "";
+
+          if (!title) {
+            skipped += 1;
+            continue;
+          }
+
+          const parsedDate = parseImportedDateCell(row[dateIndex]);
+          if (!parsedDate) {
+            skipped += 1;
+            continue;
+          }
+
+          if (!isDateWithinRemedialWindow(parsedDate)) {
+            skipped += 1;
+            if (scheduleBlockingReason) {
+              setRemedialGuardMessage(scheduleBlockingReason);
+            }
+            continue;
+          }
+
+          const resolvedSubject = sanitizeSubjectSelection(defaultSubject, allowedSubjects) ?? defaultSubject;
+          if (!resolvedSubject) {
+            skipped += 1;
+            continue;
+          }
+
+          const { start, end } = deriveSessionTimes(parsedDate);
+          const signature = `${start.toISOString()}::${title.toLowerCase()}::${resolvedSubject.toLowerCase()}`;
+          if (existingSignatures.has(signature)) {
+            skipped += 1;
+            continue;
+          }
+
+          existingSignatures.add(signature);
+
+          const description = `${resolvedSubject} remediation for ${gradeLabel}`;
+          newActivities.push({
+            id: nextId,
+            title,
+            day: start.toLocaleDateString("en-US", { weekday: "long" }),
+            description,
+            date: start,
+            end,
+            type: "class",
+            gradeLevel: gradeLabel,
+            subject: resolvedSubject,
+          });
+
+          nextId += 1;
+          added += 1;
+    }
+        if (newActivities.length > 0) {
+          setActivities((prev) => [...prev, ...newActivities].sort((a, b) => a.date.getTime() - b.date.getTime()));
+          setSendFeedback(null);
+        }
+
+        const totalRows = Math.max(rows.length - 1, 0);
+        if (added === 0) {
+          setImportError("No new activities were imported from the selected file.");
+        } else {
+          setImportError(null);
+          const summaryParts = [
+            `Imported ${added} of ${totalRows} row${totalRows === 1 ? "" : "s"}.`,
+          ];
+          if (skipped > 0) {
+            summaryParts.push(
+              `Skipped ${skipped} entr${skipped === 1 ? "y" : "ies"} that could not be imported.`,
+            );
+          }
+          showToast(summaryParts.join(" "), skipped > 0 ? "info" : "success");
+        }
+      } catch (error) {
+        console.error("Failed to import activities", error);
+        setImportError(error instanceof Error ? error.message : "Unable to import the schedule file.");
+      } finally {
+        setImporting(false);
+      }
+    },
+    [activities, allowedSubjects, canPlanActivities, deriveSessionTimes, gradeLabel, hasActiveRemedialWindow, isDateWithinRemedialWindow, scheduleBlockingReason],
+  );
+
+  const handleImportButtonClick = () => {
+    if (!canPlanActivities) {
+      if (!hasActiveRemedialWindow && scheduleBlockingReason) {
+        setRemedialGuardMessage(scheduleBlockingReason);
+      }
+      return;
+    }
+
+    setImportError(null);
+    setSendFeedback(null);
+    fileInputRef.current?.click();
+  };
+
+  const handleImportInputChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    if (!file) {
+      return;
+    }
+
+    await processImportFile(file);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleOpenSendModal = () => {
+    if (!activities.length) {
+      setSendFeedback("Add at least one activity to your calendar before sending it to the principal.");
+      return;
+    }
+
+    const unresolvedSubject = activities.some((activity) => !activity.subject);
+    if (unresolvedSubject && allowedSubjects.length === 0) {
+      setSendFeedback("Assign a subject to each activity before sending them to the principal.");
+      return;
+    }
+
+    setSendError(null);
+    setSendFeedback(null);
+    setShowSendModal(true);
+  };
+
+  const handleSendActivities = async () => {
+    if (!activities.length || sending) {
+      return;
+    }
+
+    setSending(true);
+    setSendError(null);
+
+    try {
+      if (!sendableActivities.length) {
+        showToast("All scheduled activities have already been approved.", "info");
+        setShowSendModal(false);
+        return;
+      }
+
+      const fallbackSubject = sanitizeSubjectSelection(allowedSubjects[0], allowedSubjects) ?? allowedSubjects[0] ?? null;
+      const storedProfile = getStoredUserProfile();
+      const resolvedName = buildStoredProfileName(storedProfile, coordinatorName) ?? "Master Teacher";
+
+      const payload = {
+        gradeLevel: gradeLabel,
+        coordinatorName: resolvedName,
+        coordinatorId: coordinatorUserId,
+        subjectFallback: fallbackSubject,
+        activities: sendableActivities.map((activity) => ({
+          id: activity.id,
+          title: activity.title,
+          subject: activity.subject ?? fallbackSubject,
+          gradeLevel: activity.gradeLevel ?? gradeLabel,
+          description: activity.description ?? null,
+          date: activity.date.toISOString(),
+          end: activity.end.toISOString(),
+          day: activity.date.toLocaleDateString("en-US", { weekday: "long" }),
+          weekRef: activity.weekRef ?? null,
+        })),
+      };
+
+      const response = await fetch("/api/master_teacher/coordinator/calendar/send", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json().catch(() => ({ success: false }));
+
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.error ?? "Unable to send activities to the principal right now.");
+      }
+
+      const inserted = typeof result.inserted === "number" && result.inserted >= 0 ? result.inserted : activities.length;
+      const skippedCount = Array.isArray(result.skipped) ? result.skipped.length : 0;
+      const feedbackParts = [`Sent ${inserted} activit${inserted === 1 ? "y" : "ies"} to the principal for approval.`];
+      if (skippedCount > 0) {
+        feedbackParts.push(`${skippedCount} entr${skippedCount === 1 ? "y" : "ies"} were skipped.`);
+      }
+      showToast(feedbackParts.join(" "), skippedCount > 0 ? "info" : "success");
+      setShowSendModal(false);
+
+  const sendableIds = new Set(sendableActivities.map((activity) => activity.id));
+      setActivities((prev) =>
+        prev.map((activity) =>
+          sendableIds.has(activity.id)
+            ? { ...activity, status: "Pending" }
+            : activity,
+        ),
+      );
+    } catch (error) {
+      console.error("Failed to send activities", error);
+      setSendError(error instanceof Error ? error.message : "Unable to send activities to the principal right now.");
+    } finally {
+      setSending(false);
+    }
   };
 
   const generateActivitiesForWeek = (schedule: WeeklyScheduleFormData): Activity[] | null => {
@@ -877,7 +1471,6 @@ export default function MasterTeacherCalendar() {
         id: baseId + index,
         title,
         day,
-        roomNo: defaultRoomLabel,
         description,
         date: startDate,
         end: endDate,
@@ -933,12 +1526,22 @@ export default function MasterTeacherCalendar() {
 
   // Delete schedule with confirmation
   const handleDeleteClick = (activity: Activity) => {
+    if (isActivityLocked(activity)) {
+      showToast("Approved activities are view-only and cannot be removed.", "info");
+      return;
+    }
     setActivityToDelete(activity);
     setShowDeleteModal(true);
   };
 
   const handleDeleteConfirm = () => {
     if (activityToDelete) {
+      if (isActivityLocked(activityToDelete)) {
+        showToast("Approved activities are view-only and cannot be removed.", "info");
+        setShowDeleteModal(false);
+        setActivityToDelete(null);
+        return;
+      }
       setActivities(activities.filter((activity) => activity.id !== activityToDelete.id));
       setSelectedActivity(null);
       setShowDeleteModal(false);
@@ -951,15 +1554,69 @@ export default function MasterTeacherCalendar() {
     setActivityToDelete(null);
   };
 
-  // Activity type colors
-  const getActivityColor = (type: string) => {
-    switch(type) {
-      case "class": return "bg-blue-100 text-blue-800 border-blue-200";
-      case "meeting": return "bg-green-100 text-green-800 border-green-200";
-      case "appointment": return "bg-purple-100 text-purple-800 border-purple-200";
-      case "event": return "bg-amber-100 text-amber-800 border-amber-200";
-      default: return "bg-gray-100 text-gray-800 border-gray-200";
+  const resolveActivityTone = (type: string | null | undefined) => {
+    const normalized = (type ?? "").toLowerCase();
+
+    if (normalized.includes("english") || normalized === "class") {
+      return {
+        backgroundClass: "bg-blue-50",
+        borderClass: "border-blue-200",
+        titleClass: "text-blue-900",
+        accentColor: "#2563EB",
+      } as const;
     }
+
+    if (normalized.includes("filipino")) {
+      return {
+        backgroundClass: "bg-purple-50",
+        borderClass: "border-purple-200",
+        titleClass: "text-purple-900",
+        accentColor: "#7C3AED",
+      } as const;
+    }
+
+    if (normalized.includes("math")) {
+      return {
+        backgroundClass: "bg-amber-50",
+        borderClass: "border-amber-200",
+        titleClass: "text-amber-900",
+        accentColor: "#D97706",
+      } as const;
+    }
+
+    if (normalized.includes("meeting")) {
+      return {
+        backgroundClass: "bg-green-50",
+        borderClass: "border-green-200",
+        titleClass: "text-green-900",
+        accentColor: "#047857",
+      } as const;
+    }
+
+    if (normalized.includes("appointment")) {
+      return {
+        backgroundClass: "bg-rose-50",
+        borderClass: "border-rose-200",
+        titleClass: "text-rose-900",
+        accentColor: "#DB2777",
+      } as const;
+    }
+
+    if (normalized.includes("event")) {
+      return {
+        backgroundClass: "bg-sky-50",
+        borderClass: "border-sky-200",
+        titleClass: "text-sky-900",
+        accentColor: "#0EA5E9",
+      } as const;
+    }
+
+    return {
+      backgroundClass: "bg-gray-50",
+      borderClass: "border-gray-200",
+      titleClass: "text-gray-900",
+      accentColor: "#047857",
+    } as const;
   };
 
   // Render the calendar based on view
@@ -986,44 +1643,84 @@ export default function MasterTeacherCalendar() {
                 {week} - {activities[0].date.getFullYear()}
               </h3>
               <div className="space-y-3">
-                {activities.map((activity) => (
-                  <div
-                    key={activity.id}
-                    className="p-3 border-l-4 border-[#013300] bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-pointer"
-                    onClick={() => setSelectedActivity(activity)}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <div className="font-medium text-gray-900">
-                          {activity.subject ?? activity.title}
+                {activities.map((activity) => {
+                  const viewOnly = isActivityLocked(activity);
+                  const approvalMeta = viewOnly
+                    ? formatApprovalMetadata(activity.approvedAt ?? null, activity.approvedBy ?? null)
+                    : null;
+                  const displayTitle = activity.title?.trim().length
+                    ? activity.title
+                    : activity.subject ?? "Scheduled Activity";
+                  const subjectLabel = activity.subject && activity.subject !== activity.title ? activity.subject : null;
+                  const tone = resolveActivityTone(activity.subject ?? activity.type);
+                  const statusClass = activity.status ? statusBadgeTone(viewOnly ? "Pending" : activity.status) : null;
+                  return (
+                    <div
+                      key={activity.id}
+                      className={`p-3 border border-l-4 rounded-lg shadow-sm transition-shadow cursor-pointer ${tone.backgroundClass} ${tone.borderClass} hover:shadow-md`}
+                      style={{ borderLeftColor: tone.accentColor }}
+                      onClick={() => setSelectedActivity(activity)}
+                    >
+                      <div className="flex justify-between items-start gap-3">
+                        <div className="flex-1 space-y-1.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`font-semibold ${tone.titleClass}`}>{displayTitle}</span>
+                            {subjectLabel && (
+                              <span className="inline-flex items-center rounded-full border border-gray-200 bg-white/80 px-2 py-0.5 text-xs font-medium tracking-wide text-gray-600">
+                                {subjectLabel}
+                              </span>
+                            )}
+                            {activity.status && statusClass && (
+                              <span
+                                className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${statusClass}`}
+                              >
+                                {activity.status}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
+                            <span>
+                              {activity.date.toLocaleDateString("en-US", {
+                                month: "long",
+                                day: "numeric",
+                                year: "numeric",
+                              })}
+                            </span>
+                            <span className="text-gray-300">•</span>
+                            <span>
+                              {activity.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                              {" – "}
+                              {activity.end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                            <span className="text-gray-300">•</span>
+                            <span>{activity.gradeLevel ?? gradeLabel}</span>
+                          </div>
+                          {activity.description && (
+                            <div className="text-sm text-gray-500">{activity.description}</div>
+                          )}
+                          {viewOnly && (
+                            <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-gray-600">
+                              <span>Approved — View Only</span>
+                              {approvalMeta && <span className="text-gray-500">{approvalMeta}</span>}
+                            </div>
+                          )}
                         </div>
-                        <div className="text-sm text-gray-600 mt-1">
-                          {activity.date.toLocaleDateString("en-US", {
-                            month: "long",
-                            day: "numeric",
-                            year: "numeric",
-                          })}
-                          {" · "}
-                          {activity.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                          {" - "}
-                          {activity.end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        </div>
-                        <div className="text-xs text-gray-500 mt-1">
-                          {(activity.gradeLevel ?? gradeLabel) + " · " + activity.roomNo}
-                        </div>
+                        {!viewOnly && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteClick(activity);
+                            }}
+                            className="text-gray-400 hover:text-red-500 text-lg"
+                            aria-label="Delete activity"
+                          >
+                            ×
+                          </button>
+                        )}
                       </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteClick(activity);
-                        }}
-                        className="text-gray-400 hover:text-red-500 text-lg"
-                      >
-                        ×
-                      </button>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ))
@@ -1074,34 +1771,59 @@ export default function MasterTeacherCalendar() {
                 )}
               </div>
               <div className="overflow-y-auto max-h-12 space-y-1">
-                {dayActivities.slice(0, 2).map((activity) => (
-                  <div
-                    key={activity.id}
-                    className={`text-xs p-1 rounded truncate cursor-pointer border ${getActivityColor(activity.type)}`}
-                    onClick={() => setSelectedActivity(activity)}
-                  >
-                    <div className="flex justify-between items-center gap-2">
-                      <span className="truncate font-semibold text-[#013300]">
-                        {activity.subject ?? activity.title}
-                      </span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteClick(activity);
-                        }}
-                        className="text-xs text-red-500 hover:text-red-700"
-                      >
-                        ×
-                      </button>
+                {dayActivities.slice(0, 2).map((activity) => {
+                  const viewOnly = isActivityLocked(activity);
+                  const displayTitle = activity.title?.trim().length
+                    ? activity.title
+                    : activity.subject ?? "Scheduled Activity";
+                  const tone = resolveActivityTone(activity.subject ?? activity.type);
+                  const statusClass = activity.status ? statusBadgeTone(viewOnly ? "Pending" : activity.status) : null;
+
+                  return (
+                    <div
+                      key={activity.id}
+                      className={`text-xs p-1 rounded cursor-pointer border ${tone.backgroundClass} ${tone.borderClass}`}
+                      onClick={() => setSelectedActivity(activity)}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <span className={`block truncate font-semibold ${tone.titleClass}`}>{displayTitle}</span>
+                          <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[0.6rem] text-gray-600">
+                            <span className="truncate capitalize">
+                              {activity.subject && activity.subject !== activity.title ? activity.subject : activity.gradeLevel ?? gradeLabel}
+                            </span>
+                            {activity.status && statusClass && (
+                              <span
+                                className={`inline-flex items-center rounded-full px-1.5 py-0.5 font-semibold ${statusClass}`}
+                              >
+                                {activity.status}
+                              </span>
+                            )}
+                            {viewOnly && <span className="font-semibold text-gray-600">View Only</span>}
+                          </div>
+                        </div>
+                        {!viewOnly && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteClick(activity);
+                            }}
+                            className="text-xs text-red-500 hover:text-red-700"
+                            aria-label="Delete activity"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                      <div className="mt-0.5 flex items-center justify-between text-[0.65rem] text-gray-600">
+                        <span className="truncate">{activity.gradeLevel ?? gradeLabel}</span>
+                        <span>
+                          {activity.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      </div>
                     </div>
-                    <div className="mt-0.5 flex items-center justify-between text-[0.65rem] text-gray-600">
-                      <span className="truncate">{activity.gradeLevel ?? gradeLabel}</span>
-                      <span>
-                        {activity.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {dayActivities.length > 2 && (
                   <div className="text-xs text-gray-500 text-center bg-gray-100 rounded p-1">
                     +{dayActivities.length - 2} more
@@ -1175,40 +1897,70 @@ export default function MasterTeacherCalendar() {
           </div>
           <div className="p-2 space-y-2">
             {dayActivities.length > 0 ? (
-              dayActivities.map((activity) => (
-                <div
-                  key={activity.id}
-                  className="p-2 rounded-lg border-l-4 shadow-sm bg-white cursor-pointer hover:shadow-md transition-shadow"
-                  style={{
-                    borderLeftColor: activity.type === "class" ? "#2563EB" : activity.type === "meeting" ? "#059669" : "#7C3AED",
-                  }}
-                  onClick={() => setSelectedActivity(activity)}
-                >
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <div className="font-medium text-gray-900 text-sm">
-                        {activity.subject ?? activity.title}
+              dayActivities.map((activity) => {
+                const viewOnly = isActivityLocked(activity);
+                const displayTitle = activity.title?.trim().length
+                  ? activity.title
+                  : activity.subject ?? "Scheduled Activity";
+                const subjectLabel = activity.subject && activity.subject !== activity.title ? activity.subject : null;
+                const tone = resolveActivityTone(activity.subject ?? activity.type);
+                const statusClass = activity.status ? statusBadgeTone(viewOnly ? "Pending" : activity.status) : null;
+                const approvalMeta = viewOnly
+                  ? formatApprovalMetadata(activity.approvedAt ?? null, activity.approvedBy ?? null)
+                  : null;
+
+                return (
+                  <div
+                    key={activity.id}
+                    className={`p-2 border border-l-4 rounded-lg shadow-sm transition-shadow cursor-pointer ${tone.backgroundClass} ${tone.borderClass} hover:shadow-md`}
+                    style={{ borderLeftColor: tone.accentColor }}
+                    onClick={() => setSelectedActivity(activity)}
+                  >
+                    <div className="flex justify-between items-start gap-3">
+                      <div className="flex-1 space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`font-semibold text-sm ${tone.titleClass}`}>{displayTitle}</span>
+                          {subjectLabel && (
+                            <span className="inline-flex items-center rounded-full border border-gray-200 bg-white/80 px-1.5 py-0.5 text-[0.6rem] font-medium uppercase tracking-wide text-gray-600">
+                              {subjectLabel}
+                            </span>
+                          )}
+                          {activity.status && statusClass && (
+                            <span
+                              className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[0.6rem] font-semibold ${statusClass}`}
+                            >
+                              {activity.status}
+                            </span>
+                          )}
+                          {viewOnly && <span className="text-[0.6rem] font-semibold text-gray-600 uppercase">View Only</span>}
+                        </div>
+                        <div className="text-xs text-gray-600">
+                          {activity.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} –{" "}
+                          {activity.end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {activity.gradeLevel ?? gradeLabel}
+                        </div>
+                        {approvalMeta && (
+                          <div className="text-[0.6rem] font-medium text-gray-500">{approvalMeta}</div>
+                        )}
                       </div>
-                      <div className="text-xs text-gray-600 mt-1">
-                        {activity.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} -{" "}
-                        {activity.end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        {(activity.gradeLevel ?? gradeLabel) + " · " + activity.roomNo}
-                      </div>
+                      {!viewOnly && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteClick(activity);
+                          }}
+                          className="text-gray-400 hover:text-red-500 text-lg"
+                          aria-label="Delete activity"
+                        >
+                          ×
+                        </button>
+                      )}
                     </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteClick(activity);
-                      }}
-                      className="text-gray-400 hover:text-red-500 text-lg"
-                    >
-                      ×
-                    </button>
                   </div>
-                </div>
-              ))
+                );
+              })
             ) : (
               <div className="text-center text-gray-400 py-4 text-sm">No activities scheduled</div>
             )}
@@ -1225,8 +1977,29 @@ export default function MasterTeacherCalendar() {
     ? `${formatTimeLabel(weeklySchedule.startTime)} - ${formatTimeLabel(weeklySchedule.endTime)}`
     : null;
 
+  const sendableActivities = useMemo(
+    () => activities.filter((activity) => !isActivityLocked(activity)),
+    [activities],
+  );
+
+  const sortedActivitiesForSend = useMemo(
+    () => [...sendableActivities].sort((a, b) => a.date.getTime() - b.date.getTime()),
+    [sendableActivities],
+  );
+
+  const subjectSummary = allowedSubjects.length > 0 ? allowedSubjects.join(", ") : null;
+  const sendButtonDisabled = sortedActivitiesForSend.length === 0 || sending;
+  const importButtonDisabled = !canPlanActivities || importing;
+
   return (
     <div className="flex h-screen bg-white overflow-hidden">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".xlsx,.xls,.csv"
+        className="hidden"
+        onChange={handleImportInputChange}
+      />
       <Sidebar />
       <div className="flex-1 pt-16 flex flex-col overflow-hidden">
         <Header title="Calendar" />
@@ -1261,14 +2034,14 @@ export default function MasterTeacherCalendar() {
                     {remedialStatusBanner.message}
                   </div>
                 )}
-                {schedulingLocked && (
-                  <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                    Calendar scheduling is locked until your {assignmentsDescription} {missingAssignments.length > 1 ? "assignments are" : "assignment is"} configured. Please contact the IT Administrator for assistance.
+                {sendFeedback && (
+                  <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                    {sendFeedback}
                   </div>
                 )}
-                {remedialGuardMessage && (
-                  <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                    {remedialGuardMessage}
+                {importError && (
+                  <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {importError}
                   </div>
                 )}
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1323,23 +2096,45 @@ export default function MasterTeacherCalendar() {
                         List
                       </button>
                     </div>
-                    <PrimaryButton
-                      type="button"
-                      small
-                      className="px-4"
-                      disabled={!canPlanActivities}
-                      onClick={() => {
-                        if (!canPlanActivities) {
-                          if (!hasActiveRemedialWindow && scheduleBlockingReason) {
-                            setRemedialGuardMessage(scheduleBlockingReason);
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:space-x-2">
+                      <PrimaryButton
+                        type="button"
+                        small
+                        className="px-4"
+                        disabled={!canPlanActivities}
+                        onClick={() => {
+                          if (!canPlanActivities) {
+                            if (!hasActiveRemedialWindow && scheduleBlockingReason) {
+                              setRemedialGuardMessage(scheduleBlockingReason);
+                            }
+                            return;
                           }
-                          return;
-                        }
-                        setShowWeeklyModal(true);
-                      }}
-                    >
-                      {weeklySchedule ? "Update Weekly Schedule" : "Set Schedule"}
-                    </PrimaryButton>
+                          setShowWeeklyModal(true);
+                        }}
+                      >
+                        {weeklySchedule ? "Update Weekly Schedule" : "Set Schedule"}
+                      </PrimaryButton>
+                      <SecondaryButton
+                        type="button"
+                        small
+                        disabled={importButtonDisabled}
+                        onClick={handleImportButtonClick}
+                        className={`px-4 ${importButtonDisabled ? "cursor-not-allowed opacity-60" : ""}`}
+                        title={!canPlanActivities ? scheduleBlockingReason ?? "Scheduling is currently disabled." : undefined}
+                      >
+                        {importing ? "Importing..." : "Import Activities"}
+                      </SecondaryButton>
+                      <PrimaryButton
+                        type="button"
+                        small
+                        className="px-4"
+                        disabled={sendButtonDisabled}
+                        onClick={handleOpenSendModal}
+                        title={sendButtonDisabled ? "Add calendar activities before sending to the principal." : undefined}
+                      >
+                        {sending ? "Sending..." : "Send Activities"}
+                      </PrimaryButton>
+                    </div>
                   </div>
                 </div>
 
@@ -1359,7 +2154,7 @@ export default function MasterTeacherCalendar() {
                             {weeklyTimeLabel ? ` · ${weeklyTimeLabel}` : ""}
                           </p>
                         ) : (
-                          <p>Click Plan Weekly Schedule to add schedule for {gradeLabel}</p>
+                          <p>Click Set Schedule to add schedule for {gradeLabel}</p>
                         )}
                       </div>
                     </div>
@@ -1416,7 +2211,6 @@ export default function MasterTeacherCalendar() {
                   reset({
                     title: "",
                     date: "",
-                    roomNo: "",
                     description: "",
                     teachers: [],
                     subject: allowedSubjects[0] ?? "",
@@ -1429,7 +2223,6 @@ export default function MasterTeacherCalendar() {
                 selectedDate={selectedDate}
                 gradeLabel={gradeLabel}
                 allowedSubjects={allowedSubjects}
-                defaultRoomLabel={defaultRoomLabel}
                 canSchedule={canPlanActivities}
                 scheduleWindowLabel={scheduleWindowLabel}
                 scheduleStartDate={remedialWindow?.startDate ?? null}
@@ -1466,7 +2259,31 @@ export default function MasterTeacherCalendar() {
             </div>
           </div>
         </main>
+        <SendActivitiesModal
+          show={showSendModal}
+          onClose={() => {
+            setShowSendModal(false);
+            setSendError(null);
+          }}
+          onConfirm={handleSendActivities}
+          loading={sending}
+          error={sendError}
+          activities={sortedActivitiesForSend}
+          gradeLabel={gradeLabel}
+          subjectSummary={subjectSummary}
+        />
       </div>
+      {toast && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center pointer-events-none">
+          <div
+            role="status"
+            aria-live="assertive"
+            className={`pointer-events-auto mt-24 rounded-xl px-4 py-3 text-sm font-semibold shadow-lg ${TOAST_TONE_STYLES[toast.tone]}`}
+          >
+            {toast.message}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

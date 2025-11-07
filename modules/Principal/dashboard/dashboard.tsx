@@ -944,64 +944,6 @@ export default function PrincipalDashboard() {
                     </div>
                   </div>
                 </div>
-
-                {/* Additional Insights Section */}
-                <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg p-6">
-                  <TertiaryHeader title="Key Insights & Recommendations" />
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-                    <div className="bg-white p-4 rounded-lg shadow">
-                      <h4 className="font-semibold text-green-900 mb-3">Positive Trends</h4>
-                      <ul className="space-y-2 text-sm text-gray-700">
-                        <li className="flex items-start">
-                          <span className="text-green-600 mr-2">✓</span>
-                          <span>Higher grades show better proficiency distribution in {selectedSubject}</span>
-                        </li>
-                        <li className="flex items-start">
-                          <span className="text-green-600 mr-2">✓</span>
-                          <span>Grade 6 shows strong performance across all proficiency levels</span>
-                        </li>
-                        <li className="flex items-start">
-                          <span className="text-green-600 mr-2">✓</span>
-                          <span>75% teacher compliance with reporting requirements</span>
-                        </li>
-                        <li className="flex items-start">
-                          <span className="text-green-600 mr-2">✓</span>
-                          <span>Steady progression from basic to advanced levels across grades</span>
-                        </li>
-                      </ul>
-                    </div>
-                    <div className="bg-white p-4 rounded-lg shadow">
-                      <h4 className="font-semibold text-green-900 mb-3">Areas for Attention</h4>
-                      <ul className="space-y-2 text-sm text-gray-700">
-                        <li className="flex items-start">
-                          <span className="text-red-600 mr-2">⚠️</span>
-                          <span>Grade 1 has higher percentage of lower proficiency levels in {selectedSubject}</span>
-                        </li>
-                        <li className="flex items-start">
-                          <span className="text-red-600 mr-2">⚠️</span>
-                          <span>2 teachers still pending report submissions</span>
-                        </li>
-                        <li className="flex items-start">
-                          <span className="text-red-600 mr-2">⚠️</span>
-                          <span>Early grades need more foundational support in {selectedSubject}</span>
-                        </li>
-                        <li className="flex items-start">
-                          <span className="text-red-600 mr-2">⚠️</span>
-                          <span>Consider targeted interventions for struggling students</span>
-                        </li>
-                      </ul>
-                    </div>
-                  </div>
-                  <div className="mt-4 bg-yellow-50 p-4 rounded-lg border border-yellow-200">
-                    <h4 className="font-semibold text-yellow-800 mb-2">Recommended Actions</h4>
-                    <ul className="text-sm text-yellow-700 space-y-1">
-                      <li>• Follow up with 2 teachers who haven't submitted reports before March 31 deadline</li>
-                      <li>• Implement targeted support for Grade 1 students in {selectedSubject}</li>
-                      <li>• Share best practices from higher performing grades</li>
-                      <li>• Plan early intervention programs for foundational skills development</li>
-                    </ul>
-                  </div>
-                </div>
               </div>
             </div>
           </div>

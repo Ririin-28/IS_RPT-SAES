@@ -138,10 +138,9 @@ export default function ParentHeader({ title, onSearch }: ParentHeaderProps) {
             {showDropdown && (
               <div ref={dropdownRef}>
                 <ProfileDropdown
-                  email="juandelacruz@gmail.com"
-                  name="Dela Cruz"
                   onProfile={() => {
-                    /* handle profile click */ setShowDropdown(false);
+                    setShowDropdown(false);
+                    router.push("/Parent/profile");
                   }}
                   onLogout={() => {
                     setShowDropdown(false);

@@ -1,4 +1,5 @@
 export const USER_PROFILE_STORAGE_KEY = "rptCurrentUser";
+export const USER_PROFILE_EVENT = "rptUserProfileUpdated";
 
 export type StoredUserProfile = {
   firstName?: string | null;
@@ -7,6 +8,7 @@ export type StoredUserProfile = {
   role?: string | null;
   userId?: string | number | null;
   email?: string | null;
+  gradeLevel?: string | null;
 };
 
 const sanitize = (value?: string | null): string => {
@@ -18,6 +20,7 @@ export function storeUserProfile(profile: StoredUserProfile) {
   if (typeof window === "undefined") return;
   try {
     sessionStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(profile));
+    window.dispatchEvent(new CustomEvent(USER_PROFILE_EVENT, { detail: profile }));
   } catch (error) {
     console.warn("Unable to persist user profile", error);
   }
@@ -39,6 +42,7 @@ export function clearStoredUserProfile() {
   if (typeof window === "undefined") return;
   try {
     sessionStorage.removeItem(USER_PROFILE_STORAGE_KEY);
+    window.dispatchEvent(new CustomEvent(USER_PROFILE_EVENT, { detail: null }));
   } catch (error) {
     console.warn("Unable to clear stored user profile", error);
   }
