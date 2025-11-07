@@ -145,6 +145,83 @@ const resolveTeacherTable = async (): Promise<ResolvedTeacherTable | null> => {
   return null;
 };
 
+export async function PUT(request: NextRequest) {
+  const userIdParam = request.nextUrl.searchParams.get("userId");
+  if (!userIdParam) {
+    return NextResponse.json(
+      { success: false, error: "Missing userId query parameter." },
+      { status: 400 },
+    );
+  }
+
+  const userId = Number(userIdParam);
+  if (!Number.isFinite(userId) || userId <= 0) {
+    return NextResponse.json(
+      { success: false, error: "Invalid userId value." },
+      { status: 400 },
+    );
+  }
+
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ success: false, error: "Invalid request body." }, { status: 400 });
+  }
+
+  try {
+    const userColumns = await getTableColumns("users");
+    const updates: string[] = [];
+    const params: any[] = [];
+
+    if (body.firstName !== undefined && userColumns.has("first_name")) {
+      updates.push("first_name = ?");
+      params.push(body.firstName?.trim() || null);
+    }
+    if (body.middleName !== undefined && userColumns.has("middle_name")) {
+      updates.push("middle_name = ?");
+      params.push(body.middleName?.trim() || null);
+    }
+    if (body.lastName !== undefined && userColumns.has("last_name")) {
+      updates.push("last_name = ?");
+      params.push(body.lastName?.trim() || null);
+    }
+    if (body.email !== undefined && userColumns.has("email")) {
+      updates.push("email = ?");
+      params.push(body.email?.trim() || null);
+    }
+    if (body.contactNumber !== undefined && userColumns.has("contact_number")) {
+      updates.push("contact_number = ?");
+      params.push(body.contactNumber?.trim() || null);
+    }
+    if (body.grade !== undefined && userColumns.has("grade")) {
+      updates.push("grade = ?");
+      params.push(body.grade?.trim() || null);
+    }
+    if (body.room !== undefined && userColumns.has("room")) {
+      updates.push("room = ?");
+      params.push(body.room?.trim() || null);
+    }
+    if (body.subject !== undefined && userColumns.has("subject")) {
+      updates.push("subject = ?");
+      params.push(body.subject?.trim() || null);
+    }
+
+    if (updates.length > 0) {
+      params.push(userId);
+      await query(`UPDATE users SET ${updates.join(", ")} WHERE user_id = ?`, params);
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Failed to update teacher profile", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to update profile." },
+      { status: 500 },
+    );
+  }
+}
+
 export async function GET(request: NextRequest) {
   const userIdParam = request.nextUrl.searchParams.get("userId");
   if (!userIdParam) {

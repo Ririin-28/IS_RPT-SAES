@@ -51,11 +51,14 @@ type CoordinatorProfile = {
 
 type CoordinatorApiResponse = {
   success: boolean;
-  coordinator?: {
-    name?: string | null;
-    gradeLevel?: string | null;
-    coordinatorSubject?: string | null;
-    subjectsHandled?: string | null;
+  profile?: {
+    firstName?: string | null;
+    middleName?: string | null;
+    lastName?: string | null;
+    grade?: string | null;
+    gradeLabel?: string | null;
+    subjectHandled?: string | null;
+    role?: string | null;
   } | null;
   error?: string;
 };
@@ -193,22 +196,13 @@ export default function MasterTeacherDashboard() {
           throw new Error(message);
         }
 
-        const fallbackNameParts = [
-          storedProfile?.firstName,
-          storedProfile?.middleName,
-          storedProfile?.lastName,
-        ].filter((part): part is string => typeof part === "string" && part.trim().length > 0);
-
-        const coordinatorName = (payload.coordinator.name ?? fallbackNameParts.join(" ")).trim();
+        const coordinatorName = payload.coordinator.name?.trim() || "Master Teacher";
 
         setCoordinatorProfile({
-          fullName: coordinatorName || "Master Teacher",
-          role: formatRoleLabel(typeof storedProfile?.role === "string" ? storedProfile.role : null),
+          fullName: coordinatorName,
+          role: formatRoleLabel(storedProfile?.role),
           gradeHandled: payload.coordinator.gradeLevel?.trim() || "Not assigned",
-          subjectAssigned:
-            payload.coordinator.coordinatorSubject?.trim() ||
-            payload.coordinator.subjectsHandled?.trim() ||
-            "Not assigned",
+          subjectAssigned: payload.coordinator.coordinatorSubject?.trim() || "Not assigned",
         });
       } catch (error) {
         if (!cancelled) {

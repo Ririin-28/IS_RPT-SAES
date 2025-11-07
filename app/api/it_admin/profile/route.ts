@@ -57,6 +57,80 @@ const pickColumn = (columns: Set<string>, candidates: readonly string[]): string
   return null;
 };
 
+export async function PUT(request: NextRequest) {
+  const userIdParam = request.nextUrl.searchParams.get("userId");
+  if (!userIdParam) {
+    return NextResponse.json(
+      { success: false, error: "Missing userId query parameter." },
+      { status: 400 },
+    );
+  }
+
+  const userId = Number(userIdParam);
+  if (!Number.isFinite(userId) || userId <= 0) {
+    return NextResponse.json(
+      { success: false, error: "Invalid userId value." },
+      { status: 400 },
+    );
+  }
+
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ success: false, error: "Invalid request body." }, { status: 400 });
+  }
+
+  try {
+    const userColumns = await getTableColumns("users");
+    const updates: string[] = [];
+    const params: any[] = [];
+
+    const firstNameCol = pickColumn(userColumns, FIRST_NAME_COLUMNS);
+    if (body.firstName !== undefined && firstNameCol) {
+      updates.push(`${firstNameCol} = ?`);
+      params.push(body.firstName?.trim() || null);
+    }
+
+    const middleNameCol = pickColumn(userColumns, MIDDLE_NAME_COLUMNS);
+    if (body.middleName !== undefined && middleNameCol) {
+      updates.push(`${middleNameCol} = ?`);
+      params.push(body.middleName?.trim() || null);
+    }
+
+    const lastNameCol = pickColumn(userColumns, LAST_NAME_COLUMNS);
+    if (body.lastName !== undefined && lastNameCol) {
+      updates.push(`${lastNameCol} = ?`);
+      params.push(body.lastName?.trim() || null);
+    }
+
+    const emailCol = pickColumn(userColumns, EMAIL_COLUMNS);
+    if (body.email !== undefined && emailCol) {
+      updates.push(`${emailCol} = ?`);
+      params.push(body.email?.trim() || null);
+    }
+
+    const contactCol = pickColumn(userColumns, CONTACT_COLUMNS);
+    if (body.contactNumber !== undefined && contactCol) {
+      updates.push(`${contactCol} = ?`);
+      params.push(body.contactNumber?.trim() || null);
+    }
+
+    if (updates.length > 0) {
+      params.push(userId);
+      await query(`UPDATE users SET ${updates.join(", ")} WHERE user_id = ?`, params);
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Failed to update IT admin profile", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to update profile." },
+      { status: 500 },
+    );
+  }
+}
+
 export async function GET(request: NextRequest) {
   const userIdParam = request.nextUrl.searchParams.get("userId");
   if (!userIdParam) {

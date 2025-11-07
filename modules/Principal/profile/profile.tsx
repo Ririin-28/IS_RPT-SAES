@@ -13,7 +13,6 @@ type PrincipalProfileState = {
   lastName: string;
   email: string;
   contactNumber: string;
-  school: string;
   position: string;
   profilePicture: string;
 };
@@ -35,7 +34,6 @@ function createEmptyProfile(): PrincipalProfileState {
     lastName: "",
     email: "",
     contactNumber: "",
-    school: "",
     position: "Principal",
     profilePicture: "",
   };
@@ -134,7 +132,6 @@ export default function PrincipalProfile() {
           lastName: toText(profile.lastName).trim(),
           email: toText(profile.email).trim(),
           contactNumber: toText(profile.contactNumber).trim(),
-          school: toText(profile.school).trim(),
           position: formatRole(derivedRole),
           profilePicture: "",
         };
@@ -187,9 +184,60 @@ export default function PrincipalProfile() {
     setPasswordData({ ...passwordData, [e.target.name]: e.target.value });
   };
 
-  const handleSave = () => {
-    setIsEditing(false);
-    setInitialData({ ...formData });
+  const handleSave = async () => {
+    try {
+      const storedProfile = getStoredUserProfile();
+      const rawUserId = storedProfile?.userId;
+      const userIdNumber = typeof rawUserId === "string" ? Number(rawUserId) : rawUserId;
+
+      if (!userIdNumber || !Number.isFinite(userIdNumber)) {
+        setModalMessage("Unable to save: Missing user information.");
+        setShowModal(true);
+        return;
+      }
+
+      const response = await fetch(
+        `/api/principal/profile?userId=${encodeURIComponent(String(userIdNumber))}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            firstName: formData.firstName,
+            middleName: formData.middleName,
+            lastName: formData.lastName,
+            email: formData.email,
+            contactNumber: formData.contactNumber,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData?.error || "Failed to save profile.");
+      }
+
+      setInitialData({ ...formData });
+      setIsEditing(false);
+      setModalMessage("Profile updated successfully!");
+      setShowModal(true);
+
+      try {
+        storeUserProfile({
+          firstName: formData.firstName || storedProfile?.firstName || "",
+          middleName: formData.middleName || storedProfile?.middleName || "",
+          lastName: formData.lastName || storedProfile?.lastName || "",
+          role: storedProfile?.role ?? null,
+          userId: storedProfile?.userId ?? null,
+          email: formData.email || storedProfile?.email || null,
+        });
+      } catch (err) {
+        console.warn("Unable to update stored profile", err);
+      }
+    } catch (error) {
+      console.error("Failed to save profile", error);
+      setModalMessage(error instanceof Error ? error.message : "Failed to save profile.");
+      setShowModal(true);
+    }
   };
 
   const handleCancel = () => {
@@ -254,7 +302,6 @@ export default function PrincipalProfile() {
   };
 
   const positionDisplay = formData.position || "Principal";
-  const schoolDisplay = formData.school || "Not set";
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
@@ -299,7 +346,7 @@ export default function PrincipalProfile() {
                     </div>
 
                     <div className="bg-gray-50 rounded-lg border border-gray-200 p-5 mb-5">
-                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Personal Information</h3>
+                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Personal Details</h3>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="space-y-1">
                           <label className="block text-sm font-medium text-gray-700">First Name</label>
@@ -348,7 +395,7 @@ export default function PrincipalProfile() {
                     </div>
 
                     <div className="bg-gray-50 rounded-lg border border-gray-200 p-5 mb-5">
-                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Contact Information</h3>
+                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Contact Details</h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-1">
                           <label className="block text-sm font-medium text-gray-700">Email</label>
@@ -375,23 +422,7 @@ export default function PrincipalProfile() {
                       </div>
                     </div>
 
-                    <div className="bg-gray-50 rounded-lg border border-gray-200 p-5 mb-5">
-                      <h3 className="text-lg font-semibold text-gray-800 mb-4">School Information</h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-1">
-                          <label className="block text-sm font-medium text-gray-700">Position</label>
-                          <div className="w-full bg-white/50 border border-gray-200 text-gray-700 rounded-md px-3 py-2 text-sm font-medium">
-                            {positionDisplay}
-                          </div>
-                        </div>
-                        <div className="space-y-1">
-                          <label className="block text-sm font-medium text-gray-700">School</label>
-                          <div className="w-full bg-gray-100 border border-gray-300 text-gray-700 rounded-md px-3 py-2 text-sm font-medium">
-                            {schoolDisplay}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+
 
                     <div className="bg-gray-50 rounded-lg border border-gray-200 p-5">
                       <h3 className="text-lg font-semibold text-gray-800 mb-4">Security Settings</h3>
@@ -453,7 +484,8 @@ export default function PrincipalProfile() {
       <ConfirmationModal
         isOpen={showModal}
         onClose={() => setShowModal(false)}
-        title="Password Change"
+        onConfirm={() => setShowModal(false)}
+        title="Profile Update"
         message={modalMessage}
       />
     </div>

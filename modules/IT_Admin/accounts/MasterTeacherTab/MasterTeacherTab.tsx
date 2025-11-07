@@ -736,6 +736,13 @@ export default function MasterTeacherTab({ teachers, setTeachers, searchTerm }: 
     setUploadedPasswords([]);
   }, [uploadedPasswords]);
 
+  const handleDownloadTemplate = useCallback(() => {
+    const link = document.createElement('a');
+    link.href = '/it_admin/accounts/masterteacher/Master Teacher List  Template.xlsx';
+    link.download = 'Master Teacher List Template.xlsx';
+    link.click();
+  }, []);
+
   return (
     <div>
       <div className="flex flex-row justify-between items-center mb-4 gap-4">
@@ -769,6 +776,10 @@ export default function MasterTeacherTab({ teachers, setTeachers, searchTerm }: 
               downloadPasswordsConfig={{
                 onDownload: handleDownloadPasswords,
                 disabled: uploadedPasswords.length === 0,
+              }}
+              downloadTemplateConfig={{
+                onDownload: handleDownloadTemplate,
+                disabled: false,
               }}
             />
           )}
@@ -824,12 +835,6 @@ export default function MasterTeacherTab({ teachers, setTeachers, searchTerm }: 
           { key: "masterTeacherId", title: "Teacher ID", render: (row: any) => row.masterTeacherId ?? "—" },
           { key: "name", title: "Full Name", render: (row: any) => row.name ?? "—" },
           { key: "email", title: "Email", render: (row: any) => row.email ?? "—" },
-          { key: "grade", title: "Grade", render: (row: any) => row.grade ?? "—" },
-          {
-            key: "coordinatorSubject",
-            title: "Coordinator Subject",
-            render: (row: any) => row.coordinatorSubject ?? "—",
-          },
           {
             key: "lastLogin",
             title: "Last Login",

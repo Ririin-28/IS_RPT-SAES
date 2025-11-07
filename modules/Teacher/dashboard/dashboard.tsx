@@ -124,10 +124,13 @@ type TeacherProfile = {
 
 type TeacherApiResponse = {
   success: boolean;
-  teacher?: {
-    name?: string | null;
-    gradeLevel?: string | null;
-    subjectsHandled?: string | null;
+  profile?: {
+    firstName?: string | null;
+    middleName?: string | null;
+    lastName?: string | null;
+    grade?: string | null;
+    gradeLabel?: string | null;
+    subjectHandled?: string | null;
     role?: string | null;
   } | null;
   error?: string;
@@ -178,24 +181,24 @@ export default function TeacherDashboard() {
 
         if (cancelled) return;
 
-        if (!response.ok || !payload?.success || !payload.teacher) {
+        if (!response.ok || !payload?.success || !payload.profile) {
           const message = payload?.error ?? "Unable to load teacher profile.";
           throw new Error(message);
         }
 
-        const fallbackNameParts = [
-          storedProfile?.firstName,
-          storedProfile?.middleName,
-          storedProfile?.lastName,
+        const nameParts = [
+          payload.profile.firstName,
+          payload.profile.middleName,
+          payload.profile.lastName,
         ].filter((part): part is string => typeof part === "string" && part.trim().length > 0);
 
-        const teacherName = (payload.teacher.name ?? fallbackNameParts.join(" ")).trim();
+        const teacherName = nameParts.length > 0 ? nameParts.join(" ") : "Teacher";
 
         setTeacherProfile({
-          fullName: teacherName || "Teacher",
-          role: formatRoleLabel(payload.teacher.role ?? storedProfile?.role),
-          gradeHandled: payload.teacher.gradeLevel?.trim() || "Not assigned",
-          subjectAssigned: payload.teacher.subjectsHandled?.trim() || "English, Filipino, Math",
+          fullName: teacherName,
+          role: formatRoleLabel(payload.profile.role ?? storedProfile?.role),
+          gradeHandled: payload.profile.gradeLabel?.trim() || payload.profile.grade?.trim() || "Not assigned",
+          subjectAssigned: payload.profile.subjectHandled?.trim() || "English, Filipino, Math",
         });
       } catch (error) {
         if (!cancelled) {
