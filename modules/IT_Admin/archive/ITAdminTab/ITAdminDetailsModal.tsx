@@ -1,13 +1,13 @@
 import BaseModal, { ModalSection, ModalInfoItem } from "@/components/Common/Modals/BaseModal";
 
-interface TeacherDetailsModalProps {
+interface ITAdminDetailsModalProps {
   show: boolean;
   onClose: () => void;
-  teacher: any;
+  itAdmin: any;
 }
 
-export default function TeacherDetailsModal({ show, onClose, teacher }: TeacherDetailsModalProps) {
-  if (!show || !teacher) return null;
+export default function ITAdminDetailsModal({ show, onClose, itAdmin }: ITAdminDetailsModalProps) {
+  if (!show || !itAdmin) return null;
 
   const footer = (
     <button
@@ -22,23 +22,23 @@ export default function TeacherDetailsModal({ show, onClose, teacher }: TeacherD
     <BaseModal
       show={show}
       onClose={onClose}
-      title="Teacher Details"
+      title="IT Admin Details"
       maxWidth="2xl"
       footer={footer}
     >
       <ModalSection title="Personal Details">
         <div className="space-y-4">
-          {/* 1st Row: Teacher ID and Role */}
+          {/* 1st Row: IT Admin ID and Role */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <ModalInfoItem label="Teacher ID" value={teacher.teacherId} />
-            <ModalInfoItem label="Role" value={teacher.role || "Teacher"} />
+            <ModalInfoItem label="IT Admin ID" value={itAdmin.userId || itAdmin.user_id || itAdmin.adminId || itAdmin.itAdminId} />
+            <ModalInfoItem label="Role" value={itAdmin.roleLabel || itAdmin.role || "IT Admin"} />
           </div>
           
           {/* 2nd Row: Full Name with helper text */}
           <div className="space-y-1">
             <ModalInfoItem 
               label="Full Name" 
-              value={teacher.fullName || teacher.name} 
+              value={itAdmin.name || itAdmin.fullName} 
             />
             <p className="text-xs text-gray-500 pl-1">Format: First, Middle, Last, Suffix</p>
           </div>
@@ -47,18 +47,18 @@ export default function TeacherDetailsModal({ show, onClose, teacher }: TeacherD
 
       <ModalSection title="Contact Details">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <ModalInfoItem label="Email" value={teacher.email} />
-          <ModalInfoItem label="Phone Number" value={teacher.phoneNumber || teacher.contactNumber} />
+          <ModalInfoItem label="Email" value={itAdmin.email || itAdmin.user_email || itAdmin.contactEmail || "—"} />
+          <ModalInfoItem
+            label="Phone Number"
+            value={itAdmin.contactNumber || itAdmin.contact_number || itAdmin.contactNo || itAdmin.phoneNumber || itAdmin.phone || itAdmin.mobile || "—"}
+          />
         </div>
       </ModalSection>
 
-      <ModalSection title="Teaching Information">
+      <ModalSection title="Archive Information">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <ModalInfoItem label="Grade Handled" value={teacher.grade || teacher.handledGrade} />
-          <ModalInfoItem 
-            label="Subjects Handled" 
-            value={teacher.subjects || "English, Filipino, Math"}
-          />
+          <ModalInfoItem label="Archived Date" value={itAdmin.archivedDateDisplay || "—"} />
+          <ModalInfoItem label="Reason" value={itAdmin.reason || "—"} />
         </div>
       </ModalSection>
     </BaseModal>

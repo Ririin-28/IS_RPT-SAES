@@ -16,6 +16,7 @@ import {
 export const dynamic = "force-dynamic";
 
 const ROLE_FILTERS = ["master_teacher", "master teacher", "master-teacher"] as const;
+const DEFAULT_SUBJECTS_STRING = "English, Filipino, Math";
 
 type RawMasterTeacherRow = RowDataPacket & {
   user_id: number;
@@ -43,6 +44,11 @@ type RawMasterTeacherRow = RowDataPacket & {
   mt_section?: string | null;
   mt_subjects?: string | null;
   mt_status?: string | null;
+  rt_grade?: string | null;
+  rt_handled_grade?: string | null;
+  rt_grade_level?: string | null;
+  rt_gradeLevel?: string | null;
+  mc_subject_handled?: string | null;
   last_login?: Date | null;
 };
 
@@ -93,8 +99,52 @@ const MASTER_TEACHER_TABLE_CANDIDATES = [
   "master_teacher_tbl",
 ] as const;
 
+const REMEDIAL_TEACHER_TABLE_CANDIDATES = [
+  "remedial_teacher",
+  "remedial_teachers",
+  "remedialteacher",
+  "remedial_teacher_info",
+  "remedial_teacher_tbl",
+] as const;
+
+const MT_COORDINATOR_TABLE_CANDIDATES = [
+  "mt_coordinator",
+  "mt_coordinators",
+  "mtcoordinator",
+  "mt_coordinator_info",
+  "mt_coordinator_tbl",
+] as const;
+
 async function resolveMasterTeacherTable(): Promise<{ table: string | null; columns: Set<string> }> {
   for (const candidate of MASTER_TEACHER_TABLE_CANDIDATES) {
+    try {
+      const columns = await safeGetColumns(candidate);
+      if (columns.size > 0) {
+        return { table: candidate, columns };
+      }
+    } catch {
+      // continue to next candidate
+    }
+  }
+  return { table: null, columns: new Set<string>() };
+}
+
+async function resolveRemedialTeacherTable(): Promise<{ table: string | null; columns: Set<string> }> {
+  for (const candidate of REMEDIAL_TEACHER_TABLE_CANDIDATES) {
+    try {
+      const columns = await safeGetColumns(candidate);
+      if (columns.size > 0) {
+        return { table: candidate, columns };
+      }
+    } catch {
+      // continue to next candidate
+    }
+  }
+  return { table: null, columns: new Set<string>() };
+}
+
+async function resolveMtCoordinatorTable(): Promise<{ table: string | null; columns: Set<string> }> {
+  for (const candidate of MT_COORDINATOR_TABLE_CANDIDATES) {
     try {
       const columns = await safeGetColumns(candidate);
       if (columns.size > 0) {
@@ -115,6 +165,8 @@ export async function GET() {
     }
 
     const masterTeacherInfo = await resolveMasterTeacherTable();
+    const remedialTeacherInfo = await resolveRemedialTeacherTable();
+    const mtCoordinatorInfo = await resolveMtCoordinatorTable();
     const accountLogsExists = await tableExists("account_logs");
     const accountLogsColumns = accountLogsExists ? await safeGetColumns("account_logs") : new Set<string>();
     const canJoinAccountLogs = accountLogsExists && accountLogsColumns.has("user_id");
@@ -130,6 +182,18 @@ export async function GET() {
     const addMasterTeacherColumn = (column: string, alias: string) => {
       if (masterTeacherInfo.columns.has(column)) {
         selectParts.push(`mt.${column} AS ${alias}`);
+      }
+    };
+
+    const addRemedialTeacherColumn = (column: string, alias: string) => {
+      if (remedialTeacherInfo.columns.has(column)) {
+        selectParts.push(`rt.${column} AS ${alias}`);
+      }
+    };
+
+    const addMtCoordinatorColumn = (column: string, alias: string) => {
+      if (mtCoordinatorInfo.columns.has(column)) {
+        selectParts.push(`mc.${column} AS ${alias}`);
       }
     };
 
@@ -159,11 +223,18 @@ export async function GET() {
     addMasterTeacherColumn("section", "mt_section");
     addMasterTeacherColumn("subjects", "mt_subjects");
     addMasterTeacherColumn("subject_handled", "mt_subject_handled");
-  addMasterTeacherColumn("mt_coordinator", "mt_coordinator");
-  addMasterTeacherColumn("coordinator_subject", "mt_coordinator_subject");
-  addMasterTeacherColumn("coordinator", "mt_coordinator_generic");
-  addMasterTeacherColumn("coordinatorSubject", "mt_coordinator_camel");
+    addMasterTeacherColumn("mt_coordinator", "mt_coordinator");
+    addMasterTeacherColumn("coordinator_subject", "mt_coordinator_subject");
+    addMasterTeacherColumn("coordinator", "mt_coordinator_generic");
+    addMasterTeacherColumn("coordinatorSubject", "mt_coordinator_camel");
     addMasterTeacherColumn("status", "mt_status");
+
+  addRemedialTeacherColumn("grade", "rt_grade");
+  addRemedialTeacherColumn("handled_grade", "rt_handled_grade");
+  addRemedialTeacherColumn("grade_level", "rt_grade_level");
+  addRemedialTeacherColumn("gradeLevel", "rt_gradeLevel");
+
+    addMtCoordinatorColumn("subject_handled", "mc_subject_handled");
 
     if (canJoinAccountLogs) {
       if (accountLogsColumns.has("last_login") || accountLogsColumns.has("created_at")) {
@@ -176,10 +247,35 @@ export async function GET() {
     let joinClauses = "";
 
     if (masterTeacherInfo.table && masterTeacherInfo.columns.size > 0) {
+      const masterTable = `\`${masterTeacherInfo.table}\``;
       if (masterTeacherInfo.columns.has("user_id")) {
-        joinClauses += " LEFT JOIN `master_teacher` AS mt ON mt.user_id = u.user_id";
+        joinClauses += ` LEFT JOIN ${masterTable} AS mt ON mt.user_id = u.user_id`;
       } else if (masterTeacherInfo.columns.has("master_teacher_id")) {
-        joinClauses += " LEFT JOIN `master_teacher` AS mt ON mt.master_teacher_id = u.user_id";
+        joinClauses += ` LEFT JOIN ${masterTable} AS mt ON mt.master_teacher_id = u.user_id`;
+      } else if (masterTeacherInfo.columns.has("masterteacher_id")) {
+        joinClauses += ` LEFT JOIN ${masterTable} AS mt ON mt.masterteacher_id = u.user_id`;
+      }
+    }
+
+    if (remedialTeacherInfo.table && remedialTeacherInfo.columns.size > 0) {
+      const remedialTable = `\`${remedialTeacherInfo.table}\``;
+      if (remedialTeacherInfo.columns.has("user_id")) {
+        joinClauses += ` LEFT JOIN ${remedialTable} AS rt ON rt.user_id = u.user_id`;
+      } else if (remedialTeacherInfo.columns.has("master_teacher_id")) {
+        joinClauses += ` LEFT JOIN ${remedialTable} AS rt ON rt.master_teacher_id = u.user_id`;
+      } else if (remedialTeacherInfo.columns.has("teacher_id")) {
+        joinClauses += ` LEFT JOIN ${remedialTable} AS rt ON rt.teacher_id = u.user_id`;
+      }
+    }
+
+    if (mtCoordinatorInfo.table && mtCoordinatorInfo.columns.size > 0) {
+      const coordinatorTable = `\`${mtCoordinatorInfo.table}\``;
+      if (mtCoordinatorInfo.columns.has("user_id")) {
+        joinClauses += ` LEFT JOIN ${coordinatorTable} AS mc ON mc.user_id = u.user_id`;
+      } else if (mtCoordinatorInfo.columns.has("master_teacher_id")) {
+        joinClauses += ` LEFT JOIN ${coordinatorTable} AS mc ON mc.master_teacher_id = u.user_id`;
+      } else if (mtCoordinatorInfo.columns.has("teacher_id")) {
+        joinClauses += ` LEFT JOIN ${coordinatorTable} AS mc ON mc.teacher_id = u.user_id`;
       }
     }
 
@@ -221,11 +317,12 @@ export async function GET() {
         row.user_contact_number,
         row.user_phone_number,
       );
-      const grade = coalesce(row.mt_remedial_grade, row.mt_grade);
+  const grade = coalesce(row.rt_grade, row.rt_handled_grade, row.rt_grade_level, row.rt_gradeLevel, row.mt_remedial_grade, row.mt_grade);
       const section = coalesce(row.mt_section);
-      const subjects = coalesce(row.mt_subjects) || "English, Filipino, Math";
+  const subjects = coalesce(row.mt_subjects) || DEFAULT_SUBJECTS_STRING;
       const subjectHandled = coalesce(row.mt_subject_handled);
       const coordinatorSubject = coalesce(
+        row.mc_subject_handled,
         subjectHandled,
         row.mt_coordinator,
         row.mt_coordinator_subject,
@@ -252,7 +349,7 @@ export async function GET() {
         grade,
         section,
         subjects,
-  coordinatorSubject,
+        coordinatorSubject,
         status,
         createdAt,
         lastLogin,
@@ -264,6 +361,8 @@ export async function GET() {
       records,
       metadata: {
         masterTeacherTableDetected: masterTeacherInfo.table && masterTeacherInfo.columns.size > 0,
+        remedialTeacherTableDetected: remedialTeacherInfo.table && remedialTeacherInfo.columns.size > 0,
+        mtCoordinatorTableDetected: mtCoordinatorInfo.table && mtCoordinatorInfo.columns.size > 0,
         accountLogsJoined: canJoinAccountLogs,
       },
     });

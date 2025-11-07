@@ -173,8 +173,52 @@ const MASTER_TEACHER_TABLE_CANDIDATES = [
   "master_teacher_tbl",
 ] as const;
 
+const REMEDIAL_TEACHER_TABLE_CANDIDATES = [
+  "remedial_teacher",
+  "remedial_teachers",
+  "remedialteacher",
+  "remedial_teacher_info",
+  "remedial_teacher_tbl",
+] as const;
+
+const MT_COORDINATOR_TABLE_CANDIDATES = [
+  "mt_coordinator",
+  "mt_coordinators",
+  "mtcoordinator",
+  "mt_coordinator_info",
+  "mt_coordinator_tbl",
+] as const;
+
 async function resolveMasterTeacherTable(connection: PoolConnection): Promise<{ table: string | null; columns: Set<string> }> {
   for (const candidate of MASTER_TEACHER_TABLE_CANDIDATES) {
+    try {
+      const columns = await getColumnsForTable(connection, candidate);
+      if (columns.size > 0) {
+        return { table: candidate, columns };
+      }
+    } catch {
+      // continue to next candidate
+    }
+  }
+  return { table: null, columns: new Set<string>() };
+}
+
+async function resolveRemedialTeacherTable(connection: PoolConnection): Promise<{ table: string | null; columns: Set<string> }> {
+  for (const candidate of REMEDIAL_TEACHER_TABLE_CANDIDATES) {
+    try {
+      const columns = await getColumnsForTable(connection, candidate);
+      if (columns.size > 0) {
+        return { table: candidate, columns };
+      }
+    } catch {
+      // continue to next candidate
+    }
+  }
+  return { table: null, columns: new Set<string>() };
+}
+
+async function resolveMtCoordinatorTable(connection: PoolConnection): Promise<{ table: string | null; columns: Set<string> }> {
+  for (const candidate of MT_COORDINATOR_TABLE_CANDIDATES) {
     try {
       const columns = await getColumnsForTable(connection, candidate);
       if (columns.size > 0) {
@@ -205,8 +249,10 @@ export async function createMasterTeacher(input: CreateMasterTeacherInput): Prom
   const temporaryPassword = generateTemporaryPassword();
 
   const result = await runWithConnection(async (connection) => {
-    const userColumns = await getColumnsForTable(connection, "users");
-    const masterTeacherInfo = await resolveMasterTeacherTable(connection);
+  const userColumns = await getColumnsForTable(connection, "users");
+  const masterTeacherInfo = await resolveMasterTeacherTable(connection);
+  const remedialTeacherInfo = await resolveRemedialTeacherTable(connection);
+  const mtCoordinatorInfo = await resolveMtCoordinatorTable(connection);
 
     await connection.beginTransaction();
     try {
@@ -296,130 +342,306 @@ export async function createMasterTeacher(input: CreateMasterTeacherInput): Prom
         throw new HttpError(500, "Failed to create user record.");
       }
 
-      if (masterTeacherInfo.table && masterTeacherInfo.columns.size > 0) {
-        const masterTeacherInsertColumns: string[] = [];
-        const masterTeacherValues: any[] = [];
+      const insertIntoFlexibleTable = async (
+        tableInfo: { table: string | null; columns: Set<string> },
+        configure: (columns: string[], values: any[]) => void,
+      ) => {
+        if (!tableInfo.table || tableInfo.columns.size === 0) {
+          return;
+        }
+        const insertColumns: string[] = [];
+        const insertValues: any[] = [];
+        configure(insertColumns, insertValues);
+        if (insertColumns.length === 0) {
+          return;
+        }
+        const columnsSql = insertColumns.map((column) => `\`${column}\``).join(", ");
+        const placeholdersSql = insertColumns.map(() => "?").join(", ");
+        await connection.query<ResultSetHeader>(
+          `INSERT INTO \`${tableInfo.table}\` (${columnsSql}) VALUES (${placeholdersSql})`,
+          insertValues,
+        );
+      };
 
-        masterTeacherInsertColumns.push("user_id");
-        masterTeacherValues.push(userId);
-
+      await insertIntoFlexibleTable(masterTeacherInfo, (insertColumns, insertValues) => {
+        const identifierPairs: Array<[string, any]> = [];
+        if (masterTeacherInfo.columns.has("user_id")) {
+          identifierPairs.push(["user_id", userId]);
+        }
         if (masterTeacherInfo.columns.has("master_teacher_id")) {
-          masterTeacherInsertColumns.push("master_teacher_id");
-          masterTeacherValues.push(String(userId));
+          identifierPairs.push(["master_teacher_id", String(userId)]);
         }
         if (masterTeacherInfo.columns.has("masterteacher_id")) {
-          masterTeacherInsertColumns.push("masterteacher_id");
-          masterTeacherValues.push(String(userId));
+          identifierPairs.push(["masterteacher_id", String(userId)]);
         }
         if (teacherId) {
           for (const column of ["teacher_id", "employee_id"]) {
             if (masterTeacherInfo.columns.has(column)) {
-              masterTeacherInsertColumns.push(column);
-              masterTeacherValues.push(teacherId);
+              identifierPairs.push([column, teacherId]);
             }
           }
         }
+
+        if (identifierPairs.length === 0) {
+          return;
+        }
+
+        for (const [column, value] of identifierPairs) {
+          insertColumns.push(column);
+          insertValues.push(value);
+        }
+
         if (masterTeacherInfo.columns.has("first_name")) {
-          masterTeacherInsertColumns.push("first_name");
-          masterTeacherValues.push(firstName);
+          insertColumns.push("first_name");
+          insertValues.push(firstName);
         }
         if (masterTeacherInfo.columns.has("middle_name")) {
-          masterTeacherInsertColumns.push("middle_name");
-          masterTeacherValues.push(middleName);
+          insertColumns.push("middle_name");
+          insertValues.push(middleName);
         }
         if (masterTeacherInfo.columns.has("last_name")) {
-          masterTeacherInsertColumns.push("last_name");
-          masterTeacherValues.push(lastName);
+          insertColumns.push("last_name");
+          insertValues.push(lastName);
         }
         if (masterTeacherInfo.columns.has("suffix")) {
-          masterTeacherInsertColumns.push("suffix");
-          masterTeacherValues.push(suffix);
+          insertColumns.push("suffix");
+          insertValues.push(suffix);
         }
         if (masterTeacherInfo.columns.has("name")) {
-          masterTeacherInsertColumns.push("name");
-          masterTeacherValues.push(fullName);
+          insertColumns.push("name");
+          insertValues.push(fullName);
         }
         if (masterTeacherInfo.columns.has("email")) {
-          masterTeacherInsertColumns.push("email");
-          masterTeacherValues.push(email);
+          insertColumns.push("email");
+          insertValues.push(email);
         }
         if (masterTeacherInfo.columns.has("contact_number")) {
-          masterTeacherInsertColumns.push("contact_number");
-          masterTeacherValues.push(phoneNumber);
+          insertColumns.push("contact_number");
+          insertValues.push(phoneNumber);
         }
         if (masterTeacherInfo.columns.has("phone_number")) {
-          masterTeacherInsertColumns.push("phone_number");
-          masterTeacherValues.push(phoneNumber);
+          insertColumns.push("phone_number");
+          insertValues.push(phoneNumber);
         }
         if (masterTeacherInfo.columns.has("remedial_teacher_grade")) {
-          masterTeacherInsertColumns.push("remedial_teacher_grade");
-          masterTeacherValues.push(grade);
+          insertColumns.push("remedial_teacher_grade");
+          insertValues.push(grade);
         }
         if (masterTeacherInfo.columns.has("grade")) {
-          masterTeacherInsertColumns.push("grade");
-          masterTeacherValues.push(grade);
+          insertColumns.push("grade");
+          insertValues.push(grade);
         }
         if (masterTeacherInfo.columns.has("handled_grade")) {
-          masterTeacherInsertColumns.push("handled_grade");
-          masterTeacherValues.push(grade);
+          insertColumns.push("handled_grade");
+          insertValues.push(grade);
         }
         if (masterTeacherInfo.columns.has("grade_level")) {
-          masterTeacherInsertColumns.push("grade_level");
-          masterTeacherValues.push(grade);
+          insertColumns.push("grade_level");
+          insertValues.push(grade);
         }
         if (section) {
           for (const column of ["section", "section_name", "class_section"]) {
             if (masterTeacherInfo.columns.has(column)) {
-              masterTeacherInsertColumns.push(column);
-              masterTeacherValues.push(section);
+              insertColumns.push(column);
+              insertValues.push(section);
             }
           }
         }
         if (subjects) {
           for (const column of ["subjects", "handled_subjects", "subject"]) {
             if (masterTeacherInfo.columns.has(column)) {
-              masterTeacherInsertColumns.push(column);
-              masterTeacherValues.push(subjects);
+              insertColumns.push(column);
+              insertValues.push(subjects);
             }
           }
         }
         if (masterTeacherInfo.columns.has("subject_handled")) {
-          masterTeacherInsertColumns.push("subject_handled");
-          masterTeacherValues.push(coordinatorSubject);
+          insertColumns.push("subject_handled");
+          insertValues.push(coordinatorSubject);
         }
         for (const column of ["mt_coordinator", "coordinator_subject", "coordinator", "coordinatorSubject"]) {
           if (masterTeacherInfo.columns.has(column)) {
-            masterTeacherInsertColumns.push(column);
-            masterTeacherValues.push(coordinatorSubject);
+            insertColumns.push(column);
+            insertValues.push(coordinatorSubject);
           }
         }
         if (masterTeacherInfo.columns.has("status")) {
-          masterTeacherInsertColumns.push("status");
-          masterTeacherValues.push("Active");
+          insertColumns.push("status");
+          insertValues.push("Active");
         }
         if (masterTeacherInfo.columns.has("role")) {
-          masterTeacherInsertColumns.push("role");
-          masterTeacherValues.push("master_teacher");
+          insertColumns.push("role");
+          insertValues.push("master_teacher");
         }
         if (masterTeacherInfo.columns.has("created_at")) {
-          masterTeacherInsertColumns.push("created_at");
-          masterTeacherValues.push(now);
+          insertColumns.push("created_at");
+          insertValues.push(now);
         }
         if (masterTeacherInfo.columns.has("updated_at")) {
-          masterTeacherInsertColumns.push("updated_at");
-          masterTeacherValues.push(now);
+          insertColumns.push("updated_at");
+          insertValues.push(now);
+        }
+      });
+
+      await insertIntoFlexibleTable(remedialTeacherInfo, (insertColumns, insertValues) => {
+        if (remedialTeacherInfo.columns.has("user_id")) {
+          insertColumns.push("user_id");
+          insertValues.push(userId);
+        } else if (remedialTeacherInfo.columns.has("master_teacher_id")) {
+          insertColumns.push("master_teacher_id");
+          insertValues.push(String(userId));
+        } else if (remedialTeacherInfo.columns.has("teacher_id")) {
+          insertColumns.push("teacher_id");
+          insertValues.push(String(userId));
         }
 
-        if (masterTeacherInsertColumns.length > 1) {
-          const masterTeacherColumnsSql = masterTeacherInsertColumns.map((column) => `\`${column}\``).join(", ");
-          const masterTeacherPlaceholders = masterTeacherInsertColumns.map(() => "?").join(", ");
-
-          await connection.query<ResultSetHeader>(
-            `INSERT INTO \`${masterTeacherInfo.table}\` (${masterTeacherColumnsSql}) VALUES (${masterTeacherPlaceholders})`,
-            masterTeacherValues,
-          );
+        if (!insertColumns.length) {
+          return;
         }
-      }
+
+        if (remedialTeacherInfo.columns.has("first_name")) {
+          insertColumns.push("first_name");
+          insertValues.push(firstName);
+        }
+        if (remedialTeacherInfo.columns.has("middle_name")) {
+          insertColumns.push("middle_name");
+          insertValues.push(middleName);
+        }
+        if (remedialTeacherInfo.columns.has("last_name")) {
+          insertColumns.push("last_name");
+          insertValues.push(lastName);
+        }
+        if (remedialTeacherInfo.columns.has("suffix")) {
+          insertColumns.push("suffix");
+          insertValues.push(suffix);
+        }
+        if (remedialTeacherInfo.columns.has("name")) {
+          insertColumns.push("name");
+          insertValues.push(fullName);
+        }
+        if (remedialTeacherInfo.columns.has("email")) {
+          insertColumns.push("email");
+          insertValues.push(email);
+        }
+        if (remedialTeacherInfo.columns.has("contact_number")) {
+          insertColumns.push("contact_number");
+          insertValues.push(phoneNumber);
+        }
+        if (remedialTeacherInfo.columns.has("phone_number")) {
+          insertColumns.push("phone_number");
+          insertValues.push(phoneNumber);
+        }
+        for (const column of [
+          "grade",
+          "handled_grade",
+          "grade_level",
+          "gradeLevel",
+          "remedial_grade",
+          "remedial_teacher_grade",
+        ]) {
+          if (remedialTeacherInfo.columns.has(column)) {
+            insertColumns.push(column);
+            insertValues.push(grade);
+          }
+        }
+        if (subjects) {
+          for (const column of ["subjects", "handled_subjects", "subject"]) {
+            if (remedialTeacherInfo.columns.has(column)) {
+              insertColumns.push(column);
+              insertValues.push(subjects);
+            }
+          }
+        }
+        if (remedialTeacherInfo.columns.has("status")) {
+          insertColumns.push("status");
+          insertValues.push("Active");
+        }
+        if (remedialTeacherInfo.columns.has("created_at")) {
+          insertColumns.push("created_at");
+          insertValues.push(now);
+        }
+        if (remedialTeacherInfo.columns.has("updated_at")) {
+          insertColumns.push("updated_at");
+          insertValues.push(now);
+        }
+      });
+
+      await insertIntoFlexibleTable(mtCoordinatorInfo, (insertColumns, insertValues) => {
+        if (!mtCoordinatorInfo.columns.has("subject_handled") &&
+          !mtCoordinatorInfo.columns.has("subjects_handled") &&
+          !mtCoordinatorInfo.columns.has("handled_subject") &&
+          !mtCoordinatorInfo.columns.has("coordinator_subject")) {
+          return;
+        }
+
+        if (mtCoordinatorInfo.columns.has("user_id")) {
+          insertColumns.push("user_id");
+          insertValues.push(userId);
+        } else if (mtCoordinatorInfo.columns.has("master_teacher_id")) {
+          insertColumns.push("master_teacher_id");
+          insertValues.push(String(userId));
+        } else if (mtCoordinatorInfo.columns.has("teacher_id")) {
+          insertColumns.push("teacher_id");
+          insertValues.push(String(userId));
+        }
+
+        if (!insertColumns.length) {
+          return;
+        }
+
+        if (mtCoordinatorInfo.columns.has("first_name")) {
+          insertColumns.push("first_name");
+          insertValues.push(firstName);
+        }
+        if (mtCoordinatorInfo.columns.has("middle_name")) {
+          insertColumns.push("middle_name");
+          insertValues.push(middleName);
+        }
+        if (mtCoordinatorInfo.columns.has("last_name")) {
+          insertColumns.push("last_name");
+          insertValues.push(lastName);
+        }
+        if (mtCoordinatorInfo.columns.has("suffix")) {
+          insertColumns.push("suffix");
+          insertValues.push(suffix);
+        }
+        if (mtCoordinatorInfo.columns.has("name")) {
+          insertColumns.push("name");
+          insertValues.push(fullName);
+        }
+        if (mtCoordinatorInfo.columns.has("email")) {
+          insertColumns.push("email");
+          insertValues.push(email);
+        }
+        if (mtCoordinatorInfo.columns.has("contact_number")) {
+          insertColumns.push("contact_number");
+          insertValues.push(phoneNumber);
+        }
+        if (mtCoordinatorInfo.columns.has("phone_number")) {
+          insertColumns.push("phone_number");
+          insertValues.push(phoneNumber);
+        }
+
+        for (const column of ["subject_handled", "subjects_handled", "handled_subject", "coordinator_subject"]) {
+          if (mtCoordinatorInfo.columns.has(column)) {
+            insertColumns.push(column);
+            insertValues.push(coordinatorSubject);
+          }
+        }
+
+        if (mtCoordinatorInfo.columns.has("status")) {
+          insertColumns.push("status");
+          insertValues.push("Active");
+        }
+        if (mtCoordinatorInfo.columns.has("created_at")) {
+          insertColumns.push("created_at");
+          insertValues.push(now);
+        }
+        if (mtCoordinatorInfo.columns.has("updated_at")) {
+          insertColumns.push("updated_at");
+          insertValues.push(now);
+        }
+      });
 
       await connection.commit();
 

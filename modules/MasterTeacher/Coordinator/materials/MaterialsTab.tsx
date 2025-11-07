@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useMemo, type ReactNode } from "react";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import TableList from "@/components/Common/Tables/TableList";
-import RequestsModal from "@/modules/MasterTeacher/Coordinator/materials/Modals/RequestsModal";
-import { useMaterialsList } from "@/modules/MasterTeacher/useArchiveMaterials";
+import { useCoordinatorMaterials } from "@/modules/MasterTeacher/Coordinator/materials/useCoordinatorMaterials";
+import type { MaterialStatus } from "@/lib/materials/shared";
 
 type MaterialItem = {
   id: number;
@@ -18,45 +18,123 @@ type MaterialItem = {
 type TableColumn = {
   key: string;
   title: string;
+  render?: (row: any) => ReactNode;
 };
 
 type MaterialTabContentProps = {
   subject: string;
   category: string;
   columns?: TableColumn[];
-  showRequestsModal?: boolean;
 };
 
 export default function MaterialTabContent({
   subject,
   category,
   columns,
-  showRequestsModal = false,
 }: MaterialTabContentProps) {
-  const { materials, setMaterials } = useMaterialsList<MaterialItem>({
+  const { materials, loading, updating, error, approveMaterial, rejectMaterial, refresh } = useCoordinatorMaterials({
     subject,
-    category,
+    level: category,
   });
-  const [isRequestsModalOpen, setIsRequestsModalOpen] = useState(false);
 
-  const handleDelete = (id: number) => {
-    setMaterials((prev) => prev.filter((material) => material.id !== id));
+  const formatDate = useCallback(
+    (value: string) => {
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime())
+        ? value
+        : parsed.toLocaleDateString("en-PH", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          });
+    },
+    [],
+  );
+
+  const buildStatusBadge = useCallback((status: MaterialStatus, rejectionReason: string | null) => {
+    const baseClass = "inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold";
+    switch (status) {
+      case "approved":
+        return <span className={`${baseClass} bg-green-100 text-green-700`}>Approved</span>;
+      case "rejected":
+        return (
+          <span className={`${baseClass} bg-red-100 text-red-700`} title={rejectionReason ?? undefined}>
+            Rejected
+          </span>
+        );
+      default:
+        return <span className={`${baseClass} bg-yellow-100 text-yellow-700`}>Pending</span>;
+    }
+  }, []);
+
+  const tableColumns: TableColumn[] = useMemo(() => {
+    const base: TableColumn[] = (columns ?? [
+      { key: "no", title: "No#" },
+      { key: "title", title: "Title" },
+      { key: "dateAttached", title: "Date Submitted" },
+    ]).map((column) => {
+      if (column.key === "dateAttached") {
+        return {
+          ...column,
+          render: (row: any) => formatDate(row.dateAttached),
+        } satisfies TableColumn;
+      }
+      if (column.key === "domain") {
+        return {
+          ...column,
+          render: (row: any) => row.domain ?? "-",
+        } satisfies TableColumn;
+      }
+      return column;
+    });
+
+    base.push({ key: "submittedBy", title: "Submitted By" });
+    base.push({
+      key: "status",
+      title: "Status",
+      render: (row: any) => buildStatusBadge(row.status as MaterialStatus, row.rejectionReason ?? null),
+    });
+
+    return base;
+  }, [columns, buildStatusBadge, formatDate]);
+
+  const tableData = useMemo(
+    () =>
+      materials.map((material, index) => ({
+        id: material.id,
+        no: index + 1,
+        title: material.title,
+        dateAttached: material.createdAt,
+        domain: material.level,
+        submittedBy: material.teacherName,
+        status: material.status,
+        rejectionReason: material.rejectionReason,
+        attachmentUrl: material.attachmentUrl,
+        files: material.files,
+      })),
+    [materials],
+  );
+
+  const handleApprove = async (row: any) => {
+    await approveMaterial(row.id);
   };
 
-  const handleDeleteAll = () => {
-    setMaterials([]);
+  const handleReject = async (row: any) => {
+    const reason = typeof window !== "undefined" ? window.prompt("Enter rejection reason", row.rejectionReason ?? "") : null;
+    if (!reason) {
+      return;
+    }
+    await rejectMaterial(row.id, reason.trim());
   };
 
-  const tableColumns: TableColumn[] = columns ?? [
-    { key: "no", title: "No#" },
-    { key: "title", title: "Title" },
-    { key: "dateAttached", title: "Date Attached" },
-  ];
-
-  const tableData = materials.map((material, index) => ({
-    ...material,
-    no: index + 1,
-  }));
+  const handleOpenMaterial = (row: any) => {
+    const targetUrl = row.attachmentUrl || row.files?.[0]?.publicUrl;
+    if (!targetUrl || typeof window === "undefined") return;
+    const url = targetUrl.startsWith("http")
+      ? targetUrl
+      : `${window.location.origin}${targetUrl.startsWith("/") ? "" : "/"}${targetUrl}`;
+    window.open(url, "_blank", "noopener");
+  };
 
   return (
     <div>
@@ -70,36 +148,12 @@ export default function MaterialTabContent({
         md:mb-2
       "
       >
-        <p className="text-gray-600 text-md font-medium">
-          Total: {materials.length}
-        </p>
-        <div className="flex gap-2">
-          <UtilityButton
-            small
-            onClick={showRequestsModal ? () => setIsRequestsModalOpen(true) : undefined}
-          >
-            <span className="flex items-center gap-1">
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-                />
-              </svg>
-              <span className="hidden sm:inline">Requests</span>
-            </span>
-          </UtilityButton>
-          {materials.length > 0 && (
-            <DangerButton small onClick={handleDeleteAll}>
-              Delete All
-            </DangerButton>
-          )}
+        <div className="flex flex-col gap-1">
+          <p className="text-gray-600 text-md font-medium">
+            Total: {materials.length}
+            {loading && <span className="ml-2 text-xs text-gray-400">Loading...</span>}
+          </p>
+          {error && <span className="text-sm text-red-600">{error}</span>}
         </div>
       </div>
       <TableList
@@ -107,21 +161,23 @@ export default function MaterialTabContent({
         data={tableData}
   actions={(row: MaterialItem & { no: number }) => (
           <>
-            <UtilityButton small>See All</UtilityButton>
-            <DangerButton small onClick={() => handleDelete(row.id)}>
-              Delete
-            </DangerButton>
+            <UtilityButton small onClick={() => handleOpenMaterial(row)}>
+              Open
+            </UtilityButton>
+            {row.status === "pending" && (
+              <>
+                <UtilityButton small disabled={updating} onClick={() => handleApprove(row)}>
+                  Approve
+                </UtilityButton>
+                <DangerButton small disabled={updating} onClick={() => handleReject(row)}>
+                  Reject
+                </DangerButton>
+              </>
+            )}
           </>
         )}
         pageSize={10}
       />
-      {showRequestsModal && (
-        <RequestsModal
-          show={isRequestsModalOpen}
-          onClose={() => setIsRequestsModalOpen(false)}
-          category={category}
-        />
-      )}
     </div>
   );
 }

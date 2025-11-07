@@ -16,6 +16,14 @@ export const dynamic = "force-dynamic";
 
 const ROLE_FILTERS = ["teacher"] as const;
 
+const REMEDIAL_TEACHER_TABLE_CANDIDATES = [
+  "remedial_teacher",
+  "remedial_teachers",
+  "remedialteacher",
+  "remedial_teacher_info",
+  "remedial_teacher_tbl",
+] as const;
+
 type RawTeacherRow = RowDataPacket & {
   user_id: number;
   user_first_name?: string | null;
@@ -46,6 +54,11 @@ type RawTeacherRow = RowDataPacket & {
   teacher_handled_subjects?: string | null;
   teacher_subject?: string | null;
   teacher_status?: string | null;
+  rt_grade?: string | null;
+  rt_handled_grade?: string | null;
+  rt_grade_level?: string | null;
+  rt_gradeLevel?: string | null;
+  rt_year_level?: string | null;
   last_login?: Date | null;
 };
 
@@ -95,14 +108,24 @@ const TEACHER_TABLE_CANDIDATES = [
   "teacher_accounts",
   "faculty",
   "teacher_tbl",
-  "remedial_teacher",
-  "remedial_teachers",
-  "remedial_teacher_info",
-  "remedial_teacher_tbl",
 ] as const;
 
 async function resolveTeacherTable(): Promise<{ table: string | null; columns: Set<string> }> {
   for (const candidate of TEACHER_TABLE_CANDIDATES) {
+    try {
+      const columns = await safeGetColumns(candidate);
+      if (columns.size > 0) {
+        return { table: candidate, columns };
+      }
+    } catch {
+      // continue to next candidate
+    }
+  }
+  return { table: null, columns: new Set<string>() };
+}
+
+async function resolveRemedialTeacherTable(): Promise<{ table: string | null; columns: Set<string> }> {
+  for (const candidate of REMEDIAL_TEACHER_TABLE_CANDIDATES) {
     try {
       const columns = await safeGetColumns(candidate);
       if (columns.size > 0) {
@@ -122,7 +145,8 @@ export async function GET() {
       return NextResponse.json({ error: "Users table is not accessible." }, { status: 500 });
     }
 
-  const teacherInfo = await resolveTeacherTable();
+    const teacherInfo = await resolveTeacherTable();
+    const remedialTeacherInfo = await resolveRemedialTeacherTable();
     const accountLogsExists = await tableExists("account_logs");
     const accountLogsColumns = accountLogsExists ? await safeGetColumns("account_logs") : new Set<string>();
     const canJoinAccountLogs = accountLogsExists && accountLogsColumns.has("user_id");
@@ -138,6 +162,14 @@ export async function GET() {
     const addTeacherColumn = (column: string, alias: string) => {
       if (teacherInfo.columns.has(column)) {
         selectParts.push(`t.${column} AS ${alias}`);
+      }
+    };
+
+    const remedialAlias = remedialTeacherInfo.table && remedialTeacherInfo.table !== teacherInfo.table ? "rt" : "t";
+
+    const addRemedialTeacherColumn = (column: string, alias: string) => {
+      if (remedialTeacherInfo.columns.has(column)) {
+        selectParts.push(`${remedialAlias}.${column} AS ${alias}`);
       }
     };
 
@@ -171,6 +203,12 @@ export async function GET() {
   addTeacherColumn("subject", "teacher_subject");
     addTeacherColumn("status", "teacher_status");
 
+    addRemedialTeacherColumn("grade", "rt_grade");
+    addRemedialTeacherColumn("handled_grade", "rt_handled_grade");
+    addRemedialTeacherColumn("grade_level", "rt_grade_level");
+    addRemedialTeacherColumn("gradeLevel", "rt_gradeLevel");
+    addRemedialTeacherColumn("year_level", "rt_year_level");
+
     if (canJoinAccountLogs) {
       if (accountLogsColumns.has("last_login") || accountLogsColumns.has("created_at")) {
         selectParts.push("latest.last_login AS last_login");
@@ -189,6 +227,21 @@ export async function GET() {
         joinClauses += ` LEFT JOIN ${teacherTableSql} AS t ON t.teacher_id = u.user_id`;
       } else {
         joinClauses += ` LEFT JOIN ${teacherTableSql} AS t ON t.user_id = u.user_id`;
+      }
+    }
+
+    if (
+      remedialTeacherInfo.table &&
+      remedialTeacherInfo.columns.size > 0 &&
+      remedialTeacherInfo.table !== teacherInfo.table
+    ) {
+      const remedialTableSql = `\`${remedialTeacherInfo.table}\``;
+      if (remedialTeacherInfo.columns.has("user_id")) {
+        joinClauses += ` LEFT JOIN ${remedialTableSql} AS rt ON rt.user_id = u.user_id`;
+      } else if (remedialTeacherInfo.columns.has("teacher_id")) {
+        joinClauses += ` LEFT JOIN ${remedialTableSql} AS rt ON rt.teacher_id = u.user_id`;
+      } else if (remedialTeacherInfo.columns.has("master_teacher_id")) {
+        joinClauses += ` LEFT JOIN ${remedialTableSql} AS rt ON rt.master_teacher_id = u.user_id`;
       }
     }
 
@@ -231,6 +284,11 @@ export async function GET() {
         row.user_phone_number,
       );
       const grade = coalesce(
+        row.rt_grade,
+        row.rt_handled_grade,
+        row.rt_grade_level,
+        row.rt_gradeLevel,
+        row.rt_year_level,
         row.teacher_grade,
         row.teacher_grade_level,
         row.teacher_year_level,
@@ -270,7 +328,8 @@ export async function GET() {
       total: records.length,
       records,
       metadata: {
-        teacherTableDetected: teacherInfo.table && teacherInfo.columns.size > 0,
+        teacherTableDetected: Boolean(teacherInfo.table && teacherInfo.columns.size > 0),
+        remedialTeacherTableDetected: Boolean(remedialTeacherInfo.table && remedialTeacherInfo.columns.size > 0),
         accountLogsJoined: canJoinAccountLogs,
       },
     });

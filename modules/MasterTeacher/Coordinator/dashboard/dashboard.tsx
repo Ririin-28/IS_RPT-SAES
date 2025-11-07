@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar from "@/components/MasterTeacher/Coordinator/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
@@ -12,6 +12,7 @@ import DangerButton from "@/components/Common/Buttons/DangerButton";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
 import BodyText from "@/components/Common/Texts/BodyText";
+import { getStoredUserProfile } from "@/lib/utils/user-profile";
 
 // Import Chart components
 import {
@@ -40,6 +41,41 @@ ChartJS.register(
   Tooltip,
   Legend
 );
+
+type CoordinatorProfile = {
+  fullName: string;
+  role: string;
+  gradeHandled: string;
+  subjectAssigned: string;
+};
+
+type CoordinatorApiResponse = {
+  success: boolean;
+  coordinator?: {
+    name?: string | null;
+    gradeLevel?: string | null;
+    coordinatorSubject?: string | null;
+    subjectsHandled?: string | null;
+  } | null;
+  error?: string;
+};
+
+const ROLE_LABELS: Record<string, string> = {
+  admin: "IT Admin",
+  it_admin: "IT Admin",
+  master_teacher: "Master Teacher",
+  masterteacher: "Master Teacher",
+  coordinator: "Coordinator",
+  teacher: "Teacher",
+};
+
+function formatRoleLabel(role?: string | null): string {
+  if (!role) {
+    return "Master Teacher";
+  }
+  const key = role.toLowerCase().replace(/[\s-]+/g, "_");
+  return ROLE_LABELS[key] ?? role;
+}
 
 // Custom styled dropdown component
 function CustomDropdown({ value, onChange, options, className = "" }: {
@@ -122,6 +158,77 @@ export default function MasterTeacherDashboard() {
   const handleNavigate = useCallback((path: string) => {
     router.push(path);
   }, [router]);
+
+  const [coordinatorProfile, setCoordinatorProfile] = useState<CoordinatorProfile | null>(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const [profileError, setProfileError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCoordinatorProfile() {
+      setIsLoadingProfile(true);
+      setProfileError(null);
+      try {
+        const storedProfile = getStoredUserProfile();
+        const userId = storedProfile?.userId;
+
+        if (!userId) {
+          throw new Error("Missing user information. Please log in again.");
+        }
+
+        const response = await fetch(
+          `/api/master_teacher/coordinator/profile?userId=${encodeURIComponent(String(userId))}`,
+          { cache: "no-store" },
+        );
+
+        const payload: CoordinatorApiResponse | null = await response.json().catch(() => null);
+
+        if (cancelled) {
+          return;
+        }
+
+        if (!response.ok || !payload?.success || !payload.coordinator) {
+          const message = payload?.error ?? "Unable to load coordinator profile.";
+          throw new Error(message);
+        }
+
+        const fallbackNameParts = [
+          storedProfile?.firstName,
+          storedProfile?.middleName,
+          storedProfile?.lastName,
+        ].filter((part): part is string => typeof part === "string" && part.trim().length > 0);
+
+        const coordinatorName = (payload.coordinator.name ?? fallbackNameParts.join(" ")).trim();
+
+        setCoordinatorProfile({
+          fullName: coordinatorName || "Master Teacher",
+          role: formatRoleLabel(typeof storedProfile?.role === "string" ? storedProfile.role : null),
+          gradeHandled: payload.coordinator.gradeLevel?.trim() || "Not assigned",
+          subjectAssigned:
+            payload.coordinator.coordinatorSubject?.trim() ||
+            payload.coordinator.subjectsHandled?.trim() ||
+            "Not assigned",
+        });
+      } catch (error) {
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : "Failed to load profile.";
+          setProfileError(message);
+          setCoordinatorProfile(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingProfile(false);
+        }
+      }
+    }
+
+    loadCoordinatorProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Get today's date in simplified month format (same as Principal)
   const today = new Date();
@@ -452,26 +559,40 @@ export default function MasterTeacherDashboard() {
               </div>
 
               <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg p-4 mb-6 min-w-full min-h-[120px] sm:p-5 sm:mb-7 md:p-6 md:mb-8">
-                <div className="flex flex-col w-full">
-                  <div className="flex flex-col mb-2 md:flex-row md:items-start md:justify-between md:mb-0">
-                    <div className="mb-3 md:mb-0 md:w-1/3">
-                      <TertiaryHeader title="Full Name:" />
-                      <BodyText title="Jane Smith" />
+                {isLoadingProfile ? (
+                  <div className="flex h-full items-center justify-center">
+                    <BodyText title="Loading profile..." />
+                  </div>
+                ) : profileError ? (
+                  <div className="flex h-full items-center justify-center">
+                    <BodyText title={profileError} />
+                  </div>
+                ) : coordinatorProfile ? (
+                  <div className="flex flex-col w-full">
+                    <div className="flex flex-col mb-2 md:flex-row md:items-start md:justify-between md:mb-0">
+                      <div className="mb-3 md:mb-0 md:w-1/3">
+                        <TertiaryHeader title="Full Name:" />
+                        <BodyText title={coordinatorProfile.fullName} />
+                      </div>
+                      <div className="mb-3 md:mb-0 md:w-1/3">
+                        <TertiaryHeader title="Position:" />
+                        <BodyText title={coordinatorProfile.role} />
+                      </div>
+                      <div className="mb-3 md:mb-0 md:w-1/3">
+                        <TertiaryHeader title="Grade Assigned:" />
+                        <BodyText title={coordinatorProfile.gradeHandled} />
+                      </div>
                     </div>
-                    <div className="mb-3 md:mb-0 md:w-1/3">
-                      <TertiaryHeader title="Position:" />
-                      <BodyText title="Master Teacher" />
-                    </div>
-                    <div className="mb-3 md:mb-0 md:w-1/3">
-                      <TertiaryHeader title="Grade Assigned:" />
-                      <BodyText title="Grades 4" />
+                    <div className="mt-3 md:mt-2">
+                      <TertiaryHeader title="Subject Assigned:" />
+                      <BodyText title={coordinatorProfile.subjectAssigned} />
                     </div>
                   </div>
-                  <div className="mt-3 md:mt-2">
-                    <TertiaryHeader title="Subject Assigned:" />
-                    <BodyText title="English" />
+                ) : (
+                  <div className="flex h-full items-center justify-center">
+                    <BodyText title="No profile data available." />
                   </div>
-                </div>
+                )}
               </div>
 
               <hr className="border-gray-300 mb-4 sm:mb-5 md:mb-6" />

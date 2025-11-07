@@ -34,6 +34,8 @@ interface AddStudentModalProps {
   form: UseFormReturn<AddStudentFormValues>;
   isSubmitting?: boolean;
   apiError?: string | null;
+  subjectLabel: string;
+  gradeLabel?: string | null;
 }
 
 /**
@@ -61,6 +63,8 @@ export default function AddStudentModal({
   form,
   isSubmitting = false,
   apiError = null,
+  subjectLabel,
+  gradeLabel = null,
 }: AddStudentModalProps) {
   const {
     register,
@@ -124,6 +128,12 @@ export default function AddStudentModal({
   useEffect(() => {
     setDisplayPhone(formatPhoneValue(phoneWatch));
   }, [phoneWatch]);
+
+  useEffect(() => {
+    if (gradeLabel && gradeLabel.trim().length > 0) {
+      setValue("grade", gradeLabel.trim(), { shouldDirty: false, shouldTouch: false, shouldValidate: false });
+    }
+  }, [gradeLabel, setValue]);
 
   const handlePhoneInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value;
@@ -242,19 +252,36 @@ export default function AddStudentModal({
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-1">
               <ModalLabel required>Grade Level</ModalLabel>
-              <select
-                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
-                {...register("grade", { required: "Grade level is required" })}
-              >
-                <option value="" disabled>
-                  Select grade
-                </option>
-                {GRADE_OPTIONS.map((grade) => (
-                  <option key={grade} value={grade}>
-                    Grade {grade}
+              {gradeLabel && gradeLabel.trim().length > 0 ? (
+                <>
+                  <input
+                    className="w-full cursor-not-allowed rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-600"
+                    value={gradeLabel.trim()}
+                    disabled
+                    aria-disabled
+                  />
+                  <input
+                    type="hidden"
+                    defaultValue={gradeLabel.trim()}
+                    readOnly
+                    {...register("grade", { required: "Grade level is required" })}
+                  />
+                </>
+              ) : (
+                <select
+                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                  {...register("grade", { required: "Grade level is required" })}
+                >
+                  <option value="" disabled>
+                    Select grade
                   </option>
-                ))}
-              </select>
+                  {GRADE_OPTIONS.map((grade) => (
+                    <option key={grade} value={grade}>
+                      Grade {grade}
+                    </option>
+                  ))}
+                </select>
+              )}
               {errors.grade && (
                 <span className="text-xs text-red-500">{errors.grade.message as string}</span>
               )}
@@ -400,10 +427,10 @@ export default function AddStudentModal({
         <ModalSection title="Assessment Level">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-1">
-              <ModalLabel>English</ModalLabel>
+              <ModalLabel>Subject Assigned</ModalLabel>
               <input
                 className="w-full cursor-not-allowed rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-500"
-                value="English"
+                value={subjectLabel}
                 disabled
                 aria-disabled
               />
