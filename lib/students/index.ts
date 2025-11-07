@@ -154,23 +154,45 @@ export function studentRowToDto(row: StudentRecordRow): StudentRecordDto {
   } satisfies StudentRecordDto;
 }
 
+type StudentIdSequence = {
+  prefix: string;
+  next: number;
+};
+
+const studentIdSequenceCache = new WeakMap<any, StudentIdSequence>();
+
 async function generateStudentId(connection: any): Promise<string> {
-  const year = new Date().getFullYear().toString().slice(-2);
-  const [rows] = await connection.query<RowDataPacket[]>(
-    `SELECT student_identifier FROM \`${STUDENT_TABLE}\` WHERE student_identifier LIKE ? ORDER BY student_identifier DESC LIMIT 1`,
-    [`ST-${year}%`]
-  );
-  
-  let nextNum = 1;
-  if (rows.length > 0) {
-    const lastId = rows[0].student_identifier;
-    const match = lastId?.match(/ST-\d{2}(\d{4})$/);
-    if (match) {
-      nextNum = parseInt(match[1], 10) + 1;
+  const yearSuffix = new Date().getFullYear().toString().slice(-2);
+  const expectedPrefix = `ST-${yearSuffix}`;
+
+  let sequence = studentIdSequenceCache.get(connection);
+
+  if (!sequence || sequence.prefix !== expectedPrefix) {
+    const [rows] = (await connection.query(
+      `SELECT student_identifier FROM \`${STUDENT_TABLE}\` WHERE student_identifier LIKE ? ORDER BY student_identifier DESC LIMIT 1`,
+      [`${expectedPrefix}%`],
+    )) as [RowDataPacket[]];
+
+    let nextNum = 1;
+    if (rows.length > 0) {
+      const lastId = rows[0].student_identifier;
+      const match = typeof lastId === "string" ? lastId.match(/^ST-\d{2}(\d{4,})$/) : null;
+      if (match) {
+        const parsed = Number.parseInt(match[1], 10);
+        if (Number.isFinite(parsed)) {
+          nextNum = parsed + 1;
+        }
+      }
     }
+
+    sequence = { prefix: expectedPrefix, next: nextNum };
   }
-  
-  return `ST-${year}${String(nextNum).padStart(4, '0')}`;
+
+  const identifier = `${sequence.prefix}${String(sequence.next).padStart(4, "0")}`;
+  sequence.next += 1;
+  studentIdSequenceCache.set(connection, sequence);
+
+  return identifier;
 }
 
 export async function insertStudents(
@@ -210,13 +232,33 @@ export async function insertStudents(
           updated_by = VALUES(updated_by)
       `;
 
-      const values = await Promise.all(students.map(async (student) => {
+      const values: Array<[
+        string,
+        string | null,
+        string | null,
+        string | null,
+        string,
+        string | null,
+        string | null,
+        string | null,
+        StudentSubject,
+        string | null,
+        string | null,
+        string | null,
+        string | null,
+        string | null,
+        string | null,
+        string | null,
+        number,
+        number,
+      ]> = [];
+
+      for (const student of students) {
         const fullName = buildFullName(student);
-        const studentId = student.studentIdentifier && student.studentIdentifier.trim() 
-          ? student.studentIdentifier.trim()
-          : await generateStudentId(connection);
-        
-        return [
+        const trimmedIdentifier = typeof student.studentIdentifier === "string" ? student.studentIdentifier.trim() : "";
+        const studentId = trimmedIdentifier.length > 0 ? trimmedIdentifier : await generateStudentId(connection);
+
+        values.push([
           studentId,
           student.firstName ?? null,
           student.middleName ?? null,
@@ -235,8 +277,8 @@ export async function insertStudents(
           student.mathProficiency ?? null,
           userId,
           userId,
-        ];
-      }));
+        ]);
+      }
 
       await connection.query(insertSql, [values]);
       await connection.commit();

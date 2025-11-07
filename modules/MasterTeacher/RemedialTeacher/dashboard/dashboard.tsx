@@ -22,11 +22,14 @@ type RemedialTeacherProfile = {
 
 type RemedialTeacherApiResponse = {
   success: boolean;
-  coordinator?: {
-    name?: string | null;
-    gradeLevel?: string | null;
-    coordinatorSubject?: string | null;
-    subjectsHandled?: string | null;
+  profile?: {
+    firstName?: string | null;
+    middleName?: string | null;
+    lastName?: string | null;
+    grade?: string | null;
+    gradeLabel?: string | null;
+    subjectHandled?: string | null;
+    role?: string | null;
   } | null;
   error?: string;
 };
@@ -123,7 +126,7 @@ export default function MasterTeacherDashboard() {
         }
 
         const response = await fetch(
-          `/api/master_teacher/coordinator/profile?userId=${encodeURIComponent(String(userId))}`,
+          `/api/teacher/profile?userId=${encodeURIComponent(String(userId))}`,
           { cache: "no-store" },
         );
 
@@ -133,27 +136,24 @@ export default function MasterTeacherDashboard() {
           return;
         }
 
-        if (!response.ok || !payload?.success || !payload.coordinator) {
+        if (!response.ok || !payload?.success || !payload.profile) {
           const message = payload?.error ?? "Unable to load profile.";
           throw new Error(message);
         }
 
-        const fallbackNameParts = [
-          storedProfile?.firstName,
-          storedProfile?.middleName,
-          storedProfile?.lastName,
+        const nameParts = [
+          payload.profile.firstName,
+          payload.profile.middleName,
+          payload.profile.lastName,
         ].filter((part): part is string => typeof part === "string" && part.trim().length > 0);
 
-        const teacherName = (payload.coordinator.name ?? fallbackNameParts.join(" ")).trim();
+        const teacherName = nameParts.length > 0 ? nameParts.join(" ") : "Master Teacher";
 
         setRemedialProfile({
-          fullName: teacherName || "Master Teacher",
-          role: formatRoleLabel(typeof storedProfile?.role === "string" ? storedProfile.role : null),
-          gradeHandled: payload.coordinator.gradeLevel?.trim() || "Not assigned",
-          subjectAssigned:
-            payload.coordinator.coordinatorSubject?.trim() ||
-            payload.coordinator.subjectsHandled?.trim() ||
-            "Not assigned",
+          fullName: teacherName,
+          role: formatRoleLabel(payload.profile.role ?? storedProfile?.role),
+          gradeHandled: payload.profile.gradeLabel?.trim() || payload.profile.grade?.trim() || "Not assigned",
+          subjectAssigned: "English, Filipino, Math",
         });
       } catch (error) {
         if (!cancelled) {

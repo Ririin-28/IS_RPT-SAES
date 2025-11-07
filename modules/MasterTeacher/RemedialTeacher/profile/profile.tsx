@@ -190,9 +190,62 @@ export default function MasterTeacherProfile() {
     setPasswordData({ ...passwordData, [e.target.name]: e.target.value });
   };
 
-  const handleSave = () => {
-    setIsEditing(false);
-    setInitialData(formData);
+  const handleSave = async () => {
+    try {
+      const storedProfile = getStoredUserProfile();
+      const userId = storedProfile?.userId;
+
+      if (!userId) {
+        setModalMessage("Unable to save: Missing user information.");
+        setShowModal(true);
+        return;
+      }
+
+      const response = await fetch(
+        `/api/master_teacher/profile?userId=${encodeURIComponent(String(userId))}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            firstName: formData.firstName,
+            middleName: formData.middleName,
+            lastName: formData.lastName,
+            email: formData.email,
+            contactNumber: formData.contactNumber,
+            grade: formData.grade,
+            room: formData.room,
+            subject: formData.subject,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData?.error || "Failed to save profile.");
+      }
+
+      setInitialData(formData);
+      setIsEditing(false);
+      setModalMessage("Profile updated successfully!");
+      setShowModal(true);
+
+      try {
+        storeUserProfile({
+          firstName: formData.firstName || storedProfile?.firstName || "",
+          middleName: formData.middleName || storedProfile?.middleName || "",
+          lastName: formData.lastName || storedProfile?.lastName || "",
+          role: storedProfile?.role ?? null,
+          userId: storedProfile?.userId ?? null,
+          email: formData.email || storedProfile?.email || null,
+        });
+      } catch (err) {
+        console.warn("Unable to update stored profile", err);
+      }
+    } catch (error) {
+      console.error("Failed to save profile", error);
+      setModalMessage(error instanceof Error ? error.message : "Failed to save profile.");
+      setShowModal(true);
+    }
   };
 
   const handleCancel = () => {
@@ -304,7 +357,7 @@ export default function MasterTeacherProfile() {
                     </div>
 
                     <div className="bg-gray-50 rounded-lg border border-gray-200 p-5 mb-5">
-                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Personal Information</h3>
+                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Personal Details</h3>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="space-y-1">
                           <label className="block text-sm font-medium text-gray-700">First Name</label>
@@ -359,7 +412,7 @@ export default function MasterTeacherProfile() {
                     </div>
 
                     <div className="bg-gray-50 rounded-lg border border-gray-200 p-5 mb-5">
-                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Contact Information</h3>
+                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Contact Details</h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-1">
                           <label className="block text-sm font-medium text-gray-700">Email</label>
@@ -387,7 +440,7 @@ export default function MasterTeacherProfile() {
                     </div>
 
                     <div className="bg-gray-50 rounded-lg border border-gray-200 p-5 mb-5">
-                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Teaching Assignment</h3>
+                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Teaching Details</h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                         <div className="space-y-1">
                           <label className="block text-sm font-medium text-gray-700">Position</label>
@@ -397,21 +450,43 @@ export default function MasterTeacherProfile() {
                         </div>
                         <div className="space-y-1">
                           <label className="block text-sm font-medium text-gray-700">Grade Handled</label>
-                          <div className="w-full bg-gray-100 border border-gray-300 text-gray-700 rounded-md px-3 py-2 text-sm font-medium">
-                            {gradeDisplay}
-                          </div>
+                          <select
+                            name="grade"
+                            value={formData.grade}
+                            onChange={handleInputChange}
+                            disabled={!isEditing}
+                            className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-600"
+                          >
+                            <option value="">Select Grade</option>
+                            <option value="1">Grade 1</option>
+                            <option value="2">Grade 2</option>
+                            <option value="3">Grade 3</option>
+                            <option value="4">Grade 4</option>
+                            <option value="5">Grade 5</option>
+                            <option value="6">Grade 6</option>
+                          </select>
                         </div>
                         <div className="space-y-1">
                           <label className="block text-sm font-medium text-gray-700">Room</label>
-                          <div className="w-full bg-gray-100 border border-gray-300 text-gray-700 rounded-md px-3 py-2 text-sm font-medium">
-                            {roomDisplay}
-                          </div>
+                          <input
+                            type="text"
+                            name="room"
+                            value={formData.room}
+                            onChange={handleInputChange}
+                            disabled={!isEditing}
+                            className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-600"
+                          />
                         </div>
                         <div className="space-y-1">
                           <label className="block text-sm font-medium text-gray-700">Subject Handled</label>
-                          <div className="w-full bg-gray-100 border border-gray-300 text-gray-700 rounded-md px-3 py-2 text-sm font-medium">
-                            {subjectDisplay}
-                          </div>
+                          <input
+                            type="text"
+                            name="subject"
+                            value={formData.subject}
+                            onChange={handleInputChange}
+                            disabled={!isEditing}
+                            className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-600"
+                          />
                         </div>
                       </div>
                     </div>

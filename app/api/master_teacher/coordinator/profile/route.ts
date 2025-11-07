@@ -4,6 +4,9 @@ import { getTableColumns, query } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
+const REMEDIAL_TABLE = "remedial_teachers";
+const COORDINATOR_TABLE = "mt_coordinator";
+
 const MASTER_TEACHER_TABLE_CANDIDATES = [
   "master_teacher",
   "master_teachers",

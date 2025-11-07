@@ -336,25 +336,45 @@ export default function StudentTab({
         const workbook = XLSX.read(data, { type: 'array' });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet);
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+        const readField = (row: any, keys: string[]): string => {
+          for (const key of keys) {
+            if (row[key] !== undefined && row[key] !== null) {
+              const value = String(row[key]).trim();
+              if (value.length > 0) return value;
+            }
+          }
+          return '';
+        };
 
         const newStudents = jsonData.map((row: any) => {
-            const studentName = `${row.FIRSTNAME || ''} ${row.MIDDLENAME || ''} ${row.SURNAME || ''}`.trim();
-            const guardianName = `${row["GUARDIAN'S FIRSTNAME"] || ''} ${row["GUARDIAN'S MIDDLENAME"] || ''} ${row["GUARDIAN'S SURNAME"] || ''}`.trim();
-            return {
-                studentId: row['STUDENT ID'] || '',
-                name: studentName || 'Unnamed Student',
-                grade: row.GRADE || '',
-                section: row.SECTION || '',
-        age: row.AGE || '',
-                address: row.ADDRESS || '',
-                guardian: guardianName || '',
-                guardianContact: row['CONTACT NUMBER'] || '',
-        relationship: row.RELATIONSHIP || '',
-                englishPhonemic: '',
-                filipinoPhonemic: '',
-                mathProficiency: '',
-            } satisfies CoordinatorStudentFormInput;
+          const firstName = readField(row, ['FIRSTNAME', 'FIRST_NAME', 'FIRST NAME', 'First Name', 'firstName']);
+          const middleName = readField(row, ['MIDDLENAME', 'MIDDLE_NAME', 'MIDDLE NAME', 'Middle Name', 'middleName']);
+          const lastName = readField(row, ['SURNAME', 'LASTNAME', 'LAST_NAME', 'LAST NAME', 'Last Name', 'lastName']);
+          const studentName = `${firstName} ${middleName} ${lastName}`.trim();
+
+          const guardianFirst = readField(row, ["GUARDIAN'S FIRSTNAME", "GUARDIAN FIRSTNAME", "Guardian First Name", 'guardianFirstName']);
+          const guardianMiddle = readField(row, ["GUARDIAN'S MIDDLENAME", "GUARDIAN MIDDLENAME", "Guardian Middle Name", 'guardianMiddleName']);
+          const guardianLast = readField(row, ["GUARDIAN'S SURNAME", "GUARDIAN SURNAME", "Guardian Last Name", 'guardianLastName']);
+          const guardianName = `${guardianFirst} ${guardianMiddle} ${guardianLast}`.trim();
+
+          const subjectPhonemic = readField(row, ['SUBJECT PHONEMIC', 'Subject Phonemic', 'subjectPhonemic', 'PHONEMIC', 'Phonemic']);
+
+          return {
+            studentId: readField(row, ['STUDENT ID', 'Student ID', 'studentId', 'ID']),
+            name: studentName || 'Unnamed Student',
+            grade: readField(row, ['GRADE', 'Grade', 'grade']),
+            section: readField(row, ['SECTION', 'Section', 'section']),
+            age: readField(row, ['AGE', 'Age', 'age']),
+            address: readField(row, ['ADDRESS', 'Address', 'address']),
+            guardian: guardianName || '',
+            guardianContact: readField(row, ["GUARDIAN'S CONTACT", "GUARDIAN'S CONTACT NUMBER", 'CONTACT NUMBER', 'CONTACT_NUMBER', 'Contact Number', 'contactNumber', 'GUARDIAN CONTACT', 'Guardian Contact', 'GUARDIAN_CONTACT', 'guardianContact']),
+            relationship: readField(row, ['RELATIONSHIP', 'Relationship', 'relationship']),
+            englishPhonemic: subjectLabel?.toLowerCase() === 'english' ? subjectPhonemic : '',
+            filipinoPhonemic: subjectLabel?.toLowerCase() === 'filipino' ? subjectPhonemic : '',
+            mathProficiency: subjectLabel?.toLowerCase() === 'math' ? subjectPhonemic : '',
+          } satisfies CoordinatorStudentFormInput;
         });
 
         void onImportStudents(newStudents)
@@ -469,7 +489,7 @@ export default function StudentTab({
                       handleExport();
                       close();
                     }}
-                    className={`mt-1 flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[#013300] ${
+                    className={`flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[#013300] ${
                       filteredStudents.length === 0 || actionsDisabled
                         ? "opacity-40 cursor-not-allowed"
                         : "hover:bg-gray-50"
@@ -480,13 +500,27 @@ export default function StudentTab({
                     Export to Excel
                   </button>
                   <button
+                    type="button"
+                    onClick={() => {
+                      const link = document.createElement('a');
+                      link.href = '/masterteacher/coordinator/students/Student List Template.xlsx';
+                      link.download = 'Student List Template.xlsx';
+                      link.click();
+                      close();
+                    }}
+                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[#013300] hover:bg-gray-50"
+                  >
+                    <ExportIcon />
+                    Download Template
+                  </button>
+                  <button
                     disabled={actionsDisabled}
                     onClick={() => {
                       if (actionsDisabled) return;
                       handleEnterSelectMode();
                       close();
                     }}
-                    className={`w-full px-4 py-2 text-left text-sm text-[#013300] flex items-center gap-2 ${actionsDisabled ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50"}`}
+                    className={`mt-1 w-full px-4 py-2 text-left text-sm text-[#013300] flex items-center gap-2 ${actionsDisabled ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50"}`}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                       <rect x="3" y="3" width="18" height="18" rx="2" />
