@@ -75,9 +75,10 @@ export function useCoordinatorMaterials({ subject, level }: UseCoordinatorMateri
       if (!response.ok) {
         throw new Error(`Failed to fetch materials (${response.status})`);
       }
-      const data = await response.json();
-      const rows: MaterialDto[] = Array.isArray(data?.data) ? data.data : [];
-      setMaterials(rows.map((row) => ({ ...row, teacherName: buildTeacherName(row) })));
+  const data = await response.json();
+  const rows: MaterialDto[] = Array.isArray(data?.data) ? data.data : [];
+  const visibleRows = rows.filter((row) => row.status !== "rejected");
+  setMaterials(visibleRows.map((row) => ({ ...row, teacherName: buildTeacherName(row) })));
     } catch (err) {
       console.error("Failed to load coordinator materials", err);
       setError("Unable to load materials");
