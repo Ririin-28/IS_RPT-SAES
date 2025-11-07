@@ -154,7 +154,7 @@ const REMEDIAL_CONFIG: Record<SubjectOption, RemedialSubjectConfig> = {
   },
   Filipino: {
     storageKey: "MASTER_TEACHER_REMEDIAL_FILIPINO",
-    validationMessage: "Pakipunan ang lahat ng detalye bago mag-save.",
+    validationMessage: "Please complete all details before saving.",
     playPath: "/MasterTeacher/RemedialTeacher/remedial/FilipinoFlashcards",
     flashcardsStorageKey: "MASTER_TEACHER_FILIPINO_FLASHCARDS",
     flashcardsInitial: FILIPINO_INITIAL_FLASHCARDS,

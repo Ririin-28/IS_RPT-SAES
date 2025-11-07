@@ -7,15 +7,12 @@ import { performClientLogout } from "@/lib/utils/logout";
 
 interface PrincipalHeaderProps {
   title?: string;
-  onSearch?: (query: string) => void;
 }
 
-export default function PrincipalHeader({ title, onSearch }: PrincipalHeaderProps) {
+export default function PrincipalHeader({ title }: PrincipalHeaderProps) {
   const router = useRouter();
-  const [searchQuery, setSearchQuery] = React.useState("");
   const [showDropdown, setShowDropdown] = React.useState(false);
   const [showNotifications, setShowNotifications] = React.useState(false);
-  const router = useRouter();
   const profileBtnRef = React.useRef<HTMLButtonElement>(null);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const notificationBtnRef = React.useRef<HTMLButtonElement>(null);

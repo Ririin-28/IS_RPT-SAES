@@ -25,7 +25,6 @@ const DEFAULT_COLUMNS: { key: string; title: string }[] = [
 const MATH_COLUMNS: { key: string; title: string }[] = [
   { key: "no", title: "No#" },
   { key: "title", title: "Title" },
-  { key: "domain", title: "Domain" },
   { key: "dateAttached", title: "Date Attached" },
 ];
 

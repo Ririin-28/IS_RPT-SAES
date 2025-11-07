@@ -1,7 +1,8 @@
 "use client";
 import Sidebar from "@/components/Teacher/Sidebar";
 import Header from "@/components/Teacher/Header";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { getStoredUserProfile } from "@/lib/utils/user-profile";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
@@ -11,17 +12,50 @@ export default function TeacherProfile() {
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [modalMessage, setModalMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
   const [formData, setFormData] = useState({
-    firstName: "Juan",
-    middleName: "Santos",
-    lastName: "Dela Cruz",
-    email: "teacher@saes.edu.ph",
-    contactNumber: "0912-345-6789",
-    grade: "1",
-    subject: "English, Filipino, Math",
-    position: "Teacher",
+    firstName: "",
+    middleName: "",
+    lastName: "",
+    email: "",
+    contactNumber: "",
+    grade: "",
+    subject: "",
+    position: "",
     profilePicture: "",
   });
+
+  useEffect(() => {
+    async function loadProfile() {
+      try {
+        const storedProfile = getStoredUserProfile();
+        const userId = storedProfile?.userId;
+        if (!userId) return;
+
+        const response = await fetch(`/api/teacher/profile?userId=${userId}`, { cache: "no-store" });
+        const data = await response.json();
+        if (data.success && data.teacher) {
+          const nameParts = data.teacher.name?.split(" ") || [];
+          setFormData({
+            firstName: storedProfile?.firstName || nameParts[0] || "",
+            middleName: storedProfile?.middleName || nameParts[1] || "",
+            lastName: data.teacher.lastName || nameParts[nameParts.length - 1] || "",
+            email: data.teacher.email || "",
+            contactNumber: data.teacher.contactNumber || "",
+            grade: data.teacher.gradeLevel || "",
+            subject: data.teacher.subjectsHandled || "English, Filipino, Math",
+            position: data.teacher.role || "Teacher",
+            profilePicture: "",
+          });
+        }
+      } catch (error) {
+        console.error("Failed to load profile", error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadProfile();
+  }, []);
   const [passwordData, setPasswordData] = useState({
     currentPassword: "",
     newPassword: "",
@@ -106,6 +140,11 @@ export default function TeacherProfile() {
         <main className="flex-1 overflow-y-auto">
           <div className="p-4 h-full sm:p-5 md:p-6">
             <div className="bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[400px] overflow-y-auto p-4 sm:p-5 md:p-6">
+              {isLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <p className="text-gray-600">Loading profile...</p>
+                </div>
+              ) : (
               <div className="max-w-4xl mx-auto">
                 <div className="flex flex-col items-center mb-6">
                   <div className="relative">
@@ -293,6 +332,7 @@ export default function TeacherProfile() {
                   )}
                 </div>
               </div>
+              )}
             </div>
           </div>
         </main>
