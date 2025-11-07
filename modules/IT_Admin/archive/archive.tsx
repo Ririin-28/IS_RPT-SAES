@@ -5,14 +5,8 @@ import ITAdminHeader from "@/components/IT_Admin/Header";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import { FaTimes } from "react-icons/fa";
-// Teacher Tabs
-import TeacherAllGradesTab from "./TeacherTab/AllGradesTab";
-import TeacherGradeOneTab from "./TeacherTab/GradeOneTab";
-import TeacherGradeTwoTab from "./TeacherTab/GradeTwoTab";
-import TeacherGradeThreeTab from "./TeacherTab/GradeThreeTab";
-import TeacherGradeFourTab from "./TeacherTab/GradeFourTab";
-import TeacherGradeFiveTab from "./TeacherTab/GradeFiveTab";
-import TeacherGradeSixTab from "./TeacherTab/GradeSixTab";
+// Teacher Tab
+import TeacherArchiveTab from "./TeacherTab/TeacherTab";
 // Master Teacher Tab
 import MasterTeacherTab from "./MasterTeacherTab/MasterTeacherTab";
 // Principal Tab
@@ -285,7 +279,7 @@ export default function ITAdminArchive() {
 			{/*---------------------------------Main Container---------------------------------*/}
 			<div className="bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[400px] overflow-y-auto p-4 sm:p-5 md:p-6">
 				<div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-0">
                   <HeaderDropdown
                     options={[...ACCOUNT_OPTIONS]}
                     value={accountType}
@@ -293,7 +287,7 @@ export default function ITAdminArchive() {
                   />
                   {showGradeDropdown ? (
                     <>
-                      <SecondaryHeader title="in" />
+                      <SecondaryHeader title="" />
                       <HeaderDropdown
                         options={[...GRADE_OPTIONS]}
                         value={activeTab}
@@ -334,7 +328,7 @@ export default function ITAdminArchive() {
               )}
               <div className="mt-4 sm:mt-6">
                 {accountType === "IT Admin" && (
-                  <ITAdminArchiveTab itAdmins={accounts} searchTerm={searchTerm} />
+                  <ITAdminArchiveTab itAdmins={accounts} setItAdmins={setAccounts} searchTerm={searchTerm} />
                 )}
 
                 {accountType === "Principal" && (
@@ -352,15 +346,13 @@ export default function ITAdminArchive() {
                 )}
                 
                 {accountType === "Teachers" && (
-                  <>
-                    {activeTab === "All Grades" && <TeacherAllGradesTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 1" && <TeacherGradeOneTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 2" && <TeacherGradeTwoTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 3" && <TeacherGradeThreeTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 4" && <TeacherGradeFourTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 5" && <TeacherGradeFiveTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 6" && <TeacherGradeSixTab teachers={accounts} setTeachers={setAccounts} searchTerm={searchTerm} />}
-                  </>
+                  <TeacherArchiveTab
+                    teachers={accounts}
+                    setTeachers={setAccounts}
+                    searchTerm={searchTerm}
+                    gradeFilter={parseGradeFilter(activeTab)}
+                    gradeLabel={activeTab}
+                  />
                 )}
 
                 {accountType === "Students" && (

@@ -3,12 +3,14 @@ import Sidebar from "@/components/MasterTeacher/Coordinator/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import { FaTimes } from "react-icons/fa";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import StudentTab from "./StudentsTab";
+import { useCoordinatorStudents } from "./useCoordinatorStudents";
 
 export default function MasterTeacherStudents() {
-  const [students, setStudents] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const { subject, gradeLevel, students, loading, saving, error, refresh, addStudent, importStudents, deleteStudents } = useCoordinatorStudents();
+  const headerTitle = useMemo(() => `${subject} Students Information List`, [subject]);
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
@@ -51,7 +53,7 @@ export default function MasterTeacherStudents() {
             "
             >
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                <SecondaryHeader title="Students information List" />
+                <SecondaryHeader title={headerTitle} />
                 <div className="flex gap-3 w-full sm:w-auto mt-4 sm:mt-0">
                   <div className="relative flex-1 sm:flex-initial">
                     <input
@@ -75,7 +77,19 @@ export default function MasterTeacherStudents() {
               
               {/*---------------------------------Tab Content---------------------------------*/}
               <div className="mt-4 sm:mt-6">
-                <StudentTab students={students} setStudents={setStudents} searchTerm={searchTerm} />
+                <StudentTab
+                  students={students}
+                  searchTerm={searchTerm}
+                  subjectLabel={subject}
+                  gradeLabel={gradeLevel}
+                  loading={loading}
+                  saving={saving}
+                  error={error}
+                  onAddStudent={addStudent}
+                  onImportStudents={importStudents}
+                  onDeleteStudents={deleteStudents}
+                  onRefresh={refresh}
+                />
               </div>
             </div>
           </div>

@@ -3,9 +3,10 @@ import { useMemo, useRef, useState, useEffect, type ChangeEvent } from "react";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import TableList from "@/components/Common/Tables/TableList";
-import { useMaterialsList } from "@/modules/MasterTeacher/useArchiveMaterials";
 import KebabMenu from "@/components/Common/Menus/KebabMenu";
 import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
+import { useTeacherMaterials } from "@/modules/Teacher/materials/useTeacherMaterials";
+import type { MaterialStatus } from "@/lib/materials/shared";
 
 export const ENGLISH_LEVELS = [
 	"Non Reader",
@@ -18,13 +19,36 @@ export const ENGLISH_LEVELS = [
 
 export type EnglishLevel = (typeof ENGLISH_LEVELS)[number];
 
-type MaterialItem = {
-	id: number | string;
-	title: string;
-	dateAttached: string;
+const normalizeId = (value: number | string) => String(value);
+
+const STATUS_LABELS: Record<MaterialStatus, string> = {
+	pending: "Pending",
+	approved: "Approved",
+	rejected: "Rejected",
 };
 
-const normalizeId = (value: number | string) => String(value);
+const formatDate = (value: Date) =>
+	value.toLocaleDateString("en-PH", {
+		month: "short",
+		day: "numeric",
+		year: "numeric",
+	});
+
+const buildStatusBadge = (status: MaterialStatus, rejectionReason: string | null) => {
+	const baseClass = "inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold";
+	switch (status) {
+		case "approved":
+			return <span className={`${baseClass} bg-green-100 text-green-700`}>{STATUS_LABELS[status]}</span>;
+		case "rejected":
+			return (
+				<span className={`${baseClass} bg-red-100 text-red-700`} title={rejectionReason ?? undefined}>
+					{STATUS_LABELS[status]}
+				</span>
+			);
+		default:
+			return <span className={`${baseClass} bg-yellow-100 text-yellow-700`}>{STATUS_LABELS[status]}</span>;
+	}
+};
 
 interface EnglishTabProps {
 	level: EnglishLevel;
@@ -32,13 +56,13 @@ interface EnglishTabProps {
 }
 
 export default function EnglishTab({ level, searchTerm = "" }: EnglishTabProps) {
-	const { materials, setMaterials } = useMaterialsList<MaterialItem>({
+	const { materials, uploadFiles, deleteMaterials, loading, deleting, error } = useTeacherMaterials({
 		subject: "English",
-		category: level,
+		level,
 	});
 
 	const [selectMode, setSelectMode] = useState(false);
-	const [selectedIds, setSelectedIds] = useState<Set<MaterialItem["id"]>>(new Set());
+	const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 	const [pendingFiles, setPendingFiles] = useState<File[]>([]);
 	const [showUploadConfirm, setShowUploadConfirm] = useState(false);
 	const fileInputRef = useRef<HTMLInputElement>(null);
@@ -49,16 +73,22 @@ export default function EnglishTab({ level, searchTerm = "" }: EnglishTabProps) 
 		if (!normalizedSearch) return materials;
 		return materials.filter((material) => {
 			const title = material.title?.toLowerCase() ?? "";
-			const date = material.dateAttached?.toLowerCase() ?? "";
-			return title.includes(normalizedSearch) || date.includes(normalizedSearch);
+			const submitted = formatDate(material.submittedAt).toLowerCase();
+			return title.includes(normalizedSearch) || submitted.includes(normalizedSearch);
 		});
 	}, [materials, normalizedSearch]);
 
 	const rows = useMemo(
 		() =>
 			filteredMaterials.map((material, index) => ({
-				...material,
+				id: material.id,
 				no: index + 1,
+				title: material.title,
+				status: material.status,
+				rejectionReason: material.rejectionReason,
+				submittedAt: formatDate(material.submittedAt),
+				attachmentUrl: material.attachmentUrl,
+				files: material.files,
 			})),
 		[filteredMaterials]
 	);
@@ -67,7 +97,7 @@ export default function EnglishTab({ level, searchTerm = "" }: EnglishTabProps) 
 		if (!selectMode) return;
 		const available = new Set(filteredMaterials.map((item) => normalizeId(item.id)));
 		setSelectedIds((prev) => {
-			const next = new Set<MaterialItem["id"]>();
+			const next = new Set<number>();
 			prev.forEach((value) => {
 				if (available.has(normalizeId(value))) {
 					next.add(value);
@@ -88,7 +118,7 @@ export default function EnglishTab({ level, searchTerm = "" }: EnglishTabProps) 
 		});
 	}, [filteredMaterials, selectMode]);
 
-	const handleSelectItem = (id: MaterialItem["id"], checked: boolean) => {
+	const handleSelectItem = (id: number, checked: boolean) => {
 		setSelectedIds((prev) => {
 			const next = new Set(prev);
 			if (checked) {
@@ -102,7 +132,7 @@ export default function EnglishTab({ level, searchTerm = "" }: EnglishTabProps) 
 
 	const handleSelectAll = (checked: boolean) => {
 		if (checked) {
-			setSelectedIds(new Set(filteredMaterials.map((item) => item.id)));
+			setSelectedIds(new Set(filteredMaterials.map((item) => Number(item.id))));
 		} else {
 			setSelectedIds(new Set());
 		}
@@ -113,10 +143,11 @@ export default function EnglishTab({ level, searchTerm = "" }: EnglishTabProps) 
 		setSelectedIds(new Set());
 	};
 
-	const handleDeleteSelected = () => {
+	const handleDeleteSelected = async () => {
 		if (selectedIds.size === 0) return;
-		const normalized = new Set(Array.from(selectedIds).map((value) => normalizeId(value)));
-		setMaterials((prev) => prev.filter((material) => !normalized.has(normalizeId(material.id))));
+		const ids = Array.from(selectedIds).map((value) => Number(value)).filter((value) => Number.isFinite(value));
+		if (ids.length === 0) return;
+		await deleteMaterials(ids);
 		exitSelectMode();
 	};
 
@@ -142,30 +173,31 @@ export default function EnglishTab({ level, searchTerm = "" }: EnglishTabProps) 
 		}
 	};
 
-	const handleUploadConfirm = () => {
+	const handleUploadConfirm = async () => {
 		if (pendingFiles.length === 0) {
 			handleUploadCancel();
 			return;
 		}
-		const timestamp = Date.now();
-		const formattedDate = new Date().toLocaleDateString("en-PH", {
-			month: "short",
-			day: "numeric",
-			year: "numeric",
-		});
-		setMaterials((prev) => [
-			...prev,
-			...pendingFiles.map((file, index) => ({
-				id: `upload-${timestamp}-${index}`,
-				title: file.name,
-				dateAttached: formattedDate,
-			})),
-		]);
+		await uploadFiles(pendingFiles);
 		handleUploadCancel();
+	};
+
+	const handleViewMaterial = (row: any) => {
+		const targetUrl = row.attachmentUrl || row.files?.[0]?.publicUrl;
+		if (!targetUrl) return;
+		const url = targetUrl.startsWith("http") ? targetUrl : `${window.location.origin}${targetUrl.startsWith("/") ? "" : "/"}${targetUrl}`;
+		window.open(url, "_blank", "noopener");
+	};
+
+	const statusColumn = {
+		key: "status",
+		title: "Status",
+		render: (row: any) => buildStatusBadge(row.status as MaterialStatus, row.rejectionReason ?? null),
 	};
 
 	return (
 		<div>
+			{error && <p className="text-sm text-red-600 mb-2">{error}</p>}
 			<div
 				className="
 				/* Mobile */
@@ -176,7 +208,10 @@ export default function EnglishTab({ level, searchTerm = "" }: EnglishTabProps) 
 				md:mb-2
 			"
 			>
-				<p className="text-gray-600 text-md font-medium">Total: {materials.length}</p>
+				<p className="text-gray-600 text-md font-medium">
+					Total: {materials.length}
+					{loading && <span className="ml-2 text-xs text-gray-400">Loading...</span>}
+				</p>
 				<div className="flex gap-2 items-center">
 					{selectMode ? (
 						<>
@@ -184,7 +219,7 @@ export default function EnglishTab({ level, searchTerm = "" }: EnglishTabProps) 
 								Cancel
 							</UtilityButton>
 							{selectedCount > 0 && (
-								<DangerButton small onClick={handleDeleteSelected}>
+								<DangerButton small onClick={handleDeleteSelected} disabled={deleting}>
 									Delete ({selectedCount})
 								</DangerButton>
 							)}
@@ -230,15 +265,18 @@ export default function EnglishTab({ level, searchTerm = "" }: EnglishTabProps) 
 				</div>
 			</div>
 			<TableList
-				columns={[
-					{ key: "no", title: "No#" },
-					{ key: "title", title: "Title" },
-					{ key: "dateAttached", title: "Date Attached" },
-				]}
+					columns={[
+						{ key: "no", title: "No#" },
+						{ key: "title", title: "Title" },
+						statusColumn,
+						{ key: "submittedAt", title: "Date Submitted" },
+					]}
 				data={rows}
 				actions={(row: any) => (
 					<>
-						<UtilityButton small>See All</UtilityButton>
+							<UtilityButton small onClick={() => handleViewMaterial(row)}>
+								Open
+							</UtilityButton>
 					</>
 				)}
 				pageSize={10}
@@ -257,10 +295,12 @@ export default function EnglishTab({ level, searchTerm = "" }: EnglishTabProps) 
 			<ConfirmationModal
 				isOpen={showUploadConfirm}
 				onClose={handleUploadCancel}
-				onConfirm={handleUploadConfirm}
+					onConfirm={() => {
+						void handleUploadConfirm();
+					}}
 				title="Confirm File Upload"
 				message="Upload the selected file(s) to this materials list?"
-				fileName={pendingFileNames || undefined}
+					fileName={pendingFileNames || undefined}
 			/>
 		</div>
 	);

@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import * as XLSX from 'xlsx';
-import AddStudentModal from "./Modals/AddStudentModal";
+import AddStudentModal, { type AddStudentFormValues } from "./Modals/AddStudentModal";
 import StudentDetailModal from "./Modals/StudentDetailModal"; // Import the modal
 import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
 import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
@@ -17,6 +17,7 @@ import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
 import BodyText from "@/components/Common/Texts/BodyText";
 import BodyLabel from "@/components/Common/Texts/BodyLabel";
+import type { CoordinatorStudent } from "./useCoordinatorStudents";
 
 const sections = ["All Sections", "A", "B", "C"];
 
@@ -94,12 +95,47 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
 };
 
 interface StudentTabProps {
-  students: any[];
-  setStudents: React.Dispatch<React.SetStateAction<any[]>>;
+  students: CoordinatorStudent[];
   searchTerm: string;
+  subjectLabel: string;
+  gradeLabel: string | null;
+  loading: boolean;
+  saving: boolean;
+  error: string | null;
+  onAddStudent: (input: CoordinatorStudentFormInput) => Promise<void>;
+  onImportStudents: (inputs: CoordinatorStudentFormInput[]) => Promise<void>;
+  onDeleteStudents: (ids: number[]) => Promise<void>;
+  onRefresh: () => Promise<void>;
 }
 
-export default function StudentTab({ students, setStudents, searchTerm }: StudentTabProps) {
+type CoordinatorStudentFormInput = {
+  studentId?: string;
+  name: string;
+  grade?: string;
+  section?: string;
+  age?: string;
+  address?: string;
+  guardian?: string;
+  guardianContact?: string;
+  relationship?: string;
+  englishPhonemic?: string;
+  filipinoPhonemic?: string;
+  mathProficiency?: string;
+};
+
+export default function StudentTab({
+  students,
+  searchTerm,
+  subjectLabel,
+  gradeLabel,
+  loading,
+  saving,
+  error,
+  onAddStudent,
+  onImportStudents,
+  onDeleteStudents,
+  onRefresh,
+}: StudentTabProps) {
   const [showModal, setShowModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
@@ -110,44 +146,75 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
   const [selectMode, setSelectMode] = useState(false);
   const [filter, setFilter] = useState({ section: "All Sections" });
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
+  const buildDefaultValues = useCallback((): AddStudentFormValues => ({
+    studentId: "",
+    role: "Student",
+    firstName: "",
+    middleName: "",
+    lastName: "",
+    suffix: "",
+    grade: gradeLabel?.trim() ?? "",
+    section: "",
+    guardianFirstName: "",
+    guardianMiddleName: "",
+    guardianLastName: "",
+    guardianSuffix: "",
+    relationship: "",
+    guardianContact: "",
+    address: "",
+    englishPhonemic: "",
+    filipinoPhonemic: "",
+    mathPhonemic: "",
+  }), [gradeLabel]);
 
   // React Hook Form setup
-  const formMethods = useForm({
-    defaultValues: {
-      studentId: "",
-      name: "",
-      grade: "",
-      section: "",
-      age: "",
-      address: "",
-      guardian: "",
-      guardianContact: "",
-      englishPhonemic: "",
-      filipinoPhonemic: "",
-      mathProficiency: "",
-    },
+  const formMethods = useForm<AddStudentFormValues>({
+    defaultValues: buildDefaultValues(),
   });
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors },
-  } = formMethods;
+  const { register, handleSubmit, reset, formState: { errors }, setValue } = formMethods;
+
+  useEffect(() => {
+    reset(buildDefaultValues());
+  }, [buildDefaultValues, reset]);
+
+  useEffect(() => {
+    if (gradeLabel && gradeLabel.trim().length > 0) {
+      setValue("grade", gradeLabel.trim(), { shouldDirty: false, shouldTouch: false, shouldValidate: false });
+    }
+  }, [gradeLabel, setValue]);
 
   // Add new student
-  const onSubmit = (data: any) => {
-    const gradeNum = Number(data.grade);
-    setStudents([
-      ...students,
-      {
-        id: Date.now(),
-        ...data,
-        grade: isNaN(gradeNum) ? "" : gradeNum,
-      },
-    ]);
-    reset();
-    setShowModal(false);
+  const onSubmit = async (data: AddStudentFormValues) => {
+    const effectiveGrade = gradeLabel && gradeLabel.trim().length > 0 ? gradeLabel.trim() : data.grade;
+    if (!effectiveGrade || effectiveGrade.trim().length === 0) {
+      alert("Grade level is required.");
+      return;
+    }
+    try {
+      const payload: CoordinatorStudentFormInput = {
+        studentId: data.studentId || undefined,
+        name: [data.firstName, data.middleName, data.lastName, data.suffix].filter((part) => part && part.trim().length > 0).join(" ") || "Unnamed Student",
+        grade: effectiveGrade,
+        section: data.section || undefined,
+        age: undefined,
+        address: data.address || undefined,
+        guardian: [data.guardianFirstName, data.guardianMiddleName, data.guardianLastName, data.guardianSuffix]
+          .filter((part) => part && part.trim().length > 0)
+          .join(" ") || undefined,
+        guardianContact: data.guardianContact || undefined,
+        relationship: data.relationship || undefined,
+        englishPhonemic: data.englishPhonemic || undefined,
+        filipinoPhonemic: data.filipinoPhonemic || undefined,
+        mathProficiency: data.mathPhonemic || undefined,
+      };
+      await onAddStudent(payload);
+      reset();
+      setShowModal(false);
+    } catch (error) {
+      console.error("Failed to add student", error);
+      alert(error instanceof Error ? error.message : "Failed to add student.");
+    }
   };
 
   // Handle student selection
@@ -190,12 +257,13 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
       Address: student.address ?? "",
     }));
 
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Students");
+  const worksheet = XLSX.utils.json_to_sheet(exportData);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Students");
 
-    const timestamp = new Date().toISOString().replace(/[:.-]/g, "");
-    const filename = `MasterTeacher_English_Students_${timestamp}.xlsx`;
+  const timestamp = new Date().toISOString().replace(/[:.-]/g, "");
+  const sanitizedSubject = subjectLabel.replace(/\s+/g, "");
+  const filename = `MasterTeacher_${sanitizedSubject}_Students_${timestamp}.xlsx`;
     XLSX.writeFile(workbook, filename);
   };
 
@@ -223,16 +291,21 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
     setShowDeleteModal(true);
   };
 
-  const confirmDelete = () => {
-    setStudents(students.filter(s => !selectedStudents.has(s.id)));
-    setSelectedStudents(new Set());
-    setSelectMode(false);
-    setShowDeleteModal(false);
+  const confirmDelete = async () => {
+    try {
+      await onDeleteStudents(Array.from(selectedStudents));
+      setSelectedStudents(new Set());
+      setSelectMode(false);
+      setShowDeleteModal(false);
+    } catch (error) {
+      console.error("Failed to delete students", error);
+      alert(error instanceof Error ? error.message : "Failed to delete students.");
+    }
   };
 
   // Handle viewing student details
   const handleViewDetails = (student: any) => {
-    setSelectedStudent(student);
+    setSelectedStudent({ ...student, subjectAssigned: subjectLabel });
     setShowDetailModal(true);
   };
 
@@ -253,7 +326,7 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
   };
 
   // Handle file upload confirmation
-  const handleUploadConfirm = () => {
+  const handleUploadConfirm = async () => {
     if (!selectedFile) return;
 
     const reader = new FileReader();
@@ -265,27 +338,33 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
         const worksheet = workbook.Sheets[sheetName];
         const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
-        const newStudents = jsonData.map((row: any, index: number) => {
+        const newStudents = jsonData.map((row: any) => {
             const studentName = `${row.FIRSTNAME || ''} ${row.MIDDLENAME || ''} ${row.SURNAME || ''}`.trim();
             const guardianName = `${row["GUARDIAN'S FIRSTNAME"] || ''} ${row["GUARDIAN'S MIDDLENAME"] || ''} ${row["GUARDIAN'S SURNAME"] || ''}`.trim();
             return {
-                id: Date.now() + index,
                 studentId: row['STUDENT ID'] || '',
-                name: studentName,
+                name: studentName || 'Unnamed Student',
                 grade: row.GRADE || '',
                 section: row.SECTION || '',
-                age: row.AGE || '',
+        age: row.AGE || '',
                 address: row.ADDRESS || '',
-                guardian: guardianName,
+                guardian: guardianName || '',
                 guardianContact: row['CONTACT NUMBER'] || '',
-                englishPhonemic: '', // Not in the excel file
-                filipinoPhonemic: '', // Not in the excel file
-                mathProficiency: '', // Not in the excel file
-            }
+        relationship: row.RELATIONSHIP || '',
+                englishPhonemic: '',
+                filipinoPhonemic: '',
+                mathProficiency: '',
+            } satisfies CoordinatorStudentFormInput;
         });
 
-        setStudents([...students, ...newStudents]);
-        alert(`Successfully imported ${newStudents.length} students`);
+        void onImportStudents(newStudents)
+          .then(() => {
+            alert(`Successfully imported ${newStudents.length} students`);
+          })
+          .catch((error) => {
+            console.error('Failed to import students', error);
+            alert(error instanceof Error ? error.message : 'Failed to import students.');
+          });
       } catch (error) {
         console.error(error);
         alert('Error reading Excel file. Please check the format and column headers.');
@@ -307,12 +386,16 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
     }
   };
 
+  const actionsDisabled = saving || loading;
+
   return (
     <div>
       <div className="flex flex-row justify-between items-center mb-4">
         <p className="text-gray-600 text-md font-medium">
           Total: {filteredStudents.length}
+          {loading && <span className="ml-2 text-xs text-gray-400">Loading...</span>}
         </p>
+        {error && <span className="text-sm text-red-600">{error}</span>}
         
         <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
           <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
@@ -333,7 +416,7 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
               </SecondaryButton>
               {selectedStudents.size > 0 && (
                   <>
-<DangerButton small onClick={handleDeleteSelected} className="flex items-center gap-1">
+<DangerButton small onClick={handleDeleteSelected} className="flex items-center gap-1" disabled={actionsDisabled}>
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-trash-icon lucide-trash"><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
   Delete ({selectedStudents.size})
 </DangerButton>
@@ -347,11 +430,13 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
               renderItems={(close) => (
                 <div className="py-1">
                   <button
+                    disabled={actionsDisabled}
                     onClick={() => {
+                      if (actionsDisabled) return;
                       setShowModal(true);
                       close();
                     }}
-                    className="w-full px-4 py-2 text-left text-sm text-[#013300] hover:bg-gray-50 flex items-center gap-2"
+                    className={`w-full px-4 py-2 text-left text-sm text-[#013300] flex items-center gap-2 ${actionsDisabled ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50"}`}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
@@ -359,11 +444,13 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
                     Add Student
                   </button>
                   <button
+                    disabled={actionsDisabled}
                     onClick={() => {
+                      if (actionsDisabled) return;
                       fileInputRef.current?.click();
                       close();
                     }}
-                    className="w-full px-4 py-2 text-left text-sm text-[#013300] hover:bg-gray-50 flex items-center gap-2"
+                    className={`w-full px-4 py-2 text-left text-sm text-[#013300] flex items-center gap-2 ${actionsDisabled ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50"}`}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v12" />
@@ -383,21 +470,23 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
                       close();
                     }}
                     className={`mt-1 flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[#013300] ${
-                      filteredStudents.length === 0
+                      filteredStudents.length === 0 || actionsDisabled
                         ? "opacity-40 cursor-not-allowed"
                         : "hover:bg-gray-50"
                     }`}
-                    aria-disabled={filteredStudents.length === 0}
+                    aria-disabled={filteredStudents.length === 0 || actionsDisabled}
                   >
                     <ExportIcon />
                     Export to Excel
                   </button>
                   <button
+                    disabled={actionsDisabled}
                     onClick={() => {
+                      if (actionsDisabled) return;
                       handleEnterSelectMode();
                       close();
                     }}
-                    className="w-full px-4 py-2 text-left text-sm text-[#013300] hover:bg-gray-50 flex items-center gap-2"
+                    className={`w-full px-4 py-2 text-left text-sm text-[#013300] flex items-center gap-2 ${actionsDisabled ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50"}`}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                       <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -425,10 +514,14 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
         show={showModal}
         onClose={() => {
           setShowModal(false);
-          reset();
+          reset(buildDefaultValues());
         }}
         form={formMethods}
         onSubmit={onSubmit}
+        isSubmitting={saving}
+        apiError={error}
+        subjectLabel={subjectLabel}
+        gradeLabel={gradeLabel}
       />
 
       {/* Student Detail Modal */}

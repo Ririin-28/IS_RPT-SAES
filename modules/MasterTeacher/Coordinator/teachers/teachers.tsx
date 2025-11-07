@@ -8,12 +8,12 @@ import { FaTimes } from "react-icons/fa";
 // Tabs
 import TeacherTab from "./Tabs/TeacherTab";
 import AttendanceTab from "./Tabs/AttendanceTab";
+import { useCoordinatorTeachers } from "./useCoordinatorTeachers";
 
 export default function MasterTeacherTeachers() {
   const [activeTab, setActiveTab] = useState("Information List");
   const [searchTerm, setSearchTerm] = useState("");
-  // Lifted teachers state so both tabs share the same data
-  const [teachers, setTeachers] = useState<any[]>([]);
+  const { teachers, gradeLabel, loading, error } = useCoordinatorTeachers();
 
   return (
     <div
@@ -59,7 +59,7 @@ export default function MasterTeacherTeachers() {
             "
             >
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                <div className="flex items-center gap-0">
+                <div className="flex items-center gap-2 flex-wrap">
                   <SecondaryHeader title="Teachers" />
                   <HeaderDropdown
                     options={["Information List", "Attendance List"]}
@@ -98,8 +98,20 @@ export default function MasterTeacherTeachers() {
                 sm:mt-6
               "
               >
-                {activeTab === "Information List" && <TeacherTab teachers={teachers} setTeachers={setTeachers} searchTerm={searchTerm} />}
-                {activeTab === "Attendance List" && <AttendanceTab teachers={teachers} searchTerm={searchTerm} />}
+                {loading ? (
+                  <div className="rounded-md border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+                    Loading teachers…
+                  </div>
+                ) : error ? (
+                  <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+                    {error}
+                  </div>
+                ) : (
+                  <>
+                    {activeTab === "Information List" && <TeacherTab teachers={teachers} searchTerm={searchTerm} />}
+                    {activeTab === "Attendance List" && <AttendanceTab teachers={teachers} searchTerm={searchTerm} />}
+                  </>
+                )}
               </div>
             </div>
           </div>

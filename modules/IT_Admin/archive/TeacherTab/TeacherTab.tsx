@@ -1,4 +1,4 @@
-import { useMemo, useCallback, type Dispatch, type SetStateAction, type ReactNode } from "react";
+import { useMemo, useCallback, type Dispatch, type SetStateAction } from "react";
 import TableList from "@/components/Common/Tables/TableList";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
@@ -11,13 +11,15 @@ import { useArchiveRestoreDelete } from "../Common/useArchiveRestoreDelete";
 import { ensureArchiveRowKey } from "../Common/archiveRowKey";
 import { exportArchiveRows } from "../utils/export-columns";
 
-type ColumnConfig = {
-  key: string;
-  title: string;
-  render?: (row: any) => ReactNode;
-};
+const ExportIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" d="m7 10 5 5 5-5" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 15V3" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M5 19h14" />
+  </svg>
+);
 
-interface MasterTeacherArchiveTabProps {
+interface TeacherArchiveTabProps {
   teachers: any[];
   setTeachers: Dispatch<SetStateAction<any[]>>;
   searchTerm: string;
@@ -25,24 +27,52 @@ interface MasterTeacherArchiveTabProps {
   gradeLabel?: string;
 }
 
+const extractGradeNumber = (raw: unknown): number | null => {
+  if (raw === null || raw === undefined) {
+    return null;
+  }
+  const value = String(raw).trim();
+  if (value.length === 0) {
+    return null;
+  }
+  const direct = Number.parseInt(value, 10);
+  if (!Number.isNaN(direct)) {
+    return direct;
+  }
+  const match = value.match(/(\d+)/);
+  if (!match) {
+    return null;
+  }
+  const parsed = Number.parseInt(match[1], 10);
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
 const matchesGrade = (teacher: any, gradeFilter?: number) => {
   if (gradeFilter === undefined) {
     return true;
   }
-  const gradeValue = teacher.grade;
-  if (gradeValue === null || gradeValue === undefined) {
-    return false;
-  }
-  return gradeValue === gradeFilter || gradeValue === String(gradeFilter);
+
+  const gradeCandidate =
+    teacher.grade ??
+    teacher.grade_level ??
+    teacher.gradeLevel ??
+    teacher.year_level ??
+    teacher.handledGrade ??
+    teacher.handled_grade ??
+    teacher.remedial_grade ??
+    teacher.remedial_teacher_grade;
+
+  const numeric = extractGradeNumber(gradeCandidate);
+  return numeric === gradeFilter;
 };
 
-export default function MasterTeacherTab({
+export default function TeacherArchiveTab({
   teachers,
   setTeachers,
   searchTerm,
   gradeFilter,
   gradeLabel,
-}: MasterTeacherArchiveTabProps) {
+}: TeacherArchiveTabProps) {
   const normalizedLabel = gradeLabel ?? (gradeFilter ? `Grade ${gradeFilter}` : "All Grades");
 
   const keySelector = (item: any) => ensureArchiveRowKey(item);
@@ -91,47 +121,52 @@ export default function MasterTeacherTab({
     () =>
       filteredTeachers.map((teacher, idx) => {
         const archiveKey = ensureArchiveRowKey(teacher);
+        const resolvedGrade =
+          teacher.grade ??
+          teacher.grade_level ??
+          teacher.gradeLevel ??
+          teacher.year_level ??
+          teacher.handled_grade ??
+          teacher.handledGrade ??
+          teacher.remedial_grade ??
+          teacher.remedial_teacher_grade ??
+          null;
+        const resolvedSection = teacher.section ?? teacher.section_name ?? teacher.class_section ?? null;
+        const resolvedContact =
+          teacher.contactNumber ??
+          teacher.contact_number ??
+          teacher.phoneNumber ??
+          teacher.phone_number ??
+          null;
+
+        const teacherIdValue =
+          teacher.teacherId ??
+          teacher.teacher_id ??
+          teacher.userId ??
+          teacher.user_id ??
+          null;
+
         return {
           ...teacher,
           id: archiveKey,
           no: idx + 1,
+          teacherId: teacherIdValue,
+          grade: resolvedGrade,
+          section: resolvedSection,
+          contactNumber: resolvedContact,
         };
       }),
     [filteredTeachers],
   );
 
-  const exportEmptyMessage =
-    normalizedLabel === "All Grades"
-      ? "No master teacher archive records available to export."
-      : `No ${normalizedLabel} master teacher archive records available to export.`;
-
   const handleExport = () => {
     void exportArchiveRows({
       rows: filteredTeachers,
-      accountLabel: "Master Teacher",
+      accountLabel: "Teacher",
       gradeLabel: normalizedLabel,
-      emptyMessage: exportEmptyMessage,
+      emptyMessage: "No teacher archive records available to export.",
     });
   };
-
-  const tableColumns = useMemo<ColumnConfig[]>(() => {
-    const baseColumns: ColumnConfig[] = [
-      { key: "no", title: "No#" },
-      { 
-        key: "teacherId", 
-        title: "Teacher ID",
-        render: (row: any) => row.userId ?? row.user_id ?? row.teacherId ?? "—"
-      },
-      { key: "name", title: "Full Name" },
-      {
-        key: "archivedDate",
-        title: "Archived Date",
-        render: (row: any) => row.archivedDateDisplay ?? "—",
-      },
-    ];
-
-    return baseColumns;
-  }, []);
 
   return (
     <div>
@@ -187,11 +222,11 @@ export default function MasterTeacherTab({
                         strokeWidth="2"
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        className="lucide lucide-archive-restore-icon lucide-archive-restore"
+                        className="lucide lucide-archive-restore"
                       >
                         <rect width="20" height="5" x="2" y="3" rx="1" />
                         <path d="M4 8v11a2 2 0 0 0 2 2h2" />
-                        <path d="M20 8v11a2 2 0 0 1-2 2h-2" />
+                        <path d="M20 8v11a 2 2 0 0 1-2 2h-2" />
                         <path d="m9 15 3-3 3 3" />
                         <path d="M12 12v9" />
                       </svg>
@@ -214,7 +249,7 @@ export default function MasterTeacherTab({
                         strokeWidth="2"
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        className="lucide lucide-trash-icon lucide-trash"
+                        className="lucide lucide-trash"
                       >
                         <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
                         <path d="M3 6h18" />
@@ -236,17 +271,7 @@ export default function MasterTeacherTab({
                       }`}
                       aria-disabled={filteredTeachers.length === 0}
                     >
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        viewBox="0 0 24 24"
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" d="m7 10 5 5 5-5" />
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 15V3" />
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 19h14" />
-                      </svg>
+                      <ExportIcon />
                       Export to Excel
                     </button>
                   </div>
@@ -257,7 +282,20 @@ export default function MasterTeacherTab({
       </div>
 
       <TableList
-        columns={tableColumns}
+        columns={[
+          { key: "no", title: "No#" },
+          { 
+            key: "teacherId", 
+            title: "Teacher ID",
+            render: (row: any) => row.userId ?? row.user_id ?? row.teacherId ?? "—"
+          },
+          { key: "name", title: "Full Name" },
+          {
+            key: "archivedDate",
+            title: "Archived Date",
+            render: (row: any) => row.archivedDateDisplay ?? "—",
+          },
+        ]}
         data={tableData}
         actions={(row: any) => (
           <UtilityButton small onClick={() => handleViewDetails(row)}>

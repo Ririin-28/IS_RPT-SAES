@@ -111,7 +111,18 @@ function normalizeTeacherRecord(record: any) {
   const contactDisplay = formatLocalPhoneNumber(contactRaw);
   normalized.contactNumberDisplay = contactDisplay ?? contactRaw;
   normalized.phoneNumber = contactRaw;
-  normalized.grade = toStringOrNull(record.grade ?? record.handledGrade ?? record.handled_grade);
+  normalized.grade = toStringOrNull(
+    record.grade ??
+      record.handledGrade ??
+      record.handled_grade ??
+      record.gradeLevel ??
+      record.grade_level ??
+      record.yearLevel ??
+      record.year_level ??
+      record.remedialGrade ??
+      record.remedial_grade ??
+      record.remedial_teacher_grade,
+  );
   normalized.section = toStringOrNull(record.section);
   normalized.subjects = DEFAULT_SUBJECTS_STRING;
   normalized.status = toStringOrNull(record.status) ?? "Active";
