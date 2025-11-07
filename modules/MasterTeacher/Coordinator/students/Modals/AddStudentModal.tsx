@@ -1,259 +1,458 @@
-import BaseModal, { ModalSection, ModalLabel } from "@/components/Common/Modals/BaseModal";
-import { UseFormReturn } from "react-hook-form";
-import { useState, useEffect } from "react";
+"use client";
+
+import BaseModal, { ModalLabel, ModalSection } from "@/components/Common/Modals/BaseModal";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
+import { useEffect, useMemo, useState } from "react";
+import type { UseFormReturn } from "react-hook-form";
+
+export interface AddStudentFormValues {
+  studentId: string;
+  role: string;
+  firstName: string;
+  middleName: string;
+  lastName: string;
+  suffix: string;
+  grade: string;
+  section: string;
+  guardianFirstName: string;
+  guardianMiddleName: string;
+  guardianLastName: string;
+  guardianSuffix: string;
+  relationship: string;
+  guardianContact: string;
+  address: string;
+  englishPhonemic: string;
+  filipinoPhonemic: string;
+  mathPhonemic: string;
+}
 
 interface AddStudentModalProps {
   show: boolean;
   onClose: () => void;
-  form: UseFormReturn<any>;
-  onSubmit: (data: any) => void;
+  onSubmit: (values: AddStudentFormValues) => void | Promise<void>;
+  form: UseFormReturn<AddStudentFormValues>;
+  isSubmitting?: boolean;
+  apiError?: string | null;
+  subjectLabel: string;
+  gradeLabel?: string | null;
 }
 
-export default function AddStudentModal({ show, onClose, form, onSubmit }: AddStudentModalProps) {
+/**
+ * Strict format: 09XX-XXX-XXXX
+ * Example: 0912-345-6789
+ */
+const PHONE_FORMAT_REGEX = /^09\d{2}-\d{3}-\d{4}$/;
+const GRADE_OPTIONS = ["1", "2", "3", "4", "5", "6"];
+const SECTION_OPTIONS = ["A", "B", "C", "D", "E", "F"];
+const RELATIONSHIP_OPTIONS = ["Mother", "Father", "Grandmother", "Grandfather", "Aunt", "Uncle", "Guardian", "Other"];
+const ASSESSMENT_LEVELS = [
+  "Exempt",
+  "Non-Reader",
+  "Syllable", 
+  "Word",
+  "Sentence",
+  "Paragraph",
+  "Finished"
+];
+
+export default function AddStudentModal({
+  show,
+  onClose,
+  onSubmit,
+  form,
+  isSubmitting = false,
+  apiError = null,
+  subjectLabel,
+  gradeLabel = null,
+}: AddStudentModalProps) {
   const {
     register,
     handleSubmit,
-    reset,
-    setValue,
     watch,
-    formState: { errors },
+    setValue,
+    reset,
+    formState: { errors, isSubmitting: formSubmitting },
   } = form;
-  
-  const [studentIdValue, setStudentIdValue] = useState("");
-  const [contactValue, setContactValue] = useState("");
-  
-  const studentId = watch("studentId");
-  const guardianContact = watch("guardianContact");
+
+  // Register validation for phone number with local format
+  const phoneRegistration = register("guardianContact", {
+    required: "Contact number is required",
+    validate: (value) => {
+      if (!value) return "Contact number is required";
+      const trimmed = value.trim();
+      return PHONE_FORMAT_REGEX.test(trimmed)
+      ? true
+      : "Contact number must follow the format 09XX-XXX-XXXX";
+    },
+  });
+
+  const formatPhoneValue = (input: string) => {
+    // Keep digits only
+    const digitsOnly = input.replace(/\D/g, "");
+
+    // Remove leading 0 if duplicated
+    let local = digitsOnly;
+    if (local.startsWith("09") && local.length > 2) {
+      local = "09" + local.slice(2).replace(/^0+/, '');
+    } else if (local.startsWith("9") && local.length >= 10) {
+      local = "09" + local.slice(1);
+    } else {
+      local = local.replace(/^0+/, '');
+      if (local.length > 0) {
+        local = "09" + local;
+      }
+    }
+
+    // Limit to 11 digits (09 + 9 digits)
+    local = local.slice(0, 11);
+
+    // Build formatted string progressively
+    let formatted = "";
+    if (local.length > 0) {
+      formatted = local.slice(0, Math.min(4, local.length));
+    }
+    if (local.length > 4) {
+      formatted += "-" + local.slice(4, Math.min(7, local.length));
+    }
+    if (local.length > 7) {
+      formatted += "-" + local.slice(7, 11);
+    }
+
+    return formatted;
+  };
+
+  const phoneWatch = watch("guardianContact") || "";
+  const [displayPhone, setDisplayPhone] = useState("");
 
   useEffect(() => {
-    if (studentId) {
-      const digits = studentId.replace(/\D/g, "");
-      let formatted = digits;
-      
-      if (digits.length > 4) {
-        formatted = `${digits.slice(0, 4)}-${digits.slice(4, 8)}`;
-      } else if (digits.length === 4) {
-        formatted = digits;
-      }
-      
-      setStudentIdValue(formatted);
-      setValue("studentId", formatted, { shouldValidate: true });
-    }
-  }, [studentId, setValue]);
-  
+    setDisplayPhone(formatPhoneValue(phoneWatch));
+  }, [phoneWatch]);
+
   useEffect(() => {
-    if (guardianContact) {
-      const digits = guardianContact.replace(/\D/g, "");
-      let formatted = digits;
-      
-      if (digits.length > 4 && digits.length <= 7) {
-        formatted = `${digits.slice(0, 4)}-${digits.slice(4, 7)}`;
-      } else if (digits.length > 7) {
-        formatted = `${digits.slice(0, 4)}-${digits.slice(4, 7)}-${digits.slice(7, 11)}`;
-      }
-      
-      setContactValue(formatted);
-      setValue("guardianContact", formatted, { shouldValidate: true });
+    if (gradeLabel && gradeLabel.trim().length > 0) {
+      setValue("grade", gradeLabel.trim(), { shouldDirty: false, shouldTouch: false, shouldValidate: false });
     }
-  }, [guardianContact, setValue]);
+  }, [gradeLabel, setValue]);
+
+  const handlePhoneInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    const formatted = formatPhoneValue(raw);
+    setDisplayPhone(formatted);
+    setValue("guardianContact", formatted, { shouldValidate: true, shouldDirty: true });
+  };
+
+  const isBusy = useMemo(() => isSubmitting || formSubmitting, [isSubmitting, formSubmitting]);
 
   const handleClose = () => {
-    onClose();
     reset();
-    setStudentIdValue("");
-    setContactValue("");
+    setDisplayPhone("");
+    onClose();
   };
 
   const footer = (
     <>
-      <DangerButton
-        type="button"
-        onClick={handleClose}>
+      <DangerButton type="button" onClick={handleClose} disabled={isBusy}>
         Cancel
       </DangerButton>
-      <PrimaryButton 
-        type="submit">
-        Save Student
+      <PrimaryButton type="submit" form="add-student-form" disabled={isBusy}>
+        {isBusy ? "Adding…" : "Add Student"}
       </PrimaryButton>
     </>
   );
 
   return (
-    <BaseModal
-      show={show}
-      onClose={handleClose}
-      title="Add New Student"
-      footer={footer}
-    >
+    <BaseModal show={show} onClose={handleClose} title="Add Student" footer={footer}>
       <form id="add-student-form" onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        <ModalSection title="Personal Information">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {apiError && (
+          <div className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+            {apiError}
+          </div>
+        )}
+        
+        <ModalSection title="Personal Details">
+          {/* 1st Row: Student ID and Role (disabled) */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-1">
-              <ModalLabel required>Student ID</ModalLabel>
+              <ModalLabel>Student ID</ModalLabel>
               <input
-                className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm"
-                placeholder="2023-0003"
-                value={studentIdValue}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setStudentIdValue(value);
-                  setValue("studentId", value, { shouldValidate: true });
-                }}
-                onKeyDown={(e) => {
-                  if (!/[\d-]|Backspace|Delete|ArrowLeft|ArrowRight|Tab/.test(e.key)) {
-                    e.preventDefault();
-                  }
-                }}
+                className="w-full cursor-not-allowed rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-500"
+                value="Auto-generated"
+                disabled
+                aria-disabled
               />
-              {errors.studentId && <span className="text-red-500 text-xs">{errors.studentId.message as string}</span>}
             </div>
             <div className="space-y-1">
-              <ModalLabel required>Full Name</ModalLabel>
+              <ModalLabel>Role</ModalLabel>
               <input
-                className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm"
-                placeholder="Surname, Firstname M.I."
-                {...register("name", { required: "Full name is required" })}
+                className="w-full cursor-not-allowed rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-500"
+                value="Student"
+                disabled
+                aria-disabled
               />
-              {errors.name && <span className="text-red-500 text-xs">{errors.name.message as string}</span>}
             </div>
-            <div className="space-y-1">
-              <ModalLabel required>Age</ModalLabel>
+          </div>
+
+          {/* Second Row: Student Name fields */}
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-7">
+            <div className="space-y-1 md:col-span-2">
+              <ModalLabel required>First Name</ModalLabel>
               <input
-                className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm"
-                placeholder="10"
-                type="number"
-                min="5"
-                {...register("age", { 
-                  required: "Age is required",
-                  min: { value: 5, message: "Age must be at least 5 years old" },
-                  valueAsNumber: true
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                placeholder="First name"
+                {...register("firstName", {
+                  required: "First name is required",
+                  minLength: { value: 2, message: "First name must be at least 2 characters" },
                 })}
               />
-              {errors.age && <span className="text-red-500 text-xs">{errors.age.message as string}</span>}
+              {errors.firstName && (
+                <span className="text-xs text-red-500">{errors.firstName.message as string}</span>
+              )}
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <ModalLabel required>Middle Name</ModalLabel>
+              <input
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                placeholder="Middle name"
+                {...register("middleName", {
+                  required: "Middle name is required",
+                  minLength: { value: 2, message: "Middle name must be at least 2 characters" },
+                })}
+              />
+              {errors.middleName && (
+                <span className="text-xs text-red-500">{errors.middleName.message as string}</span>
+              )}
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <ModalLabel required>Last Name</ModalLabel>
+              <input
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                placeholder="Last name"
+                {...register("lastName", {
+                  required: "Last name is required",
+                  minLength: { value: 2, message: "Last name must be at least 2 characters" },
+                })}
+              />
+              {errors.lastName && (
+                <span className="text-xs text-red-500">{errors.lastName.message as string}</span>
+              )}
+            </div>
+            <div className="space-y-1 md:col-span-1">
+              <ModalLabel>Suffix</ModalLabel>
+              <input
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                placeholder="Jr., Sr., III"
+                {...register("suffix")}
+              />
             </div>
           </div>
         </ModalSection>
 
-        <ModalSection title="Academic Information">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <ModalSection title="Academic Details">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-1">
               <ModalLabel required>Grade Level</ModalLabel>
-              <select
-                className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm"
-                {...register("grade", { required: "Grade level is required" })}
-              >
-                <option value="" disabled>Select grade</option>
-                {[1, 2, 3, 4, 5, 6].map((grade) => (
-                  <option key={grade} value={grade}>{grade}</option>
-                ))}
-              </select>
-              {errors.grade && <span className="text-red-500 text-xs">{errors.grade.message as string}</span>}
+              {gradeLabel && gradeLabel.trim().length > 0 ? (
+                <>
+                  <input
+                    className="w-full cursor-not-allowed rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-600"
+                    value={gradeLabel.trim()}
+                    disabled
+                    aria-disabled
+                  />
+                  <input
+                    type="hidden"
+                    defaultValue={gradeLabel.trim()}
+                    readOnly
+                    {...register("grade", { required: "Grade level is required" })}
+                  />
+                </>
+              ) : (
+                <select
+                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                  {...register("grade", { required: "Grade level is required" })}
+                >
+                  <option value="" disabled>
+                    Select grade
+                  </option>
+                  {GRADE_OPTIONS.map((grade) => (
+                    <option key={grade} value={grade}>
+                      Grade {grade}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {errors.grade && (
+                <span className="text-xs text-red-500">{errors.grade.message as string}</span>
+              )}
             </div>
             <div className="space-y-1">
               <ModalLabel required>Section</ModalLabel>
               <select
-                className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm"
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
                 {...register("section", { required: "Section is required" })}
               >
-                <option value="" disabled>Select section</option>
-                {["A", "B", "C", "D", "E", "F"].map((section) => (
-                  <option key={section} value={section}>{section}</option>
+                <option value="" disabled>
+                  Select section
+                </option>
+                {SECTION_OPTIONS.map((section) => (
+                  <option key={section} value={section}>
+                    Section {section}
+                  </option>
                 ))}
               </select>
-              {errors.section && <span className="text-red-500 text-xs">{errors.section.message as string}</span>}
+              {errors.section && (
+                <span className="text-xs text-red-500">{errors.section.message as string}</span>
+              )}
             </div>
           </div>
         </ModalSection>
 
-        <ModalSection title="Contact Information">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <ModalLabel required>Guardian</ModalLabel>
+        <ModalSection title="Guardian Details">
+          {/* 1st Row: Guardian Name fields */}
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-7">
+            <div className="space-y-1 md:col-span-2">
+              <ModalLabel required>First Name</ModalLabel>
               <input
-                className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm"
-                placeholder="Surname, Firstname M.I."
-                {...register("guardian", { required: "Guardian name is required" })}
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                placeholder="First name"
+                {...register("guardianFirstName", {
+                  required: "Guardian first name is required",
+                  minLength: { value: 2, message: "Guardian first name must be at least 2 characters" },
+                })}
               />
-              {errors.guardian && <span className="text-red-500 text-xs">{errors.guardian.message as string}</span>}
+              {errors.guardianFirstName && (
+                <span className="text-xs text-red-500">{errors.guardianFirstName.message as string}</span>
+              )}
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <ModalLabel required>Middle Name</ModalLabel>
+              <input
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                placeholder="Middle name"
+                {...register("guardianMiddleName", {
+                  required: "Guardian middle name is required",
+                  minLength: { value: 2, message: "Guardian middle name must be at least 2 characters" },
+                })}
+              />
+              {errors.guardianMiddleName && (
+                <span className="text-xs text-red-500">{errors.guardianMiddleName.message as string}</span>
+              )}
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <ModalLabel required>Last Name</ModalLabel>
+              <input
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                placeholder="Last name"
+                {...register("guardianLastName", {
+                  required: "Guardian last name is required",
+                  minLength: { value: 2, message: "Guardian last name must be at least 2 characters" },
+                })}
+              />
+              {errors.guardianLastName && (
+                <span className="text-xs text-red-500">{errors.guardianLastName.message as string}</span>
+              )}
+            </div>
+            <div className="space-y-1 md:col-span-1">
+              <ModalLabel>Suffix</ModalLabel>
+              <input
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                placeholder="Jr., Sr., III"
+                {...register("guardianSuffix")}
+              />
+            </div>
+          </div>
+
+          {/* 2nd Row: Relationship and Contact */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="space-y-1">
+              <ModalLabel required>Relationship</ModalLabel>
+              <select
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                {...register("relationship", { required: "Relationship is required" })}
+              >
+                <option value="" disabled>
+                  Select relationship
+                </option>
+                {RELATIONSHIP_OPTIONS.map((relationship) => (
+                  <option key={relationship} value={relationship}>
+                    {relationship}
+                  </option>
+                ))}
+              </select>
+              {errors.relationship && (
+                <span className="text-xs text-red-500">{errors.relationship.message as string}</span>
+              )}
             </div>
             <div className="space-y-1">
               <ModalLabel required>Contact Number</ModalLabel>
               <input
-                className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm"
-                placeholder="0912-345-6789"
-                value={contactValue}
+                {...phoneRegistration}
                 onChange={(e) => {
-                  const value = e.target.value;
-                  setContactValue(value);
-                  setValue("guardianContact", value, { shouldValidate: true });
+                  handlePhoneInput(e);
+                  phoneRegistration.onChange?.(e);
                 }}
-                onKeyDown={(e) => {
-                  if (!/[\d-]|Backspace|Delete|ArrowLeft|ArrowRight|Tab/.test(e.key)) {
-                    e.preventDefault();
-                  }
-                }}
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                placeholder="09XX-XXX-XXXX"
+                inputMode="numeric"
+                maxLength={13} // "09XX-XXX-XXXX" is 13 chars
               />
-              {errors.guardianContact && <span className="text-red-500 text-xs">{errors.guardianContact.message as string}</span>}
+              {!errors.guardianContact ? (
+                <p className="text-xs text-gray-500">Format: 09XX-XXX-XXXX</p>
+              ) : (
+                <span className="text-xs text-red-500">{errors.guardianContact.message as string}</span>
+              )}
             </div>
-            <div className="space-y-1 md:col-span-2">
-              <ModalLabel required>Address</ModalLabel>
-              <input
-                className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm"
-                placeholder="Brgy. Example, City, Province"
-                {...register("address", { required: "Address is required" })}
-              />
-              {errors.address && <span className="text-red-500 text-xs">{errors.address.message as string}</span>}
-            </div>
+          </div>
+
+          {/* 3rd Row: Address */}
+          <div className="space-y-1">
+            <ModalLabel required>Address</ModalLabel>
+            <input
+              className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+              placeholder="Street Name, Barangay, City, Region"
+              {...register("address", {
+                required: "Address is required",
+                minLength: { value: 5, message: "Address must be at least 5 characters" },
+              })}
+            />
+            {!errors.address ? (
+              <p className="text-xs text-gray-500">Format: Street Name, Barangay, City, Region</p>
+            ) : (
+              <span className="text-xs text-red-500">{errors.address.message as string}</span>
+            )}
           </div>
         </ModalSection>
 
-        <ModalSection title="Assessment Levels">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <ModalSection title="Assessment Level">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-1">
-              <ModalLabel required>English</ModalLabel>
-              <select
-                className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm"
-                {...register("englishPhonemic", { required: "English assessment level is required" })}
-              >
-                <option value="" disabled>Select level</option>
-                <option value="-">- (Not Assessed)</option>
-                <option value="Non-Reader">Non-Reader</option>
-                <option value="Syllable">Syllable</option>
-                <option value="Word">Word</option>
-                <option value="Sentence">Sentence</option>
-                <option value="Paragraph">Paragraph</option>
-              </select>
-              {errors.englishPhonemic && <span className="text-red-500 text-xs">{errors.englishPhonemic.message as string}</span>}
+              <ModalLabel>Subject Assigned</ModalLabel>
+              <input
+                className="w-full cursor-not-allowed rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-500"
+                value={subjectLabel}
+                disabled
+                aria-disabled
+              />
             </div>
             <div className="space-y-1">
-              <ModalLabel required>Filipino</ModalLabel>
+              <ModalLabel required>Phonemic</ModalLabel>
               <select
-                className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm"
-                {...register("filipinoPhonemic", { required: "Filipino assessment level is required" })}
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                {...register("englishPhonemic", { required: "Phonemic level is required" })}
               >
-                <option value="" disabled>Select level</option>
-                <option value="-">- (Not Assessed)</option>
-                <option value="Non-Reader">Non-Reader</option>
-                <option value="Syllable">Syllable</option>
-                <option value="Word">Word</option>
-                <option value="Sentence">Sentence</option>
-                <option value="Paragraph">Paragraph</option>
+                <option value="" disabled>
+                  Select level
+                </option>
+                {ASSESSMENT_LEVELS.map((level) => (
+                  <option key={level} value={level}>
+                    {level}
+                  </option>
+                ))}
               </select>
-              {errors.filipinoPhonemic && <span className="text-red-500 text-xs">{errors.filipinoPhonemic.message as string}</span>}
-            </div>
-            <div className="space-y-1">
-              <ModalLabel required>Math</ModalLabel>
-              <select
-                className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm"
-                {...register("mathProficiency", { required: "Math assessment level is required" })}
-              >
-                <option value="" disabled>Select level</option>
-                <option value="-">- (Not Assessed)</option>
-                <option value="Non-Proficient">Non-Proficient</option>
-              </select>
-              {errors.mathProficiency && <span className="text-red-500 text-xs">{errors.mathProficiency.message as string}</span>}
+              {errors.englishPhonemic && (
+                <span className="text-xs text-red-500">{errors.englishPhonemic.message as string}</span>
+              )}
             </div>
           </div>
         </ModalSection>

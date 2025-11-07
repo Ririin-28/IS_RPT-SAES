@@ -1,0 +1,251 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { MaterialDto, MaterialFileDto, MaterialStatus } from "@/lib/materials/shared";
+import { MATERIAL_SUBJECTS, type MaterialSubject } from "@/lib/materials/shared";
+import { getStoredUserProfile } from "@/lib/utils/user-profile";
+
+export type TeacherMaterialListItem = {
+  id: number;
+  title: string;
+  status: MaterialStatus;
+  submittedAt: Date;
+  updatedAt: Date;
+  reviewedAt: Date | null;
+  rejectionReason: string | null;
+  attachmentUrl: string | null;
+  files: MaterialFileDto[];
+};
+
+const MAX_UPLOAD_BATCH = 5;
+
+type UploadedFileDescriptor = {
+  fileName: string;
+  storedFileName: string;
+  storagePath: string;
+  publicUrl: string;
+  mimeType: string | null;
+  fileSize: number;
+};
+
+const parseUserId = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.floor(value);
+  }
+  if (typeof value === "string") {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return null;
+};
+
+const mapMaterial = (material: MaterialDto): TeacherMaterialListItem => {
+  return {
+    id: material.id,
+    title: material.title,
+    status: material.status,
+    submittedAt: new Date(material.createdAt),
+    updatedAt: new Date(material.updatedAt),
+    reviewedAt: material.reviewedAt ? new Date(material.reviewedAt) : null,
+    rejectionReason: material.rejectionReason,
+    attachmentUrl: material.attachmentUrl,
+    files: material.files,
+  };
+};
+
+const formatSubject = (subject: string): MaterialSubject => {
+  const found = MATERIAL_SUBJECTS.find((candidate) => candidate.toLowerCase() === subject.toLowerCase());
+  return found ?? "English";
+};
+
+export type UseTeacherMaterialsOptions = {
+  subject: string;
+  level: string;
+};
+
+export type UseTeacherMaterialsResult = {
+  teacherUserId: number | null;
+  materials: TeacherMaterialListItem[];
+  loading: boolean;
+  uploading: boolean;
+  deleting: boolean;
+  error: string | null;
+  refresh: () => Promise<void>;
+  uploadFiles: (files: File[]) => Promise<void>;
+  deleteMaterials: (materialIds: number[]) => Promise<void>;
+};
+
+export function useTeacherMaterials({ subject, level }: UseTeacherMaterialsOptions): UseTeacherMaterialsResult {
+  const [teacherUserId, setTeacherUserId] = useState<number | null>(null);
+  const [materials, setMaterials] = useState<TeacherMaterialListItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const normalizedSubject = useMemo(() => formatSubject(subject), [subject]);
+  const normalizedLevel = useMemo(() => level.trim(), [level]);
+
+  useEffect(() => {
+    const profile = getStoredUserProfile();
+    const userId = parseUserId(profile?.userId ?? null);
+    setTeacherUserId(userId);
+  }, []);
+
+  const fetchMaterials = useCallback(async () => {
+    if (!teacherUserId) {
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({
+        subject: normalizedSubject,
+        level: normalizedLevel,
+        teacherUserId: String(teacherUserId),
+        pageSize: "100",
+      });
+      const response = await fetch(`/api/materials?${params.toString()}`, {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to load materials (${response.status})`);
+      }
+      const data = await response.json();
+      const list = Array.isArray(data?.data) ? (data.data as MaterialDto[]) : [];
+      setMaterials(list.map(mapMaterial));
+    } catch (err) {
+      console.error("Failed to fetch teacher materials", err);
+      setError("Unable to load materials. Please try again later.");
+    } finally {
+      setLoading(false);
+    }
+  }, [teacherUserId, normalizedSubject, normalizedLevel]);
+
+  useEffect(() => {
+    fetchMaterials();
+  }, [fetchMaterials]);
+
+  const refresh = useCallback(async () => {
+    await fetchMaterials();
+  }, [fetchMaterials]);
+
+  const uploadFiles = useCallback(
+    async (files: File[]) => {
+      if (!teacherUserId) {
+        setError("Missing teacher profile. Please re-login.");
+        return;
+      }
+      if (!files.length) return;
+      if (files.length > MAX_UPLOAD_BATCH) {
+        setError(`Please upload at most ${MAX_UPLOAD_BATCH} files at a time.`);
+        return;
+      }
+
+      setUploading(true);
+      setError(null);
+      try {
+        const formData = new FormData();
+        files.forEach((file) => formData.append("files", file));
+        const uploadResponse = await fetch("/api/materials/upload", {
+          method: "POST",
+          body: formData,
+        });
+        if (!uploadResponse.ok) {
+          const { error: uploadError } = await uploadResponse.json().catch(() => ({ error: "Upload failed" }));
+          throw new Error(uploadError ?? "Upload failed");
+        }
+        const uploadResult = await uploadResponse.json();
+        const uploadedFiles: UploadedFileDescriptor[] = Array.isArray(uploadResult?.files)
+          ? (uploadResult.files as UploadedFileDescriptor[])
+          : [];
+        if (!uploadedFiles.length) {
+          throw new Error("Files could not be saved");
+        }
+
+        for (const uploaded of uploadedFiles) {
+          const response = await fetch("/api/materials", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              teacherUserId,
+              subject: normalizedSubject,
+              level: normalizedLevel,
+              title: uploaded.fileName || "Untitled Material",
+              attachmentUrl: uploaded.storagePath,
+              status: "pending",
+              files: [
+                {
+                  fileName: uploaded.fileName,
+                  storagePath: uploaded.storagePath,
+                  mimeType: uploaded.mimeType ?? null,
+                  fileSize: uploaded.fileSize ?? null,
+                },
+              ],
+            }),
+          });
+          if (!response.ok) {
+            const { error: createError } = await response.json().catch(() => ({ error: "Unknown error" }));
+            throw new Error(createError ?? "Failed to create material");
+          }
+        }
+
+        await fetchMaterials();
+      } catch (err) {
+        console.error("Failed to upload materials", err);
+        setError(err instanceof Error ? err.message : "Upload failed");
+      } finally {
+        setUploading(false);
+      }
+    },
+    [teacherUserId, normalizedSubject, normalizedLevel, fetchMaterials],
+  );
+
+  const deleteMaterials = useCallback(
+    async (materialIds: number[]) => {
+      if (!teacherUserId || materialIds.length === 0) return;
+      setDeleting(true);
+      setError(null);
+      try {
+        await Promise.all(
+          materialIds.map(async (materialId) => {
+            const response = await fetch(`/api/materials/${materialId}`, {
+              method: "DELETE",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ teacherUserId }),
+            });
+            if (!response.ok) {
+              const { error: deleteError } = await response.json().catch(() => ({ error: "Failed to delete" }));
+              throw new Error(deleteError ?? "Failed to delete material");
+            }
+          }),
+        );
+        await fetchMaterials();
+      } catch (err) {
+        console.error("Failed to delete materials", err);
+        setError(err instanceof Error ? err.message : "Failed to delete materials");
+      } finally {
+        setDeleting(false);
+      }
+    },
+    [teacherUserId, fetchMaterials],
+  );
+
+  return {
+    teacherUserId,
+    materials,
+    loading,
+    uploading,
+    deleting,
+    error,
+    refresh,
+    uploadFiles,
+    deleteMaterials,
+  };
+}

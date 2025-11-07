@@ -167,12 +167,29 @@ const GRADE_COLUMN_CANDIDATES = [
   { column: "gradelevel", alias: "mt_gradelevel" },
 ] as const;
 
+const REMEDIAL_GRADE_COLUMN_CANDIDATES = [
+  { column: "grade", alias: "rt_grade" },
+  { column: "grade_level", alias: "rt_grade_level" },
+  { column: "handled_grade", alias: "rt_handled_grade" },
+  { column: "gradelevel", alias: "rt_gradelevel" },
+  { column: "gradeLevel", alias: "rt_gradeLevel" },
+] as const;
+
 const COORDINATOR_COLUMN_CANDIDATES = [
   { column: "mt_coordinator", alias: "mt_coordinator" },
   { column: "coordinator_subject", alias: "mt_coordinator_subject" },
   { column: "coordinatorSubject", alias: "mt_coordinatorSubject" },
   { column: "coordinator", alias: "mt_coordinator_generic" },
   { column: "coordinator_subject_handled", alias: "mt_coordinator_subject_handled" },
+] as const;
+
+const COORDINATOR_TABLE_SUBJECT_CANDIDATES = [
+  { column: "subject_handled", alias: "mc_subject_handled" },
+  { column: "coordinator_subject", alias: "mc_coordinator_subject" },
+  { column: "coordinator_subject_handled", alias: "mc_coordinator_subject_handled" },
+  { column: "subject", alias: "mc_subject" },
+  { column: "subjects", alias: "mc_subjects" },
+  { column: "handled_subjects", alias: "mc_handled_subjects" },
 ] as const;
 
 const SUBJECT_COLUMN_CANDIDATES = [
@@ -873,6 +890,11 @@ type RawCoordinatorRow = RowDataPacket & {
   user_contact_number?: string | null;
   user_phone_number?: string | null;
   user_role?: string | null;
+  rt_grade?: string | null;
+  rt_grade_level?: string | null;
+  rt_handled_grade?: string | null;
+  rt_gradelevel?: string | null;
+  rt_gradeLevel?: string | null;
   mt_first_name?: string | null;
   mt_middle_name?: string | null;
   mt_last_name?: string | null;
@@ -896,6 +918,12 @@ type RawCoordinatorRow = RowDataPacket & {
   mt_section?: string | null;
   mt_section_name?: string | null;
   mt_class_section?: string | null;
+  mc_subject_handled?: string | null;
+  mc_coordinator_subject?: string | null;
+  mc_coordinator_subject_handled?: string | null;
+  mc_subject?: string | null;
+  mc_subjects?: string | null;
+  mc_handled_subjects?: string | null;
 };
 
 export async function GET(request: NextRequest) {
@@ -924,6 +952,8 @@ export async function GET(request: NextRequest) {
     }
 
     const masterTeacherInfo = await resolveMasterTeacherTable();
+    const remedialColumns = await safeGetColumns(REMEDIAL_TABLE);
+    const coordinatorColumns = await safeGetColumns(COORDINATOR_TABLE);
 
     const selectParts: string[] = [];
     const params: Array<number> = [userId];
@@ -937,6 +967,18 @@ export async function GET(request: NextRequest) {
     const addMasterColumn = (column: string, alias: string) => {
       if (masterTeacherInfo.table && masterTeacherInfo.columns.has(column)) {
         selectParts.push(`mt.${column} AS ${alias}`);
+      }
+    };
+
+    const addRemedialColumn = (column: string, alias: string) => {
+      if (remedialColumns.has(column)) {
+        selectParts.push(`rt.${column} AS ${alias}`);
+      }
+    };
+
+    const addCoordinatorTableColumn = (column: string, alias: string) => {
+      if (coordinatorColumns.has(column)) {
+        selectParts.push(`mc.${column} AS ${alias}`);
       }
     };
 
@@ -971,9 +1013,15 @@ export async function GET(request: NextRequest) {
       for (const candidate of SECTION_COLUMN_CANDIDATES) {
         addMasterColumn(candidate.column, candidate.alias);
       }
+      for (const candidate of REMEDIAL_GRADE_COLUMN_CANDIDATES) {
+        addRemedialColumn(candidate.column, candidate.alias);
+      }
+      for (const candidate of COORDINATOR_TABLE_SUBJECT_CANDIDATES) {
+        addCoordinatorTableColumn(candidate.column, candidate.alias);
+      }
     }
 
-    let joinClause = "";
+    const joinClauses: string[] = [];
     const joinStrategies: string[] = [];
 
     if (masterTeacherInfo.table && masterTeacherInfo.columns.size > 0) {
@@ -1004,16 +1052,53 @@ export async function GET(request: NextRequest) {
       }
 
       if (joinConditions.length > 0) {
-        joinClause = ` LEFT JOIN \`${masterTeacherInfo.table}\` AS mt ON ${joinConditions.join(" OR ")}`;
+        joinClauses.push(`LEFT JOIN \`${masterTeacherInfo.table}\` AS mt ON ${joinConditions.join(" OR ")}`);
       } else {
-        joinClause = ` LEFT JOIN \`${masterTeacherInfo.table}\` AS mt ON FALSE`;
+        joinClauses.push(`LEFT JOIN \`${masterTeacherInfo.table}\` AS mt ON FALSE`);
       }
+    }
+
+    if (remedialColumns.size > 0) {
+      const conditions: string[] = [];
+      if (remedialColumns.has("user_id")) {
+        conditions.push("rt.user_id = u.user_id");
+      }
+      if (remedialColumns.has("teacher_id")) {
+        conditions.push("rt.teacher_id = u.user_id");
+      }
+      if (remedialColumns.has("master_teacher_id")) {
+        conditions.push("rt.master_teacher_id = u.user_id");
+      }
+      if (remedialColumns.has("remedial_teacher_id")) {
+        conditions.push("rt.remedial_teacher_id = u.user_id");
+      }
+      if (remedialColumns.has("email") && userColumns.has("email")) {
+        conditions.push("rt.email = u.email");
+      }
+      joinClauses.push(`LEFT JOIN \`${REMEDIAL_TABLE}\` AS rt ON ${conditions.join(" OR ") || "FALSE"}`);
+    }
+
+    if (coordinatorColumns.size > 0) {
+      const conditions: string[] = [];
+      if (coordinatorColumns.has("user_id")) {
+        conditions.push("mc.user_id = u.user_id");
+      }
+      if (coordinatorColumns.has("master_teacher_id")) {
+        conditions.push("mc.master_teacher_id = u.user_id");
+      }
+      if (coordinatorColumns.has("coordinator_id")) {
+        conditions.push("mc.coordinator_id = u.user_id");
+      }
+      if (coordinatorColumns.has("email") && userColumns.has("email")) {
+        conditions.push("mc.email = u.email");
+      }
+      joinClauses.push(`LEFT JOIN \`${COORDINATOR_TABLE}\` AS mc ON ${conditions.join(" OR ") || "FALSE"}`);
     }
 
     const sql = `
       SELECT ${selectParts.join(", ")}
       FROM users AS u
-      ${joinClause}
+      ${joinClauses.map((clause) => clause ? ` ${clause}` : "").join(" ")}
       WHERE u.user_id = ?
       LIMIT 1
     `;
@@ -1030,6 +1115,11 @@ export async function GET(request: NextRequest) {
     const row = rows[0];
 
     const grade = pickFirst(
+      row.rt_grade,
+      row.rt_grade_level,
+      row.rt_handled_grade,
+      row.rt_gradeLevel,
+      row.rt_gradelevel,
       row.mt_grade,
       row.mt_handled_grade,
       row.mt_grade_level,
@@ -1038,6 +1128,12 @@ export async function GET(request: NextRequest) {
     );
 
     const coordinatorSubject = pickFirst(
+      row.mc_subject_handled,
+      row.mc_coordinator_subject,
+      row.mc_coordinator_subject_handled,
+      row.mc_subject,
+      row.mc_subjects,
+      row.mc_handled_subjects,
       row.mt_coordinator,
       row.mt_coordinator_subject,
       row.mt_coordinatorSubject,
@@ -1050,6 +1146,8 @@ export async function GET(request: NextRequest) {
       row.mt_handled_subjects,
       row.mt_subject,
       row.mt_remediation_subjects,
+      row.mc_subjects,
+      row.mc_handled_subjects,
     );
 
     const section = pickFirst(

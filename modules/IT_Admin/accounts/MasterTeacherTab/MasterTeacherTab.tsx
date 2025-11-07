@@ -119,12 +119,13 @@ function normalizeMasterTeacherRecord(record: any) {
   const contactDisplay = formatLocalPhoneNumber(contactRaw);
   normalized.contactNumberDisplay = contactDisplay ?? contactRaw;
   normalized.phoneNumber = contactRaw;
-  normalized.grade = toStringOrNull(record.grade ?? record.handledGrade ?? record.handled_grade);
+  normalized.grade = toStringOrNull(record.remedial_teacher_grade ?? record.grade ?? record.handledGrade ?? record.handled_grade);
   normalized.section = toStringOrNull(record.section);
-  normalized.subjects = toStringOrNull(record.subjects ?? record.handledSubjects ?? record.handled_subjects);
+  normalized.subjects = toStringOrNull(record.subjects ?? record.handledSubjects ?? record.handled_subjects) ?? "English, Filipino, Math";
   const coordinatorSubject = normalizeCoordinatorSubject(
     toStringOrNull(
-      record.coordinatorSubject ??
+      record.subject_handled ??
+        record.coordinatorSubject ??
         record.mt_coordinator ??
         record.coordinator ??
         record.coordinator_subject ??
@@ -307,7 +308,7 @@ export default function MasterTeacherTab({ teachers, setTeachers, searchTerm }: 
       email: values.email.trim().toLowerCase(),
       phoneNumber: values.phoneNumber.replace(/\D/g, ""),
       grade: values.grade.trim(),
-      subjects: values.subjects.join(", "),
+      subjects: "English, Filipino, Math",
       coordinatorSubject,
     };
 
@@ -452,6 +453,8 @@ export default function MasterTeacherTab({ teachers, setTeachers, searchTerm }: 
                 "Contact",
               ]);
               const grade = readField(row, [
+                "REMEDIAL TEACHER GRADE",
+                "remedial_teacher_grade",
                 "GRADE",
                 "Grade",
                 "grade",
@@ -459,17 +462,10 @@ export default function MasterTeacherTab({ teachers, setTeachers, searchTerm }: 
                 "handled_grade",
                 "handledGrade",
               ]);
-              const subjects = readField(row, [
-                "HANDLED SUBJECTS",
-                "HANDLED_SUBJECTS",
-                "HANDLEDSUBJECTS",
-                "Handled Subjects",
-                "handledSubjects",
-                "SUBJECTS",
-                "Subjects",
-                "subjects",
-              ]);
+              const subjects = "English, Filipino, Math";
               const coordinatorSubjectRaw = readField(row, [
+                "SUBJECT HANDLED",
+                "subject_handled",
                 "COORDINATOR SUBJECT",
                 "Coordinator Subject",
                 "coordinatorSubject",

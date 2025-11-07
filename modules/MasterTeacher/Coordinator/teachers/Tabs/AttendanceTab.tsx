@@ -4,9 +4,10 @@ import TableList from "@/components/Common/Tables/TableList";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
+import type { CoordinatorTeacher } from "../useCoordinatorTeachers";
 
 interface AttendanceTabProps {
-  teachers: any[];
+  teachers: CoordinatorTeacher[];
   searchTerm: string;
 }
 

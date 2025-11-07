@@ -1,17 +1,18 @@
 "use client";
 import Sidebar from "@/components/MasterTeacher/Coordinator/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import { FaTimes } from "react-icons/fa";
 import MaterialTabContent from "./MaterialsTab";
+import { getStoredUserProfile } from "@/lib/utils/user-profile";
+import { MATERIAL_SUBJECTS, normalizeMaterialSubject, type MaterialSubject } from "@/lib/materials/shared";
 
-const SUBJECT_OPTIONS = ["English", "Filipino", "Math"] as const;
+const SUBJECT_OPTIONS = MATERIAL_SUBJECTS;
 
 type TabDefinition = {
   label: string;
-  showRequests?: boolean;
   columns?: { key: string; title: string }[];
 };
 
@@ -30,7 +31,7 @@ const MATH_COLUMNS: { key: string; title: string }[] = [
 
 const TAB_CONFIG: Record<(typeof SUBJECT_OPTIONS)[number], readonly TabDefinition[]> = {
   English: [
-    { label: "Non Reader", showRequests: true, columns: DEFAULT_COLUMNS },
+    { label: "Non Reader", columns: DEFAULT_COLUMNS },
     { label: "Syllable", columns: DEFAULT_COLUMNS },
     { label: "Word", columns: DEFAULT_COLUMNS },
     { label: "Phrase", columns: DEFAULT_COLUMNS },
@@ -54,23 +55,99 @@ const TAB_CONFIG: Record<(typeof SUBJECT_OPTIONS)[number], readonly TabDefinitio
   ],
 };
 
-export default function MasterTeacherMaterials() {
-  const [subject, setSubject] = useState<(typeof SUBJECT_OPTIONS)[number]>("English");
-  const [activeTab, setActiveTab] = useState("Non Reader");
-  const [searchTerm, setSearchTerm] = useState("");
+type CoordinatorSubjectResponse = {
+  success: boolean;
+  coordinator?: {
+    coordinatorSubject?: string | null;
+    subjectsHandled?: string | null;
+  } | null;
+  error?: string;
+};
 
-  const currentTabOptions = TAB_CONFIG[subject];
+const SUBJECT_FALLBACK: MaterialSubject = SUBJECT_OPTIONS[0];
+
+export default function MasterTeacherMaterials() {
+  const [subject, setSubject] = useState<MaterialSubject | null>(null);
+  const [activeTab, setActiveTab] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [loadingSubject, setLoadingSubject] = useState<boolean>(true);
+  const [subjectError, setSubjectError] = useState<string | null>(null);
 
   useEffect(() => {
-    setActiveTab(TAB_CONFIG[subject][0]?.label ?? "");
-  }, [subject]);
+    let cancelled = false;
 
-  const currentTab = currentTabOptions.find((tab) => tab.label === activeTab) ?? currentTabOptions[0];
+    async function loadSubjectFromProfile() {
+      setLoadingSubject(true);
+      setSubjectError(null);
 
-  const handleSubjectChange = useCallback((nextSubject: string) => {
-    const matchedSubject = SUBJECT_OPTIONS.find((option) => option === nextSubject) ?? SUBJECT_OPTIONS[0];
-    setSubject(matchedSubject);
+      try {
+        const profile = getStoredUserProfile();
+        const userId = profile?.userId;
+
+        if (!userId) {
+          throw new Error("Missing coordinator profile. Please log in again.");
+        }
+
+        const response = await fetch(
+          `/api/master_teacher/coordinator/profile?userId=${encodeURIComponent(String(userId))}`,
+          { cache: "no-store" },
+        );
+
+        const payload: CoordinatorSubjectResponse | null = await response.json().catch(() => null);
+
+        if (cancelled) {
+          return;
+        }
+
+        if (!response.ok || !payload?.success) {
+          const message = payload?.error ?? "Failed to determine assigned subject.";
+          throw new Error(message);
+        }
+
+        const subjectCandidate = payload.coordinator?.coordinatorSubject ?? payload.coordinator?.subjectsHandled ?? null;
+        const normalized = normalizeMaterialSubject(subjectCandidate);
+
+        if (normalized) {
+          setSubject(normalized);
+        } else {
+          const fallbackMessage = subjectCandidate
+            ? `Subject "${subjectCandidate}" is not supported. Defaulting to ${SUBJECT_FALLBACK}.`
+            : `Coordinator subject not assigned. Defaulting to ${SUBJECT_FALLBACK}.`;
+          setSubjectError(fallbackMessage);
+          setSubject(SUBJECT_FALLBACK);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : "Unable to load coordinator subject.";
+          setSubjectError(message);
+          setSubject(SUBJECT_FALLBACK);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingSubject(false);
+        }
+      }
+    }
+
+    loadSubjectFromProfile();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  const resolvedSubject = subject ?? SUBJECT_FALLBACK;
+  const currentTabOptions = useMemo(() => TAB_CONFIG[resolvedSubject], [resolvedSubject]);
+
+  useEffect(() => {
+    const defaultTab = currentTabOptions[0]?.label ?? "";
+    setActiveTab(defaultTab);
+  }, [currentTabOptions]);
+
+  const currentTab = useMemo(
+    () => currentTabOptions.find((tab) => tab.label === activeTab) ?? currentTabOptions[0],
+    [activeTab, currentTabOptions],
+  );
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
@@ -116,7 +193,7 @@ export default function MasterTeacherMaterials() {
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                 <div className="flex flex-col gap-0 sm:flex-row sm:items-center sm:gap-0">
                   <div className="flex items-center gap-2">
-                    <SecondaryHeader title="English Materials" />
+                    <SecondaryHeader title={`${resolvedSubject} Materials`} />
                     <HeaderDropdown
                       options={currentTabOptions.map((tab) => tab.label)}
                       value={activeTab}
@@ -158,13 +235,20 @@ export default function MasterTeacherMaterials() {
               >
                 {currentTab && (
                   <MaterialTabContent
-                    subject={subject}
+                    subject={resolvedSubject}
                     category={currentTab.label}
                     columns={currentTab.columns}
-                    showRequestsModal={currentTab.showRequests}
                   />
                 )}
               </div>
+              {subjectError && (
+                <p className="mt-3 text-sm text-red-600">
+                  {subjectError}
+                </p>
+              )}
+              {loadingSubject && !subjectError && (
+                <p className="mt-3 text-sm text-gray-500">Loading assigned subject...</p>
+              )}
             </div>
           </div>
         </main>
