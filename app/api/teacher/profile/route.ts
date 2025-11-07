@@ -1,114 +1,152 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
-import { getTableColumns, query } from "@/lib/db";
+import { getTableColumns, query, tableExists } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-const TEACHER_TABLE_CANDIDATES = ["teacher", "teachers", "teacher_info"] as const;
-const REMEDIAL_TABLE_CANDIDATES = ["remedial_teacher", "remedial_teachers"] as const;
-const GRADE_COLUMNS = ["grade", "grade_level", "handled_grade", "gradeLevel", "year_level"] as const;
-const SUBJECT_COLUMNS = ["subjects", "handled_subjects", "subject"] as const;
-const CONTACT_COLUMNS = ["contact_number", "phone_number", "contact", "phone"] as const;
+const TEACHER_TABLE_CANDIDATES = [
+  "remedial_teachers",
+  "teacher",
+  "teachers",
+  "teacher_info",
+  "teacher_profile",
+  "teacher_profiles",
+  "faculty",
+  "faculty_info",
+  "faculty_profiles",
+] as const;
 
-type TeacherRow = RowDataPacket & {
-  user_id: number;
-  user_first_name?: string | null;
-  user_middle_name?: string | null;
-  user_last_name?: string | null;
-  user_suffix?: string | null;
-  user_name?: string | null;
-  user_email?: string | null;
-  user_contact_number?: string | null;
-  user_phone_number?: string | null;
-  user_role?: string | null;
-  teacher_first_name?: string | null;
-  teacher_middle_name?: string | null;
-  teacher_last_name?: string | null;
-  teacher_suffix?: string | null;
-  teacher_name?: string | null;
-  teacher_email?: string | null;
-  teacher_contact_number?: string | null;
-  teacher_phone_number?: string | null;
-  teacher_grade?: string | null;
-  teacher_grade_level?: string | null;
-  teacher_handled_grade?: string | null;
-  teacher_year_level?: string | null;
-  rt_grade?: string | null;
-  rt_grade_level?: string | null;
-  rt_handled_grade?: string | null;
-  rt_year_level?: string | null;
-  subjects_value?: string | null;
+const GRADE_COLUMNS = [
+  "grade",
+  "grade_level",
+  "handled_grade",
+  "gradelevel",
+  "gradeLevel",
+  "year_level",
+] as const;
+
+const SUBJECT_COLUMNS = [
+  "subject",
+  "subjects",
+  "subject_handled",
+  "handled_subjects",
+  "subject_area",
+  "subjects_handled",
+] as const;
+
+const SECTION_COLUMNS = [
+  "section",
+  "sections",
+  "section_name",
+  "handled_section",
+  "class_section",
+  "section_handled",
+] as const;
+
+const CONTACT_COLUMNS = [
+  "contact_number",
+  "contact_no",
+  "phone",
+  "phone_number",
+  "mobile",
+  "mobile_number",
+] as const;
+
+const EMAIL_COLUMNS = [
+  "email",
+  "user_email",
+] as const;
+
+const IDENTIFIER_COLUMNS = [
+  "teacher_id",
+  "employee_id",
+  "id",
+  "user_id",
+] as const;
+
+type ColumnName = string;
+
+type ResolvedTeacherTable = {
+  name: string;
+  columns: Set<ColumnName>;
 };
 
-async function safeGetColumns(tableName: string): Promise<Set<string>> {
-  try {
-    return await getTableColumns(tableName);
-  } catch {
-    return new Set<string>();
+const toNullableString = (value: unknown): string | null => {
+  if (value === null || value === undefined) {
+    return null;
   }
-}
+  const text = String(value).trim();
+  return text.length ? text : null;
+};
 
-async function resolveTeacherTable() {
+const extractGradeNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const match = String(value).match(/(\d+)/);
+  if (!match) {
+    return null;
+  }
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const formatGradeLabel = (value: unknown): string | null => {
+  const number = extractGradeNumber(value);
+  if (number) {
+    return `Grade ${number}`;
+  }
+  const text = toNullableString(value);
+  return text ?? null;
+};
+
+const pickColumn = (columns: Set<string>, candidates: readonly string[]): string | null => {
+  for (const candidate of candidates) {
+    if (columns.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  const lowerLookup = new Map<string, string>();
+  for (const column of columns) {
+    lowerLookup.set(column.toLowerCase(), column);
+  }
+
+  for (const candidate of candidates) {
+    const resolved = lowerLookup.get(candidate.toLowerCase());
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  for (const candidate of candidates) {
+    const needle = candidate.toLowerCase();
+    for (const column of columns) {
+      if (column.toLowerCase().includes(needle)) {
+        return column;
+      }
+    }
+  }
+
+  return null;
+};
+
+const resolveTeacherTable = async (): Promise<ResolvedTeacherTable | null> => {
   for (const candidate of TEACHER_TABLE_CANDIDATES) {
-    const columns = await safeGetColumns(candidate);
-    if (columns.size > 0 && columns.has("user_id")) {
-      return { table: candidate, columns };
+    if (!(await tableExists(candidate))) {
+      continue;
     }
-  }
-  return { table: null, columns: new Set<string>() };
-}
-
-async function resolveRemedialTable() {
-  for (const candidate of REMEDIAL_TABLE_CANDIDATES) {
-    const columns = await safeGetColumns(candidate);
-    if (columns.size > 0) {
-      return { table: candidate, columns };
+    const columns = await getTableColumns(candidate);
+    if (!columns.size) {
+      continue;
     }
-  }
-  return { table: null, columns: new Set<string>() };
-}
-
-function pickFirst<T>(...values: Array<T | null | undefined>): T | null {
-  for (const value of values) {
-    if (value === null || value === undefined) continue;
-    if (typeof value === "string") {
-      const trimmed = value.trim();
-      if (trimmed.length === 0) continue;
-      return trimmed as T;
-    }
-    return value;
+    return { name: candidate, columns };
   }
   return null;
-}
-
-function formatRole(role?: string | null): string {
-  if (!role) return "Teacher";
-  const normalized = role.toLowerCase().trim();
-  if (normalized === "teacher") return "Teacher";
-  if (normalized === "master_teacher" || normalized === "masterteacher") return "Master Teacher";
-  return role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
-}
-
-function buildName(
-  firstName: string | null,
-  middleName: string | null,
-  lastName: string | null,
-  suffix: string | null,
-): string | null {
-  const parts = [firstName, middleName, lastName]
-    .filter((part) => typeof part === "string" && part.trim().length > 0)
-    .map((part) => part?.trim());
-  if (parts.length === 0) return null;
-  if (suffix && suffix.trim().length > 0) {
-    parts.push(suffix.trim());
-  }
-  return parts.join(" ");
-}
+};
 
 export async function GET(request: NextRequest) {
-  const url = new URL(request.url);
-  const userIdParam = url.searchParams.get("userId");
-
+  const userIdParam = request.nextUrl.searchParams.get("userId");
   if (!userIdParam) {
     return NextResponse.json(
       { success: false, error: "Missing userId query parameter." },
@@ -118,38 +156,33 @@ export async function GET(request: NextRequest) {
 
   const userId = Number(userIdParam);
   if (!Number.isFinite(userId) || userId <= 0) {
-    return NextResponse.json({ success: false, error: "Invalid userId value." }, { status: 400 });
+    return NextResponse.json(
+      { success: false, error: "Invalid userId value." },
+      { status: 400 },
+    );
   }
 
   try {
-    const userColumns = await safeGetColumns("users");
-    if (userColumns.size === 0) {
+    const userColumns = await getTableColumns("users");
+    if (!userColumns.size) {
       return NextResponse.json(
-        { success: false, error: "Users table is not accessible." },
+        { success: false, error: "Users table is unavailable." },
         { status: 500 },
       );
     }
 
-    const teacherInfo = await resolveTeacherTable();
-    const remedialInfo = await resolveRemedialTable();
-    const selectParts: string[] = ["u.user_id AS user_id"];
-    const params: Array<number> = [userId];
+    const teacherTable = await resolveTeacherTable();
+
+    const selectParts: string[] = [
+      "u.user_id AS user_id",
+      "u.role AS user_role",
+    ];
 
     const addUserColumn = (column: string, alias: string) => {
       if (userColumns.has(column)) {
         selectParts.push(`u.${column} AS ${alias}`);
-      }
-    };
-
-    const addTeacherColumn = (column: string, alias: string) => {
-      if (teacherInfo.table && teacherInfo.columns.has(column)) {
-        selectParts.push(`t.${column} AS ${alias}`);
-      }
-    };
-
-    const addRemedialColumn = (column: string, alias: string) => {
-      if (remedialInfo.table && remedialInfo.columns.has(column)) {
-        selectParts.push(`rt.${column} AS ${alias}`);
+      } else {
+        selectParts.push(`NULL AS ${alias}`);
       }
     };
 
@@ -157,47 +190,89 @@ export async function GET(request: NextRequest) {
     addUserColumn("middle_name", "user_middle_name");
     addUserColumn("last_name", "user_last_name");
     addUserColumn("suffix", "user_suffix");
-    addUserColumn("name", "user_name");
-    addUserColumn("email", "user_email");
-    addUserColumn("contact_number", "user_contact_number");
-    addUserColumn("phone_number", "user_phone_number");
-    addUserColumn("role", "user_role");
 
-    if (teacherInfo.table && teacherInfo.columns.size > 0) {
-      addTeacherColumn("first_name", "teacher_first_name");
-      addTeacherColumn("middle_name", "teacher_middle_name");
-      addTeacherColumn("last_name", "teacher_last_name");
-      addTeacherColumn("suffix", "teacher_suffix");
-      addTeacherColumn("name", "teacher_name");
-      addTeacherColumn("email", "teacher_email");
-      addTeacherColumn("contact_number", "teacher_contact_number");
-      addTeacherColumn("phone_number", "teacher_phone_number");
-      addTeacherColumn("grade", "teacher_grade");
-      addTeacherColumn("grade_level", "teacher_grade_level");
-      addTeacherColumn("handled_grade", "teacher_handled_grade");
-      addTeacherColumn("year_level", "teacher_year_level");
-
-      for (const subjectCol of SUBJECT_COLUMNS) {
-        if (teacherInfo.columns.has(subjectCol)) {
-          selectParts.push(`t.${subjectCol} AS subjects_value`);
-          break;
-        }
-      }
+    const userGradeColumn = pickColumn(userColumns, GRADE_COLUMNS);
+    if (userGradeColumn) {
+      selectParts.push(`u.${userGradeColumn} AS user_grade`);
+    } else {
+      selectParts.push("NULL AS user_grade");
     }
 
-    if (remedialInfo.table && remedialInfo.columns.size > 0) {
-      addRemedialColumn("grade", "rt_grade");
-      addRemedialColumn("grade_level", "rt_grade_level");
-      addRemedialColumn("handled_grade", "rt_handled_grade");
-      addRemedialColumn("year_level", "rt_year_level");
+    const userSubjectColumn = pickColumn(userColumns, SUBJECT_COLUMNS);
+    if (userSubjectColumn) {
+      selectParts.push(`u.${userSubjectColumn} AS user_subject`);
+    } else {
+      selectParts.push("NULL AS user_subject");
     }
+
+    const userSectionColumn = pickColumn(userColumns, SECTION_COLUMNS);
+    if (userSectionColumn) {
+      selectParts.push(`u.${userSectionColumn} AS user_section`);
+    } else {
+      selectParts.push("NULL AS user_section");
+    }
+
+    const userContactColumn = pickColumn(userColumns, CONTACT_COLUMNS);
+    if (userContactColumn) {
+      selectParts.push(`u.${userContactColumn} AS user_contact`);
+    } else {
+      selectParts.push("NULL AS user_contact");
+    }
+
+    const userEmailColumn = pickColumn(userColumns, EMAIL_COLUMNS) ?? "email";
+    selectParts.push(`u.${userEmailColumn} AS user_email`);
 
     let joinClause = "";
-    if (teacherInfo.table) {
-      joinClause += `LEFT JOIN \`${teacherInfo.table}\` AS t ON t.user_id = u.user_id`;
-    }
-    if (remedialInfo.table && remedialInfo.table !== teacherInfo.table) {
-      joinClause += ` LEFT JOIN \`${remedialInfo.table}\` AS rt ON rt.user_id = u.user_id`;
+
+    if (teacherTable) {
+      const joinConditions: string[] = [];
+      const { name, columns } = teacherTable;
+      const addTeacherColumn = (column: string, alias: string) => {
+        if (columns.has(column)) {
+          selectParts.push(`t.${column} AS ${alias}`);
+        } else {
+          selectParts.push(`NULL AS ${alias}`);
+        }
+      };
+
+      addTeacherColumn(pickColumn(columns, IDENTIFIER_COLUMNS) ?? "", "teacher_identifier");
+      addTeacherColumn(pickColumn(columns, GRADE_COLUMNS) ?? "", "teacher_grade");
+      addTeacherColumn(pickColumn(columns, SUBJECT_COLUMNS) ?? "", "teacher_subject");
+      addTeacherColumn(pickColumn(columns, SECTION_COLUMNS) ?? "", "teacher_section");
+      addTeacherColumn(pickColumn(columns, CONTACT_COLUMNS) ?? "", "teacher_contact");
+      addTeacherColumn(pickColumn(columns, EMAIL_COLUMNS) ?? "", "teacher_email");
+
+      const joinCandidatePairs: Array<[string, string]> = [
+        ["user_id", "user_id"],
+        ["teacher_id", "user_id"],
+        ["employee_id", "user_id"],
+        ["id", "user_id"],
+        ["email", userEmailColumn],
+      ];
+
+      for (const [teacherKey, userKey] of joinCandidatePairs) {
+        if (!teacherKey || !userKey) {
+          continue;
+        }
+        if (columns.has(teacherKey) && userColumns.has(userKey)) {
+          joinConditions.push(`t.${teacherKey} = u.${userKey}`);
+        }
+      }
+
+      if (!joinConditions.length && columns.has("user_id")) {
+        joinConditions.push("t.user_id = u.user_id");
+      }
+
+      if (joinConditions.length) {
+        joinClause = `LEFT JOIN \`${name}\` AS t ON ${joinConditions.join(" OR ")}`;
+      }
+    } else {
+      selectParts.push("NULL AS teacher_identifier");
+      selectParts.push("NULL AS teacher_grade");
+      selectParts.push("NULL AS teacher_subject");
+      selectParts.push("NULL AS teacher_section");
+      selectParts.push("NULL AS teacher_contact");
+      selectParts.push("NULL AS teacher_email");
     }
 
     const sql = `
@@ -208,59 +283,62 @@ export async function GET(request: NextRequest) {
       LIMIT 1
     `;
 
-    const [rows] = await query<TeacherRow[]>(sql, params);
-
-    if (rows.length === 0) {
+    const [rows] = await query<RowDataPacket[]>(sql, [userId]);
+    if (!rows.length) {
       return NextResponse.json(
-        { success: false, error: "Teacher record was not found." },
+        { success: false, error: "Teacher profile not found." },
         { status: 404 },
       );
     }
 
-    const row = rows[0];
+    const row = rows[0] as RowDataPacket & {
+      user_grade?: unknown;
+      teacher_grade?: unknown;
+      user_subject?: unknown;
+      teacher_subject?: unknown;
+      user_section?: unknown;
+      teacher_section?: unknown;
+      user_contact?: unknown;
+      teacher_contact?: unknown;
+      user_email?: unknown;
+      teacher_email?: unknown;
+      teacher_identifier?: unknown;
+      user_first_name?: unknown;
+      user_middle_name?: unknown;
+      user_last_name?: unknown;
+      user_suffix?: unknown;
+    };
 
-    const firstName = pickFirst(row.teacher_first_name, row.user_first_name);
-    const middleName = pickFirst(row.teacher_middle_name, row.user_middle_name);
-    const lastName = pickFirst(row.teacher_last_name, row.user_last_name);
-    const suffix = pickFirst(row.teacher_suffix, row.user_suffix);
-    const displayName = pickFirst(
-      row.teacher_name,
-      row.user_name,
-      buildName(firstName, middleName, lastName, suffix),
-    );
+    const gradeRaw = toNullableString(row.teacher_grade) ?? toNullableString(row.user_grade);
+    const gradeLabel = formatGradeLabel(gradeRaw);
 
-    const grade = pickFirst(
-      row.rt_grade,
-      row.rt_grade_level,
-      row.rt_handled_grade,
-      row.rt_year_level,
-      row.teacher_grade,
-      row.teacher_grade_level,
-      row.teacher_handled_grade,
-      row.teacher_year_level,
-    );
-    const subjects = row.subjects_value?.trim() || null;
-    const email = pickFirst(row.teacher_email, row.user_email);
-    const contactNumber = pickFirst(
-      row.teacher_contact_number,
-      row.teacher_phone_number,
-      row.user_contact_number,
-      row.user_phone_number,
-    );
+    const profilePayload = {
+      userId: row.user_id,
+      role: row.user_role ?? null,
+      firstName: toNullableString(row.user_first_name),
+      middleName: toNullableString(row.user_middle_name),
+      lastName: toNullableString(row.user_last_name),
+      suffix: toNullableString(row.user_suffix),
+      grade: gradeLabel,
+      gradeLabel,
+      gradeRaw,
+      gradeNumber: extractGradeNumber(gradeRaw),
+      subjectHandled: toNullableString(row.teacher_subject) ?? toNullableString(row.user_subject),
+      section: toNullableString(row.teacher_section) ?? toNullableString(row.user_section),
+      contactNumber: toNullableString(row.teacher_contact) ?? toNullableString(row.user_contact),
+      email: toNullableString(row.teacher_email) ?? toNullableString(row.user_email),
+      teacherIdentifier: toNullableString(row.teacher_identifier),
+    };
 
-    return NextResponse.json({
-      success: true,
-      teacher: {
-        userId: row.user_id,
-        name: displayName,
-        lastName,
-        email,
-        contactNumber,
-        gradeLevel: grade,
-        subjectsHandled: subjects,
-        role: formatRole(row.user_role),
-      },
-    });
+    if (!profilePayload.grade) {
+      return NextResponse.json({
+        success: true,
+        profile: profilePayload,
+        metadata: { missingGrade: true },
+      });
+    }
+
+    return NextResponse.json({ success: true, profile: profilePayload, metadata: { missingGrade: false } });
   } catch (error) {
     console.error("Failed to load teacher profile", error);
     return NextResponse.json(
