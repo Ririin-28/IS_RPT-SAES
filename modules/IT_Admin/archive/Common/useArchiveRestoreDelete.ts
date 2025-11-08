@@ -4,10 +4,12 @@ export type ArchiveActionType = "restore" | "delete";
 
 type KeySelector<T> = (item: T) => string | undefined;
 
+type ArchiveCallback = (selectedKeys: string[], reset: () => void) => void | Promise<void>;
+
 type UseArchiveRestoreDeleteOptions<T> = {
   keySelector: KeySelector<T>;
-  onRestore?: (selectedKeys: string[], reset: () => void) => void;
-  onDelete?: (selectedKeys: string[], reset: () => void) => void;
+  onRestore?: ArchiveCallback;
+  onDelete?: ArchiveCallback;
 };
 
 export function useArchiveRestoreDelete<T>(
@@ -77,24 +79,38 @@ export function useArchiveRestoreDelete<T>(
     );
   };
 
-  const confirmRestore = () => {
-    if (selectedKeys.size === 0) return;
-    if (onRestore) {
-      onRestore(Array.from(selectedKeys), reset);
-    } else {
-      removeSelected(selectedKeys);
-      reset();
+  const confirmRestore = async () => {
+    if (selectedKeys.size === 0) {
+      return;
     }
+    setRestoreModalOpen(false);
+    if (onRestore) {
+      try {
+        await onRestore(Array.from(selectedKeys), reset);
+      } catch (error) {
+        console.error("Failed to restore archived entries", error);
+      }
+      return;
+    }
+    removeSelected(selectedKeys);
+    reset();
   };
 
-  const confirmDelete = () => {
-    if (selectedKeys.size === 0) return;
-    if (onDelete) {
-      onDelete(Array.from(selectedKeys), reset);
-    } else {
-      removeSelected(selectedKeys);
-      reset();
+  const confirmDelete = async () => {
+    if (selectedKeys.size === 0) {
+      return;
     }
+    setDeleteModalOpen(false);
+    if (onDelete) {
+      try {
+        await onDelete(Array.from(selectedKeys), reset);
+      } catch (error) {
+        console.error("Failed to delete archived entries", error);
+      }
+      return;
+    }
+    removeSelected(selectedKeys);
+    reset();
   };
 
   const selectedCount = useMemo(() => selectedKeys.size, [selectedKeys]);

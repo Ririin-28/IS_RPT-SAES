@@ -40,6 +40,7 @@ const SUBJECT_LABELS: Record<SubjectKey, string> = {
 type GradeTabProps = {
   searchTerm: string;
   onSearchTermChange: (value: string) => void;
+  gradeLevel?: string;
 };
 
 const GRADE_OPTIONS = [
@@ -188,6 +189,7 @@ export default function PrincipalReports({ subjectSlug }: PrincipalReportsProps)
                 <ActiveGradeComponent
                   searchTerm={searchTerm}
                   onSearchTermChange={(value) => setSearchTerm(value)}
+                  gradeLevel={activeGrade}
                 />
               </div>
             </div>

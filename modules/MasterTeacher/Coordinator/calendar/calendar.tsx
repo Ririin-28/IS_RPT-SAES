@@ -37,6 +37,13 @@ interface Activity {
   requester?: string | null;
 }
 
+type ActivityTone = {
+  backgroundClass: string;
+  borderClass: string;
+  titleClass: string;
+  accentColor: string;
+};
+
 type CalendarFormValues = {
   title: string;
   date: string;
@@ -102,18 +109,50 @@ const isActivityLocked = (activity: Activity | null | undefined): boolean => {
   return activity.status.toLowerCase().includes("approve");
 };
 
+const STATUS_TONE_OVERRIDES: Record<string, ActivityTone> = {
+  Approved: {
+    backgroundClass: "bg-emerald-50",
+    borderClass: "border-emerald-200",
+    titleClass: "text-emerald-900",
+    accentColor: "#059669",
+  },
+  Pending: {
+    backgroundClass: "bg-amber-50",
+    borderClass: "border-amber-200",
+    titleClass: "text-amber-900",
+    accentColor: "#D97706",
+  },
+  Declined: {
+    backgroundClass: "bg-red-50",
+    borderClass: "border-red-200",
+    titleClass: "text-red-900",
+    accentColor: "#DC2626",
+  },
+};
+
 const statusBadgeTone = (status: string | null | undefined) => {
-  if (!status) {
+  const normalized = normalizeStatusLabel(status);
+  if (!normalized) {
     return "bg-gray-100 text-gray-600 border border-gray-300";
   }
-  const normalized = status.toLowerCase();
-  if (normalized.includes("approve")) {
+  if (normalized === "Approved") {
     return "bg-emerald-100 text-emerald-800 border border-emerald-200";
   }
-  if (normalized.includes("decline") || normalized.includes("reject")) {
+  if (normalized === "Declined") {
     return "bg-red-100 text-red-700 border border-red-200";
   }
-  return "bg-amber-100 text-amber-800 border border-amber-200";
+  if (normalized === "Pending") {
+    return "bg-amber-100 text-amber-800 border border-amber-200";
+  }
+  return "bg-blue-100 text-blue-800 border border-blue-200";
+};
+
+const resolveStatusToneOverride = (status: string | null | undefined): ActivityTone | null => {
+  const normalized = normalizeStatusLabel(status);
+  if (!normalized) {
+    return null;
+  }
+  return STATUS_TONE_OVERRIDES[normalized] ?? null;
 };
 
 const normalizeSubjectValue = (raw: string): string | null => {
@@ -1554,7 +1593,7 @@ export default function MasterTeacherCalendar() {
     setActivityToDelete(null);
   };
 
-  const resolveActivityTone = (type: string | null | undefined) => {
+  const resolveActivityTone = (type: string | null | undefined): ActivityTone => {
     const normalized = (type ?? "").toLowerCase();
 
     if (normalized.includes("english") || normalized === "class") {
@@ -1563,7 +1602,7 @@ export default function MasterTeacherCalendar() {
         borderClass: "border-blue-200",
         titleClass: "text-blue-900",
         accentColor: "#2563EB",
-      } as const;
+      };
     }
 
     if (normalized.includes("filipino")) {
@@ -1572,7 +1611,7 @@ export default function MasterTeacherCalendar() {
         borderClass: "border-purple-200",
         titleClass: "text-purple-900",
         accentColor: "#7C3AED",
-      } as const;
+      };
     }
 
     if (normalized.includes("math")) {
@@ -1581,7 +1620,7 @@ export default function MasterTeacherCalendar() {
         borderClass: "border-amber-200",
         titleClass: "text-amber-900",
         accentColor: "#D97706",
-      } as const;
+      };
     }
 
     if (normalized.includes("meeting")) {
@@ -1590,7 +1629,7 @@ export default function MasterTeacherCalendar() {
         borderClass: "border-green-200",
         titleClass: "text-green-900",
         accentColor: "#047857",
-      } as const;
+      };
     }
 
     if (normalized.includes("appointment")) {
@@ -1599,7 +1638,7 @@ export default function MasterTeacherCalendar() {
         borderClass: "border-rose-200",
         titleClass: "text-rose-900",
         accentColor: "#DB2777",
-      } as const;
+      };
     }
 
     if (normalized.includes("event")) {
@@ -1608,7 +1647,7 @@ export default function MasterTeacherCalendar() {
         borderClass: "border-sky-200",
         titleClass: "text-sky-900",
         accentColor: "#0EA5E9",
-      } as const;
+      };
     }
 
     return {
@@ -1616,7 +1655,7 @@ export default function MasterTeacherCalendar() {
       borderClass: "border-gray-200",
       titleClass: "text-gray-900",
       accentColor: "#047857",
-    } as const;
+    };
   };
 
   // Render the calendar based on view
@@ -1652,8 +1691,11 @@ export default function MasterTeacherCalendar() {
                     ? activity.title
                     : activity.subject ?? "Scheduled Activity";
                   const subjectLabel = activity.subject && activity.subject !== activity.title ? activity.subject : null;
-                  const tone = resolveActivityTone(activity.subject ?? activity.type);
-                  const statusClass = activity.status ? statusBadgeTone(viewOnly ? "Pending" : activity.status) : null;
+                  const normalizedStatus = normalizeStatusLabel(activity.status);
+                  const toneOverride = resolveStatusToneOverride(activity.status);
+                  const tone = toneOverride ?? resolveActivityTone(activity.subject ?? activity.type);
+                  const statusLabel = normalizedStatus ?? activity.status ?? null;
+                  const statusClass = statusLabel ? statusBadgeTone(statusLabel) : null;
                   return (
                     <div
                       key={activity.id}
@@ -1670,11 +1712,11 @@ export default function MasterTeacherCalendar() {
                                 {subjectLabel}
                               </span>
                             )}
-                            {activity.status && statusClass && (
+                            {statusLabel && statusClass && (
                               <span
                                 className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${statusClass}`}
                               >
-                                {activity.status}
+                                {statusLabel}
                               </span>
                             )}
                           </div>
@@ -1776,8 +1818,11 @@ export default function MasterTeacherCalendar() {
                   const displayTitle = activity.title?.trim().length
                     ? activity.title
                     : activity.subject ?? "Scheduled Activity";
-                  const tone = resolveActivityTone(activity.subject ?? activity.type);
-                  const statusClass = activity.status ? statusBadgeTone(viewOnly ? "Pending" : activity.status) : null;
+                  const normalizedStatus = normalizeStatusLabel(activity.status);
+                  const toneOverride = resolveStatusToneOverride(activity.status);
+                  const tone = toneOverride ?? resolveActivityTone(activity.subject ?? activity.type);
+                  const statusLabel = normalizedStatus ?? activity.status ?? null;
+                  const statusClass = statusLabel ? statusBadgeTone(statusLabel) : null;
 
                   return (
                     <div
@@ -1792,11 +1837,11 @@ export default function MasterTeacherCalendar() {
                             <span className="truncate capitalize">
                               {activity.subject && activity.subject !== activity.title ? activity.subject : activity.gradeLevel ?? gradeLabel}
                             </span>
-                            {activity.status && statusClass && (
+                            {statusLabel && statusClass && (
                               <span
                                 className={`inline-flex items-center rounded-full px-1.5 py-0.5 font-semibold ${statusClass}`}
                               >
-                                {activity.status}
+                                {statusLabel}
                               </span>
                             )}
                             {viewOnly && <span className="font-semibold text-gray-600">View Only</span>}
@@ -1903,8 +1948,11 @@ export default function MasterTeacherCalendar() {
                   ? activity.title
                   : activity.subject ?? "Scheduled Activity";
                 const subjectLabel = activity.subject && activity.subject !== activity.title ? activity.subject : null;
-                const tone = resolveActivityTone(activity.subject ?? activity.type);
-                const statusClass = activity.status ? statusBadgeTone(viewOnly ? "Pending" : activity.status) : null;
+                const normalizedStatus = normalizeStatusLabel(activity.status);
+                const toneOverride = resolveStatusToneOverride(activity.status);
+                const tone = toneOverride ?? resolveActivityTone(activity.subject ?? activity.type);
+                const statusLabel = normalizedStatus ?? activity.status ?? null;
+                const statusClass = statusLabel ? statusBadgeTone(statusLabel) : null;
                 const approvalMeta = viewOnly
                   ? formatApprovalMetadata(activity.approvedAt ?? null, activity.approvedBy ?? null)
                   : null;
@@ -1925,11 +1973,11 @@ export default function MasterTeacherCalendar() {
                               {subjectLabel}
                             </span>
                           )}
-                          {activity.status && statusClass && (
+                          {statusLabel && statusClass && (
                             <span
                               className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[0.6rem] font-semibold ${statusClass}`}
                             >
-                              {activity.status}
+                              {statusLabel}
                             </span>
                           )}
                           {viewOnly && <span className="text-[0.6rem] font-semibold text-gray-600 uppercase">View Only</span>}

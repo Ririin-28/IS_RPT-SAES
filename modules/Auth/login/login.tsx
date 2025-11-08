@@ -1,11 +1,13 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { getSession } from "next-auth/react";
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { FaEye, FaEyeSlash, FaInfoCircle } from "react-icons/fa";
 import RPTLogoTitle from "@/components/Common/RPTLogoTitle";
 import { clearOAuthState } from "@/lib/utils/clear-oauth-state";
 import { storeUserProfile } from "@/lib/utils/user-profile";
+
+const DEFAULT_LOGIN_ERROR_MESSAGE = "Email and password do not match our records. Please try again.";
 
 type LoginProps = {
   infoMessage?: string;
@@ -26,6 +28,8 @@ export default function Login({
   const [verifying, setVerifying] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState(DEFAULT_LOGIN_ERROR_MESSAGE);
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sanitizedUserId = useMemo(() => userId.trim(), [userId]);
 
   const resolveWelcomePath = useCallback((role: string | null | undefined): string => {
@@ -51,8 +55,8 @@ export default function Login({
   // Live credential check
   useEffect(() => {
     let active = true;
-  const hasValidUserId = sanitizedUserId && !Number.isNaN(Number(sanitizedUserId));
-  const canVerify = requireUserId ? Boolean(email && password && hasValidUserId) : Boolean(email && password);
+    const hasValidUserId = sanitizedUserId && !Number.isNaN(Number(sanitizedUserId));
+    const canVerify = requireUserId ? Boolean(email && password && hasValidUserId) : Boolean(email && password);
     if (canVerify) {
       setVerifying(true);
       setSuccess(false);
@@ -97,11 +101,23 @@ export default function Login({
   }, [email, password, requireUserId, sanitizedUserId]);
 
   useEffect(() => {
+    return () => {
+      if (redirectTimerRef.current) {
+        clearTimeout(redirectTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     const checkSession = async () => {
       const urlParams = new URLSearchParams(window.location.search);
       const isLoggedOut = urlParams.get("logout") === "true";
       const hasError = urlParams.get("error");
       const wasLoggedOut = sessionStorage.getItem("wasLoggedOut") === "true";
+      const prefillEmail = urlParams.get("email");
+      if (prefillEmail) {
+        setEmail(prefillEmail);
+      }
 
       if (hasError === "OAuthCallback") {
         clearOAuthState();
@@ -130,11 +146,13 @@ export default function Login({
     try {
       if (requireUserId) {
         if (!sanitizedUserId) {
+          setErrorMessage("Please enter your numeric User ID to sign in.");
           setShowErrorModal(true);
           setIsLoading(false);
           return;
         }
         if (Number.isNaN(Number(sanitizedUserId))) {
+          setErrorMessage("User ID must be a valid number.");
           setShowErrorModal(true);
           setIsLoading(false);
           return;
@@ -158,6 +176,19 @@ export default function Login({
       const data = await res.json();
       console.log("[LOGIN] backend response:", data);
       if (res.status === 401 || data.error) {
+        if (!requireUserId && (data.requireUserId || data.errorCode === "ADMIN_USER_ID_REQUIRED")) {
+          setIsLoading(false);
+          setErrorMessage("IT Admin accounts must use the Admin Login and provide their User ID.");
+          setShowErrorModal(true);
+          if (redirectTimerRef.current) {
+            clearTimeout(redirectTimerRef.current);
+          }
+          redirectTimerRef.current = setTimeout(() => {
+            router.push(`/auth/adminlogin?email=${encodeURIComponent(email)}`);
+          }, 1500);
+          return;
+        }
+        setErrorMessage(data.error || DEFAULT_LOGIN_ERROR_MESSAGE);
         setShowErrorModal(true);
       } else {
         storeUserProfile({
@@ -186,6 +217,7 @@ export default function Login({
         }
       }
     } catch (err) {
+      setErrorMessage(DEFAULT_LOGIN_ERROR_MESSAGE);
       setShowErrorModal(true);
     }
     setIsLoading(false);
@@ -198,10 +230,13 @@ export default function Login({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-opacity-10 backdrop-blur">
           <div className="bg-white rounded-xl shadow-lg p-8 max-w-sm w-full flex flex-col items-center">
             <h3 className="text-xl font-bold text-red-700 mb-4">Login Failed</h3>
-            <p className="text-gray-800 mb-6 text-center">Email and password do not match our records. Please try again.</p>
+            <p className="text-gray-800 mb-6 text-center">{errorMessage}</p>
             <button
               className="bg-green-700 text-white px-6 py-2 rounded-lg font-semibold hover:bg-green-900 transition"
-              onClick={() => setShowErrorModal(false)}
+              onClick={() => {
+                setErrorMessage(DEFAULT_LOGIN_ERROR_MESSAGE);
+                setShowErrorModal(false);
+              }}
             >
               Close
             </button>
@@ -243,9 +278,7 @@ export default function Login({
             {/* Platform description - concise version */}
             <div className="flex items-center justify-center mb-6 bg-green-50 py-2 px-3 rounded-lg border border-green-200">
               <FaInfoCircle className="text-green-700 mr-2 flex-shrink-0" />
-              <p className="text-xs text-green-800 text-center">
-                {infoMessage}
-              </p>
+              <p className="text-xs text-green-800 text-center">{infoMessage}</p>
             </div>
 
             <form onSubmit={handleLogin}>

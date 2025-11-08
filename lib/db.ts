@@ -32,7 +32,7 @@ export function getPool(): mysql.Pool {
   return ensurePool();
 }
 
-export type QueryParams = Array<string | number | null | undefined>;
+export type QueryParams = Array<string | number | null | undefined | Buffer>;
 
 export async function query<T extends mysql.RowDataPacket[] | mysql.ResultSetHeader>(
   sql: string,

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import ITAdminSidebar from "@/components/IT_Admin/Sidebar";
 import ITAdminHeader from "@/components/IT_Admin/Header";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
@@ -202,6 +202,13 @@ export default function ITAdminArchive() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const handleArchiveRemoval = useCallback((removedArchiveIds: number[]) => {
+    if (!removedArchiveIds || removedArchiveIds.length === 0) {
+      return;
+    }
+    setArchiveRecords((prev) => prev.filter((entry) => !removedArchiveIds.includes(entry.archiveId)));
+  }, []);
+
   const showGradeDropdown = useMemo(() => {
     return accountType === "Master Teachers" || accountType === "Teachers" || accountType === "Students";
   }, [accountType]);
@@ -328,7 +335,12 @@ export default function ITAdminArchive() {
               )}
               <div className="mt-4 sm:mt-6">
                 {accountType === "IT Admin" && (
-                  <ITAdminArchiveTab itAdmins={accounts} setItAdmins={setAccounts} searchTerm={searchTerm} />
+                  <ITAdminArchiveTab
+                    itAdmins={accounts}
+                    setItAdmins={setAccounts}
+                    searchTerm={searchTerm}
+                    onEntriesRemoved={handleArchiveRemoval}
+                  />
                 )}
 
                 {accountType === "Principal" && (

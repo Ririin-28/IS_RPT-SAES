@@ -166,6 +166,11 @@ export default function ITAdminLogs() {
                              word.charAt(0).toUpperCase() + word.slice(1)
                            ).join(' ');
 
+          const rawStatus = typeof record.status === "string" ? record.status : "Offline";
+          const statusLabel = rawStatus
+            .toLowerCase()
+            .replace(/^[a-z]/, (char) => char.toUpperCase());
+
           // Safe ID generation
           const id = record.id || record.logId || record.userId || index + 1;
           
@@ -178,7 +183,7 @@ export default function ITAdminLogs() {
             lastLogin: record.lastLogin || record.loginTime || null,
             createdAt: record.createdAt || null,
             loginTime: record.loginTime || record.lastLogin || null,
-            status: record.status || "Active",
+            status: statusLabel,
             name: record.name || undefined,
             email: record.email || record.user_email || undefined,
           };
@@ -259,11 +264,14 @@ export default function ITAdminLogs() {
     {
       key: "status",
       title: "Status",
-      render: (row: LogRecord) => (
-        <span className="text-[#013300] font-semibold">
-          {row.status || "Active"}
-        </span>
-      ),
+      render: (row: LogRecord) => {
+        const normalized = (row.status || "").toLowerCase();
+        const isOnline = normalized === "online";
+        const display = isOnline ? "Online" : "Offline";
+        const className = isOnline ? "text-green-600" : "text-gray-500";
+
+        return <span className={`${className} font-semibold`}>{display}</span>;
+      },
     },
   ];
 

@@ -24,13 +24,217 @@ interface ITAdminArchiveTabProps {
   itAdmins: any[];
   setItAdmins: Dispatch<SetStateAction<any[]>>;
   searchTerm: string;
+  onEntriesRemoved?: (archiveIds: number[]) => void;
 }
 
-export default function ITAdminArchiveTab({ itAdmins, setItAdmins, searchTerm }: ITAdminArchiveTabProps) {
+export default function ITAdminArchiveTab({ itAdmins, setItAdmins, searchTerm, onEntriesRemoved }: ITAdminArchiveTabProps) {
   const [selectedAdmin, setSelectedAdmin] = useState<any>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const adminsList = Array.isArray(itAdmins) ? itAdmins : [];
 
-  const keySelector = (item: any) => ensureArchiveRowKey(item);
+  const keySelector = useCallback((item: any) => {
+    if (!item) {
+      return undefined;
+    }
+    if (item.archiveId != null) {
+      return String(item.archiveId);
+    }
+    if (item.archive_id != null) {
+      return String(item.archive_id);
+    }
+    return ensureArchiveRowKey(item);
+  }, []);
+
+  const resolveRecordsByKeys = useCallback(
+    (keys: string[]) => {
+      if (!keys.length) {
+        return [];
+      }
+      const keySet = new Set(keys.map(String));
+      return adminsList.filter((item) => {
+        const key = keySelector(item);
+        return key ? keySet.has(String(key)) : false;
+      });
+    },
+    [adminsList, keySelector],
+  );
+
+  const handleRestoreAction = useCallback(
+    async (selectedKeys: string[], resetSelection: () => void) => {
+      const selectedRecords = resolveRecordsByKeys(selectedKeys);
+      const archiveIds = Array.from(
+        new Set(
+            selectedRecords
+              .map((record) => {
+                const value = record?.archiveId ?? record?.archive_id;
+              const numeric = Number(value);
+              return Number.isInteger(numeric) && numeric > 0 ? numeric : null;
+            })
+            .filter((value: number | null): value is number => value !== null),
+        ),
+      );
+
+      if (archiveIds.length === 0) {
+        if (selectedRecords.length > 0 && typeof window !== "undefined") {
+          window.alert("Selected archive entries are missing identifiers. Please refresh and try again.");
+        }
+        resetSelection();
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/it_admin/archive/restore", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ archiveIds }),
+        });
+
+        const data: any = await response.json();
+
+        if (!response.ok) {
+          const message = typeof data?.error === "string" && data.error.trim().length > 0
+            ? data.error
+            : "Failed to restore archived accounts.";
+          throw new Error(message);
+        }
+
+        const restoredEntries: Array<{
+          archiveId: number;
+          userId: number;
+          name?: string;
+          email?: string;
+          temporaryPassword?: string;
+        }> = Array.isArray(data?.restored) ? data.restored : [];
+
+        const restoredArchiveIds = restoredEntries
+          .map((entry) => Number(entry.archiveId))
+          .filter((value) => Number.isInteger(value) && value > 0);
+
+        if (restoredArchiveIds.length > 0) {
+          const removedSet = new Set(restoredArchiveIds);
+          setItAdmins((prev) =>
+            prev.filter((entry: any) => {
+              const value = entry?.archiveId ?? entry?.archive_id;
+              return !(typeof value === "number" && removedSet.has(value));
+            }),
+          );
+          onEntriesRemoved?.(restoredArchiveIds);
+        }
+
+        if (restoredEntries.length > 0 && typeof window !== "undefined") {
+          const lines = restoredEntries.map((entry) => {
+            const label = entry.name || entry.email || `User ${entry.userId}`;
+            return entry.temporaryPassword
+              ? `${label} — temporary password: ${entry.temporaryPassword}`
+              : label;
+          });
+          window.alert(
+            `Restored ${restoredEntries.length} account${restoredEntries.length === 1 ? "" : "s"}.
+
+${lines.join("\n")}`,
+          );
+        }
+
+        if (Array.isArray(data?.errors) && data.errors.length > 0) {
+          console.warn("Some archive entries failed to restore:", data.errors);
+          if (restoredEntries.length === 0 && typeof window !== "undefined") {
+            const errorLines = data.errors
+              .map((err: any) => `#${err?.archiveId ?? "?"}: ${err?.message ?? "Unable to restore."}`)
+              .join("\n");
+            window.alert(`Unable to restore the selected accounts.\n\n${errorLines}`);
+          }
+        }
+
+        if (restoredEntries.length > 0) {
+          resetSelection();
+        }
+      } catch (error) {
+        console.error("Failed to restore archived IT Admin accounts", error);
+        if (typeof window !== "undefined") {
+          const message = error instanceof Error ? error.message : "Failed to restore archived accounts.";
+          window.alert(message);
+        }
+      }
+    },
+    [resolveRecordsByKeys, setItAdmins, onEntriesRemoved],
+  );
+
+  const handleDeleteAction = useCallback(
+    async (selectedKeys: string[], resetSelection: () => void) => {
+      const selectedRecords = resolveRecordsByKeys(selectedKeys);
+      const archiveIds = Array.from(
+        new Set(
+            selectedRecords
+              .map((record) => {
+                const value = record?.archiveId ?? record?.archive_id;
+                const numeric = Number(value);
+                return Number.isInteger(numeric) && numeric > 0 ? numeric : null;
+              })
+              .filter((value: number | null): value is number => value !== null),
+        ),
+      );
+
+      if (archiveIds.length === 0) {
+        if (selectedRecords.length > 0 && typeof window !== "undefined") {
+          window.alert("Selected archive entries are missing identifiers. Please refresh and try again.");
+        }
+        resetSelection();
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/it_admin/archive/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ archiveIds }),
+        });
+
+        const data: any = await response.json();
+
+        if (!response.ok) {
+          const message = typeof data?.error === "string" && data.error.trim().length > 0
+            ? data.error
+            : "Failed to delete archived accounts.";
+          throw new Error(message);
+        }
+
+        const deletedArchiveIds: number[] = Array.isArray(data?.deletedArchiveIds)
+          ? data.deletedArchiveIds
+              .map((value: unknown) => {
+                const numeric = Number(value);
+                return Number.isInteger(numeric) && numeric > 0 ? numeric : null;
+              })
+              .filter((value: number | null): value is number => value !== null)
+          : [];
+
+        if (deletedArchiveIds.length > 0) {
+          const removedSet = new Set(deletedArchiveIds);
+          setItAdmins((prev) =>
+            prev.filter((entry: any) => {
+              const value = entry?.archiveId ?? entry?.archive_id;
+              return !(typeof value === "number" && removedSet.has(value));
+            }),
+          );
+          onEntriesRemoved?.(deletedArchiveIds);
+        }
+
+        if (deletedArchiveIds.length > 0 && typeof window !== "undefined") {
+          window.alert(
+            `Deleted ${deletedArchiveIds.length} archived account${deletedArchiveIds.length === 1 ? "" : "s"}.`,
+          );
+        }
+
+        resetSelection();
+      } catch (error) {
+        console.error("Failed to delete archived IT Admin accounts", error);
+        if (typeof window !== "undefined") {
+          const message = error instanceof Error ? error.message : "Failed to delete archived accounts.";
+          window.alert(message);
+        }
+      }
+    },
+    [resolveRecordsByKeys, setItAdmins, onEntriesRemoved],
+  );
 
   const {
     action,
@@ -48,9 +252,13 @@ export default function ITAdminArchiveTab({ itAdmins, setItAdmins, searchTerm }:
     setDeleteModalOpen,
     confirmRestore,
     confirmDelete,
-  } = useArchiveRestoreDelete(setItAdmins, { keySelector });
+  } = useArchiveRestoreDelete(setItAdmins, {
+    keySelector,
+    onRestore: handleRestoreAction,
+    onDelete: handleDeleteAction,
+  });
 
-  const filteredAdmins = itAdmins.filter((admin) => {
+  const filteredAdmins = adminsList.filter((admin) => {
     const term = searchTerm.trim().toLowerCase();
     if (term === "") return true;
     const adminId = String(admin?.userId ?? admin?.user_id ?? admin?.adminId ?? "");
@@ -72,7 +280,7 @@ export default function ITAdminArchiveTab({ itAdmins, setItAdmins, searchTerm }:
 
   const tableData = filteredAdmins.map((admin, index) => ({
     ...admin,
-    id: ensureArchiveRowKey(admin),
+    id: keySelector(admin) ?? ensureArchiveRowKey(admin),
     no: index + 1,
   }));
 
@@ -86,7 +294,7 @@ export default function ITAdminArchiveTab({ itAdmins, setItAdmins, searchTerm }:
   return (
     <div>
       <div className="flex flex-row justify-between items-center mb-4">
-        <p className="text-gray-600 text-md font-medium">Total: {itAdmins.length}</p>
+          <p className="text-gray-600 text-md font-medium">Total: {adminsList.length}</p>
         <div className="flex items-center gap-2">
           {selectMode ? (
             <>
