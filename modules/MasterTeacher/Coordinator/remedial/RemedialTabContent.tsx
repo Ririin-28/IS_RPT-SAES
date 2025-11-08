@@ -118,6 +118,14 @@ export default function RemedialTabContent({ level, config }: RemedialTabContent
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (!hasHydrated.current) return;
+    if (!flashcardsStorageKey) return;
+
+    window.localStorage.setItem(flashcardsStorageKey, JSON.stringify(flashcards));
+  }, [flashcards, flashcardsStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
 
     const storedValue = window.localStorage.getItem(storageKey);
     if (storedValue) {
@@ -219,9 +227,6 @@ export default function RemedialTabContent({ level, config }: RemedialTabContent
 
   const handleSaveFlashcards = (updatedFlashcards: FlashcardContent[]) => {
     setFlashcards(updatedFlashcards);
-    if (typeof window !== "undefined" && flashcardsStorageKey) {
-      window.localStorage.setItem(flashcardsStorageKey, JSON.stringify(updatedFlashcards));
-    }
     setIsEditModalOpen(false);
   };
 
