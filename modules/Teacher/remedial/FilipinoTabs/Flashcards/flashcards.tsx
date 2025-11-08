@@ -590,7 +590,7 @@ export default function MasterTeacherFilipinoFlashcards() {
           <div className="mt-8 rounded-3xl border border-gray-300 bg-white shadow-md shadow-gray-200 p-6 space-y-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm font-medium text-gray-600">
-                {selectionRows.length} mag-aaral ang nakalista
+                {selectionRows.length} student(s) listed
               </p>
               <div>
                 <input

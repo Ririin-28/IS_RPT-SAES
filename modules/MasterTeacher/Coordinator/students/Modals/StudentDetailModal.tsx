@@ -48,7 +48,15 @@ export default function StudentDetailModal({ show, onClose, student }: StudentDe
       <ModalSection title="Assessment Level Details">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <ModalInfoItem label="Subject Assigned" value={student.subjectAssigned || 'N/A'} />
-          <ModalInfoItem label="Phonemic" value={student.englishPhonemic || student.filipinoPhonemic || student.mathProficiency || 'N/A'} />
+          <ModalInfoItem 
+            label="Phonemic" 
+            value={
+              student.subjectAssigned?.toLowerCase() === 'english' ? (student.englishPhonemic || 'N/A') :
+              student.subjectAssigned?.toLowerCase() === 'filipino' ? (student.filipinoPhonemic || 'N/A') :
+              student.subjectAssigned?.toLowerCase() === 'math' ? (student.mathProficiency || 'N/A') :
+              (student.englishPhonemic || student.filipinoPhonemic || student.mathProficiency || 'N/A')
+            } 
+          />
         </div>
       </ModalSection>
     </BaseModal>

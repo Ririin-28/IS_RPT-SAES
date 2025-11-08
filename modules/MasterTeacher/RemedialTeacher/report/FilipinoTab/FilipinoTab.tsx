@@ -35,7 +35,7 @@ export default function FilipinoReportTab({ rows, editable, onCellChange }: Reme
         <table className="w-full border-collapse">
           <thead>
             <tr className="bg-gray-50">
-              <th rowSpan={2} className="border border-gray-300 p-3 text-left font-semibold">Pangalan ng Mag-aaral</th>
+              <th rowSpan={2} className="border border-gray-300 p-3 text-left font-semibold">Student Name</th>
               <th rowSpan={2} className="border border-gray-300 p-3 text-left font-semibold">Seksyon</th>
               <th rowSpan={2} className="border border-gray-300 p-3 text-center font-semibold">Paunang Pagsusuri<br />Setyembre</th>
               <th colSpan={3} className="border border-gray-300 p-3 text-center font-semibold">School-Based Reading Assessment</th>

@@ -92,6 +92,10 @@ interface AccountActionsMenuProps {
     disabled?: boolean;
     onDownload: () => void;
   };
+  downloadTemplateConfig?: {
+    disabled?: boolean;
+    onDownload: () => void;
+  };
 }
 
 export default function AccountActionsMenu({
@@ -101,6 +105,7 @@ export default function AccountActionsMenu({
   className = "",
   exportConfig,
   downloadPasswordsConfig,
+  downloadTemplateConfig,
 }: AccountActionsMenuProps) {
   const handleAction = useCallback(
     (action: AccountActionKey, close: () => void) => {
@@ -190,6 +195,27 @@ export default function AccountActionsMenu({
                     Download Passwords CSV
                   </button>
                 )}
+                {downloadTemplateConfig && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (downloadTemplateConfig.disabled) {
+                        return;
+                      }
+                      downloadTemplateConfig.onDownload();
+                      close();
+                    }}
+                    className={`flex w-full items-center gap-2 px-4 py-2 text-left text-sm ${
+                      downloadTemplateConfig.disabled
+                        ? "text-gray-300 cursor-not-allowed"
+                        : "text-[#013300] hover:bg-gray-50"
+                    }`}
+                    aria-disabled={downloadTemplateConfig.disabled}
+                  >
+                    <ExportIcon />
+                    Download Template
+                  </button>
+                )}
               </>
             )}
             {afterExport.map(({ label, action, icon }) => (
@@ -242,6 +268,27 @@ export default function AccountActionsMenu({
                   >
                     <ExportIcon />
                     Download Passwords CSV
+                  </button>
+                )}
+                {downloadTemplateConfig && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (downloadTemplateConfig.disabled) {
+                        return;
+                      }
+                      downloadTemplateConfig.onDownload();
+                      close();
+                    }}
+                    className={`flex w-full items-center gap-2 px-4 py-2 text-left text-sm ${
+                      downloadTemplateConfig.disabled
+                        ? "text-gray-300 cursor-not-allowed"
+                        : "text-[#013300] hover:bg-gray-50"
+                    }`}
+                    aria-disabled={downloadTemplateConfig.disabled}
+                  >
+                    <ExportIcon />
+                    Download Template
                   </button>
                 )}
               </>
