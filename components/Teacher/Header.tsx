@@ -4,6 +4,7 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import ProfileDropdown from "../Common/ProfileDropdown";
 import { performClientLogout } from "@/lib/utils/logout";
+import { getStoredUserProfile } from "@/lib/utils/user-profile";
 
 interface TeacherHeaderProps {
   title?: string;
@@ -15,10 +16,33 @@ export default function TeacherHeader({ title, onSearch }: TeacherHeaderProps) {
   const [searchQuery, setSearchQuery] = React.useState("");
   const [showDropdown, setShowDropdown] = React.useState(false);
   const [showNotifications, setShowNotifications] = React.useState(false);
+  const [profileData, setProfileData] = React.useState({ name: "Teacher", email: "" });
   const profileBtnRef = React.useRef<HTMLButtonElement>(null);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const notificationBtnRef = React.useRef<HTMLButtonElement>(null);
   const notificationDropdownRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    async function loadProfile() {
+      try {
+        const storedProfile = getStoredUserProfile();
+        const userId = storedProfile?.userId;
+        if (!userId) return;
+
+        const response = await fetch(`/api/teacher/profile?userId=${userId}`, { cache: "no-store" });
+        const data = await response.json();
+        if (data.success && data.teacher) {
+          setProfileData({
+            name: data.teacher.lastName || data.teacher.name || "Teacher",
+            email: data.teacher.email || "",
+          });
+        }
+      } catch (error) {
+        console.error("Failed to load profile", error);
+      }
+    }
+    loadProfile();
+  }, []);
 
   // Hide dropdowns when clicking outside
   React.useEffect(() => {

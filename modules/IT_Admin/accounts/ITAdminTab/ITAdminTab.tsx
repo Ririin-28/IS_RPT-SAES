@@ -712,6 +712,13 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
     setUploadedPasswords([]);
   }, [uploadedPasswords]);
 
+  const handleDownloadTemplate = useCallback(() => {
+    const link = document.createElement('a');
+    link.href = '/it_admin/accounts/it_admin/IT Admin List  Template.xlsx';
+    link.download = 'IT Admin List Template.xlsx';
+    link.click();
+  }, []);
+
 
 
   return (
@@ -747,6 +754,10 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
               downloadPasswordsConfig={{
                 onDownload: handleDownloadPasswords,
                 disabled: uploadedPasswords.length === 0,
+              }}
+              downloadTemplateConfig={{
+                onDownload: handleDownloadTemplate,
+                disabled: false,
               }}
             />
           )}

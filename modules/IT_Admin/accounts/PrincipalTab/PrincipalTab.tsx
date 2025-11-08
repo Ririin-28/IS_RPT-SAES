@@ -668,6 +668,13 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
     setUploadedPasswords([]);
   }, [uploadedPasswords]);
 
+  const handleDownloadTemplate = useCallback(() => {
+    const link = document.createElement('a');
+    link.href = '/it_admin/accounts/principal/Principal List Template.xlsx';
+    link.download = 'Principal List Template.xlsx';
+    link.click();
+  }, []);
+
   return (
     <div>
       <div className="flex flex-row justify-between items-center mb-4 gap-4">
@@ -701,6 +708,10 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
               downloadPasswordsConfig={{
                 onDownload: handleDownloadPasswords,
                 disabled: uploadedPasswords.length === 0,
+              }}
+              downloadTemplateConfig={{
+                onDownload: handleDownloadTemplate,
+                disabled: false,
               }}
             />
           )}

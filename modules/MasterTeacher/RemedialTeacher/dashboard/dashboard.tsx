@@ -1,5 +1,5 @@
 "use client";
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Sidebar from "@/components/MasterTeacher/RemedialTeacher/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
 // Button Components
@@ -11,6 +11,45 @@ import DangerButton from "@/components/Common/Buttons/DangerButton";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
 import BodyText from "@/components/Common/Texts/BodyText";
+import { getStoredUserProfile } from "@/lib/utils/user-profile";
+
+type RemedialTeacherProfile = {
+  fullName: string;
+  role: string;
+  gradeHandled: string;
+  subjectAssigned: string;
+};
+
+type RemedialTeacherApiResponse = {
+  success: boolean;
+  profile?: {
+    firstName?: string | null;
+    middleName?: string | null;
+    lastName?: string | null;
+    grade?: string | null;
+    gradeLabel?: string | null;
+    subjectHandled?: string | null;
+    role?: string | null;
+  } | null;
+  error?: string;
+};
+
+const ROLE_LABELS: Record<string, string> = {
+  admin: "IT Admin",
+  it_admin: "IT Admin",
+  master_teacher: "Master Teacher",
+  masterteacher: "Master Teacher",
+  coordinator: "Coordinator",
+  teacher: "Teacher",
+};
+
+function formatRoleLabel(role?: string | null): string {
+  if (!role) {
+    return "Master Teacher";
+  }
+  const key = role.toLowerCase().replace(/[\s-]+/g, "_");
+  return ROLE_LABELS[key] ?? role;
+}
 
 // Import Chart components
 import {
@@ -68,6 +107,74 @@ function CustomDropdown({ value, onChange, options, className = "" }: {
 }
 
 export default function MasterTeacherDashboard() {
+  const [remedialProfile, setRemedialProfile] = useState<RemedialTeacherProfile | null>(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const [profileError, setProfileError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadRemedialProfile() {
+      setIsLoadingProfile(true);
+      setProfileError(null);
+      try {
+        const storedProfile = getStoredUserProfile();
+        const userId = storedProfile?.userId;
+
+        if (!userId) {
+          throw new Error("Missing user information. Please log in again.");
+        }
+
+        const response = await fetch(
+          `/api/teacher/profile?userId=${encodeURIComponent(String(userId))}`,
+          { cache: "no-store" },
+        );
+
+        const payload: RemedialTeacherApiResponse | null = await response.json().catch(() => null);
+
+        if (cancelled) {
+          return;
+        }
+
+        if (!response.ok || !payload?.success || !payload.profile) {
+          const message = payload?.error ?? "Unable to load profile.";
+          throw new Error(message);
+        }
+
+        const nameParts = [
+          payload.profile.firstName,
+          payload.profile.middleName,
+          payload.profile.lastName,
+        ].filter((part): part is string => typeof part === "string" && part.trim().length > 0);
+
+        const teacherName = nameParts.length > 0 ? nameParts.join(" ") : "Master Teacher";
+
+        setRemedialProfile({
+          fullName: teacherName,
+          role: formatRoleLabel(payload.profile.role ?? storedProfile?.role),
+          gradeHandled: payload.profile.gradeLabel?.trim() || payload.profile.grade?.trim() || "Not assigned",
+          subjectAssigned: "English, Filipino, Math",
+        });
+      } catch (error) {
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : "Failed to load profile.";
+          setProfileError(message);
+          setRemedialProfile(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingProfile(false);
+        }
+      }
+    }
+
+    loadRemedialProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Get today's date in simplified month format (same as Principal)
   const today = new Date();
   const monthShort = [
@@ -403,26 +510,40 @@ export default function MasterTeacherDashboard() {
               </div>
 
               <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg p-4 mb-6 min-w-full min-h-[120px] sm:p-5 sm:mb-7 md:p-6 md:mb-8">
-                <div className="flex flex-col w-full">
-                  <div className="flex flex-col mb-2 md:flex-row md:items-start md:justify-between md:mb-0">
-                    <div className="mb-3 md:mb-0 md:w-1/3">
-                      <TertiaryHeader title="Full Name:" />
-                      <BodyText title="Jane Smith" />
+                {isLoadingProfile ? (
+                  <div className="flex h-full items-center justify-center">
+                    <BodyText title="Loading profile..." />
+                  </div>
+                ) : profileError ? (
+                  <div className="flex h-full items-center justify-center">
+                    <BodyText title={profileError} />
+                  </div>
+                ) : remedialProfile ? (
+                  <div className="flex flex-col w-full">
+                    <div className="flex flex-col mb-2 md:flex-row md:items-start md:justify-between md:mb-0">
+                      <div className="mb-3 md:mb-0 md:w-1/3">
+                        <TertiaryHeader title="Full Name:" />
+                        <BodyText title={remedialProfile.fullName} />
+                      </div>
+                      <div className="mb-3 md:mb-0 md:w-1/3">
+                        <TertiaryHeader title="Position:" />
+                        <BodyText title={remedialProfile.role} />
+                      </div>
+                      <div className="mb-3 md:mb-0 md:w-1/3">
+                        <TertiaryHeader title="Grade Assigned:" />
+                        <BodyText title={remedialProfile.gradeHandled} />
+                      </div>
                     </div>
-                    <div className="mb-3 md:mb-0 md:w-1/3">
-                      <TertiaryHeader title="Position:" />
-                      <BodyText title="Master Teacher" />
-                    </div>
-                    <div className="mb-3 md:mb-0 md:w-1/3">
-                      <TertiaryHeader title="Grade Assigned:" />
-                      <BodyText title="Grades 4" />
+                    <div className="mt-3 md:mt-2">
+                      <TertiaryHeader title="Subject Assigned:" />
+                      <BodyText title={remedialProfile.subjectAssigned} />
                     </div>
                   </div>
-                  <div className="mt-3 md:mt-2">
-                    <TertiaryHeader title="Subject Assigned:" />
-                    <BodyText title="Mathematics, English, Filipino" />
+                ) : (
+                  <div className="flex h-full items-center justify-center">
+                    <BodyText title="No profile data available." />
                   </div>
-                </div>
+                )}
               </div>
 
               <hr className="border-gray-300 mb-4 sm:mb-5 md:mb-6" />

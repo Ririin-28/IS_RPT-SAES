@@ -1,7 +1,8 @@
 "use client";
 import Sidebar from "@/components/Teacher/Sidebar";
 import Header from "@/components/Teacher/Header";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { getStoredUserProfile } from "@/lib/utils/user-profile";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
@@ -11,17 +12,54 @@ export default function TeacherProfile() {
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [modalMessage, setModalMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
   const [formData, setFormData] = useState({
-    firstName: "Juan",
-    middleName: "Santos",
-    lastName: "Dela Cruz",
-    email: "teacher@saes.edu.ph",
-    contactNumber: "0912-345-6789",
-    grade: "1",
-    subject: "English, Filipino, Math",
-    position: "Teacher",
+    firstName: "",
+    middleName: "",
+    lastName: "",
+    email: "",
+    contactNumber: "",
+    grade: "",
+    room: "",
+    subject: "",
+    position: "",
     profilePicture: "",
   });
+  const [initialData, setInitialData] = useState<typeof formData | null>(null);
+
+  useEffect(() => {
+    async function loadProfile() {
+      try {
+        const storedProfile = getStoredUserProfile();
+        const userId = storedProfile?.userId;
+        if (!userId) return;
+
+        const response = await fetch(`/api/teacher/profile?userId=${userId}`, { cache: "no-store" });
+        const data = await response.json();
+        if (data.success && data.profile) {
+          const profileData = {
+            firstName: data.profile.firstName || "",
+            middleName: data.profile.middleName || "",
+            lastName: data.profile.lastName || "",
+            email: data.profile.email || "",
+            contactNumber: data.profile.contactNumber || "",
+            grade: data.profile.gradeNumber || data.profile.gradeRaw || "",
+            room: data.profile.room || "",
+            subject: data.profile.subjectHandled || "English, Filipino, Math",
+            position: data.profile.role ? data.profile.role.charAt(0).toUpperCase() + data.profile.role.slice(1).toLowerCase() : "Teacher",
+            profilePicture: "",
+          };
+          setFormData(profileData);
+          setInitialData(profileData);
+        }
+      } catch (error) {
+        console.error("Failed to load profile", error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadProfile();
+  }, []);
   const [passwordData, setPasswordData] = useState({
     currentPassword: "",
     newPassword: "",
@@ -36,11 +74,55 @@ export default function TeacherProfile() {
     setPasswordData({ ...passwordData, [e.target.name]: e.target.value });
   };
 
-  const handleSave = () => {
-    setIsEditing(false);
+  const handleSave = async () => {
+    try {
+      const storedProfile = getStoredUserProfile();
+      const userId = storedProfile?.userId;
+
+      if (!userId) {
+        setModalMessage("Unable to save: Missing user information.");
+        setShowModal(true);
+        return;
+      }
+
+      const response = await fetch(
+        `/api/teacher/profile?userId=${encodeURIComponent(String(userId))}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            firstName: formData.firstName,
+            middleName: formData.middleName,
+            lastName: formData.lastName,
+            email: formData.email,
+            contactNumber: formData.contactNumber,
+            grade: formData.grade,
+            room: formData.room,
+            subject: formData.subject,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData?.error || "Failed to save profile.");
+      }
+
+      setInitialData(formData);
+      setIsEditing(false);
+      setModalMessage("Profile updated successfully!");
+      setShowModal(true);
+    } catch (error) {
+      console.error("Failed to save profile", error);
+      setModalMessage(error instanceof Error ? error.message : "Failed to save profile.");
+      setShowModal(true);
+    }
   };
 
   const handleCancel = () => {
+    if (initialData) {
+      setFormData(initialData);
+    }
     setIsEditing(false);
   };
 
@@ -106,6 +188,11 @@ export default function TeacherProfile() {
         <main className="flex-1 overflow-y-auto">
           <div className="p-4 h-full sm:p-5 md:p-6">
             <div className="bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[400px] overflow-y-auto p-4 sm:p-5 md:p-6">
+              {isLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <p className="text-gray-600">Loading profile...</p>
+                </div>
+              ) : (
               <div className="max-w-4xl mx-auto">
                 <div className="flex flex-col items-center mb-6">
                   <div className="relative">
@@ -132,7 +219,7 @@ export default function TeacherProfile() {
                 </div>
 
                 <div className="bg-gray-50 rounded-lg border border-gray-200 p-5 mb-5">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Personal Information</h3>
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Personal Details</h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="space-y-1">
                       <label className="block text-sm font-medium text-gray-700">First Name</label>
@@ -187,7 +274,7 @@ export default function TeacherProfile() {
                 </div>
 
                 <div className="bg-gray-50 rounded-lg border border-gray-200 p-5 mb-5">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Contact Information</h3>
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Contact Details</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <label className="block text-sm font-medium text-gray-700">Email</label>
@@ -215,8 +302,8 @@ export default function TeacherProfile() {
                 </div>
 
                 <div className="bg-gray-50 rounded-lg border border-gray-200 p-5 mb-5">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Teaching Assignment</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Teaching Details</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                     <div className="space-y-1">
                       <label className="block text-sm font-medium text-gray-700">Position</label>
                       <div className="w-full bg-white/50 border border-gray-200 text-gray-700 rounded-md px-3 py-2 text-sm font-medium">
@@ -225,9 +312,32 @@ export default function TeacherProfile() {
                     </div>
                     <div className="space-y-1">
                       <label className="block text-sm font-medium text-gray-700">Grade Handled</label>
-                      <div className="w-full bg-gray-100 border border-gray-300 text-gray-700 rounded-md px-3 py-2 text-sm font-medium">
-                        Grade {formData.grade}
-                      </div>
+                      <select
+                        name="grade"
+                        value={formData.grade}
+                        onChange={handleInputChange}
+                        disabled={!isEditing}
+                        className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-600"
+                      >
+                        <option value="">Select Grade</option>
+                        <option value="1">Grade 1</option>
+                        <option value="2">Grade 2</option>
+                        <option value="3">Grade 3</option>
+                        <option value="4">Grade 4</option>
+                        <option value="5">Grade 5</option>
+                        <option value="6">Grade 6</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-sm font-medium text-gray-700">Room</label>
+                      <input
+                        type="text"
+                        name="room"
+                        value={formData.room}
+                        onChange={handleInputChange}
+                        disabled={!isEditing}
+                        className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-600"
+                      />
                     </div>
                     <div className="space-y-1">
                       <label className="block text-sm font-medium text-gray-700">Subject Handled</label>
@@ -293,6 +403,7 @@ export default function TeacherProfile() {
                   )}
                 </div>
               </div>
+              )}
             </div>
           </div>
         </main>
@@ -300,6 +411,7 @@ export default function TeacherProfile() {
       <ConfirmationModal
         isOpen={showModal}
         onClose={() => setShowModal(false)}
+        onConfirm={() => setShowModal(false)}
         title="Password Change"
         message={modalMessage}
       />

@@ -118,6 +118,94 @@ function buildName(
   return parts.join(" ");
 }
 
+export async function PUT(request: NextRequest) {
+  const url = new URL(request.url);
+  const userIdParam = url.searchParams.get("userId");
+
+  if (!userIdParam) {
+    return NextResponse.json(
+      { success: false, error: "Missing userId query parameter." },
+      { status: 400 },
+    );
+  }
+
+  const userId = Number(userIdParam);
+  if (!Number.isFinite(userId) || userId <= 0) {
+    return NextResponse.json({ success: false, error: "Invalid userId value." }, { status: 400 });
+  }
+
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ success: false, error: "Invalid request body." }, { status: 400 });
+  }
+
+  try {
+    const userColumns = await safeGetColumns("users");
+    const remedialColumns = await safeGetColumns(REMEDIAL_TABLE);
+    const coordinatorColumns = await safeGetColumns(COORDINATOR_TABLE);
+
+    const updates: string[] = [];
+    const params: any[] = [];
+
+    if (body.firstName !== undefined && userColumns.has("first_name")) {
+      updates.push("first_name = ?");
+      params.push(body.firstName?.trim() || null);
+    }
+    if (body.middleName !== undefined && userColumns.has("middle_name")) {
+      updates.push("middle_name = ?");
+      params.push(body.middleName?.trim() || null);
+    }
+    if (body.lastName !== undefined && userColumns.has("last_name")) {
+      updates.push("last_name = ?");
+      params.push(body.lastName?.trim() || null);
+    }
+    if (body.email !== undefined && userColumns.has("email")) {
+      updates.push("email = ?");
+      params.push(body.email?.trim() || null);
+    }
+    if (body.contactNumber !== undefined && userColumns.has("contact_number")) {
+      updates.push("contact_number = ?");
+      params.push(body.contactNumber?.trim() || null);
+    }
+
+    if (updates.length > 0) {
+      params.push(userId);
+      await query(`UPDATE users SET ${updates.join(", ")} WHERE user_id = ?`, params);
+    }
+
+    if (body.grade !== undefined && remedialColumns.size > 0) {
+      const gradeCol = remedialColumns.has("grade") ? "grade" : remedialColumns.has("grade_level") ? "grade_level" : null;
+      if (gradeCol) {
+        await query(`UPDATE \`${REMEDIAL_TABLE}\` SET ${gradeCol} = ? WHERE user_id = ?`, [body.grade?.trim() || null, userId]);
+      }
+    }
+
+    if (body.room !== undefined && remedialColumns.size > 0) {
+      const roomCol = remedialColumns.has("room") ? "room" : remedialColumns.has("room_number") ? "room_number" : null;
+      if (roomCol) {
+        await query(`UPDATE \`${REMEDIAL_TABLE}\` SET ${roomCol} = ? WHERE user_id = ?`, [body.room?.trim() || null, userId]);
+      }
+    }
+
+    if (body.subject !== undefined && coordinatorColumns.size > 0) {
+      const subjectCol = coordinatorColumns.has("subject_handled") ? "subject_handled" : coordinatorColumns.has("coordinator_subject") ? "coordinator_subject" : null;
+      if (subjectCol) {
+        await query(`UPDATE \`${COORDINATOR_TABLE}\` SET ${subjectCol} = ? WHERE user_id = ?`, [body.subject?.trim() || null, userId]);
+      }
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Failed to update master teacher profile", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to update profile." },
+      { status: 500 },
+    );
+  }
+}
+
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const userIdParam = url.searchParams.get("userId");
