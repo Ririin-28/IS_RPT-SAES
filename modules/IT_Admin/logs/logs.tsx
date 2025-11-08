@@ -169,7 +169,7 @@ export default function ITAdminLogs() {
           const rawStatus = typeof record.status === "string" ? record.status : "Offline";
           const statusLabel = rawStatus
             .toLowerCase()
-            .replace(/^[a-z]/, (char) => char.toUpperCase());
+            .replace(/^[a-z]/, (char: string) => char.toUpperCase());
 
           // Safe ID generation
           const id = record.id || record.logId || record.userId || index + 1;

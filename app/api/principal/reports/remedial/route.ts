@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { RowDataPacket } from "mysql2";
 import { query } from "@/lib/db";
 
 const TABLE_NAME = "remedial_reports" as const;
 
-type ReportRow = {
+type ReportRow = RowDataPacket & {
   id: number;
   user_id: number;
   subject: string;

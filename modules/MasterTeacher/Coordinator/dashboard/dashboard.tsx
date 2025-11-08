@@ -48,15 +48,18 @@ type CoordinatorProfile = {
 
 type CoordinatorApiResponse = {
   success: boolean;
-  profile?: {
-    firstName?: string | null;
-    middleName?: string | null;
-    lastName?: string | null;
-    grade?: string | null;
-    gradeLabel?: string | null;
-    subjectHandled?: string | null;
-    role?: string | null;
+  coordinator?: {
+    userId?: number | null;
+    name?: string | null;
+    gradeLevel?: string | null;
+    coordinatorSubject?: string | null;
+    subjectsHandled?: string | null;
+    section?: string | null;
+    email?: string | null;
+    contactNumber?: string | null;
   } | null;
+  activities?: Array<Record<string, unknown>> | null;
+  metadata?: Record<string, unknown> | null;
   error?: string;
 };
 

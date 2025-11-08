@@ -12,8 +12,8 @@ import AddScheduleModal from "./Modals/AddScheduleModal";
 import ActivityDetailModal from "./Modals/ActivityDetailModal";
 import DeleteConfirmationModal from "./Modals/DeleteConfirmationModal";
 import WeeklyScheduleModal, { WEEKDAY_ORDER, WeeklyScheduleFormData, Weekday } from "./Modals/WeeklyScheduleModal";
-import { getStoredUserProfile, StoredUserProfile } from "@/lib/utils/user-profile";
 import SendActivitiesModal from "./Modals/SendActivitiesModal";
+import { getStoredUserProfile, StoredUserProfile } from "@/lib/utils/user-profile";
 import * as XLSX from "xlsx";
 
 interface Activity {
@@ -27,7 +27,7 @@ interface Activity {
   gradeLevel?: string;
   subject?: string;
   isWeeklyTemplate?: boolean;
-  weekRef?: string;
+  weekRef?: string | null;
   status?: string | null;
   planBatchId?: string | null;
   requestedAt?: string | null;
@@ -81,11 +81,11 @@ const TOAST_TONE_STYLES: Record<"success" | "info" | "error", string> = {
   error: "bg-red-600 text-white border border-red-500",
 };
 
-const normalizeStatusLabel = (value: string | null | undefined): string | null => {
-  if (!value) {
+const normalizeStatusLabel = (value: unknown): string | null => {
+  if (value === null || value === undefined) {
     return null;
   }
-  const trimmed = value.trim();
+  const trimmed = String(value).trim();
   if (!trimmed) {
     return null;
   }
@@ -106,7 +106,11 @@ const isActivityLocked = (activity: Activity | null | undefined): boolean => {
   if (!activity?.status) {
     return false;
   }
-  return activity.status.toLowerCase().includes("approve");
+  const normalized = normalizeStatusLabel(activity.status);
+  if (normalized) {
+    return normalized === "Approved";
+  }
+  return String(activity.status).toLowerCase().includes("approve");
 };
 
 const STATUS_TONE_OVERRIDES: Record<string, ActivityTone> = {
@@ -817,6 +821,9 @@ export default function MasterTeacherCalendar() {
 
         if (Array.isArray(payload.activities)) {
           const gradeForActivities = normalizeGradeLabel(resolvedGrade ?? gradeLevel ?? null);
+          let droppedInvalid = 0;
+          let droppedGrade = 0;
+          let droppedSubject = 0;
 
           const parsedActivities: Activity[] = (payload.activities as Array<Record<string, unknown>>)
             .map((item, index): Activity | null => {
@@ -824,17 +831,19 @@ export default function MasterTeacherCalendar() {
               const rawStart =
                 (item.startDate as string | null | undefined) ??
                 (item.start as string | null | undefined) ??
-                (item.date as string | null | undefined) ??
                 (item.start_time as string | null | undefined) ??
                 (item.startTime as string | null | undefined) ??
+                (item.date as string | null | undefined) ??
                 null;
-              if (!rawStart) {
+
+              const start =
+                parseTimestamp(rawStart) ??
+                parseTimestamp(item.date as string | null | undefined);
+
+              if (!start) {
                 return null;
               }
-              const start = new Date(rawStart);
-              if (Number.isNaN(start.getTime())) {
-                return null;
-              }
+
               const rawEnd =
                 (item.endDate as string | null | undefined) ??
                 (item.end as string | null | undefined) ??
@@ -842,9 +851,10 @@ export default function MasterTeacherCalendar() {
                 (item.end_time as string | null | undefined) ??
                 (item.endTime as string | null | undefined) ??
                 null;
-              const end = rawEnd ? new Date(rawEnd) : new Date(start.getTime() + 60 * 60 * 1000);
-              if (Number.isNaN(end.getTime())) {
-                end.setTime(start.getTime() + 60 * 60 * 1000);
+
+              let end = rawEnd ? parseTimestamp(rawEnd) : null;
+              if (!end) {
+                end = new Date(start.getTime() + 60 * 60 * 1000);
               }
 
               const activityGrade =
@@ -922,23 +932,49 @@ export default function MasterTeacherCalendar() {
             })
             .filter((activity): activity is Activity => {
               if (!activity) {
+                droppedInvalid += 1;
                 return false;
               }
               if (gradeForActivities && activity.gradeLevel) {
                 const normalizedActivityGrade = normalizeGradeLabel(activity.gradeLevel);
                 if (normalizedActivityGrade && normalizedActivityGrade !== gradeForActivities) {
+                  droppedGrade += 1;
                   return false;
                 }
               }
               if (subjectArray.length > 0) {
                 const subjectValue = activity.subject;
                 if (!subjectValue) {
+                  droppedSubject += 1;
                   return false;
                 }
-                return subjectArray.some((subject) => subject.toLowerCase() === subjectValue.toLowerCase());
+                const allowedSubject = subjectArray.some(
+                  (subject) => subject.toLowerCase() === subjectValue.toLowerCase(),
+                );
+                if (!allowedSubject) {
+                  droppedSubject += 1;
+                  return false;
+                }
               }
               return true;
             });
+
+          if (payload.activities.length > 0) {
+            const approvedCount = parsedActivities.filter((activity) => activity.status === "Approved").length;
+            const pendingCount = parsedActivities.filter((activity) => activity.status === "Pending").length;
+            const declinedCount = parsedActivities.filter((activity) => activity.status === "Declined").length;
+            // eslint-disable-next-line no-console
+            console.log("Coordinator calendar sync", {
+              sourceCount: payload.activities.length,
+              parsedCount: parsedActivities.length,
+              approvedCount,
+              pendingCount,
+              declinedCount,
+              droppedInvalid,
+              droppedGrade,
+              droppedSubject,
+            });
+          }
 
           setActivities(parsedActivities);
         } else {
@@ -950,9 +986,9 @@ export default function MasterTeacherCalendar() {
         if (error instanceof DOMException && error.name === "AbortError") {
           return;
         }
-  console.error("Failed to load coordinator calendar context", error);
-  setAllowedSubjects([]);
-  setProfileError("Unable to load coordinator details right now. Please refresh to retry.");
+        console.error("Failed to load coordinator calendar context", error);
+        setAllowedSubjects([]);
+        setProfileError("Unable to load coordinator details right now. Please refresh to retry.");
       } finally {
         setProfileLoading(false);
       }
@@ -1147,7 +1183,6 @@ export default function MasterTeacherCalendar() {
       date: "",
       description: "",
       teachers: [],
-      subject: allowedSubjects[0] ?? "",
     });
     clearErrors();
   };
@@ -1167,6 +1202,7 @@ export default function MasterTeacherCalendar() {
       if (!parsed) {
         return null;
       }
+
       const candidate = new Date(parsed.y, (parsed.m ?? 1) - 1, parsed.d ?? 1);
       if (Number.isNaN(candidate.getTime())) {
         return null;
@@ -2024,6 +2060,18 @@ export default function MasterTeacherCalendar() {
   const weeklyTimeLabel = weeklySchedule
     ? `${formatTimeLabel(weeklySchedule.startTime)} - ${formatTimeLabel(weeklySchedule.endTime)}`
     : null;
+  const weeklySubjectSummary = useMemo(() => {
+    if (!weeklySchedule) {
+      return null;
+    }
+    for (const day of WEEKDAY_ORDER) {
+      const subject = weeklySchedule.subjects?.[day];
+      if (subject && subject.trim().length > 0) {
+        return subject;
+      }
+    }
+    return null;
+  }, [weeklySchedule]);
 
   const sendableActivities = useMemo(
     () => activities.filter((activity) => !isActivityLocked(activity)),
@@ -2218,17 +2266,20 @@ export default function MasterTeacherCalendar() {
                   </div>
 
                   {weeklySchedule && (
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                      {WEEKDAY_ORDER.map((day) => (
-                        <div
-                          key={day}
-                          className="rounded-xl border border-gray-200 bg-white px-5 py-4 shadow-sm"
-                        >
-                          <div className="text-sm font-semibold uppercase tracking-wide text-gray-500">{day}</div>
-                          <div className="mt-1 text-lg font-semibold text-black">{weeklySchedule.subjects[day]}</div>
-                          <div className="mt-2 text-sm text-gray-600">{weeklyTimeLabel}</div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      <div className="rounded-xl border border-gray-200 bg-white px-5 py-4 shadow-sm">
+                        <div className="text-sm font-semibold uppercase tracking-wide text-gray-500">Subject</div>
+                        <div className="mt-1 text-lg font-semibold text-black">
+                          {weeklySubjectSummary ?? "Subject not assigned"}
                         </div>
-                      ))}
+                        {weeklyTimeLabel && <div className="mt-2 text-sm text-gray-600">{weeklyTimeLabel}</div>}
+                      </div>
+                      <div className="rounded-xl border border-gray-200 bg-white px-5 py-4 shadow-sm">
+                        <div className="text-sm font-semibold uppercase tracking-wide text-gray-500">Week Coverage</div>
+                        <div className="mt-1 text-sm text-gray-600">
+                          {WEEKDAY_ORDER.join(", ")}
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>

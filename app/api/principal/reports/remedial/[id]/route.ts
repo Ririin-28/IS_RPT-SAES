@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Buffer } from "node:buffer";
+import type { RowDataPacket } from "mysql2";
 import { query } from "@/lib/db";
 
 const TABLE_NAME = "remedial_reports" as const;
 
-type ReportRow = {
+type ReportRow = RowDataPacket & {
   file_name: string;
   pdf: Buffer;
 };
@@ -46,7 +47,7 @@ export async function GET(request: NextRequest, context: { params: { id: string 
     const row = rows[0];
     const fileName = (row.file_name || `remedial_report_${id}.pdf`).replace(/"/g, "'");
 
-    return new NextResponse(row.pdf, {
+    return new NextResponse(new Uint8Array(row.pdf), {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
