@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar from "@/components/MasterTeacher/Coordinator/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
@@ -19,22 +19,19 @@ import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
-  PointElement,
-  LineElement,
   BarElement,
   ArcElement,
   Title,
   Tooltip,
   Legend,
 } from 'chart.js';
-import { Bar, Pie, Line } from 'react-chartjs-2';
+import { Bar, Pie } from 'react-chartjs-2';
+import type { RemedialStudentRecord, RemedialStudentResponse } from "../../RemedialTeacher/report/types";
 
 // Register ChartJS components
 ChartJS.register(
   CategoryScale,
   LinearScale,
-  PointElement,
-  LineElement,
   BarElement,
   ArcElement,
   Title,
@@ -76,6 +73,152 @@ function formatRoleLabel(role?: string | null): string {
   const key = role.toLowerCase().replace(/[\s-]+/g, "_");
   return ROLE_LABELS[key] ?? role;
 }
+
+type CoordinatorSubject = "Math" | "English" | "Filipino";
+type ProgressMonthKey = "starting" | "sept" | "oct" | "dec" | "feb";
+
+const PROGRESS_MONTHS: Array<{ key: ProgressMonthKey; label: string }> = [
+  { key: "starting", label: "Starting" },
+  { key: "sept", label: "September" },
+  { key: "oct", label: "October" },
+  { key: "dec", label: "December" },
+  { key: "feb", label: "February" },
+];
+
+const SUBJECT_PROGRESS_FIELDS: Record<CoordinatorSubject, Record<ProgressMonthKey, keyof RemedialStudentRecord>> = {
+  English: {
+    starting: "englishStartingLevel",
+    sept: "englishSeptLevel",
+    oct: "englishOctLevel",
+    dec: "englishDecLevel",
+    feb: "englishFebLevel",
+  },
+  Filipino: {
+    starting: "filipinoStartingLevel",
+    sept: "filipinoSeptLevel",
+    oct: "filipinoOctLevel",
+    dec: "filipinoDecLevel",
+    feb: "filipinoFebLevel",
+  },
+  Math: {
+    starting: "mathStartingLevel",
+    sept: "mathSeptLevel",
+    oct: "mathOctLevel",
+    dec: "mathDecLevel",
+    feb: "mathFebLevel",
+  },
+};
+
+const LEVEL_COLOR_PALETTE = [
+  "rgba(239, 68, 68, 0.85)",
+  "rgba(249, 115, 22, 0.85)",
+  "rgba(234, 179, 8, 0.85)",
+  "rgba(34, 197, 94, 0.85)",
+  "rgba(59, 130, 246, 0.85)",
+  "rgba(99, 102, 241, 0.85)",
+  "rgba(139, 92, 246, 0.85)",
+  "rgba(236, 72, 153, 0.85)",
+];
+
+const sanitize = (value: unknown): string => {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  const trimmed = String(value).trim();
+  return trimmed.length ? trimmed : "";
+};
+
+type LevelDistributionResult = {
+  labels: string[];
+  datasets: Array<{
+    label: string;
+    data: number[];
+    backgroundColor: string;
+    stack: string;
+  }>;
+  summary: string;
+};
+
+const buildLevelDistribution = (
+  students: RemedialStudentRecord[],
+  subject: CoordinatorSubject,
+): LevelDistributionResult => {
+  if (!students.length) {
+    return {
+      labels: PROGRESS_MONTHS.map((month) => month.label),
+      datasets: [],
+      summary: "No students assigned yet.",
+    };
+  }
+
+  const fieldMap = SUBJECT_PROGRESS_FIELDS[subject];
+  const levelSet = new Set<string>();
+  const countsByMonth = new Map<ProgressMonthKey, Map<string, number>>();
+
+  PROGRESS_MONTHS.forEach(({ key }) => {
+    countsByMonth.set(key, new Map<string, number>());
+  });
+
+  students.forEach((student) => {
+    PROGRESS_MONTHS.forEach(({ key }) => {
+      const field = fieldMap[key];
+      const value = sanitize(student[field]);
+      if (!value) {
+        return;
+      }
+      levelSet.add(value);
+      const monthCounts = countsByMonth.get(key);
+      if (!monthCounts) {
+        return;
+      }
+      monthCounts.set(value, (monthCounts.get(value) ?? 0) + 1);
+    });
+  });
+
+  const levels = Array.from(levelSet).sort((a, b) => a.localeCompare(b));
+  const labels = PROGRESS_MONTHS.map((month) => month.label);
+
+  const datasets = levels.map((level, index) => {
+    const color = LEVEL_COLOR_PALETTE[index % LEVEL_COLOR_PALETTE.length];
+    const data = PROGRESS_MONTHS.map(({ key }) => countsByMonth.get(key)?.get(level) ?? 0);
+    return {
+      label: level,
+      data,
+      backgroundColor: color,
+      stack: "levels",
+    };
+  });
+
+  const latestMonthWithData = [...PROGRESS_MONTHS].reverse().find(({ key }) => {
+    const monthCounts = countsByMonth.get(key);
+    if (!monthCounts) {
+      return false;
+    }
+    let total = 0;
+    monthCounts.forEach((count) => {
+      total += count;
+    });
+    return total > 0;
+  });
+
+  let summary = "No progress records available yet.";
+  if (latestMonthWithData) {
+    const monthCounts = countsByMonth.get(latestMonthWithData.key);
+    if (monthCounts && monthCounts.size > 0) {
+      let topLevel = "";
+      let topCount = 0;
+      monthCounts.forEach((count, level) => {
+        if (count > topCount) {
+          topLevel = level;
+          topCount = count;
+        }
+      });
+      summary = `${topLevel || "No level"} is the most common level in ${latestMonthWithData.label}.`;
+    }
+  }
+
+  return { labels, datasets, summary };
+};
 
 // Custom styled dropdown component
 function CustomDropdown({ value, onChange, options, className = "" }: {
@@ -159,9 +302,31 @@ export default function MasterTeacherDashboard() {
     router.push(path);
   }, [router]);
 
+  const storedProfile = useMemo(() => getStoredUserProfile(), []);
+
+  const userId = useMemo(() => {
+    if (!storedProfile) {
+      return null;
+    }
+    const rawId = storedProfile.userId;
+    if (typeof rawId === "number" && Number.isFinite(rawId)) {
+      return rawId;
+    }
+    if (typeof rawId === "string") {
+      const parsed = Number.parseInt(rawId, 10);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+    return null;
+  }, [storedProfile]);
+
   const [coordinatorProfile, setCoordinatorProfile] = useState<CoordinatorProfile | null>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [students, setStudents] = useState<RemedialStudentRecord[]>([]);
+  const [isLoadingStudents, setIsLoadingStudents] = useState(true);
+  const [studentsError, setStudentsError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -170,9 +335,6 @@ export default function MasterTeacherDashboard() {
       setIsLoadingProfile(true);
       setProfileError(null);
       try {
-        const storedProfile = getStoredUserProfile();
-        const userId = storedProfile?.userId;
-
         if (!userId) {
           throw new Error("Missing user information. Please log in again.");
         }
@@ -228,7 +390,51 @@ export default function MasterTeacherDashboard() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [storedProfile, userId]);
+
+  useEffect(() => {
+    if (userId === null) {
+      setStudents([]);
+      setIsLoadingStudents(false);
+      setStudentsError("Unable to identify the current user. Please sign in again.");
+      return;
+    }
+
+    const controller = new AbortController();
+
+    const loadStudents = async () => {
+      setIsLoadingStudents(true);
+      setStudentsError(null);
+      try {
+        const response = await fetch(
+          `/api/master_teacher/remedial/students?userId=${encodeURIComponent(String(userId))}`,
+          { cache: "no-store", signal: controller.signal },
+        );
+        const payload = (await response.json()) as RemedialStudentResponse;
+        if (!response.ok || !payload.success || !Array.isArray(payload.students)) {
+          throw new Error(payload.error ?? "Failed to load students.");
+        }
+        setStudents(payload.students);
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        console.error("Failed to load coordinator student data", error);
+        setStudents([]);
+        setStudentsError(error instanceof Error ? error.message : "Failed to load students.");
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoadingStudents(false);
+        }
+      }
+    };
+
+    loadStudents();
+
+    return () => {
+      controller.abort();
+    };
+  }, [userId]);
 
   // Get today's date in simplified month format (same as Principal)
   const today = new Date();
@@ -237,211 +443,16 @@ export default function MasterTeacherDashboard() {
     'Jul.', 'Aug.', 'Sep.', 'Oct.', 'Nov.', 'Dec.'
   ];
   const dateToday = `${monthShort[today.getMonth()]} ${today.getDate()}, ${today.getFullYear()}`;
-  const [selectedPeriod, setSelectedPeriod] = useState('monthly');
-  const [selectedSubject, setSelectedSubject] = useState('Math');
-  const [selectedMonth, setSelectedMonth] = useState('March');
+  const [selectedSubject, setSelectedSubject] = useState<CoordinatorSubject>('Math');
 
   // Sample data for the teacher's own students
   const [pendingApprovals] = useState(3);
   
-  // Months data
-  const months = ['September', 'October', 'November', 'December', 'January', 'February', 'March'];
-  
-  // Enhanced student performance data by month for each subject
-  const performanceData = {
-    Math: {
-      weekly: {
-        labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
-        datasets: [
-          {
-            label: 'Average Proficiency Level',
-            data: [1.8, 2.2, 2.7, 3.1],
-            borderColor: 'rgba(79, 70, 229, 1)',
-            backgroundColor: 'rgba(79, 70, 229, 0.2)',
-            tension: 0.4,
-            pointBackgroundColor: 'rgba(79, 70, 229, 1)',
-            pointBorderColor: '#fff',
-            pointHoverRadius: 6,
-            pointRadius: 4,
-          },
-        ],
-      },
-      monthly: {
-        labels: months,
-        datasets: [
-          {
-            label: 'Average Proficiency Level',
-            data: [1.2, 1.8, 2.3, 2.7, 3.2, 3.8, 4.2],
-            borderColor: 'rgba(79, 70, 229, 1)',
-            backgroundColor: 'rgba(79, 70, 229, 0.2)',
-            tension: 0.4,
-            pointBackgroundColor: 'rgba(79, 70, 229, 1)',
-            pointBorderColor: '#fff',
-            pointHoverRadius: 6,
-            pointRadius: 4,
-          },
-        ],
-      },
-    },
-    English: {
-      weekly: {
-        labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
-        datasets: [
-          {
-            label: 'Average Proficiency Level',
-            data: [2.1, 2.5, 3.0, 3.4],
-            borderColor: 'rgba(220, 38, 38, 1)',
-            backgroundColor: 'rgba(220, 38, 38, 0.2)',
-            tension: 0.4,
-            pointBackgroundColor: 'rgba(220, 38, 38, 1)',
-            pointBorderColor: '#fff',
-            pointHoverRadius: 6,
-            pointRadius: 4,
-          },
-        ],
-      },
-      monthly: {
-        labels: months,
-        datasets: [
-          {
-            label: 'Average Proficiency Level',
-            data: [1.5, 2.0, 2.6, 3.1, 3.5, 4.0, 4.4],
-            borderColor: 'rgba(220, 38, 38, 1)',
-            backgroundColor: 'rgba(220, 38, 38, 0.2)',
-            tension: 0.4,
-            pointBackgroundColor: 'rgba(220, 38, 38, 1)',
-            pointBorderColor: '#fff',
-            pointHoverRadius: 6,
-            pointRadius: 4,
-          },
-        ],
-      },
-    },
-    Filipino: {
-      weekly: {
-        labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
-        datasets: [
-          {
-            label: 'Average Proficiency Level',
-            data: [1.9, 2.3, 2.8, 3.2],
-            borderColor: 'rgba(234, 88, 12, 1)',
-            backgroundColor: 'rgba(234, 88, 12, 0.2)',
-            tension: 0.4,
-            pointBackgroundColor: 'rgba(234, 88, 12, 1)',
-            pointBorderColor: '#fff',
-            pointHoverRadius: 6,
-            pointRadius: 4,
-          },
-        ],
-      },
-      monthly: {
-        labels: months,
-        datasets: [
-          {
-            label: 'Average Proficiency Level',
-            data: [1.4, 1.9, 2.4, 2.9, 3.3, 3.7, 4.0],
-            borderColor: 'rgba(234, 88, 12, 1)',
-            backgroundColor: 'rgba(234, 88, 12, 0.2)',
-            tension: 0.4,
-            pointBackgroundColor: 'rgba(234, 88, 12, 1)',
-            pointBorderColor: '#fff',
-            pointHoverRadius: 6,
-            pointRadius: 4,
-          },
-        ],
-      },
-    },
-  };
 
-  // Student distribution by level for current month
-  const getMonthlyLevelData = () => {
-    switch(selectedSubject) {
-      case 'English':
-        return {
-          labels: ['Non-Reader', 'Syllable Reader', 'Word Reader', 'Phrase Reader', 'Sentence Reader', 'Paragraph Reader'],
-          datasets: [
-            {
-              label: 'Students',
-              data: [2, 3, 4, 5, 4, 2], // March data for English
-              backgroundColor: [
-                'rgba(239, 68, 68, 0.8)',
-                'rgba(249, 115, 22, 0.8)',
-                'rgba(234, 179, 8, 0.8)',
-                'rgba(34, 197, 94, 0.8)',
-                'rgba(59, 130, 246, 0.8)',
-                'rgba(139, 92, 246, 0.8)',
-              ],
-              borderColor: [
-                'rgba(239, 68, 68, 1)',
-                'rgba(249, 115, 22, 1)',
-                'rgba(234, 179, 8, 1)',
-                'rgba(34, 197, 94, 1)',
-                'rgba(59, 130, 246, 1)',
-                'rgba(139, 92, 246, 1)',
-              ],
-              borderWidth: 1,
-            },
-          ],
-        };
-      case 'Filipino':
-        return {
-          labels: ['Non-Reader', 'Syllable Reader', 'Word Reader', 'Phrase Reader', 'Sentence Reader', 'Paragraph Reader'],
-          datasets: [
-            {
-              label: 'Students',
-              data: [1, 2, 5, 6, 4, 2], // March data for Filipino
-              backgroundColor: [
-                'rgba(239, 68, 68, 0.8)',
-                'rgba(249, 115, 22, 0.8)',
-                'rgba(234, 179, 8, 0.8)',
-                'rgba(34, 197, 94, 0.8)',
-                'rgba(59, 130, 246, 0.8)',
-                'rgba(139, 92, 246, 0.8)',
-              ],
-              borderColor: [
-                'rgba(239, 68, 68, 1)',
-                'rgba(249, 115, 22, 1)',
-                'rgba(234, 179, 8, 1)',
-                'rgba(34, 197, 94, 1)',
-                'rgba(59, 130, 246, 1)',
-                'rgba(139, 92, 246, 1)',
-              ],
-              borderWidth: 1,
-            },
-          ],
-        };
-      case 'Math':
-        return {
-          labels: ['Emerging - Not Proficient', 'Emerging - Low Proficient', 'Developing - Nearly Proficient', 'Transitioning - Proficient', 'At Grade Level - Highly Proficient'],
-          datasets: [
-            {
-              label: 'Students',
-              data: [1, 2, 5, 7, 5], // March data for Math
-              backgroundColor: [
-                'rgba(239, 68, 68, 0.8)',
-                'rgba(249, 115, 22, 0.8)',
-                'rgba(234, 179, 8, 0.8)',
-                'rgba(34, 197, 94, 0.8)',
-                'rgba(139, 92, 246, 0.8)',
-              ],
-              borderColor: [
-                'rgba(239, 68, 68, 1)',
-                'rgba(249, 115, 22, 1)',
-                'rgba(234, 179, 8, 1)',
-                'rgba(34, 197, 94, 1)',
-                'rgba(139, 92, 246, 1)',
-              ],
-              borderWidth: 1,
-            },
-          ],
-        };
-      default:
-        return {
-          labels: [],
-          datasets: [],
-        };
-    }
-  };
+  const levelDistribution = useMemo(
+    () => buildLevelDistribution(students, selectedSubject),
+    [selectedSubject, students],
+  );
 
   // Pending approvals data
   const approvalsData = {
@@ -463,61 +474,6 @@ export default function MasterTeacherDashboard() {
   };
 
   // Chart options
-  const barOptions = {
-    responsive: true,
-    plugins: {
-      legend: {
-        position: 'top' as const,
-      },
-    },
-    maintainAspectRatio: false,
-  };
-
-  const lineOptions = {
-    responsive: true,
-    plugins: {
-      legend: {
-        position: 'top' as const,
-      },
-    },
-    scales: {
-      y: {
-        beginAtZero: true,
-        max: 6,
-        ticks: {
-          stepSize: 1,
-          callback: function(value: any) {
-            // Custom labels for y-axis based on subject
-            if (selectedSubject === 'Math') {
-              const mathLevels = [
-                '',
-                'Emerging - Not Proficient',
-                'Emerging - Low Proficient',
-                'Developing - Nearly Proficient',
-                'Transitioning - Proficient',
-                'At Grade Level',
-                ''
-              ];
-              return mathLevels[value] || '';
-            } else {
-              const literacyLevels = [
-                '',
-                'Non-Reader',
-                'Syllable Reader',
-                'Word Reader',
-                'Phrase Reader',
-                'Sentence Reader',
-                'Paragraph Reader'
-              ];
-              return literacyLevels[value] || '';
-            }
-          }
-        }
-      },
-    },
-    maintainAspectRatio: false,
-  };
-
   const pieOptions = {
     responsive: true,
     plugins: {
@@ -528,15 +484,39 @@ export default function MasterTeacherDashboard() {
     maintainAspectRatio: false,
   };
 
-  const monthlyBarOptions = {
-    responsive: true,
-    plugins: {
-      legend: {
-        display: false,
+  const stackedBarOptions = useMemo(
+    () => ({
+      responsive: true,
+      plugins: {
+        legend: {
+          position: 'top' as const,
+        },
+        title: {
+          display: true,
+          text: `${selectedSubject} Levels by Month`,
+          font: {
+            size: 16,
+            weight: 'bold' as const,
+          },
+        },
       },
-    },
-    maintainAspectRatio: false,
-  };
+      scales: {
+        x: {
+          stacked: true,
+        },
+        y: {
+          stacked: true,
+          beginAtZero: true,
+          ticks: {
+            stepSize: 1,
+            precision: 0,
+          },
+        },
+      },
+      maintainAspectRatio: false,
+    }),
+    [selectedSubject],
+  );
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
@@ -603,7 +583,7 @@ export default function MasterTeacherDashboard() {
               </div>
               <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2 sm:gap-5 sm:mb-7 lg:grid-cols-4 lg:gap-6 lg:mb-8">
                 <OverviewCard
-                  value={20}
+                  value={isLoadingStudents ? '—' : students.length}
                   label="Handled Students"
                   icon={
                     <svg width="38" height="38" fill="none" viewBox="0 0 24 24">
@@ -664,60 +644,6 @@ export default function MasterTeacherDashboard() {
                   </div>
                 </div>
 
-                {/* Student Performance */}
-                <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg p-6">
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
-                    <TertiaryHeader title="Student Performance" />
-                    <div className="flex space-x-2 mt-2 md:mt-0">
-                      <div className="w-32">
-                        <CustomDropdown
-                          value={selectedPeriod.charAt(0).toUpperCase() + selectedPeriod.slice(1)}
-                          onChange={(e) => setSelectedPeriod(e.target.value.toLowerCase())}
-                          options={['Monthly', 'Weekly']}
-                        />
-                      </div>
-                      <div className="w-32">
-                        <CustomDropdown
-                          value={selectedSubject}
-                          onChange={(e) => setSelectedSubject(e.target.value)}
-                          options={['Math', 'English', 'Filipino']}
-                        />
-                      </div>
-                      {selectedPeriod === 'monthly' && (
-                        <div className="w-36">
-                          <CustomDropdown
-                            value={selectedMonth}
-                            onChange={(e) => setSelectedMonth(e.target.value)}
-                            options={months}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="h-96 mt-4">
-                    <Line 
-                      options={{
-                        ...lineOptions,
-                        plugins: {
-                          ...lineOptions.plugins,
-                          title: {
-                            display: true,
-                            text: `Average ${selectedSubject} Proficiency`,
-                            font: {
-                              size: 16,
-                              weight: 'bold',
-                            }
-                          },
-                        }
-                      }} 
-                      data={performanceData[selectedSubject as keyof typeof performanceData][selectedPeriod as keyof typeof performanceData.Math]} 
-                    />
-                  </div>
-                  <div className="mt-4 text-sm text-gray-600">
-                    <p className="font-medium">Overall improvement: +3.0 levels since September</p>
-                  </div>
-                </div>
-
                 {/* Student Distribution by Level */}
                 <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg p-6">
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
@@ -726,40 +652,31 @@ export default function MasterTeacherDashboard() {
                       <div className="w-32">
                         <CustomDropdown
                           value={selectedSubject}
-                          onChange={(e) => setSelectedSubject(e.target.value)}
+                          onChange={(e) => setSelectedSubject(e.target.value as CoordinatorSubject)}
                           options={['Math', 'English', 'Filipino']}
-                        />
-                      </div>
-                      <div className="w-36">
-                        <CustomDropdown
-                          value={selectedMonth}
-                          onChange={(e) => setSelectedMonth(e.target.value)}
-                          options={months}
                         />
                       </div>
                     </div>
                   </div>
                   <div className="h-96 mt-4">
-                    <Bar 
-                      options={{
-                        ...monthlyBarOptions,
-                        plugins: {
-                          ...monthlyBarOptions.plugins,
-                          title: {
-                            display: true,
-                            text: `${selectedSubject} Levels for ${selectedMonth}`,
-                            font: {
-                              size: 16,
-                              weight: 'bold',
-                            }
-                          },
-                        }
-                      }} 
-                      data={getMonthlyLevelData()} 
-                    />
+                    {isLoadingStudents ? (
+                      <div className="flex h-full items-center justify-center text-sm text-gray-500">Loading distribution...</div>
+                    ) : studentsError ? (
+                      <div className="flex h-full items-center justify-center text-sm text-red-600">{studentsError}</div>
+                    ) : levelDistribution.datasets.length === 0 ? (
+                      <div className="flex h-full items-center justify-center text-sm text-gray-500">No progress data available yet.</div>
+                    ) : (
+                      <Bar 
+                        options={stackedBarOptions}
+                        data={{
+                          labels: levelDistribution.labels,
+                          datasets: levelDistribution.datasets,
+                        }} 
+                      />
+                    )}
                   </div>
                   <div className="mt-4 text-sm text-gray-600">
-                    <p className="font-medium">Most students are at {selectedSubject === 'Math' ? 'Transitioning - Proficient' : 'Phrase Reader'} level</p>
+                    <p className="font-medium">{studentsError ? 'Unable to summarize progress data.' : levelDistribution.summary}</p>
                   </div>
                 </div>
               </div>

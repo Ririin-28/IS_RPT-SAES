@@ -61,7 +61,7 @@ export default function ITAdminWelcome() {
         <h2 className="text-xl md:text-2xl font-semibold text-green-900 mb-4 text-center pb-12">
           Welcome,
           <br />
-          IT Admin!
+          Admin!
         </h2>
   <h1 className="text-2xl md:text-6xl font-bold text-green-900 text-center mb-8">{displayName}</h1>
         <div className="text-xl md:text-2xl text-green-800 font-semibold text-center flex items-center justify-center">

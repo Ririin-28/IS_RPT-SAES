@@ -13,6 +13,8 @@ const ROLE_VARIANTS: Record<string, string[]> = {
   student: ["student", "students", "learner", "pupil"],
 };
 
+const ACTIVE_WINDOW_MS = 10 * 60 * 1000;
+
 const ROLE_LOOKUP = (() => {
   const lookup = new Map<string, string>();
   for (const [canonical, variants] of Object.entries(ROLE_VARIANTS)) {
@@ -82,6 +84,26 @@ function normalizeName(row: LogRow): string | null {
   return username && username.trim().length > 0 ? username : null;
 }
 
+function determineStatusFromIso(
+  loginIso: string | null,
+  loggedOutIso?: string | null
+): "Online" | "Offline" {
+  if (loggedOutIso) {
+    return "Offline";
+  }
+
+  if (!loginIso) {
+    return "Offline";
+  }
+
+  const timestamp = Date.parse(loginIso);
+  if (Number.isNaN(timestamp)) {
+    return "Offline";
+  }
+
+  return Date.now() - timestamp <= ACTIVE_WINDOW_MS ? "Online" : "Offline";
+}
+
 export async function GET(request: NextRequest) {
   try {
     const hasAccountLogs = await tableExists("account_logs");
@@ -109,6 +131,7 @@ export async function GET(request: NextRequest) {
       role: columns.has("role") ? "role" : null,
       createdAt: columns.has("created_at") ? "created_at" : columns.has("createdAt") ? "createdAt" : null,
       lastLogin: columns.has("last_login") ? "last_login" : columns.has("lastLogin") ? "lastLogin" : null,
+      loggedOutAt: columns.has("logged_out_at") ? "logged_out_at" : columns.has("loggedOutAt") ? "loggedOutAt" : null,
     } as const;
 
     const missingColumns: string[] = [];
@@ -120,6 +143,9 @@ export async function GET(request: NextRequest) {
     }
     if (!accountLogColumns.lastLogin) {
       missingColumns.push("last_login");
+    }
+    if (!accountLogColumns.loggedOutAt) {
+      missingColumns.push("logged_out_at");
     }
 
     const selectedUserColumns: string[] = [];
@@ -228,6 +254,7 @@ export async function GET(request: NextRequest) {
     const roleColumn = accountLogColumns.role ?? undefined;
     const createdAtColumn = accountLogColumns.createdAt ?? undefined;
     const lastLoginColumn = accountLogColumns.lastLogin ?? undefined;
+    const loggedOutAtColumn = accountLogColumns.loggedOutAt ?? undefined;
 
     const records = rows.map((row, index) => {
       const logIdValue = logIdColumn ? row[logIdColumn] : null;
@@ -236,6 +263,10 @@ export async function GET(request: NextRequest) {
       const resolvedRole = canonicalizeRole(rawRoleValue);
       const createdAtValue = createdAtColumn ? resolveDateValue(row[createdAtColumn]) : null;
       const lastLoginValue = lastLoginColumn ? resolveDateValue(row[lastLoginColumn]) : null;
+      const loggedOutAtValue = loggedOutAtColumn ? resolveDateValue(row[loggedOutAtColumn]) : null;
+
+      const loginIso = lastLoginValue ?? createdAtValue;
+      const status = determineStatusFromIso(loginIso, loggedOutAtValue);
 
       return {
         id: (typeof logIdValue === "number" && !Number.isNaN(logIdValue))
@@ -248,11 +279,12 @@ export async function GET(request: NextRequest) {
         role: resolvedRole,
         roleLabel: resolvedRole ? ROLE_VARIANTS[resolvedRole] ?? resolvedRole : (typeof rawRoleValue === "string" ? rawRoleValue : "Unknown"),
         lastLogin: lastLoginValue,
-        loginTime: lastLoginValue,
+        loginTime: loginIso,
         createdAt: createdAtValue,
         name: normalizeName(row),
         email: row.user_email ?? undefined,
-        status: "Active",
+        loggedOutAt: loggedOutAtValue ?? undefined,
+        status,
       };
     });
 

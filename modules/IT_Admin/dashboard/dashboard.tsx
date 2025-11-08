@@ -276,7 +276,15 @@ export default function ITAdminDashboard() {
       {
         key: "status",
         title: "Status",
-        render: (row: any) => <span className="text-[#013300] font-semibold">{row.status ?? "Active"}</span>,
+        render: (row: any) => {
+          const statusLabel = typeof row.status === "string" ? row.status : "Offline";
+          const normalized = statusLabel.toLowerCase();
+          const isOnline = normalized === "online";
+          const display = isOnline ? "Online" : "Offline";
+          const className = isOnline ? "text-green-600" : "text-gray-500";
+
+          return <span className={`font-semibold ${className}`}>{display}</span>;
+        },
       },
     ],
     []
@@ -289,6 +297,10 @@ export default function ITAdminDashboard() {
     return recentLogins.map((entry) => ({
       ...entry,
       role: entry.role ? entry.role.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "—",
+      status:
+        typeof entry.status === "string" && entry.status.toLowerCase() === "online"
+          ? "Online"
+          : "Offline",
     }));
   }, [isLoading, recentLogins]);
 

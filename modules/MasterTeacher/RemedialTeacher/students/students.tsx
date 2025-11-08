@@ -12,6 +12,7 @@ import FilipinoStudentTab from "./FilipinoTabs/StudentTab";
 import FilipinoAttendanceTab from "./FilipinoTabs/AttendanceTab";
 import MathStudentTab from "./MathTabs/StudentTab";
 import MathAttendanceTab from "./MathTabs/AttendanceTab";
+import { getStoredUserProfile } from "@/lib/utils/user-profile";
 
 type SubjectKey = "english" | "filipino" | "math";
 
@@ -21,11 +22,16 @@ type StudentTabProps = {
   searchTerm: string;
 };
 
+type AttendanceTabProps = {
+  students: any[];
+  searchTerm: string;
+};
+
 type SubjectConfig = {
   label: string;
   headerTitle: string;
   StudentTab: ComponentType<StudentTabProps>;
-  AttendanceTab: ComponentType<StudentTabProps>;
+  AttendanceTab: ComponentType<AttendanceTabProps>;
 };
 
 const SUBJECT_CONFIG: Record<SubjectKey, SubjectConfig> = {
@@ -68,16 +74,122 @@ type MasterTeacherStudentsProps = {
   subjectSlug?: string;
 };
 
+type RemedialStudent = {
+  studentId: number | null;
+  userId: number | null;
+  remedialId: number | null;
+  studentIdentifier: string | null;
+  grade: string | null;
+  section: string | null;
+  english: string | null;
+  filipino: string | null;
+  math: string | null;
+  guardian: string | null;
+  guardianContact: string | null;
+  address: string | null;
+  firstName: string | null;
+  middleName: string | null;
+  lastName: string | null;
+  fullName: string | null;
+};
+
+const createEmptySubjectStudents = (): Record<SubjectKey, any[]> => ({
+  english: [],
+  filipino: [],
+  math: [],
+});
+
+const coerceNumber = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim().length) {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return null;
+};
+
+const composeDisplayName = (student: RemedialStudent): string => {
+  const explicitFullName = student.fullName?.trim();
+  if (explicitFullName) {
+    return explicitFullName;
+  }
+
+  const parts = [student.firstName, student.middleName, student.lastName]
+    .map((part) => (part ?? "").trim())
+    .filter((part) => part.length > 0);
+
+  if (parts.length) {
+    return parts.join(" ");
+  }
+
+  return "Unnamed Student";
+};
+
+const toDisplayStudent = (student: RemedialStudent, index: number) => {
+  const numericStudentId = coerceNumber(student.studentId);
+  const numericUserId = coerceNumber(student.userId);
+  const numericRemedialId = coerceNumber(student.remedialId);
+
+  const resolvedNumericId = numericStudentId ?? numericUserId ?? numericRemedialId ?? index + 1;
+
+  const trimmedIdentifier = student.studentIdentifier?.trim();
+  const identifier = trimmedIdentifier?.length
+    ? trimmedIdentifier
+    : numericStudentId !== null
+    ? `ST-${String(numericStudentId).padStart(4, "0")}`
+    : String(resolvedNumericId);
+
+  return {
+    id: resolvedNumericId,
+    studentId: identifier,
+    name: composeDisplayName(student),
+    grade: student.grade ?? "",
+    section: student.section ?? "",
+    guardian: student.guardian ?? "",
+    guardianContact: student.guardianContact ?? "",
+    address: student.address ?? "",
+    age: "",
+    englishPhonemic: student.english ?? "",
+    filipinoPhonemic: student.filipino ?? "",
+    mathProficiency: student.math ?? "",
+  };
+};
+
+const buildSubjectStudents = (students: RemedialStudent[]): Record<SubjectKey, any[]> => {
+  const base = students.map(toDisplayStudent);
+  return {
+    english: base.map((student) => ({ ...student })),
+    filipino: base.map((student) => ({ ...student })),
+    math: base.map((student) => ({ ...student })),
+  };
+};
+
 export default function MasterTeacherStudents({ subjectSlug }: MasterTeacherStudentsProps = {}) {
   const router = useRouter();
   const subject = useMemo(() => normalizeSubject(subjectSlug), [subjectSlug]);
   const { label: subjectLabel, headerTitle, StudentTab, AttendanceTab } = SUBJECT_CONFIG[subject];
+  const userProfile = useMemo(() => getStoredUserProfile(), []);
+  const userId = useMemo(() => {
+    const raw = userProfile?.userId;
+    if (typeof raw === "number" && Number.isFinite(raw)) {
+      return raw;
+    }
+    if (typeof raw === "string") {
+      const parsed = Number.parseInt(raw, 10);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+    return null;
+  }, [userProfile]);
 
-  const [subjectStudents, setSubjectStudents] = useState<Record<SubjectKey, any[]>>({
-    english: [],
-    filipino: [],
-    math: [],
-  });
+  const [subjectStudents, setSubjectStudents] = useState<Record<SubjectKey, any[]>>(createEmptySubjectStudents);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<string>(TAB_OPTIONS[0]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -86,6 +198,71 @@ export default function MasterTeacherStudents({ subjectSlug }: MasterTeacherStud
     setActiveTab(TAB_OPTIONS[0]);
     setSearchTerm("");
   }, [subject]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    if (userId === null) {
+      setIsLoading(false);
+      setLoadError("Unable to identify the current user. Please sign in again.");
+      setSubjectStudents(createEmptySubjectStudents());
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    const controller = new AbortController();
+
+    const loadStudents = async () => {
+      setIsLoading(true);
+      setLoadError(null);
+
+      try {
+        const params = new URLSearchParams({ userId: String(userId) });
+        const response = await fetch(
+          `/api/master_teacher/remedial/students?${params.toString()}`,
+          { method: "GET", cache: "no-store", signal: controller.signal },
+        );
+
+        if (!response.ok) {
+          throw new Error(`Request failed with status ${response.status}`);
+        }
+
+        const payload = (await response.json()) as {
+          success: boolean;
+          students?: RemedialStudent[];
+          error?: string;
+        };
+
+        if (!payload.success) {
+          throw new Error(payload.error ?? "Failed to load students.");
+        }
+
+        const studentsData = Array.isArray(payload.students) ? payload.students : [];
+
+        if (!isCancelled) {
+          setSubjectStudents(buildSubjectStudents(studentsData));
+          setIsLoading(false);
+        }
+      } catch (error) {
+        if (isCancelled || (error instanceof DOMException && error.name === "AbortError")) {
+          return;
+        }
+
+        console.error("Failed to load remedial students", error);
+        setSubjectStudents(createEmptySubjectStudents());
+        setLoadError(error instanceof Error ? error.message : "Failed to load students.");
+        setIsLoading(false);
+      }
+    };
+
+    loadStudents();
+
+    return () => {
+      isCancelled = true;
+      controller.abort();
+    };
+  }, [userId]);
 
   const students = subjectStudents[subject];
 
@@ -197,11 +374,21 @@ export default function MasterTeacherStudents({ subjectSlug }: MasterTeacherStud
                 sm:mt-6
               "
               >
-                {activeTab === "Information List" && (
-                  <StudentTab students={students} setStudents={setStudents} searchTerm={searchTerm} />
+                {isLoading && (
+                  <div className="py-12 text-center text-sm text-gray-500">Loading students...</div>
                 )}
-                {activeTab === "Attendance List" && (
-                  <AttendanceTab students={students} setStudents={setStudents} searchTerm={searchTerm} />
+                {!isLoading && loadError && (
+                  <div className="py-12 text-center text-sm text-red-600">{loadError}</div>
+                )}
+                {!isLoading && !loadError && (
+                  <>
+                    {activeTab === "Information List" && (
+                      <StudentTab students={students} setStudents={setStudents} searchTerm={searchTerm} />
+                    )}
+                    {activeTab === "Attendance List" && (
+                      <AttendanceTab students={students} searchTerm={searchTerm} />
+                    )}
+                  </>
                 )}
               </div>
             </div>

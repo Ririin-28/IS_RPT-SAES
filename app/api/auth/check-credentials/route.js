@@ -9,6 +9,12 @@ export async function POST(req) {
       password: "RIANA28@eg564",
       database: "rpt-saes_db",
     });
+
+    const requiresUserId = (role) => {
+      if (!role) return false;
+      const normalized = String(role).toLowerCase().replace(/\s+/g, "_");
+      return ["it_admin", "admin", "itadmin"].includes(normalized);
+    };
     let normalizedUserId = null;
     if (userId !== undefined && userId !== null && userId !== "") {
       normalizedUserId = Number(userId);
@@ -32,8 +38,11 @@ export async function POST(req) {
       return new Response(JSON.stringify({ match: false }), { status: 200 });
     }
 
-    if (user.role === "it_admin" && normalizedUserId === null) {
-      return new Response(JSON.stringify({ match: false }), { status: 200 });
+    if (requiresUserId(user.role) && normalizedUserId === null) {
+      return new Response(
+        JSON.stringify({ match: false, requireUserId: true, role: user.role }),
+        { status: 200 }
+      );
     }
 
     if (password !== user.password) {

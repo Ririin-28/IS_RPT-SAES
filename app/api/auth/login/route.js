@@ -11,6 +11,12 @@ export async function POST(req) {
       password: "RIANA28@eg564",
       database: "rpt-saes_db",
     });
+
+    const requiresUserId = (role) => {
+      if (!role) return false;
+      const normalized = String(role).toLowerCase().replace(/\s+/g, "_");
+      return ["it_admin", "admin", "itadmin"].includes(normalized);
+    };
     // 1. Check user
     const [users] = await db.execute("SELECT * FROM users WHERE email = ?", [email]);
     const user = users[0];
@@ -31,9 +37,16 @@ export async function POST(req) {
       }
     }
 
-    if (user.role === "it_admin" && normalizedUserId === null) {
+    if (requiresUserId(user.role) && normalizedUserId === null) {
       await db.end();
-      return new Response(JSON.stringify({ error: "Invalid credentials" }), { status: 401 });
+      return new Response(
+        JSON.stringify({
+          error: "Admin login requires user ID",
+          errorCode: "ADMIN_USER_ID_REQUIRED",
+          requireUserId: true,
+        }),
+        { status: 401 }
+      );
     }
     // 2. Check password (direct string comparison, no bcrypt)
     if (password !== user.password) {

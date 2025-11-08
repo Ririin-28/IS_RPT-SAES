@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { FaFileWord } from "react-icons/fa";
 
 type ReportFile = {
@@ -11,25 +11,24 @@ type ReportFile = {
   url: string;
 };
 
-const initialFiles: ReportFile[] = [
-  {
-    id: 1,
-    name: "Filipino Progress Report",
-    uploadedAt: "2024-01-25",
-    teacher: "Ricardo Alonso",
-    grade: "Grade 3",
-    url: "#"
-  }
-];
+type ApiReport = {
+  id: number;
+  subject: string;
+  gradeLevel: string | null;
+  teacherName: string | null;
+  fileName: string;
+  uploadedAt: string;
+  downloadPath: string;
+};
 
 const sortOptions = ["Newest first", "Oldest first", "Name (A-Z)", "Name (Z-A)"];
 
 interface Props {
   searchTerm: string;
   onSearchTermChange: (value: string) => void;
+  gradeLevel?: string;
 }
 
-// Custom Dropdown Component for filters
 interface CustomDropdownProps {
   options: string[];
   value: string;
@@ -95,12 +94,55 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
   );
 };
 
-export default function GradeThreeTab({
-  searchTerm,
-  onSearchTermChange
-}: Props) {
-  const [files] = useState(initialFiles);
+const SUBJECT_KEY = "filipino";
+const DEFAULT_GRADE_LEVEL = "Grade 3";
+
+export default function GradeThreeTab({ searchTerm, onSearchTermChange, gradeLevel }: Props) {
+  const [files, setFiles] = useState<ReportFile[]>([]);
   const [sortBy, setSortBy] = useState("Newest first");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const activeGradeLevel = gradeLevel ?? DEFAULT_GRADE_LEVEL;
+
+  const loadReports = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/principal/reports/remedial?subject=${encodeURIComponent(SUBJECT_KEY)}&grade=${encodeURIComponent(activeGradeLevel)}`,
+        { cache: "no-store" },
+      );
+      const payload = (await response.json().catch(() => null)) as
+        | { success: boolean; reports?: ApiReport[]; error?: string }
+        | null;
+
+      if (!response.ok || !payload?.success || !Array.isArray(payload.reports)) {
+        throw new Error(payload?.error ?? "Hindi ma-load ang mga ulat.");
+      }
+
+      const mapped: ReportFile[] = payload.reports.map((report) => ({
+        id: report.id,
+        name: report.fileName || "Remedial Progress Report",
+        uploadedAt: report.uploadedAt,
+        teacher: report.teacherName || "Remedial Teacher",
+        grade: report.gradeLevel || activeGradeLevel,
+        url: report.downloadPath,
+      }));
+
+      setFiles(mapped);
+    } catch (err) {
+      console.error("Failed to fetch remedial reports", err);
+      setFiles([]);
+      setError(err instanceof Error ? err.message : "Hindi ma-load ang mga ulat.");
+    } finally {
+      setLoading(false);
+    }
+  }, [activeGradeLevel]);
+
+  useEffect(() => {
+    loadReports();
+  }, [loadReports]);
 
   const filteredFiles = files.filter((file) => {
     const matchSearch = searchTerm === "" || 
@@ -125,16 +167,17 @@ export default function GradeThreeTab({
   const clearFilters = () => {
     onSearchTermChange("");
     setSortBy("Newest first");
+    loadReports();
   };
 
   function formatDateTime(dateString: string) {
     const date = new Date(dateString);
-    return date.toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
+    return date.toLocaleString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
       hour12: true,
     });
   }
@@ -145,12 +188,12 @@ export default function GradeThreeTab({
         <div className="flex-1">
           <div className="flex flex-row justify-between items-center mb-4">
             <p className="text-gray-600 text-md font-medium">
-              Total: {filteredFiles.length}
+              Total: {loading ? "--" : filteredFiles.length}
             </p>
             
             <div className="flex items-center gap-3 bg-gray-100 rounded-lg p-2 w-fit">
               <div className="flex items-center gap-2 text-sm text-gray-700">
-                <span className="whitespace-nowrap">Sort by:</span>
+                <span className="whitespace-nowrap">Ayusin ayon sa:</span>
                 <CustomDropdown 
                   options={sortOptions}
                   value={sortBy}
@@ -160,18 +203,24 @@ export default function GradeThreeTab({
             </div>
           </div>
 
-          {sortedFiles.length === 0 ? (
+          {loading ? (
+            <div className="text-center py-12 text-sm text-gray-500">Naglo-load ng mga ulat...</div>
+          ) : error ? (
+            <div className="text-center py-12 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              {error}
+            </div>
+          ) : sortedFiles.length === 0 ? (
             <div className="text-center py-12 bg-gray-50 rounded-lg border border-dashed border-gray-300">
               <FaFileWord className="mx-auto text-gray-400 text-4xl mb-4" />
-              <h3 className="text-lg font-medium text-gray-700 mb-2">No reports found</h3>
+              <h3 className="text-lg font-medium text-gray-700 mb-2">Walang report na nahanap</h3>
               <p className="text-gray-500 mb-4">
-                Try adjusting your filters or search term to find what you're looking for.
+                Subukan ang ibang search term o i-reset ang mga filter.
               </p>
               <button
                 onClick={clearFilters}
                 className="px-4 py-2 bg-green-700 hover:bg-green-800 text-white font-semibold rounded-lg shadow"
               >
-                Clear all filters
+                I-reset ang filters
               </button>
             </div>
           ) : (
@@ -179,9 +228,13 @@ export default function GradeThreeTab({
               {sortedFiles.map((file) => (
                 <div
                   key={file.id}
-                  className="bg-white rounded-xl shadow hover:shadow-lg transition p-4 flex flex-col border border-gray-200 cursor-pointer min-h-[240px] relative group"
+                  className="bg-white rounded-xl shadow hover:shadow-lg transition p-4 flex flex-col border border-gray-200 min-h-[240px] relative group"
                 >
-                  <button className="absolute top-3 right-3 p-2 bg-gray-100 rounded-lg text-gray-600 hover:bg-gray-200">
+                  <button
+                    className="absolute top-3 right-3 p-2 bg-gray-100 rounded-lg text-gray-600 hover:bg-gray-200"
+                    onClick={() => window.open(file.url, "_blank")}
+                    aria-label="I-download ang ulat"
+                  >
                     <svg 
                       xmlns="http://www.w3.org/2000/svg" 
                       width="16" 
@@ -206,10 +259,10 @@ export default function GradeThreeTab({
                   </div>
                   <div className="text-xs text-gray-600 space-y-1 w-full mt-auto">
                     <div className="flex items-center gap-1">
-                      <span className="font-medium">Teacher:</span> {file.teacher}
+                      <span className="font-medium">Guro:</span> {file.teacher}
                     </div>
                     <div className="flex items-center gap-1 text-gray-500">
-                      <span className="font-medium">Uploaded:</span> {formatDateTime(file.uploadedAt)}
+                      <span className="font-medium">Na-upload:</span> {formatDateTime(file.uploadedAt)}
                     </div>
                   </div>
                 </div>

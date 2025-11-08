@@ -13,6 +13,8 @@ const TRUSTED_DEVICE_TIMESTAMP_CANDIDATES = [
   "updated_at",
 ] as const;
 
+const ACTIVE_WINDOW_MS = 10 * 60 * 1000;
+
 type CountRow = RowDataPacket & { count: number };
 type RecentLoginRow = RowDataPacket & {
   log_id: number;
@@ -20,6 +22,7 @@ type RecentLoginRow = RowDataPacket & {
   role: string | null;
   created_at: Date | null;
   last_login: Date | null;
+  logged_out_at: Date | null;
   username?: string | null;
   email?: string | null;
   name?: string | null;
@@ -265,7 +268,8 @@ export async function GET() {
             al.user_id,
             al.role,
             al.created_at,
-            al.last_login${userSelectSql}
+            al.last_login,
+            al.logged_out_at${userSelectSql}
           FROM account_logs al
           LEFT JOIN users u ON u.user_id = al.user_id
           WHERE al.user_id IS NOT NULL
@@ -273,15 +277,23 @@ export async function GET() {
           LIMIT 5`
         );
 
-        recentLogins = recentRows.map((row) => ({
-          id: row.log_id,
-          userId: row.user_id,
-          role: row.role ?? undefined,
-          loginTime: row.last_login ? row.last_login.toISOString() : null,
-          status: "Active",
-          name: normalizeName(row),
-          email: row.email ?? undefined,
-        }));
+        recentLogins = recentRows.map((row) => {
+          const loginDate = (row.last_login ?? row.created_at) ?? null;
+          const loggedOutIso = toIsoString(row.logged_out_at);
+          const loginTime = toIsoString(loginDate);
+          const status = loggedOutIso ? "Offline" : determineStatus(loginDate);
+
+          return {
+            id: row.log_id,
+            userId: row.user_id,
+            role: row.role ?? undefined,
+            loginTime,
+            status,
+            name: normalizeName(row),
+            email: row.email ?? undefined,
+            loggedOutAt: loggedOutIso ?? undefined,
+          };
+        });
 
         console.log("Recent logins found:", recentLogins.length);
       } catch (error) {
@@ -331,4 +343,30 @@ export async function GET() {
       { status: 500 }
     );
   }
+}
+
+function determineStatus(loginDate: Date | string | null | undefined): "Online" | "Offline" {
+  if (!loginDate) {
+    return "Offline";
+  }
+
+  const timestamp = loginDate instanceof Date ? loginDate.getTime() : new Date(loginDate).getTime();
+  if (Number.isNaN(timestamp)) {
+    return "Offline";
+  }
+
+  return Date.now() - timestamp <= ACTIVE_WINDOW_MS ? "Online" : "Offline";
+}
+
+function toIsoString(value: Date | string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }

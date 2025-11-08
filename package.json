@@ -23,6 +23,8 @@
     "exceljs": "^4.4.0",
     "flatpickr": "^4.6.13",
     "framer-motion": "^12.23.24",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^3.0.3",
     "mysql2": "^3.14.4",
     "next": "^15.5.2",
     "next-auth": "^4.24.11",
