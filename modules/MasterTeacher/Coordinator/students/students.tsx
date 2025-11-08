@@ -9,7 +9,7 @@ import { useCoordinatorStudents } from "./useCoordinatorStudents";
 
 export default function MasterTeacherStudents() {
   const [searchTerm, setSearchTerm] = useState("");
-  const { subject, gradeLevel, students, loading, saving, error, refresh, addStudent, importStudents, deleteStudents } = useCoordinatorStudents();
+  const { subject, gradeLevel, students, loading, saving, error, refresh, addStudent, updateStudent, importStudents, deleteStudents } = useCoordinatorStudents();
   const headerTitle = useMemo(() => `${subject} Students Information List`, [subject]);
 
   return (
@@ -86,6 +86,7 @@ export default function MasterTeacherStudents() {
                   saving={saving}
                   error={error}
                   onAddStudent={addStudent}
+                  onUpdateStudent={updateStudent}
                   onImportStudents={importStudents}
                   onDeleteStudents={deleteStudents}
                   onRefresh={refresh}

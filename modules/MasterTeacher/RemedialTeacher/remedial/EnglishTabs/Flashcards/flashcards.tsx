@@ -141,7 +141,9 @@ const DEFAULT_ENGLISH_STUDENTS: StudentRecord[] = [
 ];
 
 /* ---------- English Remedial Flashcards data ---------- */
-const flashcardsData = [
+const FLASHCARDS_STORAGE_KEY = "MASTER_TEACHER_ENGLISH_FLASHCARDS";
+
+const DEFAULT_FLASHCARDS = [
   { sentence: "The cat sat on the mat.", highlights: ["cat", "sat", "mat"] },
   { sentence: "A big dog ran in the park.", highlights: ["big", "dog", "ran"] },
   { sentence: "She has a red ball and blue car.", highlights: ["red", "ball", "blue"] },
@@ -158,20 +160,36 @@ const flashcardsData = [
 export default function MasterTeacherEnglishRemedialFlashcards() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const startParam = searchParams?.get("start");
-  const startIndex = startParam
-    ? Math.min(Math.max(parseInt(startParam), 0), flashcardsData.length - 1)
-    : 0;
-
+  
+  const [flashcardsData, setFlashcardsData] = useState(DEFAULT_FLASHCARDS);
   const [view, setView] = useState<"select" | "session">("select");
   const [students, setStudents] = useState<StudentRecord[]>(DEFAULT_ENGLISH_STUDENTS);
   const [performances, setPerformances] = useState<StudentPerformanceEntry[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [studentSearch, setStudentSearch] = useState("");
   const [lastSavedStudentId, setLastSavedStudentId] = useState<string | null>(null);
+  
+  const startParam = searchParams?.get("start");
+  const startIndex = startParam
+    ? Math.min(Math.max(parseInt(startParam), 0), flashcardsData.length - 1)
+    : 0;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+
+    try {
+      const storedFlashcards = window.localStorage.getItem(FLASHCARDS_STORAGE_KEY);
+      if (storedFlashcards) {
+        const parsed = JSON.parse(storedFlashcards);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setFlashcardsData(parsed);
+        }
+      } else {
+        window.localStorage.setItem(FLASHCARDS_STORAGE_KEY, JSON.stringify(DEFAULT_FLASHCARDS));
+      }
+    } catch (error) {
+      console.warn("Failed to load flashcards", error);
+    }
 
     try {
       const storedStudents = window.localStorage.getItem(STUDENT_ROSTER_KEY);

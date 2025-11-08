@@ -62,6 +62,7 @@ export type UseCoordinatorStudentsResult = {
   error: string | null;
   refresh: () => Promise<void>;
   addStudent: (student: CreateStudentPayload) => Promise<void>;
+  updateStudent: (id: number, student: CreateStudentPayload) => Promise<void>;
   importStudents: (students: CreateStudentPayload[]) => Promise<void>;
   deleteStudents: (ids: number[]) => Promise<void>;
 };
@@ -214,6 +215,49 @@ export function useCoordinatorStudents(): UseCoordinatorStudentsResult {
     await persistStudents([student]);
   }, [persistStudents]);
 
+  const updateStudent = useCallback(async (id: number, student: CreateStudentPayload) => {
+    if (!userId) {
+      setError("Missing coordinator profile. Please log in again.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/students/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId,
+          studentIdentifier: student.studentId ?? null,
+          fullName: student.name,
+          gradeLevel: student.grade ?? null,
+          section: student.section ?? null,
+          age: student.age ?? null,
+          guardianName: student.guardian ?? null,
+          guardianContact: student.guardianContact ?? null,
+          relationship: student.relationship ?? null,
+          address: student.address ?? null,
+          englishPhonemic: student.englishPhonemic ?? null,
+          filipinoPhonemic: student.filipinoPhonemic ?? null,
+          mathProficiency: student.mathProficiency ?? null,
+        }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error ?? "Failed to update student");
+      }
+      await fetchStudents();
+    } catch (err) {
+      console.error("Failed to update student", err);
+      setError(err instanceof Error ? err.message : "Failed to update student.");
+      throw err;
+    } finally {
+      setSaving(false);
+    }
+  }, [fetchStudents, userId]);
+
   const importStudents = useCallback(async (studentList: CreateStudentPayload[]) => {
     await persistStudents(studentList);
   }, [persistStudents]);
@@ -254,6 +298,7 @@ export function useCoordinatorStudents(): UseCoordinatorStudentsResult {
     error,
     refresh,
     addStudent,
+    updateStudent,
     importStudents,
     deleteStudents: deleteStudentsHandler,
   };

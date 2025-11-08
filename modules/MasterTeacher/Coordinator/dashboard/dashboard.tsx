@@ -4,15 +4,13 @@ import { useRouter } from 'next/navigation';
 import Sidebar from "@/components/MasterTeacher/Coordinator/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
 // Button Components
-import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
-import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
-import DangerButton from "@/components/Common/Buttons/DangerButton";
 // Text Components
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
 import BodyText from "@/components/Common/Texts/BodyText";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
+import { normalizeMaterialSubject } from "@/lib/materials/shared";
 
 // Import Chart components
 import {
@@ -333,6 +331,10 @@ export default function MasterTeacherDashboard() {
   const [students, setStudents] = useState<RemedialStudentRecord[]>([]);
   const [isLoadingStudents, setIsLoadingStudents] = useState(true);
   const [studentsError, setStudentsError] = useState<string | null>(null);
+  const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number | null>(null);
+  const [approvedMaterialsCount, setApprovedMaterialsCount] = useState<number | null>(null);
+  const [isLoadingApprovals, setIsLoadingApprovals] = useState(false);
+  const [approvalsError, setApprovalsError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -433,6 +435,78 @@ export default function MasterTeacherDashboard() {
     };
   }, [userId]);
 
+  const subjectFilter = useMemo(() => {
+    const rawSubject = coordinatorProfile?.subjectAssigned?.trim();
+    if (!rawSubject || rawSubject.toLowerCase() === "not assigned") {
+      return null;
+    }
+    return normalizeMaterialSubject(rawSubject) ?? null;
+  }, [coordinatorProfile?.subjectAssigned]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchMaterialCount = async (status: "pending" | "approved"): Promise<number> => {
+      const params = new URLSearchParams({ status, pageSize: "1" });
+      if (subjectFilter) {
+        params.set("subject", subjectFilter);
+      }
+      const response = await fetch(`/api/materials?${params.toString()}`, { cache: "no-store" });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error ?? `Failed to load ${status} materials`);
+      }
+      const totalValue = payload?.pagination?.total;
+      const parsedTotal = typeof totalValue === "string" ? Number.parseInt(totalValue, 10) : Number(totalValue ?? 0);
+      if (Number.isFinite(parsedTotal) && parsedTotal >= 0) {
+        return parsedTotal;
+      }
+      const fallbackTotal = Array.isArray(payload?.data) ? payload.data.length : 0;
+      return Number.isFinite(fallbackTotal) ? fallbackTotal : 0;
+    };
+
+    const loadApprovals = async () => {
+      if (!userId) {
+        setPendingApprovalsCount(0);
+        setApprovedMaterialsCount(0);
+        return;
+      }
+
+      setIsLoadingApprovals(true);
+      setApprovalsError(null);
+  setPendingApprovalsCount(null);
+  setApprovedMaterialsCount(null);
+
+      try {
+        const [pendingTotal, approvedTotal] = await Promise.all([
+          fetchMaterialCount("pending"),
+          fetchMaterialCount("approved"),
+        ]);
+
+        if (!cancelled) {
+          setPendingApprovalsCount(pendingTotal);
+          setApprovedMaterialsCount(approvedTotal);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Failed to load material approval stats", error);
+          setApprovalsError(error instanceof Error ? error.message : "Failed to load approval statistics.");
+          setPendingApprovalsCount(0);
+          setApprovedMaterialsCount(0);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingApprovals(false);
+        }
+      }
+    };
+
+    loadApprovals();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [subjectFilter, userId]);
+
   // Get today's date in simplified month format (same as Principal)
   const today = new Date();
   const monthShort = [
@@ -443,20 +517,23 @@ export default function MasterTeacherDashboard() {
   const [selectedSubject, setSelectedSubject] = useState<CoordinatorSubject>('Math');
 
   // Sample data for the teacher's own students
-  const [pendingApprovals] = useState(3);
-  
-
   const levelDistribution = useMemo(
     () => buildLevelDistribution(students, selectedSubject),
     [selectedSubject, students],
   );
+
+  const pendingCount = pendingApprovalsCount ?? 0;
+  const approvedCount = approvedMaterialsCount ?? 0;
+  const totalUploaded = pendingCount + approvedCount;
+  const pendingCardValue = isLoadingApprovals ? '—' : approvalsError ? '—' : pendingCount;
+  const materialsCardValue = isLoadingApprovals ? '—' : approvalsError ? '—' : totalUploaded;
 
   // Pending approvals data
   const approvalsData = {
     labels: ['Pending', 'Approved'],
     datasets: [
       {
-        data: [pendingApprovals, 12 - pendingApprovals],
+        data: [pendingCount, approvedCount],
         backgroundColor: [
           'rgba(234, 179, 8, 0.8)',
           'rgba(34, 197, 94, 0.8)',
@@ -591,7 +668,7 @@ export default function MasterTeacherDashboard() {
                   onClick={() => handleNavigate("/MasterTeacher/RemedialTeacher/students")}
                 />
                 <OverviewCard
-                  value={pendingApprovals}
+                  value={pendingCardValue}
                   label="Pending Approvals"
                   icon={
                     <svg width="38" height="38" fill="none" viewBox="0 0 24 24">
@@ -601,7 +678,7 @@ export default function MasterTeacherDashboard() {
                   onClick={() => handleNavigate("/MasterTeacher/Coordinator/materials?view=pending")}
                 />
                 <OverviewCard
-                  value={"20"}
+                  value={materialsCardValue}
                   label="Materials Uploaded"
                   icon={
                     <svg width="38" height="38" fill="none" viewBox="0 0 24 24">
@@ -626,10 +703,24 @@ export default function MasterTeacherDashboard() {
                 <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg p-6">
                   <TertiaryHeader title="Pending Approvals this Week" />
                   <div className="h-64 mt-2">
-                    <Pie options={pieOptions} data={approvalsData} />
+                    {isLoadingApprovals ? (
+                      <div className="flex h-full items-center justify-center text-sm text-gray-500">Loading approvals...</div>
+                    ) : approvalsError ? (
+                      <div className="flex h-full items-center justify-center text-sm text-red-600">{approvalsError}</div>
+                    ) : pendingCount === 0 && approvedCount === 0 ? (
+                      <div className="flex h-full items-center justify-center text-sm text-gray-500">No materials found.</div>
+                    ) : (
+                      <Pie options={pieOptions} data={approvalsData} />
+                    )}
                   </div>
                   <div className="mt-4 text-sm text-gray-600">
-                    <p className="font-medium">{pendingApprovals} approvals awaiting your review</p>
+                    <p className="font-medium">
+                      {approvalsError
+                        ? approvalsError
+                        : isLoadingApprovals
+                          ? "Loading pending approvals..."
+                          : `${pendingCount} approvals awaiting your review`}
+                    </p>
                   </div>
                   <div className="mt-3">
                     <UtilityButton 

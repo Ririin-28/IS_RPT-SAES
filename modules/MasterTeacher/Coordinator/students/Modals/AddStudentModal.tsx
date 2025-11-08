@@ -36,6 +36,7 @@ interface AddStudentModalProps {
   apiError?: string | null;
   subjectLabel: string;
   gradeLabel?: string | null;
+  isEditing?: boolean;
 }
 
 /**
@@ -65,6 +66,7 @@ export default function AddStudentModal({
   apiError = null,
   subjectLabel,
   gradeLabel = null,
+  isEditing = false,
 }: AddStudentModalProps) {
   const {
     register,
@@ -156,13 +158,13 @@ export default function AddStudentModal({
         Cancel
       </DangerButton>
       <PrimaryButton type="submit" form="add-student-form" disabled={isBusy}>
-        {isBusy ? "Adding…" : "Add Student"}
+        {isBusy ? (isEditing ? "Updating…" : "Adding…") : (isEditing ? "Update Student" : "Add Student")}
       </PrimaryButton>
     </>
   );
 
   return (
-    <BaseModal show={show} onClose={handleClose} title="Add Student" footer={footer}>
+    <BaseModal show={show} onClose={handleClose} title={isEditing ? "Edit Student" : "Add Student"} footer={footer}>
       <form id="add-student-form" onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         {apiError && (
           <div className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">

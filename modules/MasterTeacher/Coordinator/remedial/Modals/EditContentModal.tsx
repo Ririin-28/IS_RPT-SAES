@@ -83,6 +83,7 @@ export default function EditContentModal({ isOpen, onClose, flashcards, onSave }
     }
 
     onSave(editableFlashcards);
+    onClose();
   };
 
   const handleClose = () => {
