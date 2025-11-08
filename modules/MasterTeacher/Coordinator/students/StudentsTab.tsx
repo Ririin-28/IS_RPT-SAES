@@ -103,6 +103,7 @@ interface StudentTabProps {
   saving: boolean;
   error: string | null;
   onAddStudent: (input: CoordinatorStudentFormInput) => Promise<void>;
+  onUpdateStudent: (id: number, input: CoordinatorStudentFormInput) => Promise<void>;
   onImportStudents: (inputs: CoordinatorStudentFormInput[]) => Promise<void>;
   onDeleteStudents: (ids: number[]) => Promise<void>;
   onRefresh: () => Promise<void>;
@@ -132,6 +133,7 @@ export default function StudentTab({
   saving,
   error,
   onAddStudent,
+  onUpdateStudent,
   onImportStudents,
   onDeleteStudents,
   onRefresh,
@@ -139,6 +141,7 @@ export default function StudentTab({
   const [showModal, setShowModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
+  const [editingStudent, setEditingStudent] = useState<any>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -184,7 +187,7 @@ export default function StudentTab({
     }
   }, [gradeLabel, setValue]);
 
-  // Add new student
+  // Add or update student
   const onSubmit = async (data: AddStudentFormValues) => {
     const effectiveGrade = gradeLabel && gradeLabel.trim().length > 0 ? gradeLabel.trim() : data.grade;
     if (!effectiveGrade || effectiveGrade.trim().length === 0) {
@@ -208,12 +211,19 @@ export default function StudentTab({
         filipinoPhonemic: data.filipinoPhonemic || undefined,
         mathProficiency: data.mathPhonemic || undefined,
       };
-      await onAddStudent(payload);
+      
+      if (editingStudent) {
+        await onUpdateStudent(editingStudent.id, payload);
+        setEditingStudent(null);
+      } else {
+        await onAddStudent(payload);
+      }
+      
       reset();
       setShowModal(false);
     } catch (error) {
-      console.error("Failed to add student", error);
-      alert(error instanceof Error ? error.message : "Failed to add student.");
+      console.error(editingStudent ? "Failed to update student" : "Failed to add student", error);
+      alert(error instanceof Error ? error.message : editingStudent ? "Failed to update student." : "Failed to add student.");
     }
   };
 
@@ -309,6 +319,45 @@ export default function StudentTab({
     setShowDetailModal(true);
   };
 
+  // Handle editing student
+  const handleEditStudent = (student: any) => {
+    setShowDetailModal(false);
+    setEditingStudent(student);
+    
+    const nameParts = (student.name || "").split(" ");
+    const firstName = nameParts[0] || "";
+    const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : "";
+    const middleName = nameParts.length > 2 ? nameParts.slice(1, -1).join(" ") : "";
+    
+    const guardianParts = (student.guardian || "").split(" ");
+    const guardianFirstName = guardianParts[0] || "";
+    const guardianLastName = guardianParts.length > 1 ? guardianParts[guardianParts.length - 1] : "";
+    const guardianMiddleName = guardianParts.length > 2 ? guardianParts.slice(1, -1).join(" ") : "";
+    
+    reset({
+      studentId: student.studentId || "",
+      role: "Student",
+      firstName,
+      middleName,
+      lastName,
+      suffix: "",
+      grade: student.grade || gradeLabel?.trim() || "",
+      section: student.section || "",
+      guardianFirstName,
+      guardianMiddleName,
+      guardianLastName,
+      guardianSuffix: "",
+      relationship: student.relationship || "",
+      guardianContact: student.guardianContact || "",
+      address: student.address || "",
+      englishPhonemic: student.englishPhonemic || "",
+      filipinoPhonemic: student.filipinoPhonemic || "",
+      mathPhonemic: student.mathProficiency || "",
+    });
+    
+    setShowModal(true);
+  };
+
   // Handle file selection
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -377,14 +426,10 @@ export default function StudentTab({
           } satisfies CoordinatorStudentFormInput;
         });
 
-        void onImportStudents(newStudents)
-          .then(() => {
-            alert(`Successfully imported ${newStudents.length} students`);
-          })
-          .catch((error) => {
-            console.error('Failed to import students', error);
-            alert(error instanceof Error ? error.message : 'Failed to import students.');
-          });
+        void onImportStudents(newStudents).catch((error) => {
+          console.error('Failed to import students', error);
+          alert(error instanceof Error ? error.message : 'Failed to import students.');
+        });
       } catch (error) {
         console.error(error);
         alert('Error reading Excel file. Please check the format and column headers.');
@@ -543,11 +588,12 @@ export default function StudentTab({
         </div>
       </div>
 
-      {/* Modal for Add Student Form */}
+      {/* Modal for Add/Edit Student Form */}
       <AddStudentModal
         show={showModal}
         onClose={() => {
           setShowModal(false);
+          setEditingStudent(null);
           reset(buildDefaultValues());
         }}
         form={formMethods}
@@ -556,6 +602,7 @@ export default function StudentTab({
         apiError={error}
         subjectLabel={subjectLabel}
         gradeLabel={gradeLabel}
+        isEditing={!!editingStudent}
       />
 
       {/* Student Detail Modal */}
@@ -563,6 +610,7 @@ export default function StudentTab({
         show={showDetailModal}
         onClose={() => setShowDetailModal(false)}
         student={selectedStudent}
+        onEdit={handleEditStudent}
       />
 
       {/* Student Table Section */}

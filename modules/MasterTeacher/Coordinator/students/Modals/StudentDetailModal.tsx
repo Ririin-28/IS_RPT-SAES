@@ -1,21 +1,31 @@
+import { useState } from "react";
 import BaseModal, { ModalSection, ModalInfoItem } from "@/components/Common/Modals/BaseModal";
+import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 
 interface StudentDetailModalProps {
   show: boolean;
   onClose: () => void;
   student: any;
+  onEdit?: (student: any) => void;
 }
 
-export default function StudentDetailModal({ show, onClose, student }: StudentDetailModalProps) {
+export default function StudentDetailModal({ show, onClose, student, onEdit }: StudentDetailModalProps) {
   if (!show || !student) return null;
 
   const footer = (
-    <button
-      onClick={onClose}
-      className="bg-[#013300] text-white px-6 py-2 rounded-lg hover:bg-[#013300]/90 transition-colors font-medium"
-    >
-      Close
-    </button>
+    <>
+      {onEdit && (
+        <UtilityButton onClick={() => onEdit(student)}>
+          Edit
+        </UtilityButton>
+      )}
+      <button
+        onClick={onClose}
+        className="bg-[#013300] text-white px-6 py-2 rounded-lg hover:bg-[#013300]/90 transition-colors font-medium"
+      >
+        Close
+      </button>
+    </>
   );
 
   return (

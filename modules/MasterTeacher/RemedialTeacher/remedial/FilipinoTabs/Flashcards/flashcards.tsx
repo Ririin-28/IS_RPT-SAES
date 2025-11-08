@@ -166,6 +166,8 @@ export default function MasterTeacherFilipinoFlashcards() {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [studentSearch, setStudentSearch] = useState("");
   const [lastSavedStudentId, setLastSavedStudentId] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -230,6 +232,10 @@ export default function MasterTeacherFilipinoFlashcards() {
       return haystack.includes(term);
     });
   }, [enrichedStudents, studentSearch]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [studentSearch]);
 
   const selectedStudent = useMemo(() => {
     if (!selectedStudentId) return null;
@@ -558,11 +564,34 @@ export default function MasterTeacherFilipinoFlashcards() {
     }
   };
 
-  const selectionRows = filteredStudents.map((student, index) => ({
+  const paginatedStudents = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    const end = start + PAGE_SIZE;
+    return filteredStudents.slice(start, end);
+  }, [filteredStudents, currentPage]);
+
+  const totalPages = Math.max(Math.ceil(filteredStudents.length / PAGE_SIZE), 1);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const selectionRows = paginatedStudents.map((student, index) => ({
     ...student,
-    no: index + 1,
+    no: (currentPage - 1) * PAGE_SIZE + index + 1,
     lastPhonemic: student.lastPerformance ? `${Math.round(student.lastPerformance.phonemeAccuracy)}%` : "—",
   }));
+
+    // When selection changes ensure the selected student is still visible
+    useEffect(() => {
+      if (!selectedStudentId) return;
+      const exists = filteredStudents.some((student) => student.id === selectedStudentId);
+      if (!exists) {
+        setSelectedStudentId(null);
+      }
+    }, [filteredStudents, selectedStudentId]);
 
   if (view === "select") {
     return (
@@ -589,9 +618,14 @@ export default function MasterTeacherFilipinoFlashcards() {
 
           <div className="mt-8 rounded-3xl border border-gray-300 bg-white shadow-md shadow-gray-200 p-6 space-y-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm font-medium text-gray-600">
-                {selectionRows.length} student(s) listed
-              </p>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:gap-3">
+                <p className="text-sm font-medium text-gray-600">
+                  {filteredStudents.length} student(s) listed
+                </p>
+                <p className="text-xs text-gray-400">
+                  Page {currentPage} of {totalPages}
+                </p>
+              </div>
               <div>
                 <input
                   type="text"
@@ -618,8 +652,33 @@ export default function MasterTeacherFilipinoFlashcards() {
                   Start Remedial
                 </UtilityButton>
               )}
-              pageSize={8}
+              pageSize={PAGE_SIZE}
             />
+
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <p className="text-xs text-gray-500">
+                Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredStudents.length)} of {filteredStudents.length}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="rounded-full border border-[#013300] px-4 py-2 text-sm text-[#013300] transition hover:bg-emerald-50 disabled:opacity-40"
+                  onClick={() => setCurrentPage((page) => Math.max(page - 1, 1))}
+                  disabled={currentPage <= 1}
+                >
+                  Previous
+                </button>
+                <span className="text-sm text-gray-600">{currentPage} / {totalPages}</span>
+                <button
+                  type="button"
+                  className="rounded-full border border-[#013300] px-4 py-2 text-sm text-[#013300] transition hover:bg-emerald-50 disabled:opacity-40"
+                  onClick={() => setCurrentPage((page) => Math.min(page + 1, totalPages))}
+                  disabled={currentPage >= totalPages}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
