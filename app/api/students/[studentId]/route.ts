@@ -46,7 +46,7 @@ export async function GET(_: NextRequest, { params }: { params: { studentId?: st
   }
 }
 
-export async function PATCH(request: NextRequest, { params }: { params: { studentId?: string } }) {
+async function handleUpdate(request: NextRequest, params: { studentId?: string }) {
   const studentId = parseStudentId(params.studentId ?? null);
   if (!studentId) {
     return NextResponse.json({ success: false, error: "Invalid student id" }, { status: 400 });
@@ -86,6 +86,14 @@ export async function PATCH(request: NextRequest, { params }: { params: { studen
     console.error("Failed to update student", error);
     return NextResponse.json({ success: false, error: "Failed to update student" }, { status: 500 });
   }
+}
+
+export async function PATCH(request: NextRequest, { params }: { params: { studentId?: string } }) {
+  return handleUpdate(request, params);
+}
+
+export async function PUT(request: NextRequest, { params }: { params: { studentId?: string } }) {
+  return handleUpdate(request, params);
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { studentId?: string } }) {
