@@ -78,6 +78,62 @@ function generateTemporaryPassword(): string {
   return random.padEnd(8, "0");
 }
 
+const PRINCIPAL_ID_PATTERN = /^PR-\d{2}\d{4,}$/;
+
+export function formatPrincipalIdentifier(
+  raw: string | null | undefined,
+  fallbackSequence?: number | null,
+  yearOverride?: number | null,
+): string {
+  const normalized = typeof raw === "string" ? raw.trim() : "";
+  if (normalized && PRINCIPAL_ID_PATTERN.test(normalized)) {
+    return normalized;
+  }
+
+  const yearSource = typeof yearOverride === "number" && Number.isFinite(yearOverride)
+    ? yearOverride
+    : new Date().getFullYear();
+  const year = String(yearSource).slice(-2);
+
+  const sequenceValue = typeof fallbackSequence === "number" && Number.isFinite(fallbackSequence)
+    ? Math.max(1, Math.trunc(fallbackSequence))
+    : 1;
+
+  return `PR-${year}${String(sequenceValue).padStart(4, "0")}`;
+}
+
+async function generatePrincipalId(
+  connection: PoolConnection,
+  sources: Array<{ table: string; column: string }>,
+): Promise<string> {
+  const year = new Date().getFullYear().toString().slice(-2);
+
+  let maxSequence = 0;
+
+  for (const source of sources) {
+    const [rows] = await connection.query<RowDataPacket[]>(
+      `SELECT \`${source.column}\` AS principal_id FROM \`${source.table}\` WHERE \`${source.column}\` LIKE ? ORDER BY \`${source.column}\` DESC LIMIT 1`,
+      [`PR-${year}%`],
+    );
+
+    if (rows.length === 0) {
+      continue;
+    }
+
+    const lastId = rows[0]?.principal_id;
+    const match = typeof lastId === "string" ? lastId.match(/PR-\d{2}(\d{4,})$/) : null;
+    if (match) {
+      const parsed = Number.parseInt(match[1], 10);
+      if (Number.isFinite(parsed)) {
+        maxSequence = Math.max(maxSequence, parsed);
+      }
+    }
+  }
+
+  const nextNum = maxSequence + 1;
+  return `PR-${year}${String(nextNum).padStart(4, "0")}`;
+}
+
 export interface CreatePrincipalInput {
   firstName: string;
   middleName: string | null;
@@ -113,14 +169,18 @@ export async function createPrincipal(input: CreatePrincipalInput): Promise<Crea
   const result = await runWithConnection(async (connection) => {
     const userColumns = await getColumnsForTable(connection, "users");
     let principalColumns: Set<string> | null = null;
-    try {
-      principalColumns = await getColumnsForTable(connection, "principal");
-    } catch {
-      // Try alternative table names
+    let principalTable: string | null = null;
+    const principalCandidates = ["principal", "principals", "principal_info"];
+    for (const table of principalCandidates) {
       try {
-        principalColumns = await getColumnsForTable(connection, "principals");
+        const columns = await getColumnsForTable(connection, table);
+        if (columns.size > 0) {
+          principalColumns = columns;
+          principalTable = table;
+          break;
+        }
       } catch {
-        principalColumns = null;
+        // continue to next candidate
       }
     }
 
@@ -136,6 +196,19 @@ export async function createPrincipal(input: CreatePrincipalInput): Promise<Crea
 
       const userInsertColumns: string[] = [];
       const userInsertValues: any[] = [];
+      const principalIdSources: Array<{ table: string; column: string }> = [];
+
+      if (userColumns.has("principal_id")) {
+        principalIdSources.push({ table: "users", column: "principal_id" });
+      }
+      if (principalTable && principalColumns?.has("principal_id")) {
+        principalIdSources.push({ table: principalTable, column: "principal_id" });
+      }
+
+      let generatedPrincipalId: string | null = null;
+      if (principalIdSources.length > 0) {
+        generatedPrincipalId = await generatePrincipalId(connection, principalIdSources);
+      }
 
       if (userColumns.has("first_name")) {
         userInsertColumns.push("first_name");
@@ -185,6 +258,10 @@ export async function createPrincipal(input: CreatePrincipalInput): Promise<Crea
         userInsertColumns.push("password");
         userInsertValues.push(temporaryPassword);
       }
+      if (generatedPrincipalId && userColumns.has("principal_id")) {
+        userInsertColumns.push("principal_id");
+        userInsertValues.push(generatedPrincipalId);
+      }
       const now = new Date();
       if (userColumns.has("created_at")) {
         userInsertColumns.push("created_at");
@@ -212,16 +289,16 @@ export async function createPrincipal(input: CreatePrincipalInput): Promise<Crea
         throw new HttpError(500, "Failed to create user record.");
       }
 
-      if (principalColumns && principalColumns.size > 0) {
+      if (principalTable && principalColumns && principalColumns.size > 0) {
         const principalInsertColumns: string[] = [];
         const principalValues: any[] = [];
 
         principalInsertColumns.push("user_id");
         principalValues.push(userId);
 
-        if (principalColumns.has("principal_id")) {
+        if (principalColumns.has("principal_id") && generatedPrincipalId) {
           principalInsertColumns.push("principal_id");
-          principalValues.push(String(userId));
+          principalValues.push(generatedPrincipalId);
         }
         if (principalColumns.has("first_name")) {
           principalInsertColumns.push("first_name");
@@ -277,7 +354,7 @@ export async function createPrincipal(input: CreatePrincipalInput): Promise<Crea
           const principalPlaceholders = principalInsertColumns.map(() => "?").join(", ");
 
           await connection.query<ResultSetHeader>(
-            `INSERT INTO principal (${principalColumnsSql}) VALUES (${principalPlaceholders})`,
+            `INSERT INTO \`${principalTable}\` (${principalColumnsSql}) VALUES (${principalPlaceholders})`,
             principalValues,
           );
         }
@@ -287,7 +364,7 @@ export async function createPrincipal(input: CreatePrincipalInput): Promise<Crea
 
       const record = {
         userId,
-        principalId: String(userId),
+        principalId: formatPrincipalIdentifier(generatedPrincipalId, userId),
         firstName,
         middleName,
         lastName,

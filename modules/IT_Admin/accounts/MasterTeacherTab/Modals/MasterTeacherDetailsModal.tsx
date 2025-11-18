@@ -40,7 +40,7 @@ export default function MasterTeacherDetailsModal({ show, onClose, masterTeacher
               label="Full Name" 
               value={masterTeacher.fullName || masterTeacher.name} 
             />
-            <p className="text-xs text-gray-500 pl-1">Format: First, Middle, Last, Suffix</p>
+            <p className="text-xs text-gray-500 pl-1">Format: Last, First, Middle, Suffix</p>
           </div>
         </div>
       </ModalSection>

@@ -155,7 +155,7 @@ export default function TeacherTab({ teachers, searchTerm }: TeacherTabProps) {
         }))}
         actions={(row: any) => (
           <UtilityButton small onClick={() => handleShowDetails(row)}>
-            View Details
+            View
           </UtilityButton>
         )}
         pageSize={10}

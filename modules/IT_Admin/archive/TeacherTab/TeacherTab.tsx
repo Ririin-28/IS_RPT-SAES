@@ -299,7 +299,7 @@ export default function TeacherArchiveTab({
         data={tableData}
         actions={(row: any) => (
           <UtilityButton small onClick={() => handleViewDetails(row)}>
-            View Details
+            View
           </UtilityButton>
         )}
         pageSize={10}

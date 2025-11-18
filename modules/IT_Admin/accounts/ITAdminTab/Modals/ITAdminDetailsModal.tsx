@@ -40,7 +40,7 @@ export default function ITAdminDetailsModal({ show, onClose, itAdmin }: ITAdminD
               label="Full Name" 
               value={itAdmin.fullName || itAdmin.name} 
             />
-            <p className="text-xs text-gray-500 pl-1">Format: First, Middle, Last, Suffix</p>
+            <p className="text-xs text-gray-500 pl-1">Format: Last, First, Middle, Suffix</p>
           </div>
         </div>
       </ModalSection>

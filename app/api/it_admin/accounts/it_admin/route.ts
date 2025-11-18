@@ -4,6 +4,7 @@ import { getTableColumns, query, tableExists } from "@/lib/db";
 import {
   HttpError,
   createItAdmin,
+  formatAdminIdentifier,
   sanitizeEmail,
   sanitizeNamePart,
   sanitizeOptionalNamePart,
@@ -16,6 +17,7 @@ const ROLE_FILTERS = ["admin", "it_admin", "it-admin"] as const;
 
 type RawItAdminRow = RowDataPacket & {
   user_id: number;
+  user_admin_id?: string | null;
   user_first_name?: string | null;
   user_middle_name?: string | null;
   user_last_name?: string | null;
@@ -58,16 +60,30 @@ function buildName(
   lastName: string | null,
   suffix: string | null,
 ): string | null {
-  const parts = [firstName, middleName, lastName]
-    .map((part) => (typeof part === "string" ? part.trim() : ""))
-    .filter((part) => part.length > 0);
-  if (parts.length === 0) {
-    return null;
+  // If we don't have both last name and first name, use fallback
+  if (!lastName || !firstName) {
+    const parts = [firstName, middleName, lastName]
+      .map((part) => (typeof part === "string" ? part.trim() : ""))
+      .filter((part) => part.length > 0);
+    if (parts.length === 0) {
+      return null;
+    }
+    if (suffix && suffix.trim().length > 0) {
+      parts.push(suffix.trim());
+    }
+    return parts.join(" ");
   }
-  if (suffix && suffix.trim().length > 0) {
-    parts.push(suffix.trim());
-  }
-  return parts.join(" ");
+
+  // Format: "Lastname, Firstname MiddleInitial"
+  const middleInitial = middleName && middleName.trim().length > 0 
+    ? ` ${middleName.trim().charAt(0)}.` 
+    : "";
+  
+  const suffixPart = suffix && suffix.trim().length > 0 
+    ? ` ${suffix.trim()}` 
+    : "";
+
+  return `${lastName}, ${firstName}${middleInitial}${suffixPart}`;
 }
 
 async function safeGetColumns(table: string): Promise<Set<string>> {
@@ -78,6 +94,53 @@ async function safeGetColumns(table: string): Promise<Set<string>> {
   }
 }
 
+async function persistAdminIdentifiers(
+  updates: Array<{
+    userId: number;
+    previousUserAdminId: string | null;
+    previousItAdminId: string | null;
+    nextId: string;
+  }>,
+  options: {
+    userHasAdminIdColumn: boolean;
+    itAdmin: { hasTable: boolean; hasAdminIdColumn: boolean; hasUserIdColumn: boolean };
+  },
+) {
+  if (updates.length === 0) {
+    return;
+  }
+
+  await Promise.all(
+    updates.map(async ({ userId, previousUserAdminId, previousItAdminId, nextId }) => {
+      try {
+        const normalizedNext = nextId.trim();
+        if (!normalizedNext) {
+          return;
+        }
+
+        if (options.userHasAdminIdColumn) {
+          await query("UPDATE `users` SET `admin_id` = ? WHERE `user_id` = ? LIMIT 1", [normalizedNext, userId]);
+        }
+
+        if (options.itAdmin.hasTable && options.itAdmin.hasAdminIdColumn) {
+          if (options.itAdmin.hasUserIdColumn) {
+            await query("UPDATE `it_admin` SET `admin_id` = ? WHERE `user_id` = ? LIMIT 1", [normalizedNext, userId]);
+          } else {
+            const matchValue = previousItAdminId?.trim().length
+              ? previousItAdminId.trim()
+              : previousUserAdminId?.trim().length
+                ? previousUserAdminId.trim()
+                : String(userId);
+            await query("UPDATE `it_admin` SET `admin_id` = ? WHERE `admin_id` = ? LIMIT 1", [normalizedNext, matchValue]);
+          }
+        }
+      } catch (error) {
+        console.warn("Failed to persist IT admin identifier", { userId, error });
+      }
+    }),
+  );
+}
+
 export async function GET() {
   try {
     const userColumns = await safeGetColumns("users");
@@ -85,8 +148,12 @@ export async function GET() {
       return NextResponse.json({ error: "Users table is not accessible." }, { status: 500 });
     }
 
+    const userHasAdminId = userColumns.has("admin_id");
+
     const itAdminTableExists = await tableExists("it_admin");
     const itAdminColumns = itAdminTableExists ? await safeGetColumns("it_admin") : new Set<string>();
+    const itAdminHasAdminId = itAdminColumns.has("admin_id");
+    const itAdminHasUserId = itAdminColumns.has("user_id");
     const accountLogsExists = await tableExists("account_logs");
     const accountLogsColumns = accountLogsExists ? await safeGetColumns("account_logs") : new Set<string>();
     const canJoinAccountLogs = accountLogsExists && accountLogsColumns.has("user_id");
@@ -105,10 +172,11 @@ export async function GET() {
       }
     };
 
+    addUserColumn("admin_id", "user_admin_id");
     addUserColumn("first_name", "user_first_name");
     addUserColumn("middle_name", "user_middle_name");
     addUserColumn("last_name", "user_last_name");
-  addUserColumn("suffix", "user_suffix");
+    addUserColumn("suffix", "user_suffix");
     addUserColumn("name", "user_name");
     addUserColumn("email", "user_email");
     addUserColumn("contact_number", "user_contact_number");
@@ -120,7 +188,7 @@ export async function GET() {
     addItAdminColumn("first_name", "admin_first_name");
     addItAdminColumn("middle_name", "admin_middle_name");
     addItAdminColumn("last_name", "admin_last_name");
-  addItAdminColumn("suffix", "admin_suffix");
+    addItAdminColumn("suffix", "admin_suffix");
     addItAdminColumn("name", "admin_name");
     addItAdminColumn("email", "admin_email");
     addItAdminColumn("contact_number", "admin_contact_number");
@@ -138,9 +206,9 @@ export async function GET() {
     let joinClauses = "";
 
     if (itAdminTableExists && itAdminColumns.size > 0) {
-      if (itAdminColumns.has("user_id")) {
+      if (itAdminHasUserId) {
         joinClauses += " LEFT JOIN `it_admin` AS ia ON ia.user_id = u.user_id";
-      } else if (itAdminColumns.has("admin_id")) {
+      } else if (itAdminHasAdminId) {
         joinClauses += " LEFT JOIN `it_admin` AS ia ON ia.admin_id = u.user_id";
       }
     }
@@ -169,12 +237,19 @@ export async function GET() {
     const params = [...ROLE_FILTERS];
     const [rows] = await query<RawItAdminRow[]>(sql, params);
 
+    const pendingAdminIdUpdates: Array<{
+      userId: number;
+      previousUserAdminId: string | null;
+      previousItAdminId: string | null;
+      nextId: string;
+    }> = [];
+
     const records = rows.map((row) => {
       const firstName = coalesce(row.admin_first_name, row.user_first_name);
       const middleName = coalesce(row.admin_middle_name, row.user_middle_name);
       const lastName = coalesce(row.admin_last_name, row.user_last_name);
-    const suffix = coalesce(row.admin_suffix, row.user_suffix);
-    const fallbackName = buildName(firstName, middleName, lastName, suffix);
+      const suffix = coalesce(row.admin_suffix, row.user_suffix);
+      const fallbackName = buildName(firstName, middleName, lastName, suffix);
       const name = coalesce(row.admin_name, row.user_name, fallbackName, row.user_email);
       const email = coalesce(row.user_email, row.admin_email);
       const contactNumber = coalesce(
@@ -186,7 +261,24 @@ export async function GET() {
       const status = coalesce(row.user_status, row.admin_status, "Active") ?? "Active";
       const createdAt = row.user_created_at instanceof Date ? row.user_created_at.toISOString() : null;
       const lastLogin = row.last_login instanceof Date ? row.last_login.toISOString() : null;
-      const adminId = coalesce(row.admin_admin_id, row.user_id != null ? String(row.user_id) : null) ?? String(row.user_id);
+      const storedAdminId = coalesce(
+        row.user_admin_id,
+        row.admin_admin_id,
+        row.user_id != null ? String(row.user_id) : null,
+      );
+      const adminId = formatAdminIdentifier(storedAdminId, row.user_id);
+
+      const needsUserUpdate = userHasAdminId && (row.user_admin_id ?? "") !== adminId;
+      const needsItAdminUpdate = itAdminHasAdminId && (row.admin_admin_id ?? "") !== adminId;
+
+      if (row.user_id != null && (needsUserUpdate || needsItAdminUpdate)) {
+        pendingAdminIdUpdates.push({
+          userId: row.user_id,
+          previousUserAdminId: typeof row.user_admin_id === "string" ? row.user_admin_id : null,
+          previousItAdminId: typeof row.admin_admin_id === "string" ? row.admin_admin_id : null,
+          nextId: adminId,
+        });
+      }
 
       return {
         userId: row.user_id,
@@ -202,6 +294,15 @@ export async function GET() {
         createdAt,
         lastLogin,
       };
+    });
+
+    await persistAdminIdentifiers(pendingAdminIdUpdates, {
+      userHasAdminIdColumn: userHasAdminId,
+      itAdmin: {
+        hasTable: itAdminTableExists,
+        hasAdminIdColumn: itAdminHasAdminId,
+        hasUserIdColumn: itAdminHasUserId,
+      },
     });
 
     return NextResponse.json({

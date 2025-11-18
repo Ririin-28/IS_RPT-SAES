@@ -847,8 +847,8 @@ export default function MasterTeacherTab({ teachers, setTeachers, searchTerm }: 
           no: idx + 1,
         }))}
         actions={(row: any) => (
-          <UtilityButton small onClick={() => handleShowDetails(row)}>
-            View Details
+          <UtilityButton small onClick={() => handleShowDetails(row)} title="Click to view details">
+            View
           </UtilityButton>
         )}
         selectable={selectMode}

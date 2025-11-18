@@ -4,6 +4,7 @@ import { getTableColumns, query, tableExists } from "@/lib/db";
 import {
   HttpError,
   createTeacher,
+  formatTeacherIdentifier,
   sanitizeEmail,
   sanitizeNamePart,
   sanitizeOptionalNamePart,
@@ -26,6 +27,7 @@ const REMEDIAL_TEACHER_TABLE_CANDIDATES = [
 
 type RawTeacherRow = RowDataPacket & {
   user_id: number;
+  user_teacher_id?: string | null;
   user_first_name?: string | null;
   user_middle_name?: string | null;
   user_last_name?: string | null;
@@ -37,6 +39,9 @@ type RawTeacherRow = RowDataPacket & {
   user_status?: string | null;
   user_created_at?: Date | null;
   teacher_teacher_id?: string | null;
+  teacher_teacherid?: string | null;
+  teacher_employee_id?: string | null;
+  teacher_faculty_id?: string | null;
   teacher_first_name?: string | null;
   teacher_middle_name?: string | null;
   teacher_last_name?: string | null;
@@ -81,16 +86,30 @@ function buildName(
   lastName: string | null,
   suffix: string | null,
 ): string | null {
-  const parts = [firstName, middleName, lastName]
-    .map((part) => (typeof part === "string" ? part.trim() : ""))
-    .filter((part) => part.length > 0);
-  if (parts.length === 0) {
-    return null;
+  // If we don't have both last name and first name, use fallback
+  if (!lastName || !firstName) {
+    const parts = [firstName, middleName, lastName]
+      .map((part) => (typeof part === "string" ? part.trim() : ""))
+      .filter((part) => part.length > 0);
+    if (parts.length === 0) {
+      return null;
+    }
+    if (suffix && suffix.trim().length > 0) {
+      parts.push(suffix.trim());
+    }
+    return parts.join(" ");
   }
-  if (suffix && suffix.trim().length > 0) {
-    parts.push(suffix.trim());
-  }
-  return parts.join(" ");
+
+  // Format: "Lastname, Firstname MiddleInitial"
+  const middleInitial = middleName && middleName.trim().length > 0 
+    ? ` ${middleName.trim().charAt(0)}.` 
+    : "";
+  
+  const suffixPart = suffix && suffix.trim().length > 0 
+    ? ` ${suffix.trim()}` 
+    : "";
+
+  return `${lastName}, ${firstName}${middleInitial}${suffixPart}`;
 }
 
 async function safeGetColumns(table: string): Promise<Set<string>> {
@@ -99,6 +118,68 @@ async function safeGetColumns(table: string): Promise<Set<string>> {
   } catch {
     return new Set<string>();
   }
+}
+
+async function persistTeacherIdentifiers(
+  updates: Array<{
+    userId: number;
+    previousUserTeacherId: string | null;
+    previousTeacherTableId: string | null;
+    fallbackTeacherId: string | null;
+    nextId: string;
+  }>,
+  options: {
+    userHasTeacherIdColumn: boolean;
+    teacherTable: {
+      name: string | null;
+      idColumnName: string | null;
+      hasUserIdColumn: boolean;
+    };
+  },
+) {
+  if (updates.length === 0) {
+    return;
+  }
+
+  await Promise.all(
+    updates.map(async ({ userId, previousUserTeacherId, previousTeacherTableId, fallbackTeacherId, nextId }) => {
+      try {
+        const normalizedNext = nextId.trim();
+        if (!normalizedNext) {
+          return;
+        }
+
+        if (options.userHasTeacherIdColumn) {
+          await query("UPDATE `users` SET `teacher_id` = ? WHERE `user_id` = ? LIMIT 1", [normalizedNext, userId]);
+        }
+
+        if (options.teacherTable.name && options.teacherTable.idColumnName) {
+          const tableName = options.teacherTable.name;
+          const columnName = options.teacherTable.idColumnName;
+          if (options.teacherTable.hasUserIdColumn) {
+            await query(
+              `UPDATE \`${tableName}\` SET \`${columnName}\` = ? WHERE \`user_id\` = ? LIMIT 1`,
+              [normalizedNext, userId],
+            );
+          } else {
+            const matchValue = previousTeacherTableId?.trim().length
+              ? previousTeacherTableId.trim()
+              : previousUserTeacherId?.trim().length
+                ? previousUserTeacherId.trim()
+                : fallbackTeacherId?.trim().length
+                  ? fallbackTeacherId.trim()
+                  : String(userId);
+            await query(
+              `UPDATE \`${tableName}\` SET \`${columnName}\` = ? WHERE \`${columnName}\` = ? LIMIT 1`,
+              [normalizedNext, matchValue],
+            );
+          }
+        }
+      } catch (error) {
+        console.warn("Failed to persist Teacher identifier", { userId, error });
+      }
+    }),
+  );
 }
 
 const TEACHER_TABLE_CANDIDATES = [
@@ -183,8 +264,12 @@ export async function GET() {
     addUserColumn("phone_number", "user_phone_number");
     addUserColumn("status", "user_status");
     addUserColumn("created_at", "user_created_at");
+    addUserColumn("teacher_id", "user_teacher_id");
 
     addTeacherColumn("teacher_id", "teacher_teacher_id");
+    addTeacherColumn("teacherid", "teacher_teacherid");
+    addTeacherColumn("employee_id", "teacher_employee_id");
+    addTeacherColumn("faculty_id", "teacher_faculty_id");
     addTeacherColumn("first_name", "teacher_first_name");
     addTeacherColumn("middle_name", "teacher_middle_name");
     addTeacherColumn("last_name", "teacher_last_name");
@@ -219,9 +304,16 @@ export async function GET() {
 
     let joinClauses = "";
 
-    if (teacherInfo.table && teacherInfo.columns.size > 0) {
-      const teacherTableSql = `\`${teacherInfo.table}\``;
-      if (teacherInfo.columns.has("user_id")) {
+    const teacherTableName = teacherInfo.table;
+    const teacherHasUserId = teacherInfo.columns.has("user_id");
+    const teacherIdColumnName = ["teacher_id", "teacherid", "employee_id", "faculty_id"].find((column) =>
+      teacherInfo.columns.has(column),
+    ) ?? null;
+    const userHasTeacherId = userColumns.has("teacher_id");
+
+    if (teacherTableName && teacherInfo.columns.size > 0) {
+      const teacherTableSql = `\`${teacherTableName}\``;
+      if (teacherHasUserId) {
         joinClauses += ` LEFT JOIN ${teacherTableSql} AS t ON t.user_id = u.user_id`;
       } else if (teacherInfo.columns.has("teacher_id")) {
         joinClauses += ` LEFT JOIN ${teacherTableSql} AS t ON t.teacher_id = u.user_id`;
@@ -269,6 +361,14 @@ export async function GET() {
     const params = [...ROLE_FILTERS];
     const [rows] = await query<RawTeacherRow[]>(sql, params);
 
+    const pendingTeacherUpdates: Array<{
+      userId: number;
+      previousUserTeacherId: string | null;
+      previousTeacherTableId: string | null;
+      fallbackTeacherId: string | null;
+      nextId: string;
+    }> = [];
+
     const records = rows.map((row) => {
       const firstName = coalesce(row.teacher_first_name, row.user_first_name);
       const middleName = coalesce(row.teacher_middle_name, row.user_middle_name);
@@ -303,7 +403,50 @@ export async function GET() {
       const status = coalesce(row.user_status, row.teacher_status, "Active") ?? "Active";
       const createdAt = row.user_created_at instanceof Date ? row.user_created_at.toISOString() : null;
       const lastLogin = row.last_login instanceof Date ? row.last_login.toISOString() : null;
-      const teacherId = coalesce(row.teacher_teacher_id, row.user_id != null ? String(row.user_id) : null) ?? String(row.user_id);
+      const storedTeacherId = coalesce(
+        row.user_teacher_id,
+        row.teacher_teacher_id,
+        row.teacher_teacherid,
+        row.teacher_employee_id,
+        row.teacher_faculty_id,
+        row.user_id != null ? String(row.user_id) : null,
+      );
+      const teacherId = formatTeacherIdentifier(storedTeacherId, row.user_id);
+
+      const teacherTableIdValue = teacherIdColumnName === "teacher_id"
+        ? row.teacher_teacher_id ?? null
+        : teacherIdColumnName === "teacherid"
+          ? row.teacher_teacherid ?? null
+          : teacherIdColumnName === "employee_id"
+            ? row.teacher_employee_id ?? null
+            : teacherIdColumnName === "faculty_id"
+              ? row.teacher_faculty_id ?? null
+              : null;
+
+      const needsUserUpdate = userHasTeacherId && (row.user_teacher_id ?? "") !== teacherId;
+      const needsTeacherTableUpdate = Boolean(
+        teacherTableName &&
+          teacherIdColumnName &&
+          (teacherTableIdValue ?? "") !== teacherId,
+      );
+
+      if (row.user_id != null && (needsUserUpdate || needsTeacherTableUpdate)) {
+        pendingTeacherUpdates.push({
+          userId: row.user_id,
+          previousUserTeacherId: typeof row.user_teacher_id === "string" ? row.user_teacher_id : null,
+          previousTeacherTableId: typeof teacherTableIdValue === "string" ? teacherTableIdValue : null,
+          fallbackTeacherId: typeof row.teacher_teacher_id === "string"
+            ? row.teacher_teacher_id
+            : typeof row.teacher_teacherid === "string"
+              ? row.teacher_teacherid
+              : typeof row.teacher_employee_id === "string"
+                ? row.teacher_employee_id
+                : typeof row.teacher_faculty_id === "string"
+                  ? row.teacher_faculty_id
+                  : null,
+          nextId: teacherId,
+        });
+      }
 
       return {
         userId: row.user_id,
@@ -324,11 +467,20 @@ export async function GET() {
       };
     });
 
+    await persistTeacherIdentifiers(pendingTeacherUpdates, {
+      userHasTeacherIdColumn: userHasTeacherId,
+      teacherTable: {
+        name: teacherTableName,
+        idColumnName: teacherIdColumnName,
+        hasUserIdColumn: teacherHasUserId,
+      },
+    });
+
     return NextResponse.json({
       total: records.length,
       records,
       metadata: {
-        teacherTableDetected: Boolean(teacherInfo.table && teacherInfo.columns.size > 0),
+        teacherTableDetected: Boolean(teacherTableName && teacherInfo.columns.size > 0),
         remedialTeacherTableDetected: Boolean(remedialTeacherInfo.table && remedialTeacherInfo.columns.size > 0),
         accountLogsJoined: canJoinAccountLogs,
       },

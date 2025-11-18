@@ -4,6 +4,7 @@ import { getTableColumns, query, tableExists } from "@/lib/db";
 import {
   HttpError,
   createPrincipal,
+  formatPrincipalIdentifier,
   sanitizeEmail,
   sanitizeNamePart,
   sanitizeOptionalNamePart,
@@ -16,6 +17,7 @@ const ROLE_FILTERS = ["principal"] as const;
 
 type RawPrincipalRow = RowDataPacket & {
   user_id: number;
+  user_principal_id?: string | null;
   user_first_name?: string | null;
   user_middle_name?: string | null;
   user_last_name?: string | null;
@@ -58,16 +60,30 @@ function buildName(
   lastName: string | null,
   suffix: string | null,
 ): string | null {
-  const parts = [firstName, middleName, lastName]
-    .map((part) => (typeof part === "string" ? part.trim() : ""))
-    .filter((part) => part.length > 0);
-  if (parts.length === 0) {
-    return null;
+  // If we don't have both last name and first name, use fallback
+  if (!lastName || !firstName) {
+    const parts = [firstName, middleName, lastName]
+      .map((part) => (typeof part === "string" ? part.trim() : ""))
+      .filter((part) => part.length > 0);
+    if (parts.length === 0) {
+      return null;
+    }
+    if (suffix && suffix.trim().length > 0) {
+      parts.push(suffix.trim());
+    }
+    return parts.join(" ");
   }
-  if (suffix && suffix.trim().length > 0) {
-    parts.push(suffix.trim());
-  }
-  return parts.join(" ");
+
+  // Format: "Lastname, Firstname MiddleInitial"
+  const middleInitial = middleName && middleName.trim().length > 0 
+    ? ` ${middleName.trim().charAt(0)}.` 
+    : "";
+  
+  const suffixPart = suffix && suffix.trim().length > 0 
+    ? ` ${suffix.trim()}` 
+    : "";
+
+  return `${lastName}, ${firstName}${middleInitial}${suffixPart}`;
 }
 
 async function safeGetColumns(table: string): Promise<Set<string>> {
@@ -76,6 +92,64 @@ async function safeGetColumns(table: string): Promise<Set<string>> {
   } catch {
     return new Set<string>();
   }
+}
+
+async function persistPrincipalIdentifiers(
+  updates: Array<{
+    userId: number;
+    previousUserPrincipalId: string | null;
+    previousPrincipalTableId: string | null;
+    nextId: string;
+  }>,
+  options: {
+    userHasPrincipalIdColumn: boolean;
+    principalTable: {
+      name: string | null;
+      hasPrincipalIdColumn: boolean;
+      hasUserIdColumn: boolean;
+    };
+  },
+) {
+  if (updates.length === 0) {
+    return;
+  }
+
+  await Promise.all(
+    updates.map(async ({ userId, previousUserPrincipalId, previousPrincipalTableId, nextId }) => {
+      try {
+        const normalizedNext = nextId.trim();
+        if (!normalizedNext) {
+          return;
+        }
+
+        if (options.userHasPrincipalIdColumn) {
+          await query("UPDATE `users` SET `principal_id` = ? WHERE `user_id` = ? LIMIT 1", [normalizedNext, userId]);
+        }
+
+        if (options.principalTable.name && options.principalTable.hasPrincipalIdColumn) {
+          const tableName = options.principalTable.name;
+          if (options.principalTable.hasUserIdColumn) {
+            await query(
+              `UPDATE \`${tableName}\` SET \`principal_id\` = ? WHERE \`user_id\` = ? LIMIT 1`,
+              [normalizedNext, userId],
+            );
+          } else {
+            const matchValue = previousPrincipalTableId?.trim().length
+              ? previousPrincipalTableId.trim()
+              : previousUserPrincipalId?.trim().length
+                ? previousUserPrincipalId.trim()
+                : String(userId);
+            await query(
+              `UPDATE \`${tableName}\` SET \`principal_id\` = ? WHERE \`principal_id\` = ? LIMIT 1`,
+              [normalizedNext, matchValue],
+            );
+          }
+        }
+      } catch (error) {
+        console.warn("Failed to persist Principal identifier", { userId, error });
+      }
+    }),
+  );
 }
 
 async function resolvePrincipalTable(): Promise<{ table: string | null; columns: Set<string> }> {
@@ -129,6 +203,7 @@ export async function GET() {
     addUserColumn("phone_number", "user_phone_number");
     addUserColumn("status", "user_status");
     addUserColumn("created_at", "user_created_at");
+    addUserColumn("principal_id", "user_principal_id");
 
     addPrincipalColumn("principal_id", "principal_principal_id");
     addPrincipalColumn("first_name", "principal_first_name");
@@ -151,11 +226,16 @@ export async function GET() {
 
     let joinClauses = "";
 
-    if (principalInfo.table && principalInfo.columns.size > 0) {
-      if (principalInfo.columns.has("user_id")) {
-        joinClauses += " LEFT JOIN `principal` AS p ON p.user_id = u.user_id";
-      } else if (principalInfo.columns.has("principal_id")) {
-        joinClauses += " LEFT JOIN `principal` AS p ON p.principal_id = u.user_id";
+    const principalTableName = principalInfo.table;
+    const principalHasPrincipalId = principalInfo.columns.has("principal_id");
+    const principalHasUserId = principalInfo.columns.has("user_id");
+    const userHasPrincipalId = userColumns.has("principal_id");
+
+    if (principalTableName && principalInfo.columns.size > 0) {
+      if (principalHasUserId) {
+        joinClauses += ` LEFT JOIN \`${principalTableName}\` AS p ON p.user_id = u.user_id`;
+      } else if (principalHasPrincipalId) {
+        joinClauses += ` LEFT JOIN \`${principalTableName}\` AS p ON p.principal_id = u.user_id`;
       }
     }
 
@@ -183,6 +263,13 @@ export async function GET() {
     const params = [...ROLE_FILTERS];
     const [rows] = await query<RawPrincipalRow[]>(sql, params);
 
+    const pendingPrincipalUpdates: Array<{
+      userId: number;
+      previousUserPrincipalId: string | null;
+      previousPrincipalTableId: string | null;
+      nextId: string;
+    }> = [];
+
     const records = rows.map((row) => {
       const firstName = coalesce(row.principal_first_name, row.user_first_name);
       const middleName = coalesce(row.principal_middle_name, row.user_middle_name);
@@ -200,7 +287,24 @@ export async function GET() {
       const status = coalesce(row.user_status, row.principal_status, "Active") ?? "Active";
       const createdAt = row.user_created_at instanceof Date ? row.user_created_at.toISOString() : null;
       const lastLogin = row.last_login instanceof Date ? row.last_login.toISOString() : null;
-      const principalId = coalesce(row.principal_principal_id, row.user_id != null ? String(row.user_id) : null) ?? String(row.user_id);
+      const storedPrincipalId = coalesce(
+        row.user_principal_id,
+        row.principal_principal_id,
+        row.user_id != null ? String(row.user_id) : null,
+      );
+      const principalId = formatPrincipalIdentifier(storedPrincipalId, row.user_id);
+
+      const needsUserUpdate = userHasPrincipalId && (row.user_principal_id ?? "") !== principalId;
+      const needsPrincipalTableUpdate = principalHasPrincipalId && (row.principal_principal_id ?? "") !== principalId;
+
+      if (row.user_id != null && (needsUserUpdate || needsPrincipalTableUpdate)) {
+        pendingPrincipalUpdates.push({
+          userId: row.user_id,
+          previousUserPrincipalId: typeof row.user_principal_id === "string" ? row.user_principal_id : null,
+          previousPrincipalTableId: typeof row.principal_principal_id === "string" ? row.principal_principal_id : null,
+          nextId: principalId,
+        });
+      }
 
       return {
         userId: row.user_id,
@@ -218,11 +322,20 @@ export async function GET() {
       };
     });
 
+    await persistPrincipalIdentifiers(pendingPrincipalUpdates, {
+      userHasPrincipalIdColumn: userHasPrincipalId,
+      principalTable: {
+        name: principalTableName,
+        hasPrincipalIdColumn: principalHasPrincipalId,
+        hasUserIdColumn: principalHasUserId,
+      },
+    });
+
     return NextResponse.json({
       total: records.length,
       records,
       metadata: {
-        principalTableDetected: principalInfo.table && principalInfo.columns.size > 0,
+        principalTableDetected: Boolean(principalTableName && principalInfo.columns.size > 0),
         accountLogsJoined: canJoinAccountLogs,
       },
     });

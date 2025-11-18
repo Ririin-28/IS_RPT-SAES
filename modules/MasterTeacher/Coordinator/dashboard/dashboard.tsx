@@ -406,7 +406,7 @@ export default function MasterTeacherDashboard() {
       setStudentsError(null);
       try {
         const response = await fetch(
-          `/api/master_teacher/remedial/students?userId=${encodeURIComponent(String(userId))}`,
+          `/api/master_teacher/remedialteacher/students?userId=${encodeURIComponent(String(userId))}`,
           { cache: "no-store", signal: controller.signal },
         );
         const payload = (await response.json()) as RemedialStudentResponse;

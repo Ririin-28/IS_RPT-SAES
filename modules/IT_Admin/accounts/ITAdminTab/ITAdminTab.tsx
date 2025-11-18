@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef, type ChangeEvent } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect, type ChangeEvent } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { useForm } from "react-hook-form";
 import * as XLSX from "xlsx";
@@ -12,8 +12,10 @@ import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
 import { exportAccountRows, IT_ADMIN_EXPORT_COLUMNS } from "../utils/export-columns";
+import { getStoredUserProfile, USER_PROFILE_EVENT, type StoredUserProfile } from "@/lib/utils/user-profile";
 
 const NAME_COLLATOR = new Intl.Collator("en", { sensitivity: "base", numeric: true });
+const SELF_ARCHIVE_BLOCK_MESSAGE = "You cannot archive your own account.";
 
 function toStringOrNull(value: unknown): string | null {
   if (value === null || value === undefined) {
@@ -209,6 +211,11 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [isArchiving, setIsArchiving] = useState(false);
   const [uploadedPasswords, setUploadedPasswords] = useState<Array<{name: string; email: string; password: string}>>([]);
+  const [currentUserIdentifiers, setCurrentUserIdentifiers] = useState<{ id: string | null; email: string | null }>({ id: null, email: null });
+
+  const clearSelfArchiveError = useCallback(() => {
+    setArchiveError((prev) => (prev === SELF_ARCHIVE_BLOCK_MESSAGE ? null : prev));
+  }, [setArchiveError]);
 
   const addITAdminForm = useForm<AddITAdminFormValues>({
     mode: "onTouched",
@@ -222,6 +229,37 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
     },
   });
 
+  useEffect(() => {
+    const updateProfileState = (profile: StoredUserProfile | null) => {
+      const nextId = profile?.userId != null ? String(profile.userId) : null;
+      const nextEmail = typeof profile?.email === "string" ? profile.email.toLowerCase() : null;
+
+      setCurrentUserIdentifiers((prev) => {
+        if (prev.id === nextId && prev.email === nextEmail) {
+          return prev;
+        }
+        return { id: nextId, email: nextEmail };
+      });
+    };
+
+    updateProfileState(getStoredUserProfile());
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleProfileUpdate = (event: Event) => {
+      const customEvent = event as CustomEvent<StoredUserProfile | null>;
+      updateProfileState(customEvent.detail ?? null);
+    };
+
+    window.addEventListener(USER_PROFILE_EVENT, handleProfileUpdate);
+    return () => {
+      window.removeEventListener(USER_PROFILE_EVENT, handleProfileUpdate);
+    };
+  }, []);
+
+
   const getItAdminKey = useCallback((admin: any) => {
     const fallbackIndex = itAdmins.indexOf(admin);
     return String(
@@ -233,6 +271,48 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
         fallbackIndex,
     );
   }, [itAdmins]);
+
+  const currentUserProtectedKeys = useMemo(() => {
+    if (!currentUserIdentifiers.id && !currentUserIdentifiers.email) {
+      return new Set<string>();
+    }
+
+    const matches: string[] = [];
+    for (const admin of itAdmins) {
+      const candidateId = admin.userId ?? admin.user_id ?? admin.adminId ?? admin.admin_id;
+      const candidateIdString = candidateId != null ? String(candidateId) : null;
+      const candidateEmailSource = admin.email ?? admin.user_email ?? null;
+      const candidateEmail = typeof candidateEmailSource === "string" ? candidateEmailSource.toLowerCase() : null;
+
+      if (
+        (currentUserIdentifiers.id && candidateIdString === currentUserIdentifiers.id) ||
+        (currentUserIdentifiers.email && candidateEmail === currentUserIdentifiers.email)
+      ) {
+        matches.push(getItAdminKey(admin));
+      }
+    }
+
+    return new Set(matches);
+  }, [currentUserIdentifiers, getItAdminKey, itAdmins]);
+
+  useEffect(() => {
+    if (currentUserProtectedKeys.size === 0) {
+      return;
+    }
+
+    setSelectedITAdminKeys((prev) => {
+      let changed = false;
+      const next = new Set<string>();
+      prev.forEach((key) => {
+        if (!currentUserProtectedKeys.has(key)) {
+          next.add(key);
+        } else {
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [currentUserProtectedKeys]);
 
   const handleMenuAction = useCallback((action: AccountActionKey) => {
     if (action === "it_admin:add") {
@@ -586,6 +666,13 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
   }, []);
 
   const handleSelectItAdmin = useCallback((id: string, checked: boolean) => {
+    if (currentUserProtectedKeys.has(id)) {
+      setArchiveError(SELF_ARCHIVE_BLOCK_MESSAGE);
+      return;
+    }
+
+    clearSelfArchiveError();
+
     setSelectedITAdminKeys((prev) => {
       const next = new Set(prev);
       if (checked) {
@@ -595,16 +682,26 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
       }
       return next;
     });
-  }, []);
+  }, [clearSelfArchiveError, currentUserProtectedKeys, setArchiveError]);
 
   const handleSelectAll = useCallback((checked: boolean) => {
     if (checked) {
-      const keys = new Set(filteredITAdmins.map((admin: any) => getItAdminKey(admin)));
-      setSelectedITAdminKeys(keys);
+      const allKeys = filteredITAdmins.map((admin: any) => getItAdminKey(admin));
+      const allowedKeys = allKeys.filter((key) => !currentUserProtectedKeys.has(key));
+
+      if (allowedKeys.length !== allKeys.length && currentUserProtectedKeys.size > 0) {
+        setArchiveError(SELF_ARCHIVE_BLOCK_MESSAGE);
+      } else {
+        clearSelfArchiveError();
+      }
+
+      setSelectedITAdminKeys(new Set(allowedKeys));
       return;
     }
+
+    clearSelfArchiveError();
     setSelectedITAdminKeys(new Set());
-  }, [filteredITAdmins, getItAdminKey]);
+  }, [clearSelfArchiveError, currentUserProtectedKeys, filteredITAdmins, getItAdminKey, setArchiveError]);
 
   const handleCancelSelect = useCallback(() => {
     setSelectMode(false);
@@ -627,7 +724,15 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
     }
 
     const selectedRecords = itAdmins.filter((admin: any) => selectedITAdminKeys.has(getItAdminKey(admin)));
-    const userIds = selectedRecords
+    const archiveCandidates = selectedRecords.filter((admin: any) => !currentUserProtectedKeys.has(getItAdminKey(admin)));
+
+    if (archiveCandidates.length !== selectedRecords.length) {
+      setArchiveError(SELF_ARCHIVE_BLOCK_MESSAGE);
+      setSelectedITAdminKeys(new Set(archiveCandidates.map((admin: any) => getItAdminKey(admin))));
+      return;
+    }
+
+    const userIds = archiveCandidates
       .map((admin: any) => extractNumericId(admin.userId ?? admin.user_id ?? admin.adminId ?? admin.admin_id))
       .filter((value): value is number => value !== null);
 
@@ -673,7 +778,7 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
       });
 
       const archivedCount = effectiveIds.length;
-      setSuccessMessage(`Archived ${archivedCount} IT Admin${archivedCount === 1 ? "" : "s"} successfully.`);
+  setSuccessMessage(`Archived ${archivedCount} IT Admin${archivedCount === 1 ? "" : "s"} successfully.`);
       setSelectedITAdminKeys(new Set());
       setSelectMode(false);
       setShowArchiveModal(false);
@@ -682,7 +787,7 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
     } finally {
       setIsArchiving(false);
     }
-  }, [getItAdminKey, itAdmins, selectedITAdminKeys, setITAdmins]);
+  }, [currentUserProtectedKeys, getItAdminKey, itAdmins, selectedITAdminKeys, setArchiveError, setITAdmins]);
 
   const handleCloseArchiveModal = useCallback(() => {
     setShowArchiveModal(false);
@@ -825,14 +930,15 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
           no: idx + 1,
         }))}
         actions={(row: any) => (
-          <UtilityButton small onClick={() => handleShowDetails(row)}>
-            View Details
-          </UtilityButton>
+          <UtilityButton small onClick={() => handleShowDetails(row)} title="Click to view details">
+            View
+          </UtilityButton>       
         )}
         selectable={selectMode}
         selectedItems={selectedITAdminKeys}
         onSelectAll={handleSelectAll}
         onSelectItem={(id, checked) => handleSelectItAdmin(String(id), checked)}
+        nonSelectableIds={currentUserProtectedKeys}
         pageSize={10}
       />
 
