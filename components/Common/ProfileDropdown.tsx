@@ -8,6 +8,7 @@ import {
   USER_PROFILE_EVENT,
   StoredUserProfile,
 } from "@/lib/utils/user-profile";
+import LogoutConfirmationModal from "./Modals/LogoutConfirmationModal";
 type RoleSwitchOption = {
   label: string;
   description?: string;
@@ -27,6 +28,7 @@ export default function ProfileDropdown({ email, name, onProfile, onLogout, role
   const router = useRouter();
   const pathname = usePathname();
   const [storedProfile, setStoredProfile] = React.useState<StoredUserProfile | null>(() => getStoredUserProfile());
+  const [showLogoutConfirm, setShowLogoutConfirm] = React.useState(false);
 
   React.useEffect(() => {
     if (typeof window === "undefined") {
@@ -125,17 +127,31 @@ export default function ProfileDropdown({ email, name, onProfile, onLogout, role
     router.push("/Proponent/profile");
   };
 
-  const handleLogoutClick = () => {
+  const runLogout = React.useCallback(() => {
     if (onLogout) {
       onLogout();
       return;
     }
     performClientLogout(router);
+  }, [onLogout, router]);
+
+  const handleLogoutClick = () => {
+    setShowLogoutConfirm(true);
+  };
+
+  const handleConfirmLogout = () => {
+    setShowLogoutConfirm(false);
+    runLogout();
+  };
+
+  const handleCancelLogout = () => {
+    setShowLogoutConfirm(false);
   };
 
   return (
-    <div
-      className="
+    <>
+      <div
+        className="
       /* Mobile */
       absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-gray-200 z-50 p-4 flex flex-col items-center
       /* Tablet */
@@ -143,7 +159,7 @@ export default function ProfileDropdown({ email, name, onProfile, onLogout, role
       /* Desktop */
       md:w-80 md:p-8
     "
-    >
+      >
       <span className="text-sm text-[#013300] font-semibold mb-2">{resolvedEmail}</span>
       <div className="my-2">
         <svg width="56" height="56" fill="none" stroke="#013300" strokeWidth="2" viewBox="0 0 24 24">
@@ -197,7 +213,13 @@ export default function ProfileDropdown({ email, name, onProfile, onLogout, role
           </div>
         </>
       )}
-    </div>
+      </div>
+      <LogoutConfirmationModal
+        isOpen={showLogoutConfirm}
+        onClose={handleCancelLogout}
+        onConfirm={handleConfirmLogout}
+      />
+    </>
   );
 }
 

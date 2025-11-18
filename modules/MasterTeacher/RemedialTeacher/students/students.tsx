@@ -220,7 +220,7 @@ export default function MasterTeacherStudents({ subjectSlug }: MasterTeacherStud
       try {
         const params = new URLSearchParams({ userId: String(userId) });
         const response = await fetch(
-          `/api/master_teacher/remedial/students?${params.toString()}`,
+          `/api/master_teacher/remedialteacher/students?${params.toString()}`,
           { method: "GET", cache: "no-store", signal: controller.signal },
         );
 

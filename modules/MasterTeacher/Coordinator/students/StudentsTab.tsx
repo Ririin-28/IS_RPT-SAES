@@ -628,7 +628,7 @@ export default function StudentTab({
   }))}
   actions={(row: any) => (
     <UtilityButton small onClick={() => handleViewDetails(row)}>
-      View Details
+      View
     </UtilityButton>
   )}
   selectable={selectMode}

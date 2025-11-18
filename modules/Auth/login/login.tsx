@@ -1,11 +1,10 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { getSession } from "next-auth/react";
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { FaEye, FaEyeSlash, FaInfoCircle } from "react-icons/fa";
 import RPTLogoTitle from "@/components/Common/RPTLogoTitle";
 import { clearOAuthState } from "@/lib/utils/clear-oauth-state";
-import { storeUserProfile } from "@/lib/utils/user-profile";
+import { getStoredUserProfile, storeUserProfile } from "@/lib/utils/user-profile";
 
 const DEFAULT_LOGIN_ERROR_MESSAGE = "Email and password do not match our records. Please try again.";
 
@@ -129,15 +128,15 @@ export default function Login({
       }
 
       if (!isLoggedOut && !wasLoggedOut) {
-        const session = await getSession();
-        if (session) {
-          router.push("/MasterTeacher/welcome");
+        const storedProfile = getStoredUserProfile();
+        if (storedProfile?.role) {
+          router.push(resolveWelcomePath(storedProfile.role));
         }
       }
     };
 
     checkSession();
-  }, [router]);
+  }, [resolveWelcomePath, router]);
 
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -224,7 +223,16 @@ export default function Login({
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-green-200 relative overflow-hidden md:py-8">
+    <div className="min-h-screen text-[#013300] relative overflow-hidden scroll-smooth flex items-center justify-center">
+      {/* Background Styles - Same as Landing Page */}
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,_rgba(209,255,222,0.45),_transparent_20%),radial-gradient(circle_at_bottom_right,_rgba(188,240,214,0.35),_transparent_30%),linear-gradient(180deg,_rgba(255,255,255,0.98),_rgba(242,249,245,0.95))]" />
+      <div className="pointer-events-none absolute left-[12%] right-[46%] top-40 -z-10 h-56 rounded-3xl bg-gradient-to-br from-green-200/50 via-white/40 to-transparent blur-4xl" />
+      <div className="pointer-events-none absolute left-[52%] right-[12%] bottom-16 -z-10 h-56 rounded-[40px] bg-gradient-to-t from-green-200/60 via-white/35 to-transparent blur-4xl" />
+      
+      {/* Additional soft gradients for depth */}
+      <div className="pointer-events-none absolute left-[5%] top-[20%] -z-10 h-48 w-48 rounded-full bg-gradient-to-br from-green-300/50 to-transparent blur-3xl" />
+      <div className="pointer-events-none absolute right-[8%] bottom-[25%] -z-10 h-56 w-56 rounded-full bg-gradient-to-tl from-green-200/90 to-transparent blur-3xl" />
+
       {/* Error Modal */}
       {showErrorModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-opacity-10 backdrop-blur">
@@ -243,6 +251,7 @@ export default function Login({
           </div>
         </div>
       )}
+      
       {/* Back Button */}
       <a
         href="/"
@@ -253,12 +262,6 @@ export default function Login({
         </svg>
         <span className="ml-1 text-base font-medium sm:text-lg">Back to Landing Page</span>
       </a>
-
-      {/* Decorative elements */}
-      <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none select-none">
-        <div className="absolute top-20 left-10 w-32 h-32 rounded-full bg-green-300 blur-xl sm:left-20 sm:w-40 sm:h-40 lg:left-32 lg:w-48 lg:h-48"></div>
-        <div className="absolute bottom-20 right-10 w-48 h-48 rounded-full bg-green-200 blur-xl sm:right-20 sm:w-60 sm:h-60 lg:right-32 lg:w-72 lg:h-72"></div>
-      </div>
 
       {/* MAIN CONTENT */}
       <div className="flex flex-col z-10 relative w-full max-w-md px-4 py-8 sm:max-w-2xl sm:px-6 md:flex-row md:max-w-6xl md:justify-between md:items-center md:px-8 lg:px-12">
@@ -271,12 +274,12 @@ export default function Login({
         </div>
 
         {/* Login Card */}
-        <div className="flex flex-col justify-center items-center bg-white rounded-3xl shadow-xl p-6 w-full sm:p-6 sm:max-w-md md:w-96">
+        <div className="flex flex-col justify-center items-center bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-6 w-full sm:p-6 sm:max-w-md md:w-96 border border-green-100/60">
           <div className="w-full">
             <h2 className="text-2xl font-bold text-green-900 mb-2 text-center sm:text-3xl">Login</h2>
             
             {/* Platform description - concise version */}
-            <div className="flex items-center justify-center mb-6 bg-green-50 py-2 px-3 rounded-lg border border-green-200">
+            <div className="flex items-center justify-center mb-6 bg-green-50/80 py-2 px-3 rounded-lg border border-green-200/60 backdrop-blur-sm">
               <FaInfoCircle className="text-green-700 mr-2 flex-shrink-0" />
               <p className="text-xs text-green-800 text-center">{infoMessage}</p>
             </div>

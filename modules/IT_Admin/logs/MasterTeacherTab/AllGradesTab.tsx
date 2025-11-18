@@ -137,7 +137,7 @@ export default function MasterTeacherAllGradesTab({ teachers, setTeachers, searc
         }))}
         actions={(row: any) => (
           <UtilityButton small onClick={() => handleShowDetails(row)}>
-            View Details
+            View
           </UtilityButton>
         )}
         pageSize={10}
