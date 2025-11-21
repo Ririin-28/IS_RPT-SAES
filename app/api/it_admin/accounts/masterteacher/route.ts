@@ -4,6 +4,7 @@ import { getTableColumns, query, tableExists } from "@/lib/db";
 import {
   HttpError,
   createMasterTeacher,
+  formatMasterTeacherIdentifier,
   sanitizeEmail,
   sanitizeNamePart,
   sanitizeOptionalNamePart,
@@ -20,6 +21,7 @@ const DEFAULT_SUBJECTS_STRING = "English, Filipino, Math";
 
 type RawMasterTeacherRow = RowDataPacket & {
   user_id: number;
+  user_master_teacher_id?: string | null;
   user_first_name?: string | null;
   user_middle_name?: string | null;
   user_last_name?: string | null;
@@ -31,6 +33,7 @@ type RawMasterTeacherRow = RowDataPacket & {
   user_status?: string | null;
   user_created_at?: Date | null;
   mt_master_teacher_id?: string | null;
+  mt_masterteacher_id?: string | null;
   mt_teacher_id?: string | null;
   mt_first_name?: string | null;
   mt_middle_name?: string | null;
@@ -71,16 +74,30 @@ function buildName(
   lastName: string | null,
   suffix: string | null,
 ): string | null {
-  const parts = [firstName, middleName, lastName]
-    .map((part) => (typeof part === "string" ? part.trim() : ""))
-    .filter((part) => part.length > 0);
-  if (parts.length === 0) {
-    return null;
+  // If we don't have both last name and first name, use fallback
+  if (!lastName || !firstName) {
+    const parts = [firstName, middleName, lastName]
+      .map((part) => (typeof part === "string" ? part.trim() : ""))
+      .filter((part) => part.length > 0);
+    if (parts.length === 0) {
+      return null;
+    }
+    if (suffix && suffix.trim().length > 0) {
+      parts.push(suffix.trim());
+    }
+    return parts.join(" ");
   }
-  if (suffix && suffix.trim().length > 0) {
-    parts.push(suffix.trim());
-  }
-  return parts.join(" ");
+
+  // Format: "Lastname, Firstname MiddleInitial"
+  const middleInitial = middleName && middleName.trim().length > 0 
+    ? ` ${middleName.trim().charAt(0)}.` 
+    : "";
+  
+  const suffixPart = suffix && suffix.trim().length > 0 
+    ? ` ${suffix.trim()}` 
+    : "";
+
+  return `${lastName}, ${firstName}${middleInitial}${suffixPart}`;
 }
 
 async function safeGetColumns(table: string): Promise<Set<string>> {
@@ -89,6 +106,68 @@ async function safeGetColumns(table: string): Promise<Set<string>> {
   } catch {
     return new Set<string>();
   }
+}
+
+async function persistMasterTeacherIdentifiers(
+  updates: Array<{
+    userId: number;
+    previousUserMasterTeacherId: string | null;
+    previousMasterTeacherTableId: string | null;
+    fallbackTeacherId: string | null;
+    nextId: string;
+  }>,
+  options: {
+    userHasMasterTeacherIdColumn: boolean;
+    masterTeacherTable: {
+      name: string | null;
+      idColumnName: string | null;
+      hasUserIdColumn: boolean;
+    };
+  },
+) {
+  if (updates.length === 0) {
+    return;
+  }
+
+  await Promise.all(
+    updates.map(async ({ userId, previousUserMasterTeacherId, previousMasterTeacherTableId, fallbackTeacherId, nextId }) => {
+      try {
+        const normalizedNext = nextId.trim();
+        if (!normalizedNext) {
+          return;
+        }
+
+        if (options.userHasMasterTeacherIdColumn) {
+          await query("UPDATE `users` SET `master_teacher_id` = ? WHERE `user_id` = ? LIMIT 1", [normalizedNext, userId]);
+        }
+
+        if (options.masterTeacherTable.name && options.masterTeacherTable.idColumnName) {
+          const tableName = options.masterTeacherTable.name;
+          const columnName = options.masterTeacherTable.idColumnName;
+          if (options.masterTeacherTable.hasUserIdColumn) {
+            await query(
+              `UPDATE \`${tableName}\` SET \`${columnName}\` = ? WHERE \`user_id\` = ? LIMIT 1`,
+              [normalizedNext, userId],
+            );
+          } else {
+            const matchValue = previousMasterTeacherTableId?.trim().length
+              ? previousMasterTeacherTableId.trim()
+              : previousUserMasterTeacherId?.trim().length
+                ? previousUserMasterTeacherId.trim()
+                : fallbackTeacherId?.trim().length
+                  ? fallbackTeacherId.trim()
+                  : String(userId);
+            await query(
+              `UPDATE \`${tableName}\` SET \`${columnName}\` = ? WHERE \`${columnName}\` = ? LIMIT 1`,
+              [normalizedNext, matchValue],
+            );
+          }
+        }
+      } catch (error) {
+        console.warn("Failed to persist Master Teacher identifier", { userId, error });
+      }
+    }),
+  );
 }
 
 const MASTER_TEACHER_TABLE_CANDIDATES = [
@@ -207,8 +286,10 @@ export async function GET() {
     addUserColumn("phone_number", "user_phone_number");
     addUserColumn("status", "user_status");
     addUserColumn("created_at", "user_created_at");
+    addUserColumn("master_teacher_id", "user_master_teacher_id");
 
     addMasterTeacherColumn("master_teacher_id", "mt_master_teacher_id");
+    addMasterTeacherColumn("masterteacher_id", "mt_masterteacher_id");
     addMasterTeacherColumn("teacher_id", "mt_teacher_id");
     addMasterTeacherColumn("first_name", "mt_first_name");
     addMasterTeacherColumn("middle_name", "mt_middle_name");
@@ -246,9 +327,18 @@ export async function GET() {
 
     let joinClauses = "";
 
-    if (masterTeacherInfo.table && masterTeacherInfo.columns.size > 0) {
-      const masterTable = `\`${masterTeacherInfo.table}\``;
-      if (masterTeacherInfo.columns.has("user_id")) {
+    const masterTeacherTableName = masterTeacherInfo.table;
+    const masterTeacherHasUserId = masterTeacherInfo.columns.has("user_id");
+    const masterTeacherIdColumnName = masterTeacherInfo.columns.has("master_teacher_id")
+      ? "master_teacher_id"
+      : masterTeacherInfo.columns.has("masterteacher_id")
+        ? "masterteacher_id"
+        : null;
+    const userHasMasterTeacherId = userColumns.has("master_teacher_id");
+
+    if (masterTeacherTableName && masterTeacherInfo.columns.size > 0) {
+      const masterTable = `\`${masterTeacherTableName}\``;
+      if (masterTeacherHasUserId) {
         joinClauses += ` LEFT JOIN ${masterTable} AS mt ON mt.user_id = u.user_id`;
       } else if (masterTeacherInfo.columns.has("master_teacher_id")) {
         joinClauses += ` LEFT JOIN ${masterTable} AS mt ON mt.master_teacher_id = u.user_id`;
@@ -303,6 +393,14 @@ export async function GET() {
     const params = [...ROLE_FILTERS];
     const [rows] = await query<RawMasterTeacherRow[]>(sql, params);
 
+    const pendingMasterTeacherUpdates: Array<{
+      userId: number;
+      previousUserMasterTeacherId: string | null;
+      previousMasterTeacherTableId: string | null;
+      fallbackTeacherId: string | null;
+      nextId: string;
+    }> = [];
+
     const records = rows.map((row) => {
       const firstName = coalesce(row.mt_first_name, row.user_first_name);
       const middleName = coalesce(row.mt_middle_name, row.user_middle_name);
@@ -332,8 +430,38 @@ export async function GET() {
       const status = coalesce(row.user_status, row.mt_status, "Active") ?? "Active";
       const createdAt = row.user_created_at instanceof Date ? row.user_created_at.toISOString() : null;
       const lastLogin = row.last_login instanceof Date ? row.last_login.toISOString() : null;
-      const masterTeacherId = coalesce(row.mt_master_teacher_id, row.mt_teacher_id, row.user_id != null ? String(row.user_id) : null) ?? String(row.user_id);
-      const teacherId = coalesce(row.mt_teacher_id, row.mt_master_teacher_id);
+      const storedMasterTeacherId = coalesce(
+        row.user_master_teacher_id,
+        row.mt_master_teacher_id,
+        row.mt_masterteacher_id,
+        row.mt_teacher_id,
+        row.user_id != null ? String(row.user_id) : null,
+      );
+      const masterTeacherId = formatMasterTeacherIdentifier(storedMasterTeacherId, row.user_id);
+      const teacherId = coalesce(row.mt_teacher_id, row.mt_master_teacher_id, row.mt_masterteacher_id, row.user_master_teacher_id, masterTeacherId);
+
+      const masterTableIdValue = masterTeacherIdColumnName === "master_teacher_id"
+        ? row.mt_master_teacher_id ?? null
+        : masterTeacherIdColumnName === "masterteacher_id"
+          ? row.mt_masterteacher_id ?? null
+          : null;
+
+      const needsUserUpdate = userHasMasterTeacherId && (row.user_master_teacher_id ?? "") !== masterTeacherId;
+      const needsMasterTableUpdate = Boolean(
+        masterTeacherTableName &&
+          masterTeacherIdColumnName &&
+          (masterTableIdValue ?? "") !== masterTeacherId,
+      );
+
+      if (row.user_id != null && (needsUserUpdate || needsMasterTableUpdate)) {
+        pendingMasterTeacherUpdates.push({
+          userId: row.user_id,
+          previousUserMasterTeacherId: typeof row.user_master_teacher_id === "string" ? row.user_master_teacher_id : null,
+          previousMasterTeacherTableId: typeof masterTableIdValue === "string" ? masterTableIdValue : null,
+          fallbackTeacherId: typeof row.mt_teacher_id === "string" ? row.mt_teacher_id : null,
+          nextId: masterTeacherId,
+        });
+      }
 
       return {
         userId: row.user_id,
@@ -356,13 +484,22 @@ export async function GET() {
       };
     });
 
+    await persistMasterTeacherIdentifiers(pendingMasterTeacherUpdates, {
+      userHasMasterTeacherIdColumn: userHasMasterTeacherId,
+      masterTeacherTable: {
+        name: masterTeacherTableName,
+        idColumnName: masterTeacherIdColumnName,
+        hasUserIdColumn: masterTeacherHasUserId,
+      },
+    });
+
     return NextResponse.json({
       total: records.length,
       records,
       metadata: {
-        masterTeacherTableDetected: masterTeacherInfo.table && masterTeacherInfo.columns.size > 0,
-        remedialTeacherTableDetected: remedialTeacherInfo.table && remedialTeacherInfo.columns.size > 0,
-        mtCoordinatorTableDetected: mtCoordinatorInfo.table && mtCoordinatorInfo.columns.size > 0,
+        masterTeacherTableDetected: Boolean(masterTeacherTableName && masterTeacherInfo.columns.size > 0),
+        remedialTeacherTableDetected: Boolean(remedialTeacherInfo.table && remedialTeacherInfo.columns.size > 0),
+        mtCoordinatorTableDetected: Boolean(mtCoordinatorInfo.table && mtCoordinatorInfo.columns.size > 0),
         accountLogsJoined: canJoinAccountLogs,
       },
     });

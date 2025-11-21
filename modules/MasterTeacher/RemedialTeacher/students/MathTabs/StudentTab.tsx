@@ -360,7 +360,7 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
   }))}
   actions={(row: any) => (
     <UtilityButton small onClick={() => handleViewDetails(row)}>
-      View Details
+      View
     </UtilityButton>
   )}
   selectable={selectMode}

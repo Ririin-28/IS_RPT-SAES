@@ -7,7 +7,7 @@ export type KebabMenuProps = {
   small?: boolean;
   className?: string;
   menuClassName?: string;
-  menuWidthClass?: string; // e.g., w-48
+  menuWidthClass?: string;
   buttonAriaLabel?: string;
   renderItems: (close: () => void) => React.ReactNode;
 };
@@ -45,7 +45,9 @@ const KebabMenu: React.FC<KebabMenuProps> = ({
       </UtilityButton>
       {open && (
         <div
-          className={`absolute ${align === "right" ? "right-0" : "left-0"} mt-2 ${menuWidthClass} bg-white border border-gray-200 rounded-md shadow-lg z-10 ${menuClassName}`}
+          className={`absolute ${align === "right" ? "right-0" : "left-0"} mt-2 ${menuWidthClass} 
+                      bg-white border border-gray-200 rounded-md shadow-lg 
+                      z-[999] ${menuClassName}`}
           role="menu"
         >
           {renderItems(close)}

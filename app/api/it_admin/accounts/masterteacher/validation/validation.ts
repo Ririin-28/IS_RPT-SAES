@@ -128,6 +128,62 @@ function generateTemporaryPassword(): string {
   return random.padEnd(8, "0");
 }
 
+const MASTER_TEACHER_ID_PATTERN = /^MT-\d{2}\d{4,}$/;
+
+export function formatMasterTeacherIdentifier(
+  raw: string | null | undefined,
+  fallbackSequence?: number | null,
+  yearOverride?: number | null,
+): string {
+  const normalized = typeof raw === "string" ? raw.trim() : "";
+  if (normalized && MASTER_TEACHER_ID_PATTERN.test(normalized)) {
+    return normalized;
+  }
+
+  const yearSource = typeof yearOverride === "number" && Number.isFinite(yearOverride)
+    ? yearOverride
+    : new Date().getFullYear();
+  const year = String(yearSource).slice(-2);
+
+  const sequenceValue = typeof fallbackSequence === "number" && Number.isFinite(fallbackSequence)
+    ? Math.max(1, Math.trunc(fallbackSequence))
+    : 1;
+
+  return `MT-${year}${String(sequenceValue).padStart(4, "0")}`;
+}
+
+async function generateMasterTeacherId(
+  connection: PoolConnection,
+  sources: Array<{ table: string; column: string }>,
+): Promise<string> {
+  const year = new Date().getFullYear().toString().slice(-2);
+
+  let maxSequence = 0;
+
+  for (const source of sources) {
+    const [rows] = await connection.query<RowDataPacket[]>(
+      `SELECT \`${source.column}\` AS master_teacher_id FROM \`${source.table}\` WHERE \`${source.column}\` LIKE ? ORDER BY \`${source.column}\` DESC LIMIT 1`,
+      [`MT-${year}%`],
+    );
+
+    if (rows.length === 0) {
+      continue;
+    }
+
+    const lastId = rows[0]?.master_teacher_id;
+    const match = typeof lastId === "string" ? lastId.match(/MT-\d{2}(\d{4,})$/) : null;
+    if (match) {
+      const parsed = Number.parseInt(match[1], 10);
+      if (Number.isFinite(parsed)) {
+        maxSequence = Math.max(maxSequence, parsed);
+      }
+    }
+  }
+
+  const nextNum = maxSequence + 1;
+  return `MT-${year}${String(nextNum).padStart(4, "0")}`;
+}
+
 export interface CreateMasterTeacherInput {
   firstName: string;
   middleName: string | null;
@@ -254,6 +310,25 @@ export async function createMasterTeacher(input: CreateMasterTeacherInput): Prom
   const remedialTeacherInfo = await resolveRemedialTeacherTable(connection);
   const mtCoordinatorInfo = await resolveMtCoordinatorTable(connection);
 
+  const masterTeacherIdSources: Array<{ table: string; column: string }> = [];
+  if (userColumns.has("master_teacher_id")) {
+    masterTeacherIdSources.push({ table: "users", column: "master_teacher_id" });
+  }
+  if (masterTeacherInfo.table) {
+    if (masterTeacherInfo.columns.has("master_teacher_id")) {
+      masterTeacherIdSources.push({ table: masterTeacherInfo.table, column: "master_teacher_id" });
+    }
+    if (masterTeacherInfo.columns.has("masterteacher_id")) {
+      masterTeacherIdSources.push({ table: masterTeacherInfo.table, column: "masterteacher_id" });
+    }
+  }
+  if (remedialTeacherInfo.table && remedialTeacherInfo.columns.has("master_teacher_id")) {
+    masterTeacherIdSources.push({ table: remedialTeacherInfo.table, column: "master_teacher_id" });
+  }
+  if (mtCoordinatorInfo.table && mtCoordinatorInfo.columns.has("master_teacher_id")) {
+    masterTeacherIdSources.push({ table: mtCoordinatorInfo.table, column: "master_teacher_id" });
+  }
+
     await connection.beginTransaction();
     try {
       const [duplicateEmail] = await connection.query<RowDataPacket[]>(
@@ -342,6 +417,21 @@ export async function createMasterTeacher(input: CreateMasterTeacherInput): Prom
         throw new HttpError(500, "Failed to create user record.");
       }
 
+      let generatedMasterTeacherId: string | null = null;
+      if (masterTeacherIdSources.length > 0) {
+        generatedMasterTeacherId = await generateMasterTeacherId(connection, masterTeacherIdSources);
+      }
+
+      const masterTeacherId = formatMasterTeacherIdentifier(generatedMasterTeacherId, userId);
+      const teacherIdentifier = teacherId ?? masterTeacherId;
+
+      if (userColumns.has("master_teacher_id")) {
+        await connection.query<ResultSetHeader>(
+          "UPDATE `users` SET `master_teacher_id` = ? WHERE `user_id` = ? LIMIT 1",
+          [masterTeacherId, userId],
+        );
+      }
+
       const insertIntoFlexibleTable = async (
         tableInfo: { table: string | null; columns: Set<string> },
         configure: (columns: string[], values: any[]) => void,
@@ -369,16 +459,14 @@ export async function createMasterTeacher(input: CreateMasterTeacherInput): Prom
           identifierPairs.push(["user_id", userId]);
         }
         if (masterTeacherInfo.columns.has("master_teacher_id")) {
-          identifierPairs.push(["master_teacher_id", String(userId)]);
+          identifierPairs.push(["master_teacher_id", masterTeacherId]);
         }
         if (masterTeacherInfo.columns.has("masterteacher_id")) {
-          identifierPairs.push(["masterteacher_id", String(userId)]);
+          identifierPairs.push(["masterteacher_id", masterTeacherId]);
         }
-        if (teacherId) {
-          for (const column of ["teacher_id", "employee_id"]) {
-            if (masterTeacherInfo.columns.has(column)) {
-              identifierPairs.push([column, teacherId]);
-            }
+        for (const column of ["teacher_id", "employee_id"]) {
+          if (masterTeacherInfo.columns.has(column)) {
+            identifierPairs.push([column, teacherIdentifier]);
           }
         }
 
@@ -489,10 +577,10 @@ export async function createMasterTeacher(input: CreateMasterTeacherInput): Prom
           insertValues.push(userId);
         } else if (remedialTeacherInfo.columns.has("master_teacher_id")) {
           insertColumns.push("master_teacher_id");
-          insertValues.push(String(userId));
+          insertValues.push(masterTeacherId);
         } else if (remedialTeacherInfo.columns.has("teacher_id")) {
           insertColumns.push("teacher_id");
-          insertValues.push(String(userId));
+          insertValues.push(teacherIdentifier);
         }
 
         if (!insertColumns.length) {
@@ -579,10 +667,10 @@ export async function createMasterTeacher(input: CreateMasterTeacherInput): Prom
           insertValues.push(userId);
         } else if (mtCoordinatorInfo.columns.has("master_teacher_id")) {
           insertColumns.push("master_teacher_id");
-          insertValues.push(String(userId));
+          insertValues.push(masterTeacherId);
         } else if (mtCoordinatorInfo.columns.has("teacher_id")) {
           insertColumns.push("teacher_id");
-          insertValues.push(String(userId));
+          insertValues.push(teacherIdentifier);
         }
 
         if (!insertColumns.length) {
@@ -647,8 +735,8 @@ export async function createMasterTeacher(input: CreateMasterTeacherInput): Prom
 
       const record = {
         userId,
-        masterTeacherId: teacherId ?? String(userId),
-        teacherId: teacherId ?? null,
+        masterTeacherId,
+        teacherId: teacherIdentifier,
         firstName,
         middleName,
         lastName,

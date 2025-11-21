@@ -14,21 +14,35 @@ export default function VerificationForm({ email, user_id, role, onVerified }: V
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [otpSent, setOtpSent] = useState(false);
+  const [sendDisabled, setSendDisabled] = useState(false);
 
   const sendOtp = async () => {
+    if (sendDisabled || loading) {
+      return;
+    }
+
+    setSendDisabled(true);
     setLoading(true);
     setError("");
-    const res = await fetch("/api/send-otp", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, user_id }),
-    });
-    const data = await res.json();
-    setLoading(false);
-    if (data.success) {
-      setOtpSent(true);
-    } else {
+    try {
+      const res = await fetch("/api/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, user_id }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setOtpSent(true);
+      } else {
+        setError("Failed to send OTP. Please try again.");
+        setSendDisabled(false);
+      }
+    } catch (err) {
       setError("Failed to send OTP. Please try again.");
+      setSendDisabled(false);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -61,7 +75,7 @@ export default function VerificationForm({ email, user_id, role, onVerified }: V
             <button
               type="button"
               onClick={sendOtp}
-              disabled={loading}
+              disabled={loading || sendDisabled}
               className="w-full bg-gradient-to-r from-green-600 to-[#133000] text-white font-bold py-2.5 rounded-lg hover:opacity-90 transition shadow-md disabled:opacity-70 sm:py-2 mb-4"
             >
               {loading ? "Sending..." : "Send OTP"}

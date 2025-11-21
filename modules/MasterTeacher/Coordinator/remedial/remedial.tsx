@@ -140,7 +140,7 @@ const REMEDIAL_CONFIG: Record<SubjectOption, RemedialSubjectConfig> = {
   English: {
     storageKey: "MASTER_TEACHER_REMEDIAL_ENGLISH",
     validationMessage: "Please complete all fields before saving.",
-    playPath: "/MasterTeacher/RemedialTeacher/remedial/EnglishFlashcards",
+    playPath: "/MasterTeacher/Coordinator/remedial/EnglishFlashcards",
     flashcardsStorageKey: "MASTER_TEACHER_ENGLISH_FLASHCARDS",
     flashcardsInitial: ENGLISH_INITIAL_FLASHCARDS,
     levels: buildLevels({

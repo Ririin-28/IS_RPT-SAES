@@ -63,7 +63,7 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
         }))}
         actions={(row: any) => (
           <UtilityButton small onClick={() => handleShowDetails(row)}>
-            View Details
+            View
           </UtilityButton>
         )}
         pageSize={10}

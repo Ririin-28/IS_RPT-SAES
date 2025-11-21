@@ -130,7 +130,7 @@ export function useCoordinatorStudents(): UseCoordinatorStudentsResult {
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch(`/api/students?subject=${encodeURIComponent(subjectToUse)}`, {
+        const response = await fetch(`/api/master_teacher/coordinator/students?subject=${encodeURIComponent(subjectToUse)}`, {
           cache: "no-store",
         });
         if (!response.ok) {
@@ -172,7 +172,7 @@ export function useCoordinatorStudents(): UseCoordinatorStudentsResult {
       setSaving(true);
       setError(null);
       try {
-        const response = await fetch("/api/students", {
+        const response = await fetch("/api/master_teacher/coordinator/students", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -223,7 +223,7 @@ export function useCoordinatorStudents(): UseCoordinatorStudentsResult {
     setSaving(true);
     setError(null);
     try {
-      const response = await fetch(`/api/students/${id}`, {
+      const response = await fetch(`/api/master_teacher/coordinator/students/${id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -271,7 +271,7 @@ export function useCoordinatorStudents(): UseCoordinatorStudentsResult {
     try {
       await Promise.all(
         ids.map(async (id) => {
-          const response = await fetch(`/api/students/${id}?userId=${encodeURIComponent(String(userId))}`, {
+          const response = await fetch(`/api/master_teacher/coordinator/students/${id}?userId=${encodeURIComponent(String(userId))}`, {
             method: "DELETE",
           });
           if (!response.ok) {

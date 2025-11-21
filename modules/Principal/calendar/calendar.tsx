@@ -43,7 +43,7 @@ interface ScheduleResponse {
 }
 
 const STORAGE_KEY = "principalRemedialPeriod";
-const API_ENDPOINT = "/api/master_teacher/coordinator/remedial-schedule";
+const API_ENDPOINT = "/api/master_teacher/coordinator/calendar/remedial-schedule";
 const MONTHS_STORAGE_KEY = "principalRemedialQuarterMonths";
 const SUBJECT_SCHEDULE_ENDPOINT = "/api/principal/subject-schedule";
 

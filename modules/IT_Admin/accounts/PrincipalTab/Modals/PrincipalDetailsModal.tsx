@@ -40,7 +40,7 @@ export default function PrincipalDetailsModal({ show, onClose, principal }: Prin
               label="Full Name" 
               value={principal.fullName || principal.name} 
             />
-            <p className="text-xs text-gray-500 pl-1">Format: First, Middle, Last, Suffix</p>
+            <p className="text-xs text-gray-500 pl-1">Format: Last, First, Middle, Suffix</p>
           </div>
         </div>
       </ModalSection>

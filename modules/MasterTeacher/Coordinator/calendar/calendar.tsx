@@ -641,7 +641,7 @@ export default function MasterTeacherCalendar() {
     setRemedialWindowLoading(true);
     setRemedialWindowError(null);
     try {
-  const response = await fetch("/api/master_teacher/coordinator/remedial-schedule", { cache: "no-store" });
+      const response = await fetch("/api/master_teacher/coordinator/calendar/remedial-schedule", { cache: "no-store" });
       if (response.status === 404) {
         setRemedialWindow(null);
         return;
@@ -1816,6 +1816,7 @@ export default function MasterTeacherCalendar() {
     const month = currentDate.getMonth();
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const today = new Date();
 
     const weeks = [];
     let day = 1;
@@ -1829,18 +1830,33 @@ export default function MasterTeacherCalendar() {
           days.push(<div key={`empty-${i}-${j}`} className="h-20 p-1 border border-gray-100"></div>);
         } else {
           const currentDay = new Date(year, month, day);
+          currentDay.setHours(0, 0, 0, 0);
           const dayActivities = activities.filter(
             (a) => a.date.getDate() === day && a.date.getMonth() === month && a.date.getFullYear() === year
           );
+          const isToday =
+            currentDay.getDate() === today.getDate() &&
+            currentDay.getMonth() === today.getMonth() &&
+            currentDay.getFullYear() === today.getFullYear();
+          const withinRemedialWindow = scheduleRange
+            ? currentDay >= scheduleRange.start && currentDay <= scheduleRange.end
+            : false;
 
           days.push(
             <div
               key={`day-${day}`}
-              className="h-24 p-1 border overflow-hidden relative hover:bg-gray-50 transition-colors cursor-pointer border-gray-100"
+              className={`h-24 p-1 border overflow-hidden relative hover:bg-gray-50 transition-colors cursor-pointer ${
+                withinRemedialWindow ? "border-green-200 bg-green-50" : "border-gray-100"
+              }`}
               onDoubleClick={() => handleDateDoubleClick(currentDay)}
             >
               <div className="text-right text-sm font-medium text-gray-800 mb-1">
-                {day === new Date().getDate() && month === new Date().getMonth() && year === new Date().getFullYear() ? (
+                {withinRemedialWindow && (
+                  <span className="absolute left-1 top-1 text-[0.65rem] font-semibold uppercase tracking-wide text-[#013300]/70">
+                    Remedial
+                  </span>
+                )}
+                {isToday ? (
                   <span className="inline-block w-6 h-6 bg-[#013300] text-white rounded-full text-center leading-6">
                     {day}
                   </span>
