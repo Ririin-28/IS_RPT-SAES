@@ -89,6 +89,7 @@ const ReportIcon = React.memo(() => (
 ReportIcon.displayName = "ReportIcon";
 
 const NAV_ITEMS: NavItem[] = [
+  { label: "Dashboard", path: "/MasterTeacher/RemedialTeacher/dashboard", icon: <DashboardIcon /> },
   { label: "Calendar", path: "/MasterTeacher/RemedialTeacher/calendar", icon: <CalendarIcon /> },
   {
     label: "Students",
