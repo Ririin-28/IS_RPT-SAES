@@ -195,6 +195,8 @@ async function generateStudentId(connection: any): Promise<string> {
   return identifier;
 }
 
+
+
 export async function insertStudents(
   userId: number,
   subject: StudentSubject,

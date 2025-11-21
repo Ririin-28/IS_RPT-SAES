@@ -78,6 +78,30 @@ function generateTemporaryPassword(): string {
   return random.padEnd(8, "0");
 }
 
+const ADMIN_ID_PATTERN = /^IA-\d{2}\d{4,}$/;
+
+export function formatAdminIdentifier(
+  raw: string | null | undefined,
+  fallbackSequence?: number | null,
+  yearOverride?: number | null,
+): string {
+  const normalized = typeof raw === "string" ? raw.trim() : "";
+  if (normalized && ADMIN_ID_PATTERN.test(normalized)) {
+    return normalized;
+  }
+
+  const yearSource = typeof yearOverride === "number" && Number.isFinite(yearOverride)
+    ? yearOverride
+    : new Date().getFullYear();
+  const year = String(yearSource).slice(-2);
+
+  const sequenceValue = typeof fallbackSequence === "number" && Number.isFinite(fallbackSequence)
+    ? Math.max(1, Math.trunc(fallbackSequence))
+    : 1;
+
+  return `IA-${year}${String(sequenceValue).padStart(4, "0")}`;
+}
+
 export interface CreateItAdminInput {
   firstName: string;
   middleName: string | null;
@@ -105,6 +129,38 @@ export interface CreateItAdminResult {
   temporaryPassword: string;
 }
 
+async function generateAdminId(
+  connection: PoolConnection,
+  sources: Array<{ table: string; column: string }>,
+): Promise<string> {
+  const year = new Date().getFullYear().toString().slice(-2);
+
+  let maxSequence = 0;
+
+  for (const source of sources) {
+    const [rows] = await connection.query<RowDataPacket[]>(
+      `SELECT \`${source.column}\` AS admin_id FROM \`${source.table}\` WHERE \`${source.column}\` LIKE ? ORDER BY \`${source.column}\` DESC LIMIT 1`,
+      [`IA-${year}%`],
+    );
+
+    if (rows.length === 0) {
+      continue;
+    }
+
+    const lastId = rows[0]?.admin_id;
+    const match = typeof lastId === "string" ? lastId.match(/IA-\d{2}(\d{4,})$/) : null;
+    if (match) {
+      const parsed = Number.parseInt(match[1], 10);
+      if (Number.isFinite(parsed)) {
+        maxSequence = Math.max(maxSequence, parsed);
+      }
+    }
+  }
+
+  const nextNum = maxSequence + 1;
+  return `IA-${year}${String(nextNum).padStart(4, "0")}`;
+}
+
 export async function createItAdmin(input: CreateItAdminInput): Promise<CreateItAdminResult> {
   const { firstName, middleName, lastName, suffix, email, phoneNumber } = input;
   const fullName = buildFullName(firstName, middleName, lastName, suffix);
@@ -127,6 +183,20 @@ export async function createItAdmin(input: CreateItAdminInput): Promise<CreateIt
       );
       if (duplicateEmail.length > 0) {
         throw new HttpError(409, "Email already exists.");
+      }
+
+      let adminId: string | null = null;
+      const adminIdSources: Array<{ table: string; column: string }> = [];
+
+      if (userColumns.has("admin_id")) {
+        adminIdSources.push({ table: "users", column: "admin_id" });
+      }
+      if (itAdminColumns?.has("admin_id")) {
+        adminIdSources.push({ table: "it_admin", column: "admin_id" });
+      }
+
+      if (adminIdSources.length > 0) {
+        adminId = await generateAdminId(connection, adminIdSources);
       }
 
       const userInsertColumns: string[] = [];
@@ -180,6 +250,10 @@ export async function createItAdmin(input: CreateItAdminInput): Promise<CreateIt
         userInsertColumns.push("password");
         userInsertValues.push(temporaryPassword);
       }
+      if (adminId && userColumns.has("admin_id")) {
+        userInsertColumns.push("admin_id");
+        userInsertValues.push(adminId);
+      }
       const now = new Date();
       if (userColumns.has("created_at")) {
         userInsertColumns.push("created_at");
@@ -214,9 +288,9 @@ export async function createItAdmin(input: CreateItAdminInput): Promise<CreateIt
         itAdminInsertColumns.push("user_id");
         itAdminValues.push(userId);
 
-        if (itAdminColumns.has("admin_id")) {
+        if (adminId && itAdminColumns.has("admin_id")) {
           itAdminInsertColumns.push("admin_id");
-          itAdminValues.push(String(userId));
+          itAdminValues.push(adminId);
         }
         if (itAdminColumns.has("first_name")) {
           itAdminInsertColumns.push("first_name");
@@ -282,7 +356,7 @@ export async function createItAdmin(input: CreateItAdminInput): Promise<CreateIt
 
       const record = {
         userId,
-        adminId: String(userId),
+        adminId: formatAdminIdentifier(adminId, userId),
         firstName,
         middleName,
         lastName,

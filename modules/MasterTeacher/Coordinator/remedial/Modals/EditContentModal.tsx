@@ -120,10 +120,10 @@ export default function EditContentModal({ isOpen, onClose, flashcards, onSave }
       footer={footer}
     >
       <ModalSection title="Flashcards">
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-gray-600 mb-4">
           Update each sentence below. These changes apply to the Master Teacher flashcard session.
         </p>
-        <div className="space-y-6">
+        <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-2">
           {editableFlashcards.map((card: FlashcardContent, index: number) => (
             <div key={index} className="border border-gray-300 rounded-xl p-6 bg-gray-50">
               <div className="flex justify-between items-center mb-4">

@@ -123,7 +123,7 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
         actions={(row: any) => (
           <div className="flex items-center gap-2">
             <UtilityButton small onClick={() => handleShowDetails(row)}>
-              View Details
+              View
             </UtilityButton>
             <KebabMenu
               onEdit={() => console.log('Edit', row)}
