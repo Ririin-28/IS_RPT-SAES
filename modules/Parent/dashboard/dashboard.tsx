@@ -669,13 +669,6 @@ export default function ParentDashboard() {
 
               {/* Child Details Section */}
               <div className="bg-[#E9FDF2] rounded-xl shadow-lg p-6 mb-8 min-h-[160px] flex flex-col gap-6 md:flex-row md:items-start md:px-8">
-                <div className="flex-shrink-0 self-center md:ml-15 md:mr-20">
-                  <img
-                    src="/public/SAES/SAESImg.png"
-                    alt="Child profile"
-                    className="w-32 h-32 md:w-45 md:h-45 object-cover border-4 border-white shadow-lg bg-white"
-                  />
-                </div>
 
                 <div className="flex-1 w-full">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-4">
