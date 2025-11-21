@@ -43,12 +43,14 @@ function OverviewCard({
   icon,
   className = "",
   onClick,
+  tooltip,
 }: {
   value: React.ReactNode;
   label: string;
   icon?: React.ReactNode;
   className?: string;
   onClick?: () => void;
+  tooltip?: string;
 }) {
   // Sanitize string values to prevent XSS
   const sanitizeContent = (content: any): React.ReactNode => {
@@ -61,7 +63,7 @@ function OverviewCard({
 
   const baseClasses = `
       /* Mobile */
-      bg-gradient-to-br bg-green-50 rounded-xl shadow-lg
+      relative group bg-gradient-to-br bg-green-50 rounded-xl shadow-lg
       flex flex-col items-center justify-center p-5 min-w-[160px] min-h-[110px]
   transition-transform duration-200 hover:scale-105
 
@@ -73,8 +75,15 @@ function OverviewCard({
       ${className}
     `;
 
+  const tooltipNode = tooltip ? (
+    <span className="pointer-events-none absolute -top-2 left-1/2 z-10 hidden w-56 -translate-x-1/2 -translate-y-full rounded-md bg-[#013300] px-3 py-2 text-center text-xs font-medium text-white opacity-0 shadow-lg transition-opacity duration-200 group-hover:block group-hover:opacity-100">
+      {tooltip}
+    </span>
+  ) : null;
+
   const content = (
     <>
+      {tooltipNode}
       <div className="flex flex-row items-center">
         <span
           className="
@@ -211,7 +220,8 @@ export default function ITAdminDashboard() {
     () => [
       {
         key: "total-users",
-        label: "Total Users",
+        label: "Total Accounts",
+        tooltip: "Total registered accounts.",
         value: overview.totalUsers,
         icon: (
           <svg width="38" height="38" fill="none" viewBox="0 0 24 24" stroke="#013300" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -225,7 +235,8 @@ export default function ITAdminDashboard() {
       },
       {
         key: "new-users",
-        label: "New Users This Week",
+        label: "New Accounts",
+        tooltip: "Total newly added accounts.",
         value: overview.newUsersThisWeek,
         icon: (
           <svg width="38" height="38" fill="none" viewBox="0 0 24 24" stroke="#013300" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -239,7 +250,8 @@ export default function ITAdminDashboard() {
       },
       {
         key: "pending-users",
-        label: "Pending Onboarding",
+        label: "Unverified Accounts",
+        tooltip: "Total accounts created but not yet activated by users.",
         value: overview.pendingOnboarding,
         icon: (
           <svg width="38" height="38" fill="none" viewBox="0 0 24 24" stroke="#013300" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -255,6 +267,7 @@ export default function ITAdminDashboard() {
       {
         key: "archived-users",
         label: "Archived Accounts",
+        tooltip: "Total archived accounts.",
         value: overview.archivedAccounts,
         icon: (
           <svg width="38" height="38" fill="none" viewBox="0 0 24 24" stroke="#013300" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -337,7 +350,9 @@ export default function ITAdminDashboard() {
             {/*---------------------------------Main Container---------------------------------*/}
             <div className="bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[380px] overflow-y-auto p-4 sm:p-5 md:p-6">
               {/* Overview Cards Section */}
-              <SecondaryHeader title="User Overview" />
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
+                <SecondaryHeader title="IT Admin Overview" />
+              </div>
               {error && (
                 <p className="mt-2 text-sm text-red-600" role="alert">
                   {error}
@@ -356,6 +371,7 @@ export default function ITAdminDashboard() {
                       key={card.key}
                       value={displayValue}
                       label={card.label}
+                      tooltip={card.tooltip}
                       icon={card.icon}
                       onClick={card.onClick}
                     />
