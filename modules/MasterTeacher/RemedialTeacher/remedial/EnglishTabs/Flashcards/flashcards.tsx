@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { useState, useRef, useEffect, useMemo, useCallback, type CSSProperties } from "react";
 import { FiArrowLeft, FiArrowRight } from "react-icons/fi";
 import { useSearchParams, useRouter } from "next/navigation";
