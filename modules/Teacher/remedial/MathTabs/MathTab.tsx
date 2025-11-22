@@ -179,7 +179,7 @@ export default function MathTab({ level }: MathTabProps) {
         data={rows}
         actions={(row: any) => (
           <>
-            <a href={`/MasterTeacher/RemedialTeacher/remedial/MathFlashcards?start=${row.startIndex}`}>
+            <a href={`/Teacher/remedial/MathFlashcards?start=${row.startIndex}`}>
               <UtilityButton small>Play</UtilityButton>
             </a>
           </>

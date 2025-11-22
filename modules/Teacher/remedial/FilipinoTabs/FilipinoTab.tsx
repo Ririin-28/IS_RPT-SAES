@@ -144,7 +144,7 @@ export default function FilipinoTab({ level }: FilipinoTabProps) {
         data={rows}
         actions={(row: any) => (
           <>
-            <a href={`/MasterTeacher/RemedialTeacher/remedial/FilipinoFlashcards?start=${row.startIndex}`}>
+            <a href={`/Teacher/remedial/FilipinoFlashcards?start=${row.startIndex}`}>
               <UtilityButton small>Play</UtilityButton>
             </a>
           </>

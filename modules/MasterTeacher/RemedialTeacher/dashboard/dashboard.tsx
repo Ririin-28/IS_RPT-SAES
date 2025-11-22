@@ -207,7 +207,7 @@ export default function TeacherDashboard() {
           fullName: teacherName,
           role: formatRoleLabel(payload.profile.role ?? storedProfile?.role),
           gradeHandled: payload.profile.gradeLabel?.trim() || payload.profile.grade?.trim() || "Not assigned",
-          subjectAssigned: payload.profile.subjectHandled?.trim() || "English, Filipino, Math",
+          subjectAssigned: "English, Filipino, Math",
         });
       } catch (error) {
         if (!cancelled) {
