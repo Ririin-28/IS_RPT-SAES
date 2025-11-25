@@ -5,6 +5,8 @@ import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import TableList from "@/components/Common/Tables/TableList";
 import FlashcardsTemplate from "@/components/Common/RemedialFlashcards/FlashcardsTemplate";
 
+const PAGE_SIZE = 8;
+
 const flashcardsData = [
   { question: "5 + 3", correctAnswer: "8" },
   { question: "9 - 4", correctAnswer: "5" },
@@ -48,7 +50,6 @@ const DEFAULT_MATH_STUDENTS: StudentRecord[] = [
 
 export default function MasterTeacherMathFlashcards() {
   const searchParams = useSearchParams();
-  const router = useRouter();
   const startParam = searchParams?.get("start");
   const startIndex = startParam
     ? Math.min(Math.max(parseInt(startParam), 0), flashcardsData.length - 1)
@@ -60,6 +61,7 @@ export default function MasterTeacherMathFlashcards() {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [studentSearch, setStudentSearch] = useState("");
   const [lastSavedStudentId, setLastSavedStudentId] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -136,6 +138,21 @@ export default function MasterTeacherMathFlashcards() {
   }, [enrichedStudents, lastSavedStudentId]);
 
   useEffect(() => {
+    setCurrentPage(1);
+  }, [studentSearch]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredStudents.length / PAGE_SIZE));
+
+  useEffect(() => {
+    setCurrentPage((prev) => Math.min(prev, totalPages));
+  }, [totalPages]);
+
+  const paginatedStudents = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filteredStudents.slice(start, start + PAGE_SIZE);
+  }, [filteredStudents, currentPage]);
+
+  useEffect(() => {
     if (view === "session" && !selectedStudent) {
       setView("select");
     }
@@ -157,14 +174,36 @@ export default function MasterTeacherMathFlashcards() {
   const [startTime, setStartTime] = useState<number | null>(null);
   const [rate, setRate] = useState<number | null>(null); // seconds
   const [score, setScore] = useState<number | null>(null);
+  const [showCorrectAnswer, setShowCorrectAnswer] = useState(false);
 
   const { question, correctAnswer } = flashcardsData[current];
+
+  // Validation function for input field
+  const validateInput = (input: string): boolean => {
+    // Regular expression to allow only numbers, hyphen, and dot
+    const validPattern = /^[0-9.\-]*$/;
+    return validPattern.test(input);
+  };
+
+  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = event.target.value;
+    
+    // Only set the value if it passes validation
+    if (validateInput(value)) {
+      setUserAnswer(value);
+    }
+    // If the value is empty, still allow it (for backspace/delete)
+    else if (value === "") {
+      setUserAnswer("");
+    }
+  };
 
   const resetFields = useCallback(() => {
     setUserAnswer("");
     setFeedback("");
     setRate(null);
     setScore(null);
+    setShowCorrectAnswer(false);
     setStartTime(Date.now());
   }, []);
 
@@ -209,10 +248,6 @@ export default function MasterTeacherMathFlashcards() {
     setView("select");
   };
 
-  const handleBackToDashboard = () => {
-    router.back();
-  };
-
   useEffect(() => {
     setStartTime(Date.now());
   }, [current]);
@@ -239,71 +274,96 @@ export default function MasterTeacherMathFlashcards() {
     }
   };
 
-  const selectionRows = filteredStudents.map((student, index) => ({
+  const selectionRows = paginatedStudents.map((student, index) => ({
     ...student,
-    no: index + 1,
+    no: (currentPage - 1) * PAGE_SIZE + index + 1,
     lastAccuracy: student.lastPerformance ? `${student.lastPerformance.score}%` : "—",
   }));
-  const selectionProps = {
-    summaryText: `Showing ${selectionRows.length} student${selectionRows.length === 1 ? "" : "s"}`,
-    searchValue: studentSearch,
-    onSearchChange: (value: string) => setStudentSearch(value),
-    table: (
-      <TableList
-        columns={[
-          { key: "no", title: "No#" },
-          { key: "studentId", title: "Student ID" },
-          { key: "name", title: "Full Name" },
-          { key: "grade", title: "Grade" },
-          { key: "section", title: "Section" },
-          { key: "lastAccuracy", title: "Accuracy" },
-        ]}
-        data={selectionRows}
-        actions={(row: any) => (
-          <UtilityButton small onClick={() => handleStartSession(row.id)}>
-            Start Session
-          </UtilityButton>
-        )}
-        pageSize={8}
-      />
-    ),
-    lastSavedMessage: lastSavedStudent
-      ? `Latest accuracy for ${lastSavedStudent.name} has been saved.`
-      : undefined,
-  };
+  const selectionSummaryText = filteredStudents.length
+    ? `Showing ${selectionRows.length} of ${filteredStudents.length} students • Page ${currentPage} of ${totalPages}`
+    : "No students match your search.";
 
-  const insightMetrics = [
-    { label: "Accuracy", value: score !== null ? `${score}%` : "—" },
-    { label: "Response Time", value: rate !== null ? `${rate.toFixed(2)}s` : "—" },
-    { label: "Your Input", value: userAnswer || "—" },
-  ];
+  const paginationControls = totalPages > 1 && (
+    <div className="mt-5 flex items-center justify-end gap-3">
+      <button
+        className="rounded-full border border-[#013300] px-4 py-1.5 text-sm font-medium text-[#013300] disabled:opacity-40"
+        onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+        disabled={currentPage === 1}
+      >
+        Prev page
+      </button>
+      <button
+        className="rounded-full border border-[#013300] px-4 py-1.5 text-sm font-medium text-[#013300] disabled:opacity-40"
+        onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+        disabled={currentPage === totalPages}
+      >
+        Next page
+      </button>
+    </div>
+  );
 
-  const sessionFooterLabel = score === 0 && userAnswer ? "Correct Answer" : "Tip";
-  const sessionFooterText = score === 0 && userAnswer
-    ? correctAnswer
-    : "Submit an answer to see detailed feedback.";
+  const selectionTable = (
+    <TableList
+      columns={[
+        { key: "no", title: "No#" },
+        { key: "studentId", title: "Student ID" },
+        { key: "name", title: "Full Name" },
+        { key: "grade", title: "Grade" },
+        { key: "section", title: "Section" },
+        { key: "lastAccuracy", title: "Accuracy" },
+      ]}
+      data={selectionRows}
+      actions={(row: any) => (
+        <UtilityButton small onClick={() => handleStartSession(row.id)}>
+          Start Session
+        </UtilityButton>
+      )}
+      pageSize={PAGE_SIZE}
+    />
+  );
 
-  const cardContent = (
-    <div className="h-full w-full">
-      <div className="flex-1 px-6 sm:px-8 lg:px-12 py-12 flex items-center justify-center text-center bg-gradient-to-b from-white via-white to-[#f3f7f4]">
-        <p className="text-4xl sm:text-5xl lg:text-6xl font-semibold text-[#013300] tracking-tight">{question}</p>
+  if (view === "session" && !selectedStudent) {
+    return null;
+  }
+
+  const selectionProps = view === "select"
+    ? {
+        summaryText: selectionSummaryText,
+        searchValue: studentSearch,
+        onSearchChange: setStudentSearch,
+        table: selectionTable,
+        lastSavedMessage: lastSavedStudent
+          ? `Latest accuracy for ${lastSavedStudent.name} has been saved.`
+          : undefined,
+        customBanner: paginationControls,
+      }
+    : undefined;
+
+  const questionCardContent = (
+    <div className="flex w-full flex-col gap-6">
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <p className="mt-4 text-4xl font-semibold tracking-tight text-[#013300] sm:text-5xl">{question}</p>
       </div>
-      <div className="px-6 sm:px-8 py-6 border-t border-gray-300 flex flex-col gap-4 md:flex-row md:items-stretch md:justify-between bg-white/90">
-        <label className="w-full sm:flex-1 flex flex-col gap-2 text-sm font-medium text-slate-600">
-          <span className="uppercase tracking-wide text-xs">Your answer</span>
-          <input
-            type="text"
-            value={userAnswer}
-            onChange={(event) => setUserAnswer(event.target.value)}
-            className="w-full rounded-full border border-[#013300] px-5 py-3 text-center text-base font-semibold text-[#013300] focus:outline-none focus-visible:ring-2"
-            placeholder="Type here"
-          />
-        </label>
-        <div className="flex flex-col gap-2 w-full md:w-auto">
-          <span className="uppercase tracking-wide text-xs text-slate-600 opacity-0">Action</span>
+
+      <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5">
+        <div className="flex flex-col gap-4 md:flex-row md:items-end">
+          <label className="flex-1">
+            <span className="text-sm font-semibold text-slate-700">Your answer</span>
+            <input
+              type="text"
+              value={userAnswer}
+              onChange={handleInputChange}
+              className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-lg font-semibold text-[#013300] transition focus:border-[#013300] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#013300]/30"
+              placeholder="Type and submit"
+              // Additional attributes for better user experience
+              inputMode="decimal" // Shows appropriate keyboard on mobile
+              pattern="[0-9.\-]*" // HTML5 pattern validation
+              title="Only numbers, decimal point, and minus sign are allowed"
+            />
+          </label>
           <button
             onClick={handleSubmit}
-            className="inline-flex items-center justify-center gap-2 rounded-full bg-[#013300] px-7 py-3 text-base font-semibold text-white shadow-md shadow-gray-200 transition hover:bg-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600 active:scale-95 h-full w-full"
+            className="w-full rounded-xl bg-[#013300] px-6 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-green-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#013300]/60 md:w-auto"
           >
             Check Answer
           </button>
@@ -311,6 +371,23 @@ export default function MasterTeacherMathFlashcards() {
       </div>
     </div>
   );
+
+  const sessionInsights = {
+    heading: "Real-time Insights",
+    highlightLabel: "Remarks",
+    highlightText: feedback || "Submit an answer to see how you did.",
+    metrics: [
+      { label: "Accuracy", value: score !== null ? `${score}%` : "—" },
+      { label: "Response time", value: rate !== null ? `${rate.toFixed(2)}s` : "—" },
+      { label: "Your input", value: userAnswer || "—" },
+      { 
+        label: "Correct answer", 
+        value: showCorrectAnswer ? correctAnswer : "••••••",
+        onClick: () => setShowCorrectAnswer(true),
+        clickable: !showCorrectAnswer
+      },
+    ],
+  };
 
   const sessionProps = view === "session" && selectedStudent
     ? {
@@ -321,15 +398,8 @@ export default function MasterTeacherMathFlashcards() {
           section: selectedStudent.section,
         },
         levelLabel: "Non-Proficient Level",
-        cardContent,
-        insights: {
-          heading: "Live mastery insights",
-          highlightLabel: "Latest feedback",
-          highlightText: feedback || "Submit an answer to see how you did.",
-          metrics: insightMetrics,
-          footerLabel: sessionFooterLabel,
-          footerText: sessionFooterText,
-        },
+        cardContent: questionCardContent,
+        insights: sessionInsights,
         progress: { currentIndex: current, totalCount: flashcardsData.length },
         nav: {
           onPrev: handlePrev,
@@ -337,22 +407,16 @@ export default function MasterTeacherMathFlashcards() {
           onStop: handleStopSession,
           disablePrev: current === 0,
           disableNext: current === flashcardsData.length - 1,
-          prevLabel: "Previous",
-          nextLabel: "Next",
-          stopLabel: "Save & Exit",
         },
       }
     : undefined;
 
-  const resolvedView: "select" | "session" = sessionProps ? view : "select";
-
   return (
     <FlashcardsTemplate
-      view={resolvedView}
+      view={view}
       subjectLabel="Mathematics"
       headline="Remedial Flashcards"
       cardLabel="Card"
-      onBack={() => router.push("/Teacher/remedial/math")}
       selection={selectionProps}
       session={sessionProps}
     />

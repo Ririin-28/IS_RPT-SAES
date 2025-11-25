@@ -298,7 +298,7 @@ export default function RemedialTabContent({ level, config }: RemedialTabContent
           <>
             {showPlayButton && (
               <a href={`${playPath}?start=${row.startIndex}`}>
-                <UtilityButton small>Play</UtilityButton>
+                <UtilityButton small title="Click to play remedial session">Play</UtilityButton>
               </a>
             )}
             {levelConfig.allowSeeAll && <UtilityButton small>See All</UtilityButton>}
