@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import * as XLSX from 'xlsx';
 import AddStudentModal from "../Modals/AddStudentModal";
@@ -100,6 +101,7 @@ interface StudentTabProps {
 }
 
 export default function StudentTab({ students, setStudents, searchTerm }: StudentTabProps) {
+  const router = useRouter();
   const [showModal, setShowModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
@@ -307,6 +309,10 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
     }
   };
 
+  const handlePlayClick = () => {
+    router.push("/MasterTeacher/RemedialTeacher/remedial/FilipinoFlashcards?start=0");
+  };
+
   return (
     <div>
       <div className="flex flex-row justify-between items-center mb-4">
@@ -359,9 +365,14 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
     no: idx + 1,
   }))}
   actions={(row: any) => (
-    <UtilityButton small onClick={() => handleViewDetails(row)}>
-      View
-    </UtilityButton>
+    <div className="flex gap-2">
+      <UtilityButton small onClick={() => handleViewDetails(row)} title="View student details">
+        View
+      </UtilityButton>
+      <UtilityButton small type="button" onClick={handlePlayClick} title="Click to play remedial session">
+        Play
+      </UtilityButton>
+    </div>
   )}
   selectable={selectMode}
   selectedItems={selectedStudents}

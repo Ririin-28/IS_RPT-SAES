@@ -547,7 +547,7 @@ export default function MasterTeacherFilipinoFlashcards() {
     lastPhonemic: student.lastPerformance ? `${Math.round(student.lastPerformance.phonemeAccuracy)}%` : "—",
   }));
   const selectionProps = {
-    summaryText: `${selectionRows.length} student${selectionRows.length === 1 ? "" : "s"} listed`,
+    summaryText: `Showing ${selectionRows.length} student${selectionRows.length === 1 ? "" : "s"}`,
     searchValue: studentSearch,
     onSearchChange: (value: string) => setStudentSearch(value),
     table: (

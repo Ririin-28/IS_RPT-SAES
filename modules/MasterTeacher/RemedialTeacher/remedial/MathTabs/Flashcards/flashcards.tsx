@@ -174,14 +174,36 @@ export default function MasterTeacherMathFlashcards() {
   const [startTime, setStartTime] = useState<number | null>(null);
   const [rate, setRate] = useState<number | null>(null); // seconds
   const [score, setScore] = useState<number | null>(null);
+  const [showCorrectAnswer, setShowCorrectAnswer] = useState(false);
 
   const { question, correctAnswer } = flashcardsData[current];
+
+  // Validation function for input field
+  const validateInput = (input: string): boolean => {
+    // Regular expression to allow only numbers, hyphen, and dot
+    const validPattern = /^[0-9.\-]*$/;
+    return validPattern.test(input);
+  };
+
+  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = event.target.value;
+    
+    // Only set the value if it passes validation
+    if (validateInput(value)) {
+      setUserAnswer(value);
+    }
+    // If the value is empty, still allow it (for backspace/delete)
+    else if (value === "") {
+      setUserAnswer("");
+    }
+  };
 
   const resetFields = useCallback(() => {
     setUserAnswer("");
     setFeedback("");
     setRate(null);
     setScore(null);
+    setShowCorrectAnswer(false);
     setStartTime(Date.now());
   }, []);
 
@@ -318,40 +340,53 @@ export default function MasterTeacherMathFlashcards() {
     : undefined;
 
   const questionCardContent = (
-    <div className="flex w-full flex-col gap-8">
-      <p className="text-4xl sm:text-5xl font-semibold text-[#013300] tracking-tight">{question}</p>
-      <div className="flex flex-col gap-4 md:flex-row md:items-end">
-        <label className="w-full flex flex-col gap-2 text-sm font-medium text-slate-600">
-          <span className="uppercase tracking-wide text-xs">Your answer</span>
-          <input
-            type="text"
-            value={userAnswer}
-            onChange={(event) => setUserAnswer(event.target.value)}
-            className="w-full rounded-full border border-[#013300] px-5 py-3 text-center text-base font-semibold text-[#013300] focus:outline-none focus-visible:ring-2"
-            placeholder="Type here"
-          />
-        </label>
-        <button
-          onClick={handleSubmit}
-          className="inline-flex items-center justify-center gap-2 rounded-full bg-[#013300] px-7 py-3 text-base font-semibold text-white shadow-md shadow-gray-200 transition hover:bg-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600 active:scale-95 w-full md:w-auto"
-        >
-          Check Answer
-        </button>
+    <div className="flex w-full flex-col gap-6">
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <p className="mt-4 text-4xl font-semibold tracking-tight text-[#013300] sm:text-5xl">{question}</p>
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5">
+        <div className="flex flex-col gap-4 md:flex-row md:items-end">
+          <label className="flex-1">
+            <span className="text-sm font-semibold text-slate-700">Your answer</span>
+            <input
+              type="text"
+              value={userAnswer}
+              onChange={handleInputChange}
+              className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-lg font-semibold text-[#013300] transition focus:border-[#013300] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#013300]/30"
+              placeholder="Type and submit"
+              // Additional attributes for better user experience
+              inputMode="decimal" // Shows appropriate keyboard on mobile
+              pattern="[0-9.\-]*" // HTML5 pattern validation
+              title="Only numbers, decimal point, and minus sign are allowed"
+            />
+          </label>
+          <button
+            onClick={handleSubmit}
+            className="w-full rounded-xl bg-[#013300] px-6 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-green-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#013300]/60 md:w-auto"
+          >
+            Check Answer
+          </button>
+        </div>
       </div>
     </div>
   );
 
   const sessionInsights = {
-    heading: "Live mastery insights",
-    highlightLabel: "Latest feedback",
+    heading: "Real-time Insights",
+    highlightLabel: "Remarks",
     highlightText: feedback || "Submit an answer to see how you did.",
     metrics: [
       { label: "Accuracy", value: score !== null ? `${score}%` : "—" },
       { label: "Response time", value: rate !== null ? `${rate.toFixed(2)}s` : "—" },
       { label: "Your input", value: userAnswer || "—" },
+      { 
+        label: "Correct answer", 
+        value: showCorrectAnswer ? correctAnswer : "••••••",
+        onClick: () => setShowCorrectAnswer(true),
+        clickable: !showCorrectAnswer
+      },
     ],
-    footerLabel: "Correct answer",
-    footerText: score === 0 && userAnswer ? correctAnswer : undefined,
   };
 
   const sessionProps = view === "session" && selectedStudent

@@ -52,6 +52,8 @@ type CardAction = {
 type InsightMetric = {
   label: string;
   value?: string | number | null;
+  onClick?: () => void;
+  clickable?: boolean;
 };
 
 export type InsightPanelProps = {
@@ -228,7 +230,11 @@ export default function FlashcardsTemplate({
       return (
         <dl className="grid flex-1 grid-cols-1 gap-3 text-sm sm:grid-cols-2 auto-rows-fr">
           {session.insights.metrics.map((metric) => (
-            <div key={metric.label} className="rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col">
+            <div 
+              key={metric.label} 
+              className={`rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col ${metric.clickable ? 'cursor-pointer hover:bg-emerald-50 transition-colors' : ''}`}
+              onClick={metric.clickable ? metric.onClick : undefined}
+            >
               <dt className="text-xs uppercase tracking-wide text-slate-500">{metric.label}</dt>
               <dd className="text-lg font-semibold text-[#013300]">{metric.value ?? "—"}</dd>
             </div>

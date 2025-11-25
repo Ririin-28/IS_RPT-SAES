@@ -153,7 +153,6 @@ export default function MasterTeacherFilipinoFlashcards() {
 	const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
 	const [studentSearch, setStudentSearch] = useState("");
 	const [lastSavedStudentId, setLastSavedStudentId] = useState<string | null>(null);
-	const [currentPage, setCurrentPage] = useState(1);
 
 	useEffect(() => {
 		if (typeof window === "undefined") return;
@@ -218,21 +217,6 @@ export default function MasterTeacherFilipinoFlashcards() {
 			return haystack.includes(term);
 		});
 	}, [enrichedStudents, studentSearch]);
-
-	useEffect(() => {
-		setCurrentPage(1);
-	}, [studentSearch]);
-
-	const totalPages = Math.max(1, Math.ceil(filteredStudents.length / PAGE_SIZE));
-
-	useEffect(() => {
-		setCurrentPage((prev) => Math.min(prev, totalPages));
-	}, [totalPages]);
-
-	const paginatedStudents = useMemo(() => {
-		const start = (currentPage - 1) * PAGE_SIZE;
-		return filteredStudents.slice(start, start + PAGE_SIZE);
-	}, [filteredStudents, currentPage]);
 
 	const selectedStudent = useMemo(() => {
 		if (!selectedStudentId) return null;
@@ -544,9 +528,9 @@ export default function MasterTeacherFilipinoFlashcards() {
 		}
 	};
 
-	const selectionRows = paginatedStudents.map((student, index) => ({
+	const selectionRows = filteredStudents.map((student, index) => ({
 		...student,
-		no: (currentPage - 1) * PAGE_SIZE + index + 1,
+		no: index + 1,
 		lastPhonemic: student.lastPerformance ? `${Math.round(student.lastPerformance.phonemeAccuracy)}%` : "—",
 	}));
 
@@ -569,36 +553,11 @@ export default function MasterTeacherFilipinoFlashcards() {
 				)}
 				pageSize={PAGE_SIZE}
 			/>
-
-			<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-				<p className="text-xs text-gray-500">
-					Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredStudents.length)} of {filteredStudents.length}
-				</p>
-				<div className="flex items-center gap-2">
-					<button
-						type="button"
-						className="rounded-full border border-[#013300] px-4 py-2 text-sm text-[#013300] transition hover:bg-emerald-50 disabled:opacity-40"
-						onClick={() => setCurrentPage((page) => Math.max(page - 1, 1))}
-						disabled={currentPage <= 1}
-					>
-						Previous
-					</button>
-					<span className="text-sm text-gray-600">{currentPage} / {totalPages}</span>
-					<button
-						type="button"
-						className="rounded-full border border-[#013300] px-4 py-2 text-sm text-[#013300] transition hover:bg-emerald-50 disabled:opacity-40"
-						onClick={() => setCurrentPage((page) => Math.min(page + 1, totalPages))}
-						disabled={currentPage >= totalPages}
-					>
-						Next
-					</button>
-				</div>
-			</div>
 		</div>
 	);
 
 	const selectionProps = {
-		summaryText: `${filteredStudents.length} student(s) listed • Page ${currentPage} of ${totalPages}`,
+		summaryText: `Showing ${filteredStudents.length} student${filteredStudents.length === 1 ? "" : "s"}`,
 		searchValue: studentSearch,
 		onSearchChange: (value: string) => setStudentSearch(value),
 		table: selectionTable,
