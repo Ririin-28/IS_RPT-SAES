@@ -1,51 +1,39 @@
 {
-  "name": "RPT-SAES",
-  "short_name": "RPT-SAES",
-  "description": "Remedial Performance Tracker",
-  "start_url": "/",
-  "scope": "/",
+  "name": "RPT-SAES Student Quiz",
+  "short_name": "RPT Quiz",
+  "description": "Student Assessment and Quiz Platform",
+  "start_url": "/PWA",
+  "scope": "/PWA/",
   "display": "standalone",
-  "orientation": "any",
+  "orientation": "portrait",
   "theme_color": "#013300",
   "background_color": "#ffffff",
   "lang": "en-US",
-  "dir": "auto",
+  "dir": "ltr",
   "icons": [
     {
-      "src": "icon512_maskable.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "maskable"
-    },
-    {
-      "src": "icon512_maskable.png",
-      "sizes": "384x384",
-      "type": "image/png",
-      "purpose": "maskable"
-    },
-    {
-      "src": "icon512_maskable.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
-    },
-    {
-      "src": "icon512_rounded.png",
+      "src": "/icon512_rounded.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icon512_rounded.png",
-      "sizes": "384x384",
+      "src": "/icon512_rounded.png",
+      "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icon512_rounded.png",
+      "src": "/icon512_maskable.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon512_maskable.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any"
+      "purpose": "maskable"
     }
   ]
 }

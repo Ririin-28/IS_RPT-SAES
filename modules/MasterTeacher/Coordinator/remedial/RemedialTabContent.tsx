@@ -306,8 +306,7 @@ export default function RemedialTabContent({ level, config }: RemedialTabContent
               <UtilityButton
                 small
                 className="bg-[#013300] hover:bg-green-900"
-                onClick={() => setIsEditModalOpen(true)}
-              >
+                onClick={() => setIsEditModalOpen(true)} title="Click to edit remedial contents">
                 Edit
               </UtilityButton>
             )}
