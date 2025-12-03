@@ -3,18 +3,30 @@
 import React, { useState } from "react";
 import { motion } from "framer-motion";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
+import InstallPWAButton from "@/components/Common/Buttons/InstallPWAButton";
+import RemedialAssessment from "../RemedialAssessment/RemedialAssessment";
 
 export default function LandingPageAssessment() {
   const [quizCode, setQuizCode] = useState("");
   const [studentId, setStudentId] = useState("");
   const [surname, setSurname] = useState("");
+  const [showAssessment, setShowAssessment] = useState(false);
 
   const handleStart = () => {
-    console.log({ quizCode, studentId, surname });
+    setShowAssessment(true);
   };
 
+  if (showAssessment) {
+    return <RemedialAssessment />;
+  }
+
   return (
-    <div className="min-h-screen w-full bg-gradient-to-b from-[#e8f5e9] to-white flex items-center justify-center p-4">
+    <div className="min-h-screen w-full bg-gradient-to-b from-[#e8f5e9] to-white flex items-center justify-center p-4 relative">
+      {/* Floating install button - bottom right */}
+      <div className="fixed bottom-6 right-6 z-50">
+        <InstallPWAButton />
+      </div>
+
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
