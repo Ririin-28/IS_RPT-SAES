@@ -1,11 +1,8 @@
-const CACHE_NAME = 'rpt-saes-pwa-v1';
+const CACHE_NAME = 'rpt-quiz-pwa-v1';
 const urlsToCache = [
-  '/',
+  '/PWA',
   '/manifest.json',
-  '/favicon.ico',
-  '/globals.css',
-  // Add other static assets as needed
-  // Note: For dynamic Next.js routes, we'll handle in fetch event
+  '/favicon.ico'
 ];
 
 // Install event
@@ -20,15 +17,20 @@ self.addEventListener('install', (event) => {
 
 // Fetch event for caching strategy
 self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  
+  // Only handle requests within PWA scope
+  if (!url.pathname.startsWith('/PWA')) {
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request)
       .then((response) => {
-        // Return cached version or fetch from network
         if (response) {
           return response;
         }
         return fetch(event.request).then((fetchResponse) => {
-          // Cache successful responses
           if (fetchResponse && fetchResponse.status === 200) {
             const responseToCache = fetchResponse.clone();
             caches.open(CACHE_NAME)
@@ -38,9 +40,8 @@ self.addEventListener('fetch', (event) => {
           }
           return fetchResponse;
         }).catch(() => {
-          // Offline fallback for navigation requests
           if (event.request.destination === 'document') {
-            return caches.match('/');
+            return caches.match('/PWA');
           }
         });
       })

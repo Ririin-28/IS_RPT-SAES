@@ -71,7 +71,7 @@ export function useCoordinatorMaterials({ subject, level }: UseCoordinatorMateri
         level: normalizedLevel,
         pageSize: "100",
       });
-      const response = await fetch(`/api/materials?${params.toString()}`, { cache: "no-store" });
+      const response = await fetch(`/api/master_teacher/coordinator/materials?${params.toString()}`, { cache: "no-store" });
       if (!response.ok) {
         throw new Error(`Failed to fetch materials (${response.status})`);
       }

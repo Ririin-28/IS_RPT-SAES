@@ -222,11 +222,12 @@ export default function TeacherDashboard() {
 
   // Get today's date in simplified month format (same as Principal)
   const today = new Date();
+  const dayShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const monthShort = [
     'Jan.', 'Feb.', 'Mar.', 'Apr.', 'May.', 'Jun.',
     'Jul.', 'Aug.', 'Sep.', 'Oct.', 'Nov.', 'Dec.'
   ];
-  const dateToday = `${monthShort[today.getMonth()]} ${today.getDate()}, ${today.getFullYear()}`;
+  const dateToday = `${dayShort[today.getDay()]}, ${monthShort[today.getMonth()]} ${today.getDate()}, ${today.getFullYear()}`;
   const [selectedPeriod, setSelectedPeriod] = useState('monthly');
   const [selectedSubject, setSelectedSubject] = useState('Math');
   const [selectedMonth, setSelectedMonth] = useState('March');
@@ -535,7 +536,9 @@ export default function TeacherDashboard() {
               <hr className="border-gray-300 mb-4 sm:mb-5 md:mb-6" />
 
               {/* Overview Cards Section */}
-              <SecondaryHeader title="Class Overview" />
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
+                <SecondaryHeader title="Remedial Overview" />
+              </div>
               <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2 sm:gap-5 sm:mb-7 lg:grid-cols-4 lg:gap-6 lg:mb-8">
                 <OverviewCard
                   value={12}
@@ -577,7 +580,7 @@ export default function TeacherDashboard() {
                   onClick={() => handleNavigate("/Teacher/materials")}
                 />
                 <OverviewCard
-                  value={<span className="text-2xl">{dateToday}</span>}
+                  value={<span className="text-xl">{dateToday}</span>}
                   label="Date Today"
                   onClick={() => handleNavigate("/Teacher/calendar")}
                 />

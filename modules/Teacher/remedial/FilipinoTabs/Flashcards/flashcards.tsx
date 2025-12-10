@@ -1,26 +1,9 @@
 "use client";
-import { useState, useRef, useEffect, useMemo, useCallback, type CSSProperties } from "react";
-import { FiArrowLeft, FiArrowRight } from "react-icons/fi";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import TableList from "@/components/Common/Tables/TableList";
-
-/* ---------- Icons (unchanged) ---------- */
-const Volume2Icon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/>
-    <path d="M16 9a5 5 0 0 1 0 6"/>
-    <path d="M19.364 18.364a9 9 0 0 0 0-12.728"/>
-  </svg>
-);
-
-const MicIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 19v3"/>
-    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-    <rect x="9" y="2" width="6" height="13" rx="3"/>
-  </svg>
-);
+import FlashcardsTemplate, { MicIcon, Volume2Icon } from "@/components/Common/RemedialFlashcards/FlashcardsTemplate";
 
 /* ---------- String/phoneme utilities ---------- */
 
@@ -563,220 +546,102 @@ export default function MasterTeacherFilipinoFlashcards() {
     no: index + 1,
     lastPhonemic: student.lastPerformance ? `${Math.round(student.lastPerformance.phonemeAccuracy)}%` : "—",
   }));
-
-  if (view === "select") {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-[#f2f8f4] via-white to-[#e6f2ec] py-10">
-        <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <header className="rounded-3xl border border-gray-300 bg-white/70 backdrop-blur px-6 py-8 sm:py-10 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between shadow-md shadow-gray-200">
-            <div className="space-y-3 text-center sm:text-left">
-              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">Filipino</p>
-              <h1 className="text-3xl sm:text-4xl font-bold text-[#0d1b16]">Remedial Flashcards</h1>
-            </div>
-            <button
-              onClick={handleBackToDashboard}
-              className="inline-flex items-center gap-2 rounded-full border border-[#013300] px-6 py-3 text-sm font-semibold text-[#013300] transition hover:bg-emerald-50"
-            >
-              <FiArrowLeft /> Back
-            </button>
-          </header>
-
-          {lastSavedStudent && (
-            <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 shadow-sm shadow-emerald-100">
-              Nai-save na ang pinakahuling performance ni <span className="font-semibold">{lastSavedStudent.name}</span>.
-            </div>
-          )}
-
-          <div className="mt-8 rounded-3xl border border-gray-300 bg-white shadow-md shadow-gray-200 p-6 space-y-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm font-medium text-gray-600">
-                {selectionRows.length} student(s) listed
-              </p>
-              <div>
-                <input
-                  type="text"
-                  placeholder="Search Students..."
-                  className="w-full border border-gray-300 rounded-lg px-4 py-2 pr-10 text-black"
-                  value={studentSearch}
-                  onChange={(event) => setStudentSearch(event.target.value)}
-                />
-              </div>
-            </div>
-
-            <TableList
-              columns={[
-                { key: "no", title: "No#" },
-                { key: "studentId", title: "Student ID" },
-                { key: "name", title: "Full Name" },
-                { key: "grade", title: "Grade" },
-                { key: "section", title: "Section" },
-                { key: "lastPhonemic", title: "Phonemic" },
-              ]}
-              data={selectionRows}
-              actions={(row: any) => (
-                <UtilityButton small onClick={() => handleStartSession(row.id)}>
-                  Start Remedial
-                </UtilityButton>
-              )}
-              pageSize={8}
-            />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!selectedStudent) {
-    return null;
-  }
-
-  const progressPercent = ((current + 1) / flashcardsData.length) * 100;
-  const progressCircleStyle: CSSProperties = {
-    background: `conic-gradient(#013300 ${progressPercent * 3.6}deg, #e6f4ef ${progressPercent * 3.6}deg)`,
+  const selectionProps = {
+    summaryText: `Showing ${selectionRows.length} student${selectionRows.length === 1 ? "" : "s"}`,
+    searchValue: studentSearch,
+    onSearchChange: (value: string) => setStudentSearch(value),
+    table: (
+      <TableList
+        columns={[
+          { key: "no", title: "No#" },
+          { key: "studentId", title: "Student ID" },
+          { key: "name", title: "Full Name" },
+          { key: "grade", title: "Grade" },
+          { key: "section", title: "Section" },
+          { key: "lastPhonemic", title: "Phonemic" },
+        ]}
+        data={selectionRows}
+        actions={(row: any) => (
+          <UtilityButton small onClick={() => handleStartSession(row.id)}>
+            Start Remedial
+          </UtilityButton>
+        )}
+        pageSize={8}
+      />
+    ),
+    lastSavedMessage: lastSavedStudent
+      ? `Nai-save na ang pinakahuling performance ni ${lastSavedStudent.name}.`
+      : undefined,
   };
 
+  const insightMetrics = [
+    { label: "Pronunciation", value: metrics ? `${metrics.pronScore}%` : "—" },
+    { label: "Fluency", value: metrics ? `${metrics.fluencyScore}%` : "—" },
+    { label: "Sound Accuracy", value: metrics ? `${Math.round(metrics.phonemeAccuracy)}%` : "—" },
+    { label: "Reading Speed", value: metrics ? `${metrics.wpm} WPM` : "—" },
+  ];
+
+  const sessionProps = view === "session" && selectedStudent
+    ? {
+        student: {
+          studentId: selectedStudent.studentId,
+          name: selectedStudent.name,
+          grade: selectedStudent.grade,
+          section: selectedStudent.section,
+        },
+        levelLabel: "Non-Reader Level",
+        cardText: sentence,
+        cardActions: [
+          {
+            id: "speak",
+            label: "Play Sentence",
+            activeLabel: "Playing...",
+            icon: <Volume2Icon />,
+            onClick: handleSpeak,
+            isActive: isPlaying,
+          },
+          {
+            id: "mic",
+            label: "Pronunciation Check",
+            activeLabel: "Listening...",
+            icon: <MicIcon />,
+            onClick: handleMicrophone,
+            isActive: isListening,
+          },
+        ],
+        insights: {
+          heading: "Real-time Insights",
+          highlightLabel: "Transcription",
+          highlightText: recognizedText || "Waiting for microphone recording.",
+          metrics: insightMetrics,
+          footerLabel: "Remarks",
+          footerText: feedback || "Patuloy na magsalita upang makakuha ng feedback.",
+        },
+        progress: { currentIndex: current, totalCount: flashcardsData.length },
+        nav: {
+          onPrev: handlePrev,
+          onNext: handleNext,
+          onStop: handleStopSession,
+          disablePrev: current === 0,
+          disableNext: current === flashcardsData.length - 1,
+          prevLabel: "Previous",
+          nextLabel: "Next",
+          stopLabel: "Save & Exit",
+        },
+      }
+    : undefined;
+
+  const resolvedView: "select" | "session" = sessionProps ? view : "select";
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#f2f8f4] via-white to-[#e6f2ec] py-10">
-      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <header className="rounded-3xl border border-gray-300 bg-white/70 backdrop-blur px-6 py-8 sm:py-10 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between shadow-md shadow-gray-200">
-          <div className="space-y-2 text-center lg:text-left">
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">Filipino</p>
-            <h1 className="text-3xl sm:text-4xl font-bold text-[#0d1b16]">Non-Reader Level</h1>
-            <p className="text-md font-semibold text-[#013300]">
-              Student: {selectedStudent.studentId} - {selectedStudent.name}
-            </p>
-            {(selectedStudent.grade || selectedStudent.section) && (
-              <p className="text-sm text-slate-500">
-                {selectedStudent.grade ? `Grade ${selectedStudent.grade}` : ""}
-                {selectedStudent.grade && selectedStudent.section ? " • " : ""}
-                {selectedStudent.section ? `Section ${selectedStudent.section}` : ""}
-              </p>
-            )}
-          </div>
-          <div className="flex flex-col items-center gap-5 sm:flex-row sm:justify-center lg:justify-end">
-            <div className="relative grid place-items-center">
-              <div className="w-20 h-20 rounded-full ring-8 ring-emerald-50 shadow-inner" style={progressCircleStyle} />
-              <div className="absolute inset-3 rounded-full bg-white" />
-              <span className="absolute text-lg font-semibold text-[#013300]">{Math.round(progressPercent)}%</span>
-            </div>
-            <div className="text-center sm:text-left">
-              <p className="text-xs uppercase tracking-wide text-slate-500">Card</p>
-              <p className="text-xl font-semibold text-[#013300]">
-                {current + 1} <span className="text-base font-normal text-slate-400">/ {flashcardsData.length}</span>
-              </p>
-            </div>
-          </div>
-        </header>
-
-        <div className="mt-10 grid gap-8 xl:grid-cols-12">
-          <section className="xl:col-span-8">
-            <div className="h-full rounded-3xl border border-gray-300 bg-white shadow-md shadow-gray-200 overflow-hidden flex flex-col">
-              <div className="flex-1 px-6 sm:px-8 lg:px-12 py-12 via-white flex items-center justify-center text-center">
-                <p className="text-3xl sm:text-4xl lg:text-5xl font-semibold text-[#013300] leading-tight">
-                  {sentence}
-                </p>
-              </div>
-              <div className="px-6 sm:px-8 py-6 border-t border-gray-300 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-between">
-                <button
-                  onClick={handleSpeak}
-                  className={`group flex items-center gap-3 rounded-full px-6 py-3 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600 active:scale-95 ${
-                    isPlaying
-                      ? "bg-[#013300] text-white shadow-md shadow-gray-200"
-                      : "border border-[#013300] bg-white text-[#013300] hover:border-[#013300] hover:bg-[#013300] hover:text-white"
-                  } w-full md:w-auto`}
-                >
-                  <span
-                    className={`grid h-10 w-10 place-items-center rounded-full transition-colors ${
-                      isPlaying
-                        ? "bg-white/10 text-white animate-pulse"
-                        : "bg-white text-[#013300] group-hover:bg-[#013300] group-hover:text-white group-focus-visible:bg-[#013300] group-focus-visible:text-white"
-                    }`}
-                  >
-                    <Volume2Icon />
-                  </span>
-                  {isPlaying ? "Playing..." : "Play Sentence"}
-                </button>
-                <button
-                  onClick={handleMicrophone}
-                  className={`group flex items-center gap-3 rounded-full px-6 py-3 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600 active:scale-95 ${
-                    isListening
-                      ? "bg-[#013300] text-white shadow-md shadow-gray-200"
-                      : "border border-[#013300] bg-white text-[#013300] hover:border-[#013300] hover:bg-[#013300] hover:text-white"
-                  } w-full md:w-auto`}
-                >
-                  <span
-                    className={`grid h-10 w-10 place-items-center rounded-full transition-colors ${
-                      isListening
-                        ? "bg-white/10 text-white animate-pulse"
-                        : "bg-white text-[#013300] group-hover:bg-[#013300] group-hover:text-white group-focus-visible:bg-[#013300] group-focus-visible:text-white"
-                    }`}
-                  >
-                    <MicIcon />
-                  </span>
-                  {isListening ? "Listening.." : "Pronunciation Check"}
-                </button>
-              </div>
-            </div>
-          </section>
-
-          <aside className="xl:col-span-4 flex flex-col gap-6">
-            <div className="rounded-3xl border border-gray-300 bg-white/80 backdrop-blur px-6 py-7 shadow-md shadow-gray-200">
-              <h2 className="text-lg font-semibold text-[#013300]">Real-time insights</h2>
-              <div className="mt-6 space-y-4">
-                <div className="rounded-2xl border border-gray-300 bg-emerald-50/60 px-4 py-3">
-                  <p className="text-xs uppercase tracking-wide text-emerald-800">Transcription:</p>
-                  <p className="mt-1 text-sm font-medium text-[#013300]">
-                    {recognizedText || "Waiting for microphone recording."}
-                  </p>
-                </div>
-                <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                  <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3">
-                    <dt className="text-xs uppercase tracking-wide text-slate-500">Pronunciation</dt>
-                    <dd className="text-lg font-semibold text-[#013300]">{metrics ? `${metrics.pronScore}%` : "—"}</dd>
-                  </div>
-                  <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3">
-                    <dt className="text-xs uppercase tracking-wide text-slate-500">Fluency</dt>
-                    <dd className="text-lg font-semibold text-[#013300]">{metrics ? `${metrics.fluencyScore}%` : "—"}</dd>
-                  </div>
-                  <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3">
-                    <dt className="text-xs uppercase tracking-wide text-slate-500">Sound Accuracy</dt>
-                    <dd className="text-lg font-semibold text-[#013300]">{metrics ? `${metrics.phonemeAccuracy.toFixed(0)}%` : "—"}</dd>
-                  </div>
-                  <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3">
-                    <dt className="text-xs uppercase tracking-wide text-slate-500">Reading Speed</dt>
-                    <dd className="text-lg font-semibold text-[#013300]">{metrics ? `${metrics.wpm} WPM` : "—"}</dd>
-                  </div>
-                </dl>
-              </div>
-            </div>
-          </aside>
-        </div>
-
-        <div className="mt-12 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-center">
-          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-center gap-3 w-full">
-            <button
-              onClick={handlePrev}
-              disabled={current === 0}
-              className="inline-flex items-center justify-center gap-2 rounded-full border border-[#013300] px-6 py-3 text-sm font-medium text-[#013300] transition hover:border-[#013300] hover:bg-emerald-50 disabled:opacity-40 disabled:hover:bg-transparent w-full sm:w-auto"
-            >
-              <FiArrowLeft /> Previous
-            </button>
-            <button
-              onClick={handleStopSession}
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#013300] px-7 py-3 text-sm font-medium text-white shadow-md shadow-gray-200 transition hover:bg-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600 active:scale-95 w-full sm:w-auto"
-            >
-              <span className="h-2 w-2 rounded-full bg-white/70" /> Save &amp; Exit
-            </button>
-            <button
-              onClick={handleNext}
-              disabled={current === flashcardsData.length - 1}
-              className="inline-flex items-center justify-center gap-2 rounded-full border border-[#013300] px-6 py-3 text-sm font-medium text-[#013300] transition hover:border-[#013300] hover:bg-emerald-50 disabled:opacity-40 disabled:hover:bg-transparent w-full sm:w-auto"
-            >
-              Next <FiArrowRight />
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <FlashcardsTemplate
+      view={resolvedView}
+      subjectLabel="Filipino"
+      headline="Remedial Flashcards"
+      cardLabel="Card"
+      onBack={() => router.push("/Teacher/remedial/filipino")}
+      selection={selectionProps}
+      session={sessionProps}
+    />
   );
 }

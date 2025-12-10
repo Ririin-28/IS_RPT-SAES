@@ -469,7 +469,7 @@ export default function Home() {
             text-3xl font-extrabold text-[#013300] mb-4 text-center leading-tight
             md:text-4xl md:mb-5 lg:text-5xl
             transition-all duration-800 delay-200 transform
-            ${isSectionVisible('about') ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-6 opacity-0 scale-95'}
+            ${isSectionVisible('about') ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}
           `}
           >
             About RPT-SAES
@@ -724,18 +724,35 @@ export default function Home() {
                 Manage remedial programs and 
                 <br className="hidden md:block" /> track student progress directly from your phone.
               </p>
-              <a
+              <div
                 className={`
-                  flex items-center px-4 py-2 bg-[#013300] text-white cursor-pointer text-base font-bold rounded-lg hover:bg-green-900
-                  md:px-6 md:py-3 md:text-lg lg:text-xl
+                  mt-2 md:mt-4
                   ${isSectionVisible('mobile') ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-6 opacity-0 scale-95'}
                 `}
               >
-                <svg className="w-5 h-5 mr-2 md:w-6 md:h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4" />
-                </svg>
-                RPT-SAES Mobile
-              </a>
+                <Link
+                  href="/PWA"
+                  className="
+                    flex items-center justify-center px-6 py-3 bg-green-900 text-white text-base font-bold rounded-lg
+                    hover:bg-green-800 transition md:px-8 md:py-3 md:text-lg
+                  "
+                >
+                  <svg
+                    className="w-5 h-5 mr-2 md:w-6 md:h-6"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4"
+                    />
+                  </svg>
+                  Install RPT-SAES
+                </Link>
+              </div>
             </div>
           </div>
         </div>

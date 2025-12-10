@@ -1,57 +1,6 @@
 "use client";
-import { useState, useEffect } from 'react';
-import Sidebar from "@/components/MasterTeacher/RemedialTeacher/Sidebar";
-import Header from "@/components/MasterTeacher/Header";
-// Button Components
-import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
-import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
-import UtilityButton from "@/components/Common/Buttons/UtilityButton";
-import DangerButton from "@/components/Common/Buttons/DangerButton";
-// Text Components
-import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
-import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
-import BodyText from "@/components/Common/Texts/BodyText";
-import { getStoredUserProfile } from "@/lib/utils/user-profile";
-
-type RemedialTeacherProfile = {
-  fullName: string;
-  role: string;
-  gradeHandled: string;
-  subjectAssigned: string;
-};
-
-type RemedialTeacherApiResponse = {
-  success: boolean;
-  profile?: {
-    firstName?: string | null;
-    middleName?: string | null;
-    lastName?: string | null;
-    grade?: string | null;
-    gradeLabel?: string | null;
-    subjectHandled?: string | null;
-    role?: string | null;
-  } | null;
-  error?: string;
-};
-
-const ROLE_LABELS: Record<string, string> = {
-  admin: "IT Admin",
-  it_admin: "IT Admin",
-  master_teacher: "Master Teacher",
-  masterteacher: "Master Teacher",
-  coordinator: "Coordinator",
-  teacher: "Teacher",
-};
-
-function formatRoleLabel(role?: string | null): string {
-  if (!role) {
-    return "Master Teacher";
-  }
-  const key = role.toLowerCase().replace(/[\s-]+/g, "_");
-  return ROLE_LABELS[key] ?? role;
-}
-
-// Import Chart components
+import { useState, useCallback, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -59,25 +8,17 @@ import {
   PointElement,
   LineElement,
   BarElement,
-  ArcElement,
   Title,
   Tooltip,
   Legend,
 } from 'chart.js';
-import { Bar, Pie, Line } from 'react-chartjs-2';
-
-// Register ChartJS components
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  ArcElement,
-  Title,
-  Tooltip,
-  Legend
-);
+import { Bar, Line } from 'react-chartjs-2';
+import RemedialTeacherSidebar from "@/components/MasterTeacher/RemedialTeacher/Sidebar";
+import MasterTeacherHeader from "@/components/MasterTeacher/Header";
+import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
+import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
+import BodyText from "@/components/Common/Texts/BodyText";
+import { getStoredUserProfile } from "@/lib/utils/user-profile";
 
 // Custom styled dropdown component
 function CustomDropdown({ value, onChange, options, className = "" }: {
@@ -106,15 +47,130 @@ function CustomDropdown({ value, onChange, options, className = "" }: {
   );
 }
 
-export default function MasterTeacherDashboard() {
-  const [remedialProfile, setRemedialProfile] = useState<RemedialTeacherProfile | null>(null);
+// Register ChartJS components
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend
+);
+
+// OverviewCard component with responsive styles
+function OverviewCard({
+  value,
+  label,
+  icon,
+  className = "",
+  onClick,
+  tooltip,
+}: {
+  value: React.ReactNode;
+  label: string;
+  icon?: React.ReactNode;
+  className?: string;
+  onClick?: () => void;
+  tooltip?: string;
+}) {
+  const sanitizeContent = (content: any): React.ReactNode => {
+    if (typeof content === 'string') {
+      return content;
+    }
+    return content;
+  };
+
+  const baseClasses = `relative group bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg
+      flex flex-col items-center justify-center p-5 min-w-[160px] min-h-[110px] 
+      transition-transform duration-200 hover:scale-105
+      sm:p-6 sm:min-w-[180px] sm:min-h-[120px]
+      lg:p-7 ${className}`;
+
+  const tooltipNode = tooltip ? (
+    <span className="pointer-events-none absolute -top-2 left-1/2 z-10 hidden w-56 -translate-x-1/2 -translate-y-full rounded-md bg-[#013300] px-3 py-2 text-center text-xs font-medium text-white opacity-0 shadow-lg transition-opacity duration-200 group-hover:block group-hover:opacity-100">
+      {tooltip}
+    </span>
+  ) : null;
+
+  const content = (
+    <>
+      {tooltipNode}
+      <div className="flex flex-row items-center">
+        <span className="text-4xl font-extrabold text-[#013300] drop-shadow sm:text-5xl">
+          {sanitizeContent(value)}
+        </span>
+        {icon && <span className="ml-1 sm:ml-2">{icon}</span>}
+      </div>
+      <div className="text-green-900 text-sm font-semibold mt-1 tracking-wide sm:text-base sm:mt-2">
+        {sanitizeContent(label)}
+      </div>
+    </>
+  );
+
+  if (typeof onClick === "function") {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`${baseClasses} focus:outline-none cursor-pointer text-left`}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return <div className={baseClasses}>{content}</div>;
+}
+
+type TeacherProfile = {
+  fullName: string;
+  role: string;
+  gradeHandled: string;
+  subjectAssigned: string;
+};
+
+type TeacherApiResponse = {
+  success: boolean;
+  profile?: {
+    firstName?: string | null;
+    middleName?: string | null;
+    lastName?: string | null;
+    grade?: string | null;
+    gradeLabel?: string | null;
+    subjectHandled?: string | null;
+    role?: string | null;
+  } | null;
+  error?: string;
+};
+
+const ROLE_LABELS: Record<string, string> = {
+  teacher: "Teacher",
+  master_teacher: "Master Teacher",
+  coordinator: "Coordinator",
+};
+
+function formatRoleLabel(role?: string | null): string {
+  if (!role) return "Teacher";
+  const key = role.toLowerCase().replace(/[\s-]+/g, "_");
+  return ROLE_LABELS[key] ?? role;
+}
+
+export default function TeacherDashboard() {
+  const router = useRouter();
+  const handleNavigate = useCallback((path: string) => {
+    router.push(path);
+  }, [router]);
+
+  const [teacherProfile, setTeacherProfile] = useState<TeacherProfile | null>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function loadRemedialProfile() {
+    async function loadTeacherProfile() {
       setIsLoadingProfile(true);
       setProfileError(null);
       try {
@@ -126,18 +182,16 @@ export default function MasterTeacherDashboard() {
         }
 
         const response = await fetch(
-          `/api/teacher/profile?userId=${encodeURIComponent(String(userId))}`,
+          `/api/master_teacher/profile?userId=${encodeURIComponent(String(userId))}`,
           { cache: "no-store" },
         );
 
-        const payload: RemedialTeacherApiResponse | null = await response.json().catch(() => null);
+        const payload: TeacherApiResponse | null = await response.json().catch(() => null);
 
-        if (cancelled) {
-          return;
-        }
+        if (cancelled) return;
 
         if (!response.ok || !payload?.success || !payload.profile) {
-          const message = payload?.error ?? "Unable to load profile.";
+          const message = payload?.error ?? "Unable to load teacher profile.";
           throw new Error(message);
         }
 
@@ -147,9 +201,9 @@ export default function MasterTeacherDashboard() {
           payload.profile.lastName,
         ].filter((part): part is string => typeof part === "string" && part.trim().length > 0);
 
-        const teacherName = nameParts.length > 0 ? nameParts.join(" ") : "Master Teacher";
+        const teacherName = nameParts.length > 0 ? nameParts.join(" ") : "Teacher";
 
-        setRemedialProfile({
+        setTeacherProfile({
           fullName: teacherName,
           role: formatRoleLabel(payload.profile.role ?? storedProfile?.role),
           gradeHandled: payload.profile.gradeLabel?.trim() || payload.profile.grade?.trim() || "Not assigned",
@@ -159,7 +213,7 @@ export default function MasterTeacherDashboard() {
         if (!cancelled) {
           const message = error instanceof Error ? error.message : "Failed to load profile.";
           setProfileError(message);
-          setRemedialProfile(null);
+          setTeacherProfile(null);
         }
       } finally {
         if (!cancelled) {
@@ -168,7 +222,7 @@ export default function MasterTeacherDashboard() {
       }
     }
 
-    loadRemedialProfile();
+    loadTeacherProfile();
 
     return () => {
       cancelled = true;
@@ -177,22 +231,19 @@ export default function MasterTeacherDashboard() {
 
   // Get today's date in simplified month format (same as Principal)
   const today = new Date();
+  const dayShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const monthShort = [
     'Jan.', 'Feb.', 'Mar.', 'Apr.', 'May.', 'Jun.',
     'Jul.', 'Aug.', 'Sep.', 'Oct.', 'Nov.', 'Dec.'
   ];
-  const dateToday = `${monthShort[today.getMonth()]} ${today.getDate()}, ${today.getFullYear()}`;
+  const dateToday = `${dayShort[today.getDay()]}, ${monthShort[today.getMonth()]} ${today.getDate()}, ${today.getFullYear()}`;
+  const endOfMonthDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  const endOfMonthLabel = `${monthShort[endOfMonthDate.getMonth()]} ${endOfMonthDate.getDate()}, ${endOfMonthDate.getFullYear()}`;
   const [selectedPeriod, setSelectedPeriod] = useState('monthly');
   const [selectedSubject, setSelectedSubject] = useState('Math');
   const [selectedMonth, setSelectedMonth] = useState('March');
-
-  // Sample data for the teacher's own students
-  const [pendingApprovals] = useState(3);
-  
-  // Months data
   const months = ['September', 'October', 'November', 'December', 'January', 'February', 'March'];
   
-  // Enhanced student performance data by month for each subject
   const performanceData = {
     Math: {
       weekly: {
@@ -298,7 +349,6 @@ export default function MasterTeacherDashboard() {
     },
   };
 
-  // Student distribution by level for current month
   const getMonthlyLevelData = () => {
     switch(selectedSubject) {
       case 'English':
@@ -307,7 +357,7 @@ export default function MasterTeacherDashboard() {
           datasets: [
             {
               label: 'Students',
-              data: [2, 3, 4, 5, 4, 2], // March data for English
+              data: [2, 3, 4, 5, 4, 2],
               backgroundColor: [
                 'rgba(239, 68, 68, 0.8)',
                 'rgba(249, 115, 22, 0.8)',
@@ -334,7 +384,7 @@ export default function MasterTeacherDashboard() {
           datasets: [
             {
               label: 'Students',
-              data: [1, 2, 5, 6, 4, 2], // March data for Filipino
+              data: [1, 2, 5, 6, 4, 2],
               backgroundColor: [
                 'rgba(239, 68, 68, 0.8)',
                 'rgba(249, 115, 22, 0.8)',
@@ -361,7 +411,7 @@ export default function MasterTeacherDashboard() {
           datasets: [
             {
               label: 'Students',
-              data: [1, 2, 5, 7, 5], // March data for Math
+              data: [1, 2, 5, 7, 5],
               backgroundColor: [
                 'rgba(239, 68, 68, 0.8)',
                 'rgba(249, 115, 22, 0.8)',
@@ -388,36 +438,6 @@ export default function MasterTeacherDashboard() {
     }
   };
 
-  // Pending approvals data
-  const approvalsData = {
-    labels: ['Pending', 'Approved'],
-    datasets: [
-      {
-        data: [pendingApprovals, 12 - pendingApprovals],
-        backgroundColor: [
-          'rgba(234, 179, 8, 0.8)',
-          'rgba(34, 197, 94, 0.8)',
-        ],
-        borderColor: [
-          'rgba(234, 179, 8, 1)',
-          'rgba(34, 197, 94, 1)',
-        ],
-        borderWidth: 1,
-      },
-    ],
-  };
-
-  // Chart options
-  const barOptions = {
-    responsive: true,
-    plugins: {
-      legend: {
-        position: 'top' as const,
-      },
-    },
-    maintainAspectRatio: false,
-  };
-
   const lineOptions = {
     responsive: true,
     plugins: {
@@ -432,7 +452,6 @@ export default function MasterTeacherDashboard() {
         ticks: {
           stepSize: 1,
           callback: function(value: any) {
-            // Custom labels for y-axis based on subject
             if (selectedSubject === 'Math') {
               const mathLevels = [
                 '',
@@ -463,16 +482,6 @@ export default function MasterTeacherDashboard() {
     maintainAspectRatio: false,
   };
 
-  const pieOptions = {
-    responsive: true,
-    plugins: {
-      legend: {
-        position: 'top' as const,
-      },
-    },
-    maintainAspectRatio: false,
-  };
-
   const monthlyBarOptions = {
     responsive: true,
     plugins: {
@@ -485,28 +494,17 @@ export default function MasterTeacherDashboard() {
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
-      {/*---------------------------------Sidebar---------------------------------*/}
-      <Sidebar />
+      <RemedialTeacherSidebar />
 
-      {/*---------------------------------Main Content---------------------------------*/}
       <div className="flex-1 pt-16 flex flex-col overflow-hidden">
-        <Header title="Dashboard" />
+        <MasterTeacherHeader title="Dashboard" />
 
         <main className="flex-1 overflow-y-auto">
           <div className="p-4 h-full sm:p-5 md:p-6">
-            {/*---------------------------------Main Container---------------------------------*/}
-            <div className="bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[380px] overflow-y-auto p-4 sm:p-5 md:p-6">
+            <div className="bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[400px] overflow-y-auto p-4 sm:p-5 md:p-6">
               {/* Teacher Info Section */}
               <div className="flex flex-col mb-3 md:flex-row md:items-center md:justify-between">
                 <SecondaryHeader title="Teacher Overview" />
-                <div className="flex space-x-2 mt-2 md:mt-0">
-                  <PrimaryButton 
-                    onClick={() => {}} 
-                    className="text-sm py-1.5 px-3"
-                  >
-                    Student Progress
-                  </PrimaryButton>
-                </div>
               </div>
 
               <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg p-4 mb-6 min-w-full min-h-[120px] sm:p-5 sm:mb-7 md:p-6 md:mb-8">
@@ -518,25 +516,25 @@ export default function MasterTeacherDashboard() {
                   <div className="flex h-full items-center justify-center">
                     <BodyText title={profileError} />
                   </div>
-                ) : remedialProfile ? (
+                ) : teacherProfile ? (
                   <div className="flex flex-col w-full">
                     <div className="flex flex-col mb-2 md:flex-row md:items-start md:justify-between md:mb-0">
                       <div className="mb-3 md:mb-0 md:w-1/3">
                         <TertiaryHeader title="Full Name:" />
-                        <BodyText title={remedialProfile.fullName} />
+                        <BodyText title={teacherProfile.fullName} />
                       </div>
                       <div className="mb-3 md:mb-0 md:w-1/3">
                         <TertiaryHeader title="Position:" />
-                        <BodyText title={remedialProfile.role} />
+                        <BodyText title={teacherProfile.role} />
                       </div>
                       <div className="mb-3 md:mb-0 md:w-1/3">
                         <TertiaryHeader title="Grade Assigned:" />
-                        <BodyText title={remedialProfile.gradeHandled} />
+                        <BodyText title={teacherProfile.gradeHandled} />
                       </div>
                     </div>
                     <div className="mt-3 md:mt-2">
                       <TertiaryHeader title="Subject Assigned:" />
-                      <BodyText title={remedialProfile.subjectAssigned} />
+                      <BodyText title={teacherProfile.subjectAssigned} />
                     </div>
                   </div>
                 ) : (
@@ -548,93 +546,82 @@ export default function MasterTeacherDashboard() {
 
               <hr className="border-gray-300 mb-4 sm:mb-5 md:mb-6" />
 
-              {/* Charts Section */}
-              <div className="space-y-8">
-                {/* Pending Approvals */}
-                <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg p-6">
-                  <TertiaryHeader title="Pending Approvals this Week" />
-                  <div className="h-64 mt-2">
-                    <Pie options={pieOptions} data={approvalsData} />
-                  </div>
-                  <div className="mt-4 text-sm text-gray-600">
-                    <p className="font-medium">{pendingApprovals} approvals awaiting your review</p>
-                  </div>
-                  <div className="mt-3">
-                    <UtilityButton 
-                      onClick={() => {}} 
-                      className="w-full text-center justify-center"
-                    >
-                      Review Approvals
-                    </UtilityButton>
-                  </div>
+              {/* Overview Cards Section */}
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
+                <SecondaryHeader title="Remedial Overview" />
+              </div>
+              <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2 sm:gap-5 sm:mb-7 lg:grid-cols-4 lg:gap-6 lg:mb-8">
+                <OverviewCard
+                  value={12}
+                  label="Handled Students"
+                  tooltip="Total handled students."
+                  icon={
+                    <svg width="42" height="42" fill="none" viewBox="0 0 24 24">
+                      <ellipse cx="12" cy="8" rx="4" ry="4" stroke="#013300" strokeWidth="2" />
+                      <path d="M4 18v-2c0-2.66 5.33-4 8-4s8 1.34 8 4v2" stroke="#013300" strokeWidth="2" strokeLinecap="round" />
+                    </svg>
+                  }
+                  onClick={() => handleNavigate("/MasterTeacher/RemedialTeacher/students")}
+                />
+                <OverviewCard
+                  value={4}
+                  label="Reports Submitted"
+                  tooltip={`Deadline: ${endOfMonthLabel}`}
+                  icon={
+                    <svg width="40" height="40" fill="none" viewBox="0 0 24 24">
+                      <rect width="16" height="20" x="4" y="2" rx="2" stroke="#013300" strokeWidth="2" />
+                      <path d="M2 6h4" stroke="#013300" strokeWidth="2" />
+                      <path d="M2 10h4" stroke="#013300" strokeWidth="2" />
+                      <path d="M2 14h4" stroke="#013300" strokeWidth="2" />
+                      <path d="M2 18h4" stroke="#013300" strokeWidth="2" />
+                      <path d="M9.5 8h5" stroke="#013300" strokeWidth="2" />
+                      <path d="M9.5 12H16" stroke="#013300" strokeWidth="2" />
+                      <path d="M9.5 16H14" stroke="#013300" strokeWidth="2" />
+                    </svg>
+                  }
+                  onClick={() => handleNavigate("/MasterTeacher/RemedialTeacher/report")}
+                />
+                <OverviewCard
+                  value={5}
+                  label="Submitted Materials"
+                  tooltip="Total submitted materials."
+                  icon={
+                    <svg width="40" height="40" fill="none" viewBox="0 0 24 24">
+                      <rect x="3" y="7" width="18" height="14" rx="2" stroke="#013300" strokeWidth="2" />
+                      <rect x="7" y="3" width="10" height="4" rx="1" stroke="#013300" strokeWidth="2" />
+                    </svg>
+                  }
+                  onClick={() => handleNavigate("/MasterTeacher/RemedialTeacher/materials")}
+                />
+                <OverviewCard
+                  value={<span className="text-xl">{dateToday}</span>}
+                  label="Date Today"
+                  onClick={() => handleNavigate("/MasterTeacher/RemedialTeacher/calendar")}
+                />
                 </div>
 
-                {/* Student Performance */}
-                <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg p-6">
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
-                    <TertiaryHeader title="Student Performance" />
-                    <div className="flex space-x-2 mt-2 md:mt-0">
-                      <div className="w-32">
-                        <CustomDropdown
-                          value={selectedPeriod.charAt(0).toUpperCase() + selectedPeriod.slice(1)}
-                          onChange={(e) => setSelectedPeriod(e.target.value.toLowerCase())}
-                          options={['Monthly', 'Weekly']}
-                        />
-                      </div>
-                      <div className="w-32">
-                        <CustomDropdown
-                          value={selectedSubject}
-                          onChange={(e) => setSelectedSubject(e.target.value)}
-                          options={['Math', 'English', 'Filipino']}
-                        />
-                      </div>
-                      {selectedPeriod === 'monthly' && (
-                        <div className="w-36">
-                          <CustomDropdown
-                            value={selectedMonth}
-                            onChange={(e) => setSelectedMonth(e.target.value)}
-                            options={months}
-                          />
-                        </div>
-                      )}
+              <hr className="border-gray-300 mb-4 sm:mb-5 md:mb-6" />
+
+              {/* Student Performance */}
+              <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg p-6 mb-8">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
+                  <TertiaryHeader title="Student Performance" />
+                  <div className="flex space-x-2 mt-2 md:mt-0">
+                    <div className="w-32">
+                      <CustomDropdown
+                        value={selectedPeriod.charAt(0).toUpperCase() + selectedPeriod.slice(1)}
+                        onChange={(e) => setSelectedPeriod(e.target.value.toLowerCase())}
+                        options={['Monthly', 'Weekly']}
+                      />
                     </div>
-                  </div>
-                  <div className="h-96 mt-4">
-                    <Line 
-                      options={{
-                        ...lineOptions,
-                        plugins: {
-                          ...lineOptions.plugins,
-                          title: {
-                            display: true,
-                            text: `Average ${selectedSubject} Proficiency`,
-                            font: {
-                              size: 16,
-                              weight: 'bold',
-                            }
-                          },
-                        }
-                      }} 
-                      data={performanceData[selectedSubject as keyof typeof performanceData][selectedPeriod as keyof typeof performanceData.Math]} 
-                    />
-                  </div>
-                  <div className="mt-4 text-sm text-gray-600">
-                    <p className="font-medium">Overall improvement: +3.0 levels since September</p>
-                  </div>
-                </div>
-
-                {/* Student Distribution by Level */}
-                <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg p-6">
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
-                    <TertiaryHeader title="Student Distribution by Level" />
-                    <div className="flex space-x-2 mt-2 md:mt-0">
-                      <div className="w-32">
-                        <CustomDropdown
-                          value={selectedSubject}
-                          onChange={(e) => setSelectedSubject(e.target.value)}
-                          options={['Math', 'English', 'Filipino']}
-                        />
-                      </div>
+                    <div className="w-32">
+                      <CustomDropdown
+                        value={selectedSubject}
+                        onChange={(e) => setSelectedSubject(e.target.value)}
+                        options={['Math', 'English', 'Filipino']}
+                      />
+                    </div>
+                    {selectedPeriod === 'monthly' && (
                       <div className="w-36">
                         <CustomDropdown
                           value={selectedMonth}
@@ -642,37 +629,83 @@ export default function MasterTeacherDashboard() {
                           options={months}
                         />
                       </div>
-                    </div>
-                  </div>
-                  <div className="h-96 mt-4">
-                    <Bar 
-                      options={{
-                        ...monthlyBarOptions,
-                        plugins: {
-                          ...monthlyBarOptions.plugins,
-                          title: {
-                            display: true,
-                            text: `${selectedSubject} Levels for ${selectedMonth}`,
-                            font: {
-                              size: 16,
-                              weight: 'bold',
-                            }
-                          },
-                        }
-                      }} 
-                      data={getMonthlyLevelData()} 
-                    />
-                  </div>
-                  <div className="mt-4 text-sm text-gray-600">
-                    <p className="font-medium">Most students are at {selectedSubject === 'Math' ? 'Transitioning - Proficient' : 'Phrase Reader'} level</p>
+                    )}
                   </div>
                 </div>
+                <div className="h-96 mt-4">
+                  <Line
+                    options={{
+                      ...lineOptions,
+                      plugins: {
+                        ...lineOptions.plugins,
+                        title: {
+                          display: true,
+                          text: `Average ${selectedSubject} Proficiency`,
+                          font: {
+                            size: 16,
+                            weight: 'bold',
+                          }
+                        },
+                      }
+                    }}
+                    data={performanceData[selectedSubject as keyof typeof performanceData][selectedPeriod as keyof typeof performanceData.Math]}
+                  />
+                </div>
+                <div className="mt-4 text-sm text-gray-600">
+                  <p className="font-medium">Overall improvement: +3.0 levels since September</p>
+                </div>
               </div>
+
+              {/* Student Distribution by Level */}
+              <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg p-6">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
+                  <TertiaryHeader title="Student Distribution by Level" />
+                  <div className="flex space-x-2 mt-2 md:mt-0">
+                    <div className="w-32">
+                      <CustomDropdown
+                        value={selectedSubject}
+                        onChange={(e) => setSelectedSubject(e.target.value)}
+                        options={['Math', 'English', 'Filipino']}
+                      />
+                    </div>
+                    <div className="w-36">
+                      <CustomDropdown
+                        value={selectedMonth}
+                        onChange={(e) => setSelectedMonth(e.target.value)}
+                        options={months}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="h-96 mt-4">
+                  <Bar
+                    options={{
+                      ...monthlyBarOptions,
+                      plugins: {
+                        ...monthlyBarOptions.plugins,
+                        title: {
+                          display: true,
+                          text: `${selectedSubject} Levels for ${selectedMonth}`,
+                          font: {
+                            size: 16,
+                            weight: 'bold',
+                          }
+                        },
+                      }
+                    }}
+                    data={getMonthlyLevelData()}
+                  />
+                </div>
+                <div className="mt-4 text-sm text-gray-600">
+                  <p className="font-medium">Most students are at {selectedSubject === 'Math' ? 'Transitioning - Proficient' : 'Phrase Reader'} level</p>
+                </div>
+              </div>
+
             </div>
           </div>
         </main>
       </div>
     </div>
   );
-
 }
+  

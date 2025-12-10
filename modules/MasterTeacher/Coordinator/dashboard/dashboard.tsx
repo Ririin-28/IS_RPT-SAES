@@ -78,6 +78,91 @@ function formatRoleLabel(role?: string | null): string {
   return ROLE_LABELS[key] ?? role;
 }
 
+const GRADE_WORD_MAP: Record<string, number> = {
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+};
+
+const normalizeGradeKey = (value?: string | number | null): string | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  const trimmed = String(value).trim();
+  if (!trimmed) {
+    return null;
+  }
+  const digitMatch = trimmed.match(/(\d+)/);
+  if (digitMatch) {
+    return digitMatch[1];
+  }
+  const lower = trimmed.toLowerCase();
+  if (GRADE_WORD_MAP[lower]) {
+    return String(GRADE_WORD_MAP[lower]);
+  }
+  const gradeWordMatch = lower.match(/grade\s+(one|two|three|four|five|six|seven|eight|nine|ten)/);
+  if (gradeWordMatch) {
+    const mapped = GRADE_WORD_MAP[gradeWordMatch[1]];
+    return mapped ? String(mapped) : trimmed.toLowerCase();
+  }
+  return lower;
+};
+
+const formatGradeDescriptor = (value?: string | null): string => {
+  if (!value) {
+    return "their assigned grade";
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "their assigned grade";
+  }
+  if (trimmed.toLowerCase() === "not assigned") {
+    return "their assigned grade";
+  }
+  const digitMatch = trimmed.match(/(\d+)/);
+  if (digitMatch) {
+    return `Grade ${digitMatch[1]}`;
+  }
+  return trimmed;
+};
+
+const formatSubjectDescriptor = (value?: string | null): string => {
+  if (!value) {
+    return "their subject focus";
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "their subject focus";
+  }
+  if (trimmed.toLowerCase() === "not assigned") {
+    return "their subject focus";
+  }
+  return trimmed;
+};
+
+type PrincipalTeacherRecord = {
+  userId: number | null;
+  grade?: string | number | null;
+  gradeLabel?: string | null;
+  role?: string | null;
+};
+
+type PrincipalTeacherResponse = {
+  teachers?: PrincipalTeacherRecord[];
+  masterTeachers?: PrincipalTeacherRecord[];
+  error?: string;
+};
+
 type CoordinatorSubject = "Math" | "English" | "Filipino";
 type ProgressMonthKey = "starting" | "sept" | "oct" | "dec" | "feb";
 
@@ -258,28 +343,37 @@ function OverviewCard({
   icon,
   className = "",
   onClick,
+  tooltip,
 }: {
   value: React.ReactNode;
   label: string;
   icon?: React.ReactNode;
   className?: string;
   onClick?: () => void;
+  tooltip?: string;
 }) {
-  const baseClasses = `bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg
+  const baseClasses = `relative group bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg
       flex flex-col items-center justify-center p-5 min-w-[160px] min-h-[110px]
       transition-transform duration-200 hover:scale-105
       sm:p-6 sm:min-w-[180px] sm:min-h-[120px]
       lg:p-7 ${className}`;
 
+  const tooltipNode = tooltip ? (
+    <span className="pointer-events-none absolute -top-2 left-1/2 z-10 mb-2 hidden w-56 -translate-x-1/2 -translate-y-full rounded-md bg-[#013300] px-3 py-2 text-center text-xs font-medium text-white opacity-0 shadow-lg transition-opacity duration-200 group-hover:block group-hover:opacity-100">
+      {tooltip}
+    </span>
+  ) : null;
+
   const content = (
     <>
-      <div className="flex flex-row items-center">
+      {tooltipNode}
+      <div className="flex flex-row items-center justify-center">
         <span className="text-4xl font-extrabold text-[#013300] drop-shadow sm:text-5xl">
           {value}
         </span>
         {icon && <span className="ml-1 sm:ml-2">{icon}</span>}
       </div>
-      <div className="text-green-900 text-sm font-semibold mt-1 tracking-wide sm:text-base sm:mt-2">
+      <div className="text-green-900 text-sm font-semibold mt-1 text-center tracking-wide sm:text-base sm:mt-2">
         {label}
       </div>
     </>
@@ -290,7 +384,7 @@ function OverviewCard({
       <button
         type="button"
         onClick={onClick}
-        className={`${baseClasses} focus:outline-none cursor-pointer text-left`}
+        className={`${baseClasses} focus:outline-none cursor-pointer`}
       >
         {content}
       </button>
@@ -335,6 +429,9 @@ export default function MasterTeacherDashboard() {
   const [approvedMaterialsCount, setApprovedMaterialsCount] = useState<number | null>(null);
   const [isLoadingApprovals, setIsLoadingApprovals] = useState(false);
   const [approvalsError, setApprovalsError] = useState<string | null>(null);
+  const [teacherCount, setTeacherCount] = useState<number | null>(null);
+  const [isLoadingTeachers, setIsLoadingTeachers] = useState(false);
+  const [teacherError, setTeacherError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -450,7 +547,7 @@ export default function MasterTeacherDashboard() {
       if (subjectFilter) {
         params.set("subject", subjectFilter);
       }
-      const response = await fetch(`/api/materials?${params.toString()}`, { cache: "no-store" });
+      const response = await fetch(`/api/master_teacher/coordinator/materials?${params.toString()}`, { cache: "no-store" });
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
         throw new Error(payload?.error ?? `Failed to load ${status} materials`);
@@ -507,13 +604,77 @@ export default function MasterTeacherDashboard() {
     };
   }, [subjectFilter, userId]);
 
+  useEffect(() => {
+    if (!coordinatorProfile) {
+      setTeacherCount(null);
+      setTeacherError(null);
+      setIsLoadingTeachers(false);
+      return;
+    }
+
+    const gradeKey = normalizeGradeKey(coordinatorProfile.gradeHandled);
+    if (!gradeKey) {
+      setTeacherCount(0);
+      setTeacherError("Grade assignment unavailable.");
+      setIsLoadingTeachers(false);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    const loadTeacherCount = async () => {
+      setIsLoadingTeachers(true);
+      setTeacherError(null);
+      try {
+        const response = await fetch("/api/principal/teachers", { cache: "no-store", signal: controller.signal });
+        const payload = (await response.json()) as PrincipalTeacherResponse;
+        if (!response.ok) {
+          throw new Error(payload?.error ?? "Unable to load teachers.");
+        }
+
+        const combined = [
+          ...(payload.teachers ?? []),
+          ...(payload.masterTeachers ?? []),
+        ];
+
+        const count = combined.reduce((total, record) => {
+          const recordKey = normalizeGradeKey(record.gradeLabel ?? record.grade ?? null);
+          if (recordKey && recordKey === gradeKey) {
+            return total + 1;
+          }
+          return total;
+        }, 0);
+
+        setTeacherCount(count);
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        console.error("Failed to load teacher count", error);
+        setTeacherError(error instanceof Error ? error.message : "Failed to load teacher count.");
+        setTeacherCount(0);
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoadingTeachers(false);
+        }
+      }
+    };
+
+    loadTeacherCount();
+
+    return () => {
+      controller.abort();
+    };
+  }, [coordinatorProfile?.gradeHandled]);
+
   // Get today's date in simplified month format (same as Principal)
   const today = new Date();
+  const dayShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const monthShort = [
     'Jan.', 'Feb.', 'Mar.', 'Apr.', 'May.', 'Jun.',
     'Jul.', 'Aug.', 'Sep.', 'Oct.', 'Nov.', 'Dec.'
   ];
-  const dateToday = `${monthShort[today.getMonth()]} ${today.getDate()}, ${today.getFullYear()}`;
+  const dateToday = `${dayShort[today.getDay()]}, ${monthShort[today.getMonth()]} ${today.getDate()}, ${today.getFullYear()}`;
   const [selectedSubject, setSelectedSubject] = useState<CoordinatorSubject>('Math');
 
   // Sample data for the teacher's own students
@@ -524,9 +685,14 @@ export default function MasterTeacherDashboard() {
 
   const pendingCount = pendingApprovalsCount ?? 0;
   const approvedCount = approvedMaterialsCount ?? 0;
-  const totalUploaded = pendingCount + approvedCount;
-  const pendingCardValue = isLoadingApprovals ? '—' : approvalsError ? '—' : pendingCount;
-  const materialsCardValue = isLoadingApprovals ? '—' : approvalsError ? '—' : totalUploaded;
+  const pendingMaterialsValue = isLoadingApprovals ? '—' : approvalsError ? '—' : pendingCount;
+  const totalStudentsValue = isLoadingStudents ? '—' : students.length;
+  const teacherCardValue = isLoadingTeachers ? '—' : teacherError ? '—' : (teacherCount ?? 0);
+  const gradeDescriptor = formatGradeDescriptor(coordinatorProfile?.gradeHandled);
+  const subjectDescriptor = formatSubjectDescriptor(coordinatorProfile?.subjectAssigned);
+  const readableGrade = gradeDescriptor === "their assigned grade" ? "the assigned grade" : gradeDescriptor;
+  const hasSpecificSubject = subjectDescriptor !== "their subject focus";
+  const subjectSuffix = hasSpecificSubject ? ` (${subjectDescriptor})` : "";
 
   // Pending approvals data
   const approvalsData = {
@@ -653,12 +819,13 @@ export default function MasterTeacherDashboard() {
 
               {/* Overview Cards Section */}
               <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
-                <SecondaryHeader title="Remedial Overview" />
+                <SecondaryHeader title="Coordinator Overview" />
               </div>
               <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2 sm:gap-5 sm:mb-7 lg:grid-cols-4 lg:gap-6 lg:mb-8">
                 <OverviewCard
-                  value={isLoadingStudents ? '—' : students.length}
-                  label="Handled Students"
+                  value={totalStudentsValue}
+                  label="Total Students"
+                  tooltip={`Total students in ${readableGrade}.`}
                   icon={
                     <svg width="38" height="38" fill="none" viewBox="0 0 24 24">
                       <ellipse cx="12" cy="8" rx="4" ry="4" stroke="#013300" strokeWidth="2" />
@@ -668,28 +835,30 @@ export default function MasterTeacherDashboard() {
                   onClick={() => handleNavigate("/MasterTeacher/RemedialTeacher/students")}
                 />
                 <OverviewCard
-                  value={pendingCardValue}
-                  label="Pending Approvals"
+                  value={teacherCardValue}
+                  label="Total Teachers"
+                  tooltip={`Total teachers in ${readableGrade}.`}
                   icon={
                     <svg width="38" height="38" fill="none" viewBox="0 0 24 24">
                       <path d="M12 15V17M12 7V13M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="#013300" strokeWidth="2" strokeLinecap="round" />
                     </svg>
                   }
-                  onClick={() => handleNavigate("/MasterTeacher/Coordinator/materials?view=pending")}
+                  onClick={() => handleNavigate("/MasterTeacher/Coordinator/teachers")}
                 />
                 <OverviewCard
-                  value={materialsCardValue}
-                  label="Materials Uploaded"
+                  value={pendingMaterialsValue}
+                  label="Pending Materials"
+                  tooltip={`Pending materials awaiting review for ${readableGrade}${subjectSuffix}.`}
                   icon={
                     <svg width="38" height="38" fill="none" viewBox="0 0 24 24">
                       <rect x="3" y="7" width="18" height="14" rx="2" stroke="#013300" strokeWidth="2" />
                       <rect x="7" y="3" width="10" height="4" rx="1" stroke="#013300" strokeWidth="2" />
                     </svg>
                   }
-                  onClick={() => handleNavigate("/MasterTeacher/Coordinator/materials?view=uploaded")}
+                  onClick={() => handleNavigate("/MasterTeacher/Coordinator/materials?view=pending")}
                 />
                 <OverviewCard
-                  value={<span className="text-2xl">{dateToday}</span>}
+                  value={<span className="text-xl">{dateToday}</span>}
                   label="Date Today"
                   onClick={() => handleNavigate("/MasterTeacher/Coordinator/calendar")}
                 />

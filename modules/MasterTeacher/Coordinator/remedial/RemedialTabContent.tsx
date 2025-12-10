@@ -298,7 +298,7 @@ export default function RemedialTabContent({ level, config }: RemedialTabContent
           <>
             {showPlayButton && (
               <a href={`${playPath}?start=${row.startIndex}`}>
-                <UtilityButton small>Play</UtilityButton>
+                <UtilityButton small title="Click to play remedial session">Play</UtilityButton>
               </a>
             )}
             {levelConfig.allowSeeAll && <UtilityButton small>See All</UtilityButton>}
@@ -306,8 +306,7 @@ export default function RemedialTabContent({ level, config }: RemedialTabContent
               <UtilityButton
                 small
                 className="bg-[#013300] hover:bg-green-900"
-                onClick={() => setIsEditModalOpen(true)}
-              >
+                onClick={() => setIsEditModalOpen(true)} title="Click to edit remedial contents">
                 Edit
               </UtilityButton>
             )}
