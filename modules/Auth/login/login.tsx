@@ -198,11 +198,21 @@ export default function Login({
           userId: data.user_id,
           email: data.email ?? email,
         });
+        try {
+          sessionStorage.setItem("wasLoggedOut", "false");
+        } catch (storageError) {
+          console.warn("Unable to persist logout marker", storageError);
+        }
 
         if (data.skipOtp) {
           // Device is trusted, redirect to welcome page
           const welcomePath = resolveWelcomePath(data.role);
           console.log("[LOGIN] redirecting to:", welcomePath);
+          const normalizedRole = (data.role ?? "").toLowerCase().replace(/[\s/\-]+/g, "_");
+          if (["parent", "admin", "it_admin", "itadmin"].includes(normalizedRole)) {
+            window.location.replace(welcomePath);
+            return;
+          }
           router.push(welcomePath);
         } else {
           // Device not trusted, redirect to verification page

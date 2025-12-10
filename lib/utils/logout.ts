@@ -1,7 +1,8 @@
 import { clearStoredUserProfile, getStoredUserProfile } from "./user-profile";
 
 type RouterLike = {
-  push: (href: string) => void;
+  replace: (href: string) => void;
+  push?: (href: string) => void;
 };
 
 /**
@@ -10,6 +11,10 @@ type RouterLike = {
 export function performClientLogout(router: RouterLike) {
   const storedProfile = getStoredUserProfile();
   const userId = storedProfile?.userId ?? null;
+  const normalizedRole = typeof storedProfile?.role === "string" ? storedProfile.role.trim().toLowerCase().replace(/[\s/\-]+/g, "_") : "";
+  const logoutTarget = normalizedRole === "admin" || normalizedRole === "it_admin" || normalizedRole === "itadmin"
+    ? "/auth/adminlogin?logout=true"
+    : "/auth/login?logout=true";
 
   if (userId != null) {
     try {
@@ -22,6 +27,7 @@ export function performClientLogout(router: RouterLike) {
         fetch("/api/auth/logout", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: payload,
           keepalive: true,
         }).catch((error) => {
@@ -39,5 +45,5 @@ export function performClientLogout(router: RouterLike) {
   } catch (error) {
     console.warn("Unable to persist logout marker", error);
   }
-  router.push("/auth/login?logout=true");
+  router.replace(logoutTarget);
 }

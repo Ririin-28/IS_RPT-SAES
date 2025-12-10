@@ -44,7 +44,17 @@ function VerificationContent() {
 
 	const handleVerified = useCallback((device_token: string) => {
 		localStorage.setItem("device_token", device_token);
+		try {
+			sessionStorage.setItem("wasLoggedOut", "false");
+		} catch (storageError) {
+			console.warn("Unable to persist logout marker", storageError);
+		}
 		const path = resolveWelcomePath(role);
+		const normalizedRole = role?.toLowerCase().replace(/[\s/\-]+/g, "_");
+		if (["parent", "admin", "it_admin", "itadmin"].includes(normalizedRole || "")) {
+			window.location.replace(path);
+			return;
+		}
 		router.push(path);
 	}, [resolveWelcomePath, role, router]);
 

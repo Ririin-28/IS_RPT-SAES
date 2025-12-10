@@ -1,5 +1,7 @@
 import mysql, { type Connection, type RowDataPacket } from "mysql2/promise";
 import { recordAccountLogin } from "@/lib/server/account-logs";
+import { buildParentSessionCookie, createParentSession } from "@/lib/server/parent-session";
+import { buildAdminSessionCookie, createAdminSession } from "@/lib/server/admin-session";
 
 interface LoginRequestPayload {
   email: string;
@@ -25,6 +27,13 @@ function roleRequiresUserId(role: string | null | undefined): boolean {
   return normalized === "it_admin" || normalized === "admin" || normalized === "itadmin";
 }
 
+function normalizeRole(role: string | null | undefined): string {
+  if (!role) {
+    return "";
+  }
+  return role.trim().toLowerCase().replace(/[\s/\-]+/g, "_");
+}
+
 function toNumber(value: unknown): number | null {
   if (value === null || value === undefined) {
     return null;
@@ -36,17 +45,34 @@ function toNumber(value: unknown): number | null {
 export async function POST(req: Request): Promise<Response> {
   let db: Connection | null = null;
 
-  const respond = async (status: number, payload: Record<string, unknown>): Promise<Response> => {
+  const respond = async (
+    status: number,
+    payload: Record<string, unknown>,
+    extraHeaders?: Record<string, string | string[]>,
+  ): Promise<Response> => {
     if (db) {
       await db.end();
       db = null;
     }
 
+    const headers = new Headers({
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+    });
+
+    if (extraHeaders) {
+      for (const [key, value] of Object.entries(extraHeaders)) {
+        if (Array.isArray(value)) {
+          value.forEach((headerValue) => headers.append(key, headerValue));
+        } else {
+          headers.append(key, value);
+        }
+      }
+    }
+
     return new Response(JSON.stringify(payload), {
       status,
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers,
     });
   };
 
@@ -113,20 +139,39 @@ export async function POST(req: Request): Promise<Response> {
       }
     }
 
+    const normalizedRole = normalizeRole(user.role);
+
     if (trusted) {
+      const responseCookies: string[] = [];
+
+      if (normalizedRole === "parent") {
+        const { token, expiresAt } = await createParentSession(db, user.user_id, deviceName ?? null);
+        responseCookies.push(buildParentSessionCookie(token, expiresAt));
+      }
+
+      if (normalizedRole === "admin" || normalizedRole === "it_admin" || normalizedRole === "itadmin") {
+        const { token, expiresAt } = await createAdminSession(db, user.user_id, deviceName ?? null);
+        responseCookies.push(buildAdminSessionCookie(token, expiresAt));
+      }
+
       await db.execute("UPDATE trusted_devices SET last_used = NOW() WHERE user_id = ?", [user.user_id]);
       await recordAccountLogin(db, user.user_id, user.role);
 
-      return respond(200, {
-        success: true,
-        skipOtp: true,
-        role: user.role,
-        user_id: user.user_id,
-        first_name: user.first_name,
-        middle_name: user.middle_name,
-        last_name: user.last_name,
-        email: user.email,
-      });
+      return respond(
+        200,
+        {
+          success: true,
+          skipOtp: true,
+          role: user.role,
+          user_id: user.user_id,
+
+          first_name: user.first_name,
+          middle_name: user.middle_name,
+          last_name: user.last_name,
+          email: user.email,
+        },
+        responseCookies.length > 0 ? { "Set-Cookie": responseCookies } : undefined,
+      );
     }
 
     return respond(200, {

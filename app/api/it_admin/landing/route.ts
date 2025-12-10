@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import type { RowDataPacket } from "mysql2/promise";
+import type { Connection, PoolConnection, RowDataPacket } from "mysql2/promise";
 import { query, runWithConnection } from "@/lib/db";
 import { getDefaultLandingConfig } from "@/lib/utils/landing-config";
 
@@ -18,6 +18,52 @@ const parseStoredAsset = (value: string | null) => {
   return { dataUrl: value, name: null };
 };
 
+let landingSchemaPrepared = false;
+
+const ensureLandingTables = async (connection: Connection | PoolConnection) => {
+  if (landingSchemaPrepared) return;
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS landing_images (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      image LONGTEXT NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_landing_images_created_at (created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS landing_logo (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      logo LONGTEXT NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_landing_logo_created_at (created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS saes_details (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      location VARCHAR(255) NOT NULL,
+      contact_no VARCHAR(255) NOT NULL,
+      email VARCHAR(255) NOT NULL,
+      facebook VARCHAR(500) DEFAULT NULL,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS privacy_policy (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      file LONGTEXT NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_privacy_policy_created_at (created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
+  landingSchemaPrepared = true;
+};
+
 const seedLandingTablesIfEmpty = async () => {
   const defaults = getDefaultLandingConfig();
 
@@ -26,6 +72,7 @@ const seedLandingTablesIfEmpty = async () => {
   await runWithConnection(async (connection) => {
     await connection.beginTransaction();
     try {
+      await ensureLandingTables(connection);
       const [imageCountRows] = await connection.query<CountRow[]>(
         "SELECT COUNT(*) AS total FROM landing_images"
       );
@@ -205,6 +252,7 @@ export async function POST(request: Request) {
       await runWithConnection(async (connection) => {
         await connection.beginTransaction();
         try {
+          await ensureLandingTables(connection);
           const { contact, carousel, privacyPolicy } = body;
 
           if (contact) {
@@ -258,7 +306,10 @@ export async function POST(request: Request) {
       });
     } else if (body.type === "updateLogo") {
       const payload = JSON.stringify({ name: body.logo.name ?? null, dataUrl: body.logo.dataUrl });
-      await query("INSERT INTO landing_logo (logo) VALUES (?)", [payload]);
+      await runWithConnection(async (connection) => {
+        await ensureLandingTables(connection);
+        await connection.query("INSERT INTO landing_logo (logo) VALUES (?)", [payload]);
+      });
     } else {
       return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
     }
