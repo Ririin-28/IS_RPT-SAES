@@ -22,7 +22,7 @@ export default function TeacherWelcome() {
   }, []);
 
   return (
-    <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-blue-100 via-blue-50 to-white">
+    <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-green-100 via-green-50 to-white">
       {/* Decorative static background shapes */}
       <svg className="absolute left-0 top-0 w-2/3 h-2/3 opacity-30 blur-2xl z-0" viewBox="0 0 400 400" fill="none">
         <circle cx="200" cy="200" r="200" fill="url(#paint0_radial)" />
@@ -35,8 +35,8 @@ export default function TeacherWelcome() {
             gradientTransform="translate(200 200) scale(200)"
             gradientUnits="userSpaceOnUse"
           >
-            <stop stopColor="#bfdbfe" />
-            <stop offset="1" stopColor="#dbeafe" stopOpacity="0" />
+            <stop stopColor="#bbf7d0" />
+            <stop offset="1" stopColor="#a7f3d0" stopOpacity="0" />
           </radialGradient>
         </defs>
       </svg>
@@ -51,21 +51,21 @@ export default function TeacherWelcome() {
             gradientTransform="translate(150 150) scale(150)"
             gradientUnits="userSpaceOnUse"
           >
-            <stop stopColor="#93c5fd" />
-            <stop offset="1" stopColor="#eff6ff" stopOpacity="0" />
+            <stop stopColor="#6ee7b7" />
+            <stop offset="1" stopColor="#f0fdf4" stopOpacity="0" />
           </radialGradient>
         </defs>
       </svg>
 
       {/* Content */}
       <div className="relative z-10 flex flex-col items-center justify-center w-full px-4">
-        <h2 className="text-xl md:text-2xl font-semibold text-blue-900 mb-4 text-center pb-12">
+        <h2 className="text-xl md:text-2xl font-semibold text-green-900 mb-4 text-center pb-12">
           Welcome,
           <br />
           Teacher!
         </h2>
-    <h1 className="text-2xl md:text-6xl font-bold text-blue-900 text-center mb-8">{displayName}</h1>
-        <div className="text-xl md:text-2xl text-blue-800 font-semibold text-center flex items-center justify-center">
+    <h1 className="text-2xl md:text-6xl font-bold text-green-900 text-center mb-8">{displayName}</h1>
+        <div className="text-xl md:text-2xl text-green-800 font-semibold text-center flex items-center justify-center">
           Redirecting to dashboard
           <span className="ml-2 flex gap-1">
             <span className="inline-block animate-dot1">.</span>

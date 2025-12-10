@@ -627,7 +627,7 @@ export default function StudentTab({
     no: idx + 1,
   }))}
   actions={(row: any) => (
-    <UtilityButton small onClick={() => handleViewDetails(row)}>
+    <UtilityButton small onClick={() => handleViewDetails(row)} title="View student details">
       View
     </UtilityButton>
   )}

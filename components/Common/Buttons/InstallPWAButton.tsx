@@ -1,5 +1,6 @@
 "use client";
 import React, { useEffect, useState } from "react";
+import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 
 // Minimal typing for the beforeinstallprompt event
 interface BeforeInstallPromptEvent extends Event {
@@ -59,10 +60,10 @@ const InstallPWAButton: React.FC = () => {
   };
 
   const HelpPanel = () => (
-    <div className="mt-3 w-full max-w-sm bg-white/90 backdrop-blur-sm border border-green-200 rounded-lg p-4 shadow-md text-left">
+    <div className="mt-3 w-full max-w-sm bg-white/90 backdrop-blur-sm rounded-lg p-4 shadow-md text-left">
       <h4 className="font-semibold text-green-900 mb-2 text-sm">How to Install</h4>
       <ul className="text-green-800 text-xs list-disc list-inside space-y-1">
-        <li><span className="font-medium">Desktop Chrome / Edge:</span> Menu (⋮) → Install App / Apps → Install.</li>
+        <li><span className="font-medium">Desktop Chrome / Edge:</span> Menu (⋮) → Cast, Save, and Share → Install.</li>
         <li><span className="font-medium">Android Chrome:</span> Menu (⋮) → Add to Home Screen / Install app.</li>
         <li><span className="font-medium">iOS Safari:</span> Share button → Add to Home Screen.</li>
       </ul>
@@ -92,31 +93,62 @@ const InstallPWAButton: React.FC = () => {
       {canInstall ? (
         <button
           onClick={triggerInstall}
-          className="flex items-center px-4 py-2 bg-green-900 text-white text-base font-bold rounded-lg hover:bg-green-800 transition md:px-6 md:py-3 md:text-lg"
+          className="group flex items-center justify-center w-14 h-14 bg-green-900 text-white rounded-full shadow-lg hover:bg-green-800 transition-all duration-300 hover:scale-110"
           aria-label="Install RPT-SAES Application"
         >
-          <svg className="w-5 h-5 mr-2 md:w-6 md:h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4" />
+          <svg
+            className="w-6 h-6"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2.5}
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4"
+            />
           </svg>
-          Install RPT-SAES
         </button>
       ) : (
-        <button
+        <PrimaryButton
           onClick={() => setShowHelp(h => !h)}
-          className="flex items-center px-4 py-2 bg-green-700 text-white text-base font-bold rounded-lg hover:bg-green-600 transition md:px-6 md:py-3 md:text-lg"
           aria-expanded={showHelp}
           aria-controls="pwa-install-help"
+          className="group flex items-center justify-center w-14 h-14 bg-green-900 text-white rounded-full shadow-lg hover:bg-green-800 transition-all duration-300 hover:scale-110"
         >
-          <svg className="w-5 h-5 mr-2 md:w-6 md:h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4" />
+          <svg
+            className="w-6 h-6"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2.5}
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4"
+            />
           </svg>
-          How to Install
-        </button>
+        </PrimaryButton>
       )}
-      {showHelp && <HelpPanel />}
-      <p className="mt-2 text-xs text-green-800 opacity-80 max-w-xs text-center md:text-left">
-        {canInstall ? "Works offline after first load." : "Install prompt appears when the browser is ready (use production build)."}
-      </p>
+      {showHelp && (
+        <div className="absolute bottom-full right-0 mb-2 w-72 bg-white/95 backdrop-blur-sm rounded-lg p-3 shadow-lg border border-green-100">
+          <h4 className="font-semibold text-green-900 mb-2 text-sm">How to Install</h4>
+          <ul className="text-green-800 text-xs list-disc list-inside space-y-1">
+            <li><span className="font-medium">Desktop Chrome / Edge:</span> Menu (⋮) → Install.</li>
+            <li><span className="font-medium">Android Chrome:</span> Menu (⋮) → Add to Home Screen.</li>
+            <li><span className="font-medium">iOS Safari:</span> Share → Add to Home Screen.</li>
+          </ul>
+          <button
+            onClick={() => setShowHelp(false)}
+            className="mt-2 text-xs font-semibold text-green-700 hover:text-green-900"
+            aria-label="Close installation help"
+          >
+            Close
+          </button>
+        </div>
+      )}
     </div>
   );
 };

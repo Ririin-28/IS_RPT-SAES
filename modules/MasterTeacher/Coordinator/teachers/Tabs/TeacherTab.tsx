@@ -154,7 +154,7 @@ export default function TeacherTab({ teachers, searchTerm }: TeacherTabProps) {
           no: idx + 1,
         }))}
         actions={(row: any) => (
-          <UtilityButton small onClick={() => handleShowDetails(row)}>
+          <UtilityButton small onClick={() => handleShowDetails(row)} title="View teacher details">
             View
           </UtilityButton>
         )}

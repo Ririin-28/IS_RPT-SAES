@@ -40,6 +40,7 @@ type OverviewCardProps = {
   icon?: React.ReactNode;
   className?: string;
   onClick?: () => void;
+  tooltip?: string;
 };
 
 type DashboardTotals = {
@@ -68,11 +69,18 @@ type DashboardApiResponse = {
   };
 };
 
-function OverviewCard({ value, label, icon, className = "", onClick }: OverviewCardProps) {
-  const baseClasses = `bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg flex flex-col items-center justify-center p-5 min-w-[160px] min-h-[110px] transition-transform duration-200 hover:scale-105 sm:p-6 sm:min-w-[180px] sm:min-h-[120px] lg:p-7 ${className}`;
+function OverviewCard({ value, label, icon, className = "", onClick, tooltip }: OverviewCardProps) {
+  const baseClasses = `relative group bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg flex flex-col items-center justify-center p-5 min-w-[160px] min-h-[110px] transition-transform duration-200 hover:scale-105 sm:p-6 sm:min-w-[180px] sm:min-h-[120px] lg:p-7 ${className}`;
+
+  const tooltipNode = tooltip ? (
+    <span className="pointer-events-none absolute -top-2 left-1/2 z-10 hidden w-56 -translate-x-1/2 -translate-y-full rounded-md bg-[#013300] px-3 py-2 text-center text-xs font-medium text-white opacity-0 shadow-lg transition-opacity duration-200 group-hover:block group-hover:opacity-100">
+      {tooltip}
+    </span>
+  ) : null;
 
   const content = (
     <>
+      {tooltipNode}
       <div className="flex flex-row items-center">
         <span className="text-4xl font-extrabold text-[#013300] drop-shadow sm:text-5xl">{value}</span>
         {icon && <span className="ml-1 sm:ml-2">{icon}</span>}
@@ -100,11 +108,12 @@ export default function PrincipalDashboard() {
   const router = useRouter();
   // Get today's date in simplified month format
   const today = new Date();
+  const dayShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const monthShort = [
     'Jan.', 'Feb.', 'Mar.', 'Apr.', 'May.', 'Jun.',
     'Jul.', 'Aug.', 'Sep.', 'Oct.', 'Nov.', 'Dec.'
   ];
-  const dateToday = `${monthShort[today.getMonth()]} ${today.getDate()}, ${today.getFullYear()}`;
+  const dateToday = `${dayShort[today.getDay()]}, ${monthShort[today.getMonth()]} ${today.getDate()}, ${today.getFullYear()}`;
   const currentMonthName = today.toLocaleString('default', { month: 'long' });
 
   // State for view mode (summary or detailed)
@@ -195,6 +204,10 @@ export default function PrincipalDashboard() {
   const totalTeachersExpectedDisplay = isDashboardLoading ? '...' : formatCount(totalReports);
   const submittedProgressWidth = totalReports > 0 ? `${Math.min(100, Math.round((submittedReports / totalReports) * 100))}%` : '0%';
   const pendingProgressWidth = totalReports > 0 ? `${Math.min(100, Math.round((pendingReports / totalReports) * 100))}%` : '0%';
+  const monthlyReportsMonthLabel = currentReport?.label ?? currentMonthName;
+  const totalStudentsTooltip = "Total students in all grades and subjects.";
+  const totalTeachersTooltip = "Total teachers in all grades.";
+  const monthlyReportsTooltip = `Total submitted reports in ${monthlyReportsMonthLabel}.`;
 
   // Grade levels for student progress chart
   const gradeLevels = ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6'];
@@ -757,6 +770,7 @@ export default function PrincipalDashboard() {
                 <OverviewCard
                   value={totalStudentsDisplay}
                   label="Total Students"
+                  tooltip={totalStudentsTooltip}
                   icon={
                     <svg width="42" height="42" fill="none" viewBox="0 0 24 24">
                       <ellipse cx="12" cy="8" rx="4" ry="4" stroke="#013300" strokeWidth="2" />
@@ -768,6 +782,7 @@ export default function PrincipalDashboard() {
                 <OverviewCard
                   value={totalTeachersDisplay}
                   label="Total Teachers"
+                  tooltip={totalTeachersTooltip}
                   icon={
                     <svg width="40" height="40" fill="none" viewBox="0 0 24 24">
                       <circle cx="8" cy="8" r="4" stroke="#013300" strokeWidth="2" />
@@ -779,7 +794,8 @@ export default function PrincipalDashboard() {
                 />
                 <OverviewCard
                   value={monthlyReportsDisplay}
-                  label={currentReport?.label ? `Monthly Reports (${currentReport.label})` : 'Monthly Reports'}
+                  label="Monthly Reports"
+                  tooltip={monthlyReportsTooltip}
                   icon={
                     <svg width="40" height="40" fill="none" viewBox="0 0 24 24">
                       <rect x="3" y="7" width="18" height="14" rx="2" stroke="#013300" strokeWidth="2" />
@@ -789,7 +805,7 @@ export default function PrincipalDashboard() {
                   onClick={() => handleNavigate("/Principal/reports")}
                 />
                 <OverviewCard
-                  value={<span className="text-2xl">{dateToday}</span>}
+                  value={<span className="text-xl">{dateToday}</span>}
                   label="Date Today"
                   onClick={() => handleNavigate("/Principal/calendar")}
                 />

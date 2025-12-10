@@ -1,34 +1,34 @@
+// app/layout.tsx
+import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
+import './globals.css';
+import PWAGuard from '@/components/PWAGuard';
 
-import type { Metadata } from "next";
-import "@fontsource/geist/400.css";
-import "@fontsource/geist/700.css";
-import "@fontsource/geist-mono/400.css";
-import "@fontsource/geist-mono/700.css";
-import "./globals.css";
-import { Providers } from "./providers";
-import ServiceWorkerRegister from "../components/ServiceWorkerRegister";
+const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: "RPT-SAES",
-  description: "Remedial Performance Tracker",
-  manifest: "/manifest.json",
+  title: 'RPT-SAES',
+  description: 'RPT Student Assessment and Evaluation System',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'RPT-SAES',
+  },
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
-    <html lang="en" data-scroll-behavior="smooth">
-      <body className="antialiased font-[Geist]" suppressHydrationWarning>
-        <Providers>
+    <html lang="en">
+      <body className={inter.className}>
+        <PWAGuard>
           {children}
-        </Providers>
-        <ServiceWorkerRegister />
+        </PWAGuard>
       </body>
     </html>
   );
 }
-
-
