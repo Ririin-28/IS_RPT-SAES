@@ -1,6 +1,8 @@
 import mysql, { type Connection, type ResultSetHeader, type RowDataPacket } from "mysql2/promise";
 import { randomBytes } from "crypto";
 import { recordAccountLogin } from "@/lib/server/account-logs";
+import { buildParentSessionCookie, createParentSession } from "@/lib/server/parent-session";
+import { buildAdminSessionCookie, createAdminSession } from "@/lib/server/admin-session";
 
 interface VerifyOtpPayload {
   email: string;
@@ -16,20 +18,44 @@ interface UserRow extends RowDataPacket {
   role: string | null;
 }
 
+function normalizeRole(role: string | null | undefined): string {
+  if (!role) {
+    return "";
+  }
+  return role.trim().toLowerCase().replace(/[\s/\-]+/g, "_");
+}
+
 export async function POST(req: Request): Promise<Response> {
   let db: Connection | null = null;
 
-  const respond = async (status: number, payload: Record<string, unknown>): Promise<Response> => {
+  const respond = async (
+    status: number,
+    payload: Record<string, unknown>,
+    extraHeaders?: Record<string, string | string[]>,
+  ): Promise<Response> => {
     if (db) {
       await db.end();
       db = null;
     }
 
+    const headers = new Headers({
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+    });
+
+    if (extraHeaders) {
+      for (const [key, value] of Object.entries(extraHeaders)) {
+        if (Array.isArray(value)) {
+          value.forEach((headerValue) => headers.append(key, headerValue));
+        } else {
+          headers.append(key, value);
+        }
+      }
+    }
+
     return new Response(JSON.stringify(payload), {
       status,
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers,
     });
   };
 
@@ -77,9 +103,22 @@ export async function POST(req: Request): Promise<Response> {
       [user.user_id, deviceToken]
     );
 
+    const normalizedRole = normalizeRole(user.role);
+    const responseCookies: string[] = [];
+
+    if (normalizedRole === "parent") {
+      const { token, expiresAt } = await createParentSession(db, user.user_id, deviceName ?? null);
+      responseCookies.push(buildParentSessionCookie(token, expiresAt));
+    }
+
+    if (normalizedRole === "admin" || normalizedRole === "it_admin" || normalizedRole === "itadmin") {
+      const { token, expiresAt } = await createAdminSession(db, user.user_id, deviceName ?? null);
+      responseCookies.push(buildAdminSessionCookie(token, expiresAt));
+    }
+
     await recordAccountLogin(db, user.user_id, user.role);
 
-    return respond(200, { success: true, deviceToken });
+    return respond(200, { success: true, deviceToken }, responseCookies.length > 0 ? { "Set-Cookie": responseCookies } : undefined);
   } catch (error) {
     console.error("OTP verification failed", error);
     return respond(500, { error: "Server error" });
