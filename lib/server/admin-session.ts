@@ -213,7 +213,7 @@ export async function revokeAdminSession(
 }
 
 export async function getAdminSessionFromCookies(): Promise<AdminSessionRecord | null> {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const cookie = cookieStore.get(SESSION_COOKIE_NAME);
   if (!cookie || !cookie.value) {
     return null;
