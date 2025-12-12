@@ -50,7 +50,7 @@ export default function UtilityButton({
         {children}
       </button>
       {title && showTooltip && (
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-xs text-white bg-[#2f2f2f] rounded-sm whitespace-nowrap z-50">
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-xs text-white bg-[#2f2f2f] rounded-sm whitespace-nowrap z-50 hidden lg:flex">
           {title}
           {/* Tooltip arrow */}
           <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-[#2f2f2f]"></div>

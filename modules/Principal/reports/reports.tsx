@@ -151,7 +151,7 @@ export default function PrincipalReports({ subjectSlug }: PrincipalReportsProps)
               md:p-6
             "
             >
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
                 <div className="flex flex-wrap sm:flex-nowrap items-center gap-0 w-full sm:w-auto">
                   <SecondaryHeader title={`Reports for ${subjectLabel}`} />
                   <HeaderDropdown

@@ -189,7 +189,7 @@ export default function MasterTeacherMaterials() {
               md:p-6
             "
             >
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
                 <div className="flex flex-col gap-0 sm:flex-row sm:items-center sm:gap-0">
                   <div className="flex items-center gap-2">
                     <SecondaryHeader title={`${resolvedSubject} Materials`} />

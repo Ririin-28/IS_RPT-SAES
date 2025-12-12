@@ -58,7 +58,7 @@ export default function MasterTeacherTeachers() {
               md:p-6
             "
             >
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
                 <div className="flex items-center gap-0 flex-wrap">
                   <SecondaryHeader title="Teachers" />
                   <HeaderDropdown

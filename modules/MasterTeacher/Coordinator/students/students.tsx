@@ -52,7 +52,7 @@ export default function MasterTeacherStudents() {
               md:p-6
             "
             >
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
                 <SecondaryHeader title={headerTitle} />
                 <div className="flex gap-3 w-full sm:w-auto mt-4 sm:mt-0">
                   <div className="relative flex-1 sm:flex-initial">

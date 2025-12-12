@@ -651,7 +651,7 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
         data={selectionRows}
         actions={(row: any) => (
           <UtilityButton small onClick={() => handleStartSession(row.id)}>
-            Start Remedial
+            Start
           </UtilityButton>
         )}
         pageSize={8}
