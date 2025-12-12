@@ -283,7 +283,7 @@ export default function ITAdminLogs() {
         <main className="flex-1 overflow-y-auto pt-16">
           <div className="p-4 h-full sm:p-5 md:p-6">
             <div className="bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[400px] overflow-y-auto p-4 sm:p-5 md:p-6">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center gap-0">
                     <HeaderDropdown

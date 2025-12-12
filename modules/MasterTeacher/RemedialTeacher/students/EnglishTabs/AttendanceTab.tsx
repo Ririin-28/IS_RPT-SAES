@@ -1,6 +1,6 @@
 "use client";
 
-import AttendanceTabBase from "../components/AttendanceTabBase";
+import AttendanceTabBase from "@/components/Common/AttendanceTab/AttendanceTabBase";
 
 type AttendanceTabProps = {
   students: any[];

@@ -198,12 +198,13 @@ export default function FlashcardsTemplate({
       if (!session.cardActions || session.cardActions.length === 0) return null;
 
       return (
-        <div className="px-6 sm:px-8 py-6 border-t border-gray-300 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-between">
+        <div className="px-6 sm:px-8 py-6 border-t border-gray-300 flex flex-row gap-3 md:flex-wrap md:items-center md:justify-between">
           {session.cardActions.map((action) => (
             <button
               key={action.id}
               onClick={action.onClick}
-              className={`group flex items-center gap-3 rounded-full px-6 py-3 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600 active:scale-95 ${
+              aria-label={action.label}
+              className={`group flex items-center justify-center gap-2 sm:gap-3 rounded-full px-4 sm:px-6 py-3 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 active:scale-95 max-w-[200px] sm:max-w-none w-full sm:w-auto mx-auto sm:mx-0 ${
                 action.isActive
                   ? "bg-[#013300] text-white shadow-md shadow-gray-200"
                   : "border border-[#013300] bg-white text-[#013300] hover:border-[#013300] hover:bg-[#013300] hover:text-white"
@@ -218,7 +219,9 @@ export default function FlashcardsTemplate({
               >
                 {action.icon}
               </span>
-              {action.isActive ? action.activeLabel ?? action.label : action.label}
+              <span className="hidden sm:inline">
+                {action.isActive ? action.activeLabel ?? action.label : action.label}
+              </span>
             </button>
           ))}
         </div>
@@ -228,7 +231,7 @@ export default function FlashcardsTemplate({
     const renderInsightMetrics = () => {
       if (!session.insights.metrics || session.insights.metrics.length === 0) return null;
       return (
-        <dl className="grid flex-1 grid-cols-1 gap-3 text-sm sm:grid-cols-2 auto-rows-fr">
+        <dl className="grid flex-1 grid-cols-2 gap-3 text-sm sm:grid-cols-2 auto-rows-fr">
           {session.insights.metrics.map((metric) => (
             <div 
               key={metric.label} 
@@ -246,7 +249,7 @@ export default function FlashcardsTemplate({
     return (
       <div className="min-h-dvh bg-gradient-to-br from-[#f2f8f4] via-white to-[#e6f2ec]">
         <div className="w-full max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex min-h-dvh flex-col">
-          <header className="rounded-3xl border border-gray-300 bg-white/70 backdrop-blur px-3 py-3 sm:py-6 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between shadow-md shadow-gray-200">
+          <header className="rounded-3xl border border-gray-300 bg-white/70 backdrop-blur px-8 py-5 sm:py-6 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between shadow-md shadow-gray-200">
             <div className="space-y-2 text-center lg:text-left">
               <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">{subjectLabel}</p>
               <h1 className="text-3xl sm:text-4xl font-bold text-[#0d1b16]">{session.levelLabel ?? "Non-Reader Level"}</h1>
@@ -261,7 +264,7 @@ export default function FlashcardsTemplate({
                 </p>
               )}
             </div>
-            <div className="flex flex-col items-center gap-5 sm:flex-row sm:justify-center lg:justify-end">
+            <div className="flex flex-row items-center gap-10 justify-center lg:justify-end">
               <div className="relative grid place-items-center">
                 <div className="w-20 h-20 rounded-full ring-8 ring-emerald-50 shadow-inner" style={progressCircleStyle} />
                 <div className="absolute inset-3 rounded-full bg-white" />
@@ -314,7 +317,7 @@ export default function FlashcardsTemplate({
             </div>
 
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-center">
-              <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-center gap-3 w-full">
+              <div className="flex flex-row sm:flex-wrap sm:items-center sm:justify-center gap-3 w-full">
                 <button
                   onClick={session.nav.onPrev}
                   disabled={session.nav.disablePrev}

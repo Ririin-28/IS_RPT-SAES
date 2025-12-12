@@ -462,7 +462,7 @@ export default function StudentTab({
         </p>
         {error && <span className="text-sm text-red-600">{error}</span>}
         
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
+        <div className="flex flex-row sm:flex-row sm:items-center gap-3 ">
           <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
             <span className="text-sm text-gray-700 whitespace-nowrap">Section:</span>
             <CustomDropdown 

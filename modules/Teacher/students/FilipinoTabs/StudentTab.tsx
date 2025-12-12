@@ -1,25 +1,132 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import * as XLSX from 'xlsx';
 import AddStudentModal from "../Modals/AddStudentModal";
-import StudentDetailModal from "../Modals/StudentDetailModal"; // Import the modal
+import StudentDetailModal from "../Modals/StudentDetailModal";
 import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
 import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
-// Button Components
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import TableList from "@/components/Common/Tables/TableList";
 import KebabMenu from "@/components/Common/Menus/KebabMenu";
-// Text Components
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
 import BodyText from "@/components/Common/Texts/BodyText";
 import BodyLabel from "@/components/Common/Texts/BodyLabel";
 
 const sections = ["All Sections", "A", "B", "C"];
+
+// Define types for name parts
+type NameParts = {
+  firstName: string;
+  lastName: string;
+  middleNames: string[];
+};
+
+// Helper function to capitalize words
+const capitalizeWord = (value: string) => {
+  if (!value) {
+    return "";
+  }
+  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+};
+
+// Extract name parts from student object
+const extractNameParts = (student: any): NameParts => {
+  const firstName = (student?.firstName ?? student?.firstname ?? "").trim();
+  const lastName = (student?.lastName ?? student?.surname ?? student?.lastname ?? "").trim();
+  const middleNameRaw = (student?.middleName ?? student?.middlename ?? student?.middleInitial ?? "").trim();
+
+  // If we have separate name fields, use them
+  if (firstName || lastName) {
+    const middleNames = middleNameRaw ? middleNameRaw.split(/\s+/).filter(Boolean) : [];
+    return { firstName, lastName, middleNames };
+  }
+
+  // Otherwise, parse the full name
+  const raw = (student?.name ?? "").trim();
+  if (!raw) {
+    return { firstName: "", lastName: "", middleNames: [] };
+  }
+  
+  const parts = raw.split(/\s+/).filter(Boolean);
+  if (!parts.length) {
+    return { firstName: "", lastName: "", middleNames: [] };
+  }
+  
+  if (parts.length === 1) {
+    return { firstName: parts[0], lastName: "", middleNames: [] };
+  }
+  
+  // Assume format: FirstName MiddleName LastName
+  return {
+    firstName: parts[0],
+    lastName: parts[parts.length - 1],
+    middleNames: parts.slice(1, -1),
+  };
+};
+
+// Format display name as "Surname, FirstName M.I."
+const formatStudentDisplayName = (student: any) => {
+  const { firstName, lastName, middleNames } = extractNameParts(student);
+  
+  if (!firstName && !lastName) {
+    return student?.name ?? "";
+  }
+  
+  const segments: string[] = [];
+  
+  // Add last name (surname) first
+  if (lastName) {
+    segments.push(capitalizeWord(lastName));
+  }
+  
+  // Add first name
+  if (firstName) {
+    segments.push(capitalizeWord(firstName));
+  }
+  
+  // Add middle initials
+  const middleInitials = middleNames
+    .map((name) => (name ? `${name.charAt(0).toUpperCase()}.` : ""))
+    .filter(Boolean)
+    .join(" ");
+  
+  if (middleInitials) {
+    segments.push(middleInitials);
+  }
+  
+  // Format as "Surname, FirstName M.I."
+  if (segments.length === 1) {
+    return segments[0];
+  } else if (segments.length === 2) {
+    return `${segments[0]}, ${segments[1]}`;
+  } else {
+    return `${segments[0]}, ${segments[1]} ${segments.slice(2).join(" ")}`;
+  }
+};
+
+// Build sort key for A-Z sorting by Surname, FirstName, Middle Initials
+const buildNameSortKey = (student: any) => {
+  const { firstName, lastName, middleNames } = extractNameParts(student);
+  
+  // Create sort key: lastName|firstName|middleNames
+  const normalized = [
+    lastName.toLowerCase(),
+    firstName.toLowerCase(),
+    middleNames.join(" ").toLowerCase(),
+  ].join("|");
+  
+  // If we have no name data, use the raw name field
+  if (normalized.replace(/\|/g, "").trim()) {
+    return normalized;
+  }
+  
+  return (student?.name ?? "").toLowerCase();
+};
 
 const ExportIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -164,27 +271,45 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
   };
 
   // Filter students based on search term and section
-  const filteredStudents = students.filter((student) => {
-    const matchSection = filter.section === "All Sections" || student.section === filter.section;
-    const matchSearch = searchTerm === "" || 
-      student.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.studentId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.grade?.toString().includes(searchTerm.toLowerCase()) ||
-      student.section?.toLowerCase().includes(searchTerm.toLowerCase());
+  const filteredStudents = useMemo(() => {
+    const searchValue = searchTerm.trim().toLowerCase();
+    return students.filter((student) => {
+      const matchSection = filter.section === "All Sections" || student.section === filter.section;
       
-    return matchSection && matchSearch;
-  });
+      // Search in formatted name for better matching
+      const formattedName = formatStudentDisplayName(student).toLowerCase();
+      const matchSearch =
+        searchValue === "" ||
+        formattedName.includes(searchValue) ||
+        student.studentId?.toString().toLowerCase().includes(searchValue) ||
+        student.grade?.toString().toLowerCase().includes(searchValue) ||
+        student.section?.toLowerCase().includes(searchValue);
+      
+      return matchSection && matchSearch;
+    });
+  }, [students, filter.section, searchTerm]);
+
+  // Sort students A-Z by Surname, FirstName, Middle Initials
+  const sortedStudents = useMemo(() => {
+    const list = [...filteredStudents];
+    list.sort((a, b) => {
+      const aKey = buildNameSortKey(a);
+      const bKey = buildNameSortKey(b);
+      return aKey.localeCompare(bKey, undefined, { sensitivity: "base" });
+    });
+    return list;
+  }, [filteredStudents]);
 
   const handleExport = () => {
-    if (filteredStudents.length === 0) {
+    if (sortedStudents.length === 0) {
       alert("No students available to export.");
       return;
     }
 
-    const exportData = filteredStudents.map((student, index) => ({
+    const exportData = sortedStudents.map((student, index) => ({
       "No#": index + 1,
       "Student ID": student.studentId ?? "",
-      "Full Name": student.name ?? "",
+      "Full Name": formatStudentDisplayName(student),
       Grade: student.grade ?? "",
       Section: student.section ?? "",
       Guardian: student.guardian ?? "",
@@ -203,7 +328,7 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedStudents(new Set(filteredStudents.map(s => s.id)));
+      setSelectedStudents(new Set(sortedStudents.map(s => s.id)));
     } else {
       setSelectedStudents(new Set());
     }
@@ -317,10 +442,10 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
     <div>
       <div className="flex flex-row justify-between items-center mb-4">
         <p className="text-gray-600 text-md font-medium">
-          Total: {filteredStudents.length}
+          Total: {sortedStudents.length}
         </p>
         
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 ">
           <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
             <span className="text-sm text-gray-700 whitespace-nowrap">Section:</span>
             <CustomDropdown 
@@ -352,34 +477,35 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
       />
 
       {/* Student Table Section */}
-<TableList
-  columns={[
-    { key: "no", title: "No#" },
-    { key: "studentId", title: "Student ID" },
-    { key: "name", title: "Full Name" },
-    { key: "grade", title: "Grade" },
-    { key: "section", title: "Section" },
-  ]}
-  data={filteredStudents.map((student, idx) => ({
-    ...student,
-    no: idx + 1,
-  }))}
-  actions={(row: any) => (
-    <div className="flex gap-2">
-      <UtilityButton small onClick={() => handleViewDetails(row)} title="View student details">
-        View Details
-      </UtilityButton>
-      <UtilityButton small type="button" onClick={handlePlayClick} title="Click to play remedial session">
-        Play
-      </UtilityButton>
-    </div>
-  )}
-  selectable={selectMode}
-  selectedItems={selectedStudents}
-  onSelectAll={handleSelectAll}
-  onSelectItem={handleSelectStudent}
-  pageSize={10}
-/>
+      <TableList
+        columns={[
+          { key: "no", title: "No#" },
+          { key: "studentId", title: "Student ID" },
+          { key: "name", title: "Full Name" },
+          { key: "grade", title: "Grade" },
+          { key: "section", title: "Section" },
+        ]}
+        data={sortedStudents.map((student, idx) => ({
+          ...student,
+          name: formatStudentDisplayName(student), // Display as "Surname, FirstName M.I."
+          no: idx + 1,
+        }))}
+        actions={(row: any) => (
+          <div className="flex gap-2">
+            <UtilityButton small onClick={() => handleViewDetails(row)} title="View student details">
+              View
+            </UtilityButton>
+            <UtilityButton small type="button" onClick={handlePlayClick} title="Click to play remedial session">
+              Play
+            </UtilityButton>
+          </div>
+        )}
+        selectable={selectMode}
+        selectedItems={selectedStudents}
+        onSelectAll={handleSelectAll}
+        onSelectItem={handleSelectStudent}
+        pageSize={10}
+      />
       <ConfirmationModal
         isOpen={showConfirmModal}
         onClose={handleUploadCancel}
