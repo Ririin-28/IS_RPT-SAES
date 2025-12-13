@@ -246,12 +246,12 @@ export default function MasterTeacherFilipinoFlashcards() {
 
   // recognition + metrics state
   const [isListening, setIsListening] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false); // NEW STATE FOR SPEAKER
+  const [isPlaying, setIsPlaying] = useState(false);
   const [recognizedText, setRecognizedText] = useState("");
   const [feedback, setFeedback] = useState("");
   const [metrics, setMetrics] = useState<any>(null);
 
-  // refs for audio / timing
+  // refs for audio / timing - ADDED FOR MANUAL STOP
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -260,6 +260,13 @@ export default function MasterTeacherFilipinoFlashcards() {
   const speechStartRef = useRef<number | null>(null);
   const speechEndRef = useRef<number | null>(null);
   const cumulativeSilentMsRef = useRef<number>(0);
+  const recognitionRef = useRef<any>(null);
+  const manualStopRef = useRef(false);
+  const finalizedRef = useRef(false);
+  const transcriptRef = useRef<string>("");
+  const lastConfidenceRef = useRef<number | null>(null);
+  const restartTimeoutRef = useRef<number | null>(null);
+  const analyserCleanupRef = useRef<(() => void) | null>(null);
 
   // ---------- Core: start mic, listen, measure silence + timestamps ----------
   const startAudioAnalyser = async (stream: MediaStream) => {
@@ -304,6 +311,10 @@ export default function MasterTeacherFilipinoFlashcards() {
 
   const stopAudioAnalyser = useCallback(() => {
     try {
+      if (analyserCleanupRef.current) {
+        analyserCleanupRef.current();
+        analyserCleanupRef.current = null;
+      }
       if (audioContextRef.current) {
         audioContextRef.current.close();
         audioContextRef.current = null;
@@ -315,7 +326,60 @@ export default function MasterTeacherFilipinoFlashcards() {
     } catch (e) { /* ignore */ }
   }, []);
 
+  const clearMicRestart = useCallback(() => {
+    if (restartTimeoutRef.current) {
+      window.clearTimeout(restartTimeoutRef.current);
+      restartTimeoutRef.current = null;
+    }
+  }, []);
+
+  const stopRecognitionLoop = useCallback(() => {
+    clearMicRestart();
+    if (recognitionRef.current) {
+      recognitionRef.current.onresult = null;
+      recognitionRef.current.onerror = null;
+      recognitionRef.current.onend = null;
+      try { recognitionRef.current.stop(); } catch (e) { /* ignore */ }
+      recognitionRef.current = null;
+    }
+  }, [clearMicRestart]);
+
+  // NEW FUNCTION: Finalize recording and compute scores
+  const finalizeRecording = useCallback((errorMessage?: string) => {
+    if (finalizedRef.current) return;
+    finalizedRef.current = true;
+    stopRecognitionLoop();
+    speechEndRef.current = performance.now();
+    stopAudioAnalyser();
+    setIsListening(false);
+    manualStopRef.current = false;
+
+    const spoken = (transcriptRef.current || "").trim();
+
+    if (errorMessage) {
+      setFeedback(errorMessage);
+      return;
+    }
+
+    if (!spoken) {
+      setFeedback("Walang narinig na pagsasalita. Pakisubukan muli.");
+      setRecognizedText("");
+      return;
+    }
+
+    const sc = computeScores(sentence, spoken, lastConfidenceRef.current);
+    setMetrics(sc);
+    setFeedback(sc.remarks);
+    setRecognizedText(spoken);
+  }, [sentence, stopAudioAnalyser, stopRecognitionLoop]);
+
   const resetSessionTracking = useCallback(() => {
+    clearMicRestart();
+    stopRecognitionLoop();
+    manualStopRef.current = false;
+    finalizedRef.current = false;
+    transcriptRef.current = "";
+    lastConfidenceRef.current = null;
     setRecognizedText("");
     setFeedback("");
     setMetrics(null);
@@ -325,11 +389,16 @@ export default function MasterTeacherFilipinoFlashcards() {
     stopAudioAnalyser();
     setIsListening(false);
     setIsPlaying(false);
-  }, [stopAudioAnalyser]);
+  }, [clearMicRestart, stopAudioAnalyser, stopRecognitionLoop]);
 
   useEffect(() => {
-    return () => stopAudioAnalyser();
-  }, [stopAudioAnalyser]);
+    return () => {
+      manualStopRef.current = true;
+      stopRecognitionLoop();
+      clearMicRestart();
+      stopAudioAnalyser();
+    };
+  }, [clearMicRestart, stopAudioAnalyser, stopRecognitionLoop]);
 
   useEffect(() => {
     resetSessionTracking();
@@ -370,10 +439,6 @@ export default function MasterTeacherFilipinoFlashcards() {
     setCurrent(startIndex);
     setSelectedStudentId(null);
     setView("select");
-  };
-
-  const handleBackToDashboard = () => {
-    router.back();
   };
 
   const handleSpeak = () => {
@@ -434,37 +499,60 @@ export default function MasterTeacherFilipinoFlashcards() {
     const phonemeAccuracy = comparePhonemeArrays(expPhArr, spkPhArr);
 
     // Fluency metrics
-    const totalSpeechMs = (speechEndRef.current && speechStartRef.current) ? Math.max(1, (speechEndRef.current - speechStartRef.current)) : 1;
+    const totalSpeechMs = (speechEndRef.current && speechStartRef.current)
+      ? Math.max(1, (speechEndRef.current - speechStartRef.current))
+      : 1;
     const totalSilenceMs = cumulativeSilentMsRef.current;
     const pauseRatio = Math.min(1, totalSilenceMs / totalSpeechMs);
-    const fluencyScore = Math.round((1 - pauseRatio) * 100);
+    const fluencyScore = Math.min(100, Math.max(0, Math.round((1 - pauseRatio) * 100)));
 
-    // Reading rate: words per minute
-    const wpm = Math.round((expWords.length / (totalSpeechMs / 1000)) * 60);
+    const wpmRaw = Math.max(0, Math.round((expWords.length / (totalSpeechMs / 1000)) * 60));
 
-    // Combine scores
+    // Combine scores with confidence
     const conf = resultConfidence ?? 0.8;
-    const pronScore = Math.round((0.5 * wordAccuracy) + (0.35 * phonemeAccuracy) + (0.15 * conf * 100));
+    const pronScore = Math.min(100, Math.max(0, Math.round(
+      (0.5 * wordAccuracy) + (0.35 * phonemeAccuracy) + (0.15 * conf * 100)
+    )));
 
-    // Filipino remarks
-    let remarks = "";
-    if (pronScore > 85 && fluencyScore > 80) remarks = "Magaling! Napakagaling ng iyong pagbigkas at fluency! 🌟";
-    else if (pronScore > 70) remarks = "Magaling — kaunting pagsasanay pa sa pagbigkas at fluency. 💪";
-    else if (pronScore > 50) remarks = "Katamtaman — kailangan ng pagsasanay sa mga tunog at bawasan ang paghinto. 🗣️";
-    else remarks = "Kailangan ng mas maraming pagsasanay — pagbutihin ang kalinasan at bilis. 📚";
+    // Calculate average metrics
+    const correctnessPercent = Math.min(100, Math.max(0, Math.round(wordAccuracy)));
+    const readingSpeedPercent = Math.min(100, Math.max(0, wpmRaw));
+    const averageScore = Math.min(100, Math.max(0, Math.round(
+      (pronScore + fluencyScore + readingSpeedPercent) / 3
+    )));
+
+    let averageLabel: "Excellent" | "Magaling" | "Katamtaman" | "Kailangan ng Tulong" | "Mahina";
+    if (averageScore >= 90) averageLabel = "Excellent";
+    else if (averageScore >= 80) averageLabel = "Magaling";
+    else if (averageScore >= 70) averageLabel = "Katamtaman";
+    else if (averageScore >= 60) averageLabel = "Kailangan ng Tulong";
+    else averageLabel = "Mahina";
+
+    const remarkMessages: Record<typeof averageLabel, string> = {
+      Excellent: "Napakagaling! Walang pagkakamali sa pagbigkas! 🌟",
+      Magaling: "Magaling! Kaunting pagsasanay pa para sa perpektong pagbigkas. 💪",
+      Katamtaman: "Katamtaman — kailangan ng pagsasanay sa pagbigkas at fluency. 🗣️",
+      "Kailangan ng Tulong": "Kailangan ng tulong — pagtuunan ng pansin ang mga tunog at bilis. 📚",
+      Mahina: "Mahina ang pagbabasa — kailangan ng masinsinang paggabay at pagsasanay. 🆘",
+    };
 
     return {
-      expWords, spkWords, perWordDetails,
-      wordAccuracy: Math.round(wordAccuracy * 100) / 100,
+      expWords,
+      spkWords,
+      perWordDetails,
+      correctness: correctnessPercent,
       phonemeAccuracy: Math.round(phonemeAccuracy * 100) / 100,
       fluencyScore,
-      wpm,
+      readingSpeed: wpmRaw,
+      wpm: wpmRaw,
       pronScore,
-      remarks
+      averageScore,
+      averageLabel,
+      remarks: remarkMessages[averageLabel],
     };
   }
 
-  // ---------- Microphone handler ----------
+  // ---------- REVISED Microphone handler for MANUAL STOP ----------
   const handleMicrophone = async () => {
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -473,71 +561,84 @@ export default function MasterTeacherFilipinoFlashcards() {
       return;
     }
 
+    // If already listening, this click acts as a manual stop.
+    if (isListening) {
+      manualStopRef.current = true;
+      finalizeRecording();
+      return;
+    }
+
     try {
+      manualStopRef.current = false;
+      finalizedRef.current = false;
+      transcriptRef.current = "";
+      lastConfidenceRef.current = null;
+      setMetrics(null);
+      setRecognizedText("");
+      setFeedback("Nakikinig... 🎧");
+
+      cumulativeSilentMsRef.current = 0;
+      speechStartRef.current = performance.now();
+      speechEndRef.current = null;
+      lastVoiceTimestampRef.current = null;
+      silenceStartRef.current = null;
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
-      await startAudioAnalyser(stream);
+      analyserCleanupRef.current = await startAudioAnalyser(stream);
 
       const recognition = new SpeechRecognition();
       recognition.lang = "fil-PH"; // Filipino language
       recognition.interimResults = false;
       recognition.maxAlternatives = 1;
-
-      cumulativeSilentMsRef.current = 0;
-      speechStartRef.current = null;
-      speechEndRef.current = null;
-      lastVoiceTimestampRef.current = null;
-      silenceStartRef.current = null;
-
-      setIsListening(true);
-      setRecognizedText("");
-      setFeedback("Nakikinig... 🎧");
+      recognition.continuous = true; // Continuous listening
 
       recognition.onstart = () => {
-        speechStartRef.current = performance.now();
+        if (!speechStartRef.current) speechStartRef.current = performance.now();
+        setIsListening(true);
       };
 
       recognition.onresult = (event: any) => {
-        const spoken = event.results[0][0].transcript;
-        const conf = event.results[0][0].confidence ?? null;
-        setRecognizedText(spoken);
+        const spoken = Array.from(event.results)
+          .map((result: any) => result?.[0]?.transcript ?? "")
+          .join(" ")
+          .trim();
 
-        speechEndRef.current = performance.now();
-
-    const sc = computeScores(sentence, spoken, conf);
-    setMetrics(sc);
-        setFeedback(sc.remarks);
-
-        stopAudioAnalyser();
-        setIsListening(false);
-      };
-
-      recognition.onerror = (e: any) => {
-        setFeedback("May error sa pagkilala ng pagsasalita. Pakisubukan muli.");
-        stopAudioAnalyser();
-        setIsListening(false);
-      };
-
-      recognition.onend = () => {
-        if (!speechEndRef.current) speechEndRef.current = performance.now();
-        if (!recognizedText) {
-          setFeedback("Walang narinig na pagsasalita. Pakisubukan muli.");
-          stopAudioAnalyser();
-          setIsListening(false);
+        if (spoken) {
+          transcriptRef.current = spoken;
+          const latestConf = event.results[event.results.length - 1]?.[0]?.confidence;
+          if (typeof latestConf === "number") lastConfidenceRef.current = latestConf;
+          setRecognizedText(spoken);
         }
       };
 
+      recognition.onerror = () => {
+        finalizeRecording("Error sa speech recognition. Pakisubukan muli.");
+      };
+
+      recognition.onend = () => {
+        if (manualStopRef.current) {
+          finalizeRecording();
+          return;
+        }
+        if (finalizedRef.current) return;
+
+        // Auto-restart if not manually stopped (for continuous listening)
+        restartTimeoutRef.current = window.setTimeout(() => {
+          try {
+            recognition.start();
+          } catch (err) {
+            console.error(err);
+            finalizeRecording("Namatay ang mikropono nang hindi inaasahan. Pakisimula muli.");
+          }
+        }, 250);
+      };
+
+      recognitionRef.current = recognition;
       recognition.start();
-
-      setTimeout(() => {
-        try { recognition.stop(); } catch (e) {}
-      }, 45000);
-
     } catch (err) {
       console.error(err);
-      setFeedback("Error sa mikropono o hindi naibigay ang permiso.");
-      setIsListening(false);
-      stopAudioAnalyser();
+      finalizeRecording("Error sa mikropono o hindi ibinigay ang permiso.");
     }
   };
 
@@ -576,9 +677,9 @@ export default function MasterTeacherFilipinoFlashcards() {
 
   const insightMetrics = [
     { label: "Pronunciation", value: metrics ? `${metrics.pronScore}%` : "—" },
-    { label: "Fluency", value: metrics ? `${metrics.fluencyScore}%` : "—" },
-    { label: "Sound Accuracy", value: metrics ? `${Math.round(metrics.phonemeAccuracy)}%` : "—" },
-    { label: "Reading Speed", value: metrics ? `${metrics.wpm} WPM` : "—" },
+    { label: "Correctness", value: metrics ? `${metrics.correctness}%` : "—" },
+    { label: "Reading Speed", value: metrics ? `${metrics.readingSpeed ?? metrics.wpm} WPM` : "—" },
+    { label: "Average", value: metrics ? `${metrics.averageScore}%` : "—" },
   ];
 
   const sessionProps = view === "session" && selectedStudent
@@ -602,7 +703,7 @@ export default function MasterTeacherFilipinoFlashcards() {
           },
           {
             id: "mic",
-            label: "Pronunciation Check",
+            label: isListening ? "Stop Recording" : "Pronunciation Check",
             activeLabel: "Listening...",
             icon: <MicIcon />,
             onClick: handleMicrophone,
@@ -612,10 +713,10 @@ export default function MasterTeacherFilipinoFlashcards() {
         insights: {
           heading: "Real-time Insights",
           highlightLabel: "Transcription",
-          highlightText: recognizedText || "Waiting for microphone recording.",
+          highlightText: recognizedText || "Hintayin ang pag-record mula sa mikropono.",
           metrics: insightMetrics,
           footerLabel: "Remarks",
-          footerText: feedback || "Patuloy na magsalita upang makakuha ng feedback.",
+          footerText: feedback || "Pindutin ang 'Pronunciation Check' upang magsimula.",
         },
         progress: { currentIndex: current, totalCount: flashcardsData.length },
         nav: {
