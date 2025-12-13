@@ -248,7 +248,7 @@ export default function FlashcardsTemplate({
 
     return (
       <div className="min-h-dvh bg-gradient-to-br from-[#f2f8f4] via-white to-[#e6f2ec]">
-        <div className="w-full max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex min-h-dvh flex-col">
+        <div className="w-full max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex min-h-dvh flex-col">
           <header className="rounded-3xl border border-gray-300 bg-white/70 backdrop-blur px-8 py-5 sm:py-6 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between shadow-md shadow-gray-200">
             <div className="space-y-2 text-center lg:text-left">
               <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">{subjectLabel}</p>
@@ -279,7 +279,7 @@ export default function FlashcardsTemplate({
             </div>
           </header>
 
-          <div className="mt-5 flex flex-1 flex-col gap-5">
+          <div className="mt-3 flex flex-1 flex-col gap-3">
             <div className="grid gap-3 xl:grid-cols-12 flex-1 min-h-0">
               <section className="xl:col-span-8 flex flex-col min-h-0">
                 <div className="h-full rounded-3xl border border-gray-300 bg-white shadow-md shadow-gray-200 overflow-hidden flex flex-col">
