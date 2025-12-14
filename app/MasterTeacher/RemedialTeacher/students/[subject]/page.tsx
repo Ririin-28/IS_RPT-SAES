@@ -1,5 +1,10 @@
 import MasterTeacherStudents from "@/modules/MasterTeacher/RemedialTeacher/students/students";
 
-export default function SubjectStudentsPage({ params }: { params: { subject: string } }) {
-  return <MasterTeacherStudents subjectSlug={params.subject} />;
+export default async function SubjectStudentsPage({
+  params,
+}: {
+  params: Promise<{ subject: string }>;
+}) {
+  const { subject } = await params;
+  return <MasterTeacherStudents subjectSlug={subject} />;
 }
