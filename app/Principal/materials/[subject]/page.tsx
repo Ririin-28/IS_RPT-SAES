@@ -1,11 +1,12 @@
 import PrincipalMaterials from "@/modules/Principal/materials/materials";
 
 interface SubjectPageProps {
-  params: {
+  params: Promise<{
     subject: string;
-  };
+  }>;
 }
 
-export default function PrincipalMaterialsSubjectPage({ params }: SubjectPageProps) {
-  return <PrincipalMaterials subjectSlug={params.subject} />;
+export default async function PrincipalMaterialsSubjectPage({ params }: SubjectPageProps) {
+  const { subject } = await params;
+  return <PrincipalMaterials subjectSlug={subject} />;
 }
