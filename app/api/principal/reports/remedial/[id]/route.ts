@@ -26,10 +26,13 @@ const ensureTable = async () => {
   );
 };
 
-export async function GET(request: NextRequest, context: { params: { id: string } }) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
   try {
     await ensureTable();
-    const rawId = context.params?.id;
+    const { id: rawId } = await params;
     const id = Number(rawId);
     if (!Number.isFinite(id) || id <= 0) {
       return NextResponse.json({ success: false, error: "Invalid report id." }, { status: 400 });
