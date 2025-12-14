@@ -1,11 +1,12 @@
 import PrincipalReports from "@/modules/Principal/reports/reports";
 
 interface ReportsPageProps {
-  params: {
+  params: Promise<{
     subject?: string;
-  };
+  }>;
 }
 
-export default function ReportsBySubject({ params }: ReportsPageProps) {
-  return <PrincipalReports subjectSlug={params.subject} />;
+export default async function ReportsBySubject({ params }: ReportsPageProps) {
+  const resolved = await params;
+  return <PrincipalReports subjectSlug={resolved.subject} />;
 }
