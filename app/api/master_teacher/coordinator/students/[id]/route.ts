@@ -34,12 +34,6 @@ const mapUpdateStudentInput = (raw: Record<string, unknown>): UpdateStudentRecor
 const respondWithError = (message: string, status = 400) =>
   NextResponse.json({ success: false, error: message }, { status });
 
-type RouteContext = {
-  params: {
-    id: string;
-  };
-};
-
 const parseId = (value: string | undefined): number | null => {
   if (!value) {
     return null;
@@ -51,8 +45,12 @@ const parseId = (value: string | undefined): number | null => {
   return parsed;
 };
 
-export async function PUT(request: NextRequest, context: RouteContext) {
-  const id = parseId(context.params?.id);
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id: rawId } = await params;
+  const id = parseId(rawId);
   if (!id) {
     return respondWithError("Invalid student identifier.");
   }
@@ -89,8 +87,12 @@ export async function PUT(request: NextRequest, context: RouteContext) {
   }
 }
 
-export async function DELETE(request: NextRequest, context: RouteContext) {
-  const id = parseId(context.params?.id);
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id: rawId } = await params;
+  const id = parseId(rawId);
   if (!id) {
     return respondWithError("Invalid student identifier.");
   }
