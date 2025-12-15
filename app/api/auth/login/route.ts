@@ -44,35 +44,36 @@ function toNumber(value: unknown): number | null {
 }
 
 export async function POST(req: Request): Promise<Response> {
-  return runWithConnection(async (db) => {
-    const respond = (
-      status: number,
-      payload: Record<string, unknown>,
-      extraHeaders?: Record<string, string | string[]>,
-    ): Response => {
-      const headers = new Headers({
-        "Content-Type": "application/json",
-        "Cache-Control": "no-store",
-      });
+  try {
+    return await runWithConnection(async (db) => {
+      const respond = (
+        status: number,
+        payload: Record<string, unknown>,
+        extraHeaders?: Record<string, string | string[]>,
+      ): Response => {
+        const headers = new Headers({
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store",
+        });
 
-      if (extraHeaders) {
-        for (const [key, value] of Object.entries(extraHeaders)) {
-          if (Array.isArray(value)) {
-            value.forEach((headerValue) => headers.append(key, headerValue));
-          } else {
-            headers.append(key, value);
+        if (extraHeaders) {
+          for (const [key, value] of Object.entries(extraHeaders)) {
+            if (Array.isArray(value)) {
+              value.forEach((headerValue) => headers.append(key, headerValue));
+            } else {
+              headers.append(key, value);
+            }
           }
         }
-      }
 
-      return new Response(JSON.stringify(payload), {
-        status,
-        headers,
-      });
-    };
+        return new Response(JSON.stringify(payload), {
+          status,
+          headers,
+        });
+      };
 
-    try {
-      const { email, password, userId, deviceToken, deviceName } = (await req.json()) as LoginRequestPayload;
+      try {
+        const { email, password, userId, deviceToken, deviceName } = (await req.json()) as LoginRequestPayload;
 
     const [users] = await db.execute<UserRow[]>("SELECT * FROM users WHERE email = ?", [email]);
     const user = users[0];
@@ -162,19 +163,29 @@ export async function POST(req: Request): Promise<Response> {
         );
       }
 
-      return respond(200, {
-        success: true,
-        otpRequired: true,
-        role: user.role,
-        user_id: user.user_id,
-        first_name: user.first_name,
-        middle_name: user.middle_name,
-        last_name: user.last_name,
-        email: user.email,
-      });
-    } catch (error) {
-      console.error("Login request failed", error);
-      return respond(500, { error: "Server error" });
-    }
-  });
+        return respond(200, {
+          success: true,
+          otpRequired: true,
+          role: user.role,
+          user_id: user.user_id,
+          first_name: user.first_name,
+          middle_name: user.middle_name,
+          last_name: user.last_name,
+          email: user.email,
+        });
+      } catch (error) {
+        console.error("Login request failed", error);
+        return respond(500, { error: "Server error" });
+      }
+    });
+  } catch (error) {
+    console.error("Login connection failed", error);
+    return new Response(JSON.stringify({ error: "Server error" }), {
+      status: 500,
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store",
+      },
+    });
+  }
 }
