@@ -2,6 +2,11 @@ import mysql from "mysql2/promise";
 
 let pool: mysql.Pool | null = null;
 
+const useSsl = (process.env.DB_SSL ?? "").trim().toLowerCase() === "true";
+const sslRejectUnauthorized = (process.env.DB_SSL_REJECT_UNAUTHORIZED ?? "true")
+  .trim()
+  .toLowerCase() !== "false";
+
 const DB_CONFIG = {
   host: process.env.DB_HOST ?? "localhost",
   user: process.env.DB_USER ?? "root",
@@ -11,6 +16,11 @@ const DB_CONFIG = {
   connectionLimit: process.env.DB_CONNECTION_LIMIT
     ? Number(process.env.DB_CONNECTION_LIMIT)
     : 10,
+  ssl: useSsl
+    ? {
+        rejectUnauthorized: sslRejectUnauthorized,
+      }
+    : undefined,
 } as const;
 
 function ensurePool(): mysql.Pool {
