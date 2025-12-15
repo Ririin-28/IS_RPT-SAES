@@ -6,7 +6,7 @@ const DB_CONFIG = {
   host: process.env.DB_HOST ?? "localhost",
   user: process.env.DB_USER ?? "root",
   password: process.env.DB_PASSWORD ?? "RIANA28@eg564",
-  database: process.env.DB_DATABASE ?? "rpt-saes_db",
+  database: process.env.DB_DATABASE ?? process.env.DB_NAME ?? "rpt-saes_db",
   port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 3306,
   connectionLimit: process.env.DB_CONNECTION_LIMIT
     ? Number(process.env.DB_CONNECTION_LIMIT)
