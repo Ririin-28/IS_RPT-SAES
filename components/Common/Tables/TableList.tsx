@@ -64,7 +64,7 @@ export default function TableList({
   // Updated height classes for better mobile responsiveness
   const bodyMaxHeightClass = isFullScreen
     ? 'max-h-[calc(100vh-8rem)]'
-    : 'lg:max-h-[50vh] md:max-h-[62vh] max-h-[59vh]';
+    : 'lg:max-h-[53vh] md:max-h-[62vh] max-h-[59vh]';
 
   return (
     <div

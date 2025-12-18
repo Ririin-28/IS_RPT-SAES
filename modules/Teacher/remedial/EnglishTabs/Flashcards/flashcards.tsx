@@ -320,13 +320,6 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
   const speechStartRef = useRef<number | null>(null);
   const speechEndRef = useRef<number | null>(null);
   const cumulativeSilentMsRef = useRef<number>(0);
-  const recognitionRef = useRef<any>(null);
-  const manualStopRef = useRef(false);
-  const finalizedRef = useRef(false);
-  const transcriptRef = useRef<string>("");
-  const lastConfidenceRef = useRef<number | null>(null);
-  const restartTimeoutRef = useRef<number | null>(null);
-  const analyserCleanupRef = useRef<(() => void) | null>(null);
 
   const handlePrev = () =>
     setCurrent((prev) => (flashcardsData.length > 0 ? Math.max(prev - 1, 0) : 0));
@@ -436,10 +429,6 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
 
   const stopAudioAnalyser = useCallback(() => {
     try {
-      if (analyserCleanupRef.current) {
-        analyserCleanupRef.current();
-        analyserCleanupRef.current = null;
-      }
       if (audioContextRef.current) {
         audioContextRef.current.close();
         audioContextRef.current = null;
@@ -451,59 +440,7 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
     } catch (e) { /* ignore */ }
   }, []);
 
-  const clearMicRestart = useCallback(() => {
-    if (restartTimeoutRef.current) {
-      window.clearTimeout(restartTimeoutRef.current);
-      restartTimeoutRef.current = null;
-    }
-  }, []);
-
-  const stopRecognitionLoop = useCallback(() => {
-    clearMicRestart();
-    if (recognitionRef.current) {
-      recognitionRef.current.onresult = null;
-      recognitionRef.current.onerror = null;
-      recognitionRef.current.onend = null;
-      try { recognitionRef.current.stop(); } catch (e) { /* ignore */ }
-      recognitionRef.current = null;
-    }
-  }, [clearMicRestart]);
-
-  const finalizeRecording = useCallback((errorMessage?: string) => {
-    if (finalizedRef.current) return;
-    finalizedRef.current = true;
-    stopRecognitionLoop();
-    speechEndRef.current = performance.now();
-    stopAudioAnalyser();
-    setIsListening(false);
-    manualStopRef.current = false;
-
-    const spoken = (transcriptRef.current || "").trim();
-
-    if (errorMessage) {
-      setFeedback(errorMessage);
-      return;
-    }
-
-    if (!spoken) {
-      setFeedback("No speech detected. Please try again.");
-      setRecognizedText("");
-      return;
-    }
-
-    const sc = computeScores(sentence, spoken, lastConfidenceRef.current);
-    setMetrics(sc);
-    setFeedback(sc.remarks);
-    setRecognizedText(spoken);
-  }, [sentence, stopAudioAnalyser, stopRecognitionLoop]);
-
   const resetSessionTracking = useCallback(() => {
-    clearMicRestart();
-    stopRecognitionLoop();
-    manualStopRef.current = false;
-    finalizedRef.current = false;
-    transcriptRef.current = "";
-    lastConfidenceRef.current = null;
     setRecognizedText("");
     setFeedback("");
     setMetrics(null);
@@ -513,16 +450,11 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
     stopAudioAnalyser();
     setIsListening(false);
     setIsPlaying(false);
-  }, [clearMicRestart, stopAudioAnalyser, stopRecognitionLoop]);
+  }, [stopAudioAnalyser]);
 
   useEffect(() => {
-    return () => {
-      manualStopRef.current = true;
-      stopRecognitionLoop();
-      clearMicRestart();
-      stopAudioAnalyser();
-    };
-  }, [clearMicRestart, stopAudioAnalyser, stopRecognitionLoop]);
+    return () => stopAudioAnalyser();
+  }, []);
 
   useEffect(() => {
     resetSessionTracking();
@@ -620,83 +552,71 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
       return;
     }
 
-    // If already listening, this click acts as a manual stop.
-    if (isListening) {
-      manualStopRef.current = true;
-      finalizeRecording();
-      return;
-    }
-
     try {
-      manualStopRef.current = false;
-      finalizedRef.current = false;
-      transcriptRef.current = "";
-      lastConfidenceRef.current = null;
-      setMetrics(null);
-      setRecognizedText("");
-      setFeedback("Listening... 🎧");
-
-      cumulativeSilentMsRef.current = 0;
-      speechStartRef.current = performance.now();
-      speechEndRef.current = null;
-      lastVoiceTimestampRef.current = null;
-      silenceStartRef.current = null;
-
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
-      analyserCleanupRef.current = await startAudioAnalyser(stream);
+      await startAudioAnalyser(stream);
 
       const recognition = new SpeechRecognition();
       recognition.lang = "en-US"; // English language
       recognition.interimResults = false;
       recognition.maxAlternatives = 1;
-      recognition.continuous = true;
+
+      cumulativeSilentMsRef.current = 0;
+      speechStartRef.current = null;
+      speechEndRef.current = null;
+      lastVoiceTimestampRef.current = null;
+      silenceStartRef.current = null;
+
+      setIsListening(true);
+      setRecognizedText("");
+      setFeedback("Listening... 🎧");
 
       recognition.onstart = () => {
-        if (!speechStartRef.current) speechStartRef.current = performance.now();
-        setIsListening(true);
+        speechStartRef.current = performance.now();
       };
 
       recognition.onresult = (event: any) => {
-        const spoken = Array.from(event.results)
-          .map((result: any) => result?.[0]?.transcript ?? "")
-          .join(" ")
-          .trim();
+        const spoken = event.results[0][0].transcript;
+        const conf = event.results[0][0].confidence ?? null;
+        setRecognizedText(spoken);
 
-        if (spoken) {
-          transcriptRef.current = spoken;
-          const latestConf = event.results[event.results.length - 1]?.[0]?.confidence;
-          if (typeof latestConf === "number") lastConfidenceRef.current = latestConf;
-          setRecognizedText(spoken);
-        }
+        speechEndRef.current = performance.now();
+
+        const sc = computeScores(sentence, spoken, conf);
+        setMetrics(sc);
+        setFeedback(sc.remarks);
+
+        stopAudioAnalyser();
+        setIsListening(false);
       };
 
-      recognition.onerror = () => {
-        finalizeRecording("Error in speech recognition. Please try again.");
+      recognition.onerror = (e: any) => {
+        setFeedback("Error in speech recognition. Please try again.");
+        stopAudioAnalyser();
+        setIsListening(false);
       };
 
       recognition.onend = () => {
-        if (manualStopRef.current) {
-          finalizeRecording();
-          return;
+        if (!speechEndRef.current) speechEndRef.current = performance.now();
+        if (!recognizedText) {
+          setFeedback("No speech detected. Please try again.");
+          stopAudioAnalyser();
+          setIsListening(false);
         }
-        if (finalizedRef.current) return;
-
-        restartTimeoutRef.current = window.setTimeout(() => {
-          try {
-            recognition.start();
-          } catch (err) {
-            console.error(err);
-            finalizeRecording("Microphone stopped unexpectedly. Please start again.");
-          }
-        }, 250);
       };
 
-      recognitionRef.current = recognition;
       recognition.start();
+
+      setTimeout(() => {
+        try { recognition.stop(); } catch (e) {}
+      }, 45000);
+
     } catch (err) {
       console.error(err);
-      finalizeRecording("Microphone error or permission not granted.");
+      setFeedback("Microphone error or permission not granted.");
+      setIsListening(false);
+      stopAudioAnalyser();
     }
   };
 
