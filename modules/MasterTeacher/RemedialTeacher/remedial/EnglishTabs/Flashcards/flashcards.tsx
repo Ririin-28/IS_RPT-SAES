@@ -1,9 +1,26 @@
 "use client";
-import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback, type CSSProperties } from "react";
+import { FiArrowLeft, FiArrowRight } from "react-icons/fi";
 import { useSearchParams, useRouter } from "next/navigation";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import TableList from "@/components/Common/Tables/TableList";
-import FlashcardsTemplate, { MicIcon, Volume2Icon } from "@/components/Common/RemedialFlashcards/FlashcardsTemplate";
+
+/* ---------- Icons ---------- */
+const Volume2Icon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/>
+    <path d="M16 9a5 5 0 0 1 0 6"/>
+    <path d="M19.364 18.364a9 9 0 0 0 0-12.728"/>
+  </svg>
+);
+
+const MicIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 19v3"/>
+    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+    <rect x="9" y="2" width="6" height="13" rx="3"/>
+  </svg>
+);
 
 /* ---------- String/phoneme utilities ---------- */
 
@@ -320,13 +337,6 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
   const speechStartRef = useRef<number | null>(null);
   const speechEndRef = useRef<number | null>(null);
   const cumulativeSilentMsRef = useRef<number>(0);
-  const recognitionRef = useRef<any>(null);
-  const manualStopRef = useRef(false);
-  const finalizedRef = useRef(false);
-  const transcriptRef = useRef<string>("");
-  const lastConfidenceRef = useRef<number | null>(null);
-  const restartTimeoutRef = useRef<number | null>(null);
-  const analyserCleanupRef = useRef<(() => void) | null>(null);
 
   const handlePrev = () =>
     setCurrent((prev) => (flashcardsData.length > 0 ? Math.max(prev - 1, 0) : 0));
@@ -367,6 +377,10 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
     setCurrent(startIndex);
     setSelectedStudentId(null);
     setView("select");
+  };
+
+  const handleBackToDashboard = () => {
+    router.back();
   };
 
   const handleSpeak = () => {
@@ -436,10 +450,6 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
 
   const stopAudioAnalyser = useCallback(() => {
     try {
-      if (analyserCleanupRef.current) {
-        analyserCleanupRef.current();
-        analyserCleanupRef.current = null;
-      }
       if (audioContextRef.current) {
         audioContextRef.current.close();
         audioContextRef.current = null;
@@ -451,59 +461,7 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
     } catch (e) { /* ignore */ }
   }, []);
 
-  const clearMicRestart = useCallback(() => {
-    if (restartTimeoutRef.current) {
-      window.clearTimeout(restartTimeoutRef.current);
-      restartTimeoutRef.current = null;
-    }
-  }, []);
-
-  const stopRecognitionLoop = useCallback(() => {
-    clearMicRestart();
-    if (recognitionRef.current) {
-      recognitionRef.current.onresult = null;
-      recognitionRef.current.onerror = null;
-      recognitionRef.current.onend = null;
-      try { recognitionRef.current.stop(); } catch (e) { /* ignore */ }
-      recognitionRef.current = null;
-    }
-  }, [clearMicRestart]);
-
-  const finalizeRecording = useCallback((errorMessage?: string) => {
-    if (finalizedRef.current) return;
-    finalizedRef.current = true;
-    stopRecognitionLoop();
-    speechEndRef.current = performance.now();
-    stopAudioAnalyser();
-    setIsListening(false);
-    manualStopRef.current = false;
-
-    const spoken = (transcriptRef.current || "").trim();
-
-    if (errorMessage) {
-      setFeedback(errorMessage);
-      return;
-    }
-
-    if (!spoken) {
-      setFeedback("No speech detected. Please try again.");
-      setRecognizedText("");
-      return;
-    }
-
-    const sc = computeScores(sentence, spoken, lastConfidenceRef.current);
-    setMetrics(sc);
-    setFeedback(sc.remarks);
-    setRecognizedText(spoken);
-  }, [sentence, stopAudioAnalyser, stopRecognitionLoop]);
-
   const resetSessionTracking = useCallback(() => {
-    clearMicRestart();
-    stopRecognitionLoop();
-    manualStopRef.current = false;
-    finalizedRef.current = false;
-    transcriptRef.current = "";
-    lastConfidenceRef.current = null;
     setRecognizedText("");
     setFeedback("");
     setMetrics(null);
@@ -513,16 +471,11 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
     stopAudioAnalyser();
     setIsListening(false);
     setIsPlaying(false);
-  }, [clearMicRestart, stopAudioAnalyser, stopRecognitionLoop]);
+  }, [stopAudioAnalyser]);
 
   useEffect(() => {
-    return () => {
-      manualStopRef.current = true;
-      stopRecognitionLoop();
-      clearMicRestart();
-      stopAudioAnalyser();
-    };
-  }, [clearMicRestart, stopAudioAnalyser, stopRecognitionLoop]);
+    return () => stopAudioAnalyser();
+  }, []);
 
   useEffect(() => {
     resetSessionTracking();
@@ -620,83 +573,71 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
       return;
     }
 
-    // If already listening, this click acts as a manual stop.
-    if (isListening) {
-      manualStopRef.current = true;
-      finalizeRecording();
-      return;
-    }
-
     try {
-      manualStopRef.current = false;
-      finalizedRef.current = false;
-      transcriptRef.current = "";
-      lastConfidenceRef.current = null;
-      setMetrics(null);
-      setRecognizedText("");
-      setFeedback("Listening... 🎧");
-
-      cumulativeSilentMsRef.current = 0;
-      speechStartRef.current = performance.now();
-      speechEndRef.current = null;
-      lastVoiceTimestampRef.current = null;
-      silenceStartRef.current = null;
-
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
-      analyserCleanupRef.current = await startAudioAnalyser(stream);
+      await startAudioAnalyser(stream);
 
       const recognition = new SpeechRecognition();
       recognition.lang = "en-US"; // English language
       recognition.interimResults = false;
       recognition.maxAlternatives = 1;
-      recognition.continuous = true;
+
+      cumulativeSilentMsRef.current = 0;
+      speechStartRef.current = null;
+      speechEndRef.current = null;
+      lastVoiceTimestampRef.current = null;
+      silenceStartRef.current = null;
+
+      setIsListening(true);
+      setRecognizedText("");
+      setFeedback("Listening... 🎧");
 
       recognition.onstart = () => {
-        if (!speechStartRef.current) speechStartRef.current = performance.now();
-        setIsListening(true);
+        speechStartRef.current = performance.now();
       };
 
       recognition.onresult = (event: any) => {
-        const spoken = Array.from(event.results)
-          .map((result: any) => result?.[0]?.transcript ?? "")
-          .join(" ")
-          .trim();
+        const spoken = event.results[0][0].transcript;
+        const conf = event.results[0][0].confidence ?? null;
+        setRecognizedText(spoken);
 
-        if (spoken) {
-          transcriptRef.current = spoken;
-          const latestConf = event.results[event.results.length - 1]?.[0]?.confidence;
-          if (typeof latestConf === "number") lastConfidenceRef.current = latestConf;
-          setRecognizedText(spoken);
-        }
+        speechEndRef.current = performance.now();
+
+        const sc = computeScores(sentence, spoken, conf);
+        setMetrics(sc);
+        setFeedback(sc.remarks);
+
+        stopAudioAnalyser();
+        setIsListening(false);
       };
 
-      recognition.onerror = () => {
-        finalizeRecording("Error in speech recognition. Please try again.");
+      recognition.onerror = (e: any) => {
+        setFeedback("Error in speech recognition. Please try again.");
+        stopAudioAnalyser();
+        setIsListening(false);
       };
 
       recognition.onend = () => {
-        if (manualStopRef.current) {
-          finalizeRecording();
-          return;
+        if (!speechEndRef.current) speechEndRef.current = performance.now();
+        if (!recognizedText) {
+          setFeedback("No speech detected. Please try again.");
+          stopAudioAnalyser();
+          setIsListening(false);
         }
-        if (finalizedRef.current) return;
-
-        restartTimeoutRef.current = window.setTimeout(() => {
-          try {
-            recognition.start();
-          } catch (err) {
-            console.error(err);
-            finalizeRecording("Microphone stopped unexpectedly. Please start again.");
-          }
-        }, 250);
       };
 
-      recognitionRef.current = recognition;
       recognition.start();
+
+      setTimeout(() => {
+        try { recognition.stop(); } catch (e) {}
+      }, 45000);
+
     } catch (err) {
       console.error(err);
-      finalizeRecording("Microphone error or permission not granted.");
+      setFeedback("Microphone error or permission not granted.");
+      setIsListening(false);
+      stopAudioAnalyser();
     }
   };
 
@@ -714,102 +655,230 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
     no: index + 1,
     average: calculateStudentAverage(student),
   }));
-  const selectionProps = {
-    summaryText: `Showing ${selectionRows.length} student${selectionRows.length === 1 ? "" : "s"}`,
-    searchValue: studentSearch,
-    onSearchChange: (value: string) => setStudentSearch(value),
-    table: (
-      <TableList
-        columns={[
-          { key: "no", title: "No#" },
-          { key: "studentId", title: "Student ID" },
-          { key: "name", title: "Full Name" },
-          { key: "grade", title: "Grade" },
-          { key: "section", title: "Section" },
-          { key: "average", title: "Average" },
-        ]}
-        data={selectionRows}
-        actions={(row: any) => (
-          <UtilityButton small onClick={() => handleStartSession(row.id)}>
-            Start
-          </UtilityButton>
-        )}
-        pageSize={8}
-      />
-    ),
-    lastSavedMessage: lastSavedStudent
-      ? `Latest performance for ${lastSavedStudent.name} has been saved.`
-      : undefined,
+
+  if (view === "select") {
+    return (
+      <div className="min-h-dvh bg-gradient-to-br from-[#f2f8f4] via-white to-[#e6f2ec]">
+        <div className="w-full max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex min-h-dvh flex-col">
+          <header className="rounded-3xl border border-gray-300 bg-white/70 backdrop-blur px-3 py-3 sm:py-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between shadow-md shadow-gray-200">
+            <div className="space-y-3 text-center sm:text-left">
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">English</p>
+              <h1 className="text-3xl sm:text-4xl font-bold text-[#0d1b16]">Remedial Flashcards</h1>
+            </div>
+            <button
+              onClick={handleBackToDashboard}
+              className="inline-flex items-center gap-2 rounded-full border border-[#013300] px-6 py-3 text-sm font-semibold text-[#013300] transition hover:bg-emerald-50"
+            >
+              <FiArrowLeft /> Back
+            </button>
+          </header>
+
+          {lastSavedStudent && (
+            <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 shadow-sm shadow-emerald-100">
+              Latest performance for <span className="font-semibold">{lastSavedStudent.name}</span> has been saved.
+            </div>
+          )}
+
+          <div className="mt-5 rounded-3xl border border-gray-300 bg-white shadow-md shadow-gray-200 p-6 space-y-6 flex flex-1 flex-col min-h-0">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm font-medium text-gray-600">
+                Showing {selectionRows.length} student{selectionRows.length === 1 ? "" : "s"}
+              </p>
+              <div>
+                <input
+                  type="text"
+                  placeholder="Search Students..."
+                  className="w-full border border-gray-300 rounded-lg px-4 py-2 pr-10 text-black"
+                  value={studentSearch}
+                  onChange={(event) => setStudentSearch(event.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 min-h-0">
+              <TableList
+                columns={[
+                  { key: "no", title: "No#" },
+                  { key: "studentId", title: "Student ID" },
+                  { key: "name", title: "Full Name" },
+                  { key: "grade", title: "Grade" },
+                  { key: "section", title: "Section" },
+                  { key: "average", title: "Average" },
+                ]}
+                data={selectionRows}
+                actions={(row: any) => (
+                  <UtilityButton small onClick={() => handleStartSession(row.id)}>
+                    Start
+                  </UtilityButton>
+                )}
+                pageSize={8}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!selectedStudent) {
+    return null;
+  }
+
+  const progressPercent = flashcardsData.length
+    ? ((current + 1) / flashcardsData.length) * 100
+    : 0;
+  const progressCircleStyle: CSSProperties = {
+    background: `conic-gradient(#013300 ${progressPercent * 3.6}deg, #e6f4ef ${progressPercent * 3.6}deg)`,
   };
 
-  const insightMetrics = [
-    { label: "Pronunciation", value: metrics ? `${metrics.pronScore}%` : "—" },
-    { label: "Correctness", value: metrics ? `${metrics.correctness}%` : "—" },
-    { label: "Reading Speed", value: metrics ? `${metrics.readingSpeed ?? metrics.wpm} WPM` : "—" },
-    { label: "Average", value: metrics ? `${metrics.averageScore}%` : "—" },
-  ];
-
-  const sessionProps = view === "session" && selectedStudent
-    ? {
-        student: {
-          studentId: selectedStudent.studentId,
-          name: selectedStudent.name,
-          grade: selectedStudent.grade,
-          section: selectedStudent.section,
-        },
-        levelLabel: "Non-Reader Level",
-        cardText: sentence,
-        cardActions: [
-          {
-            id: "speak",
-            label: "Play Sentence",
-            activeLabel: "Playing...",
-            icon: <Volume2Icon />,
-            onClick: handleSpeak,
-            isActive: isPlaying,
-          },
-          {
-            id: "mic",
-            label: "Pronunciation Check",
-            activeLabel: "Listening...",
-            icon: <MicIcon />,
-            onClick: handleMicrophone,
-            isActive: isListening,
-          },
-        ],
-        insights: {
-          heading: "Real-time Insights",
-          highlightLabel: "Transcription",
-          highlightText: recognizedText || "Waiting for microphone recording.",
-          metrics: insightMetrics,
-          footerLabel: "Remarks",
-          footerText: feedback || "Run a pronunciation check to receive feedback.",
-        },
-        progress: { currentIndex: current, totalCount: flashcardsData.length },
-        nav: {
-          onPrev: handlePrev,
-          onNext: handleNext,
-          onStop: handleStopSession,
-          disablePrev: current === 0,
-          disableNext: current === flashcardsData.length - 1,
-          prevLabel: "Previous",
-          nextLabel: "Next",
-          stopLabel: "Save & Exit",
-        },
-      }
-    : undefined;
-
-  const resolvedView: "select" | "session" = sessionProps ? view : "select";
-
   return (
-    <FlashcardsTemplate
-      view={resolvedView}
-      subjectLabel="English"
-      headline="Remedial Flashcards"
-      cardLabel="Card"
-      onBack={() => router.push("/Teacher/remedial/english")}
-      selection={selectionProps}
-      session={sessionProps}
-    />
+    <div className="min-h-dvh bg-gradient-to-br from-[#f2f8f4] via-white to-[#e6f2ec]">
+      <div className="w-full max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex min-h-dvh flex-col">
+        <header className="rounded-3xl border border-gray-300 bg-white/70 backdrop-blur px-3 py-3 sm:py-6 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between shadow-md shadow-gray-200">
+          <div className="space-y-2 text-center lg:text-left">
+            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">English</p>
+            <h1 className="text-3xl sm:text-4xl font-bold text-[#0d1b16]">Non-Reader Level</h1>
+            <p className="text-md font-semibold text-[#013300]">
+              Student: {selectedStudent.studentId} - {selectedStudent.name}
+            </p>
+            {(selectedStudent.grade || selectedStudent.section) && (
+              <p className="text-sm text-slate-500">
+                {selectedStudent.grade ? `Grade ${selectedStudent.grade}` : ""}
+                {selectedStudent.grade && selectedStudent.section ? " • " : ""}
+                {selectedStudent.section ? `Section ${selectedStudent.section}` : ""}
+              </p>
+            )}
+          </div>
+          <div className="flex flex-col items-center gap-5 sm:flex-row sm:justify-center lg:justify-end">
+            <div className="relative grid place-items-center">
+              <div className="w-20 h-20 rounded-full ring-8 ring-emerald-50 shadow-inner" style={progressCircleStyle} />
+              <div className="absolute inset-3 rounded-full bg-white" />
+              <span className="absolute text-lg font-semibold text-[#013300]">{Math.round(progressPercent)}%</span>
+            </div>
+            <div className="text-center sm:text-left">
+              <p className="text-xs uppercase tracking-wide text-slate-500">Card</p>
+              <p className="text-xl font-semibold text-[#013300]">
+                {current + 1} <span className="text-base font-normal text-slate-400">/ {flashcardsData.length}</span>
+              </p>
+            </div>
+          </div>
+        </header>
+
+        <div className="mt-5 flex flex-1 flex-col gap-5">
+          <div className="grid gap-3 xl:grid-cols-12 flex-1 min-h-0">
+            <section className="xl:col-span-8 flex flex-col min-h-0">
+              <div className="h-full rounded-3xl border border-gray-300 bg-white shadow-md shadow-gray-200 overflow-hidden flex flex-col">
+              <div className="flex-1 px-6 sm:px-8 lg:px-12 py-12 via-white flex items-center justify-center text-center">
+                <p className="text-3xl sm:text-4xl lg:text-5xl font-semibold text-[#013300] leading-tight">
+                  {sentence}
+                </p>
+              </div>
+              <div className="px-6 sm:px-8 py-6 border-t border-gray-300 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-between">
+                <button
+                  onClick={handleSpeak}
+                  className={`group flex items-center gap-3 rounded-full px-6 py-3 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600 active:scale-95 ${
+                    isPlaying
+                      ? "bg-[#013300] text-white shadow-md shadow-gray-200"
+                      : "border border-[#013300] bg-white text-[#013300] hover:border-[#013300] hover:bg-[#013300] hover:text-white"
+                  } w-full md:w-auto`}
+                >
+                  <span
+                    className={`grid h-10 w-10 place-items-center rounded-full transition-colors ${
+                      isPlaying
+                        ? "bg-white/10 text-white animate-pulse"
+                        : "bg-white text-[#013300] group-hover:bg-[#013300] group-hover:text-white group-focus-visible:bg-[#013300] group-focus-visible:text-white"
+                    }`}
+                  >
+                    <Volume2Icon />
+                  </span>
+                  {isPlaying ? "Playing..." : "Play Sentence"}
+                </button>
+                <button
+                  onClick={handleMicrophone}
+                  className={`group flex items-center gap-3 rounded-full px-6 py-3 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600 active:scale-95 ${
+                    isListening
+                      ? "bg-[#013300] text-white shadow-md shadow-gray-200"
+                      : "border border-[#013300] bg-white text-[#013300] hover:border-[#013300] hover:bg-[#013300] hover:text-white"
+                  } w-full md:w-auto`}
+                >
+                  <span
+                    className={`grid h-10 w-10 place-items-center rounded-full transition-colors ${
+                      isListening
+                        ? "bg-white/10 text-white animate-pulse"
+                        : "bg-white text-[#013300] group-hover:bg-[#013300] group-hover:text-white group-focus-visible:bg-[#013300] group-focus-visible:text-white"
+                    }`}
+                  >
+                    <MicIcon />
+                  </span>
+                  {isListening ? "Listening..." : "Pronunciation Check"}
+                </button>
+              </div>
+              </div>
+            </section>
+
+            <aside className="xl:col-span-4 flex flex-col gap-6 min-h-0">
+              <div className="rounded-3xl border border-gray-300 bg-white/80 backdrop-blur px-6 py-7 shadow-md shadow-gray-200 flex flex-1 flex-col min-h-0">
+                <h2 className="text-lg font-semibold text-[#013300]">Real-time Insights</h2>
+                <div className="mt-6 flex flex-1 flex-col gap-4 min-h-0">
+                  <div className="rounded-2xl border border-gray-300 bg-emerald-50/60 px-4 py-3 flex flex-col h-full">
+                  <p className="text-xs uppercase tracking-wide text-emerald-800">Transcription:</p>
+                  <p className="mt-1 text-sm font-medium text-[#013300]">
+                    {recognizedText || "Waiting for microphone recording."}
+                  </p>
+                </div>
+                  <dl className="grid flex-1 grid-cols-1 gap-3 text-sm sm:grid-cols-2 auto-rows-fr">
+                    <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col">
+                    <dt className="text-xs uppercase tracking-wide text-slate-500">Pronunciation</dt>
+                    <dd className="text-lg font-semibold text-[#013300]">{metrics ? `${metrics.pronScore}%` : "—"}</dd>
+                  </div>
+                    <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col">
+                    <dt className="text-xs uppercase tracking-wide text-slate-500">Correctness</dt>
+                    <dd className="text-lg font-semibold text-[#013300]">{metrics ? `${metrics.correctness}%` : "—"}</dd>
+                  </div>
+                    <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col">
+                    <dt className="text-xs uppercase tracking-wide text-slate-500">Reading Speed</dt>
+                    <dd className="text-lg font-semibold text-[#013300]">{metrics ? `${metrics.readingSpeed ?? metrics.wpm} WPM` : "—"}</dd>
+                  </div>
+                    <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col">
+                    <dt className="text-xs uppercase tracking-wide text-slate-500">Average</dt>
+                    <dd className="text-lg font-semibold text-[#013300]">{metrics ? `${metrics.averageScore}%` : "—"}</dd>
+                  </div>
+                </dl>
+                  <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 flex flex-col h-full">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Remark</p>
+                  <p className="mt-1 text-sm text-[#013300]">{feedback || "Run a pronunciation check to receive feedback."}</p>
+                </div>
+                </div>
+              </div>
+            </aside>
+          </div>
+
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-center">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-center gap-3 w-full">
+              <button
+                onClick={handlePrev}
+                disabled={current === 0}
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-[#013300] px-6 py-3 text-sm font-medium text-[#013300] transition hover:border-[#013300] hover:bg-emerald-50 disabled:opacity-40 disabled:hover:bg-transparent w-full sm:w-auto"
+              >
+                <FiArrowLeft /> Previous
+              </button>
+              <button
+                onClick={handleStopSession}
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#013300] px-7 py-3 text-sm font-medium text-white shadow-md shadow-gray-200 transition hover:bg-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600 active:scale-95 w-full sm:w-auto"
+              >
+                <span className="h-2 w-2 rounded-full bg-white/70" /> Save &amp; Exit
+              </button>
+              <button
+                onClick={handleNext}
+                disabled={current === flashcardsData.length - 1}
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-[#013300] px-6 py-3 text-sm font-medium text-[#013300] transition hover:border-[#013300] hover:bg-emerald-50 disabled:opacity-40 disabled:hover:bg-transparent w-full sm:w-auto"
+              >
+                Next <FiArrowRight />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
