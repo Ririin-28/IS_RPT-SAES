@@ -8,20 +8,21 @@ export async function POST(req) {
     const otp = Math.floor(100000 + Math.random() * 900000).toString().padStart(6, '0');
     // Store OTP and expiry in DB
     const db = await mysql.createConnection({
-      host: "localhost",
-      user: "root",
-      password: "RIANA28@eg564",
-      database: "rpt-saes_db",
+      host: process.env.DB_HOST,
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_NAME,
+      port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 3306,
     });
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
     await db.execute("UPDATE users SET otp_code = ?, otp_expires_at = ? WHERE user_id = ?", [otp, expiresAt, user_id]);
     await db.end();
     // Send OTP via email
     const transporter = nodemailer.createTransport({
-      service: "gmail",
+      service: process.env.SMTP_SERVICE || "gmail",
       auth: {
-        user: "rptsaes.system@gmail.com",
-        pass: "brqu lxmz ozsf eqyw",
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
       },
     });
     const logoUrl = "https://raw.githubusercontent.com/Ririin-28/IS_RPT-SAES/main/public/RPT-SAES/RPTLogo.png";
@@ -76,7 +77,7 @@ export async function POST(req) {
 </html>`;
 
     await transporter.sendMail({
-      from: "rptsaes.system@gmail.com",
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
       to: email,
       subject: "RPT-SAES OTP Verification",
       text: plainTextMessage,

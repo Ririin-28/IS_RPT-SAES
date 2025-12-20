@@ -6,10 +6,11 @@ export async function POST(req) {
   const { step, email, otp, newPassword } = await req.json();
   // DB connection
   const db = await mysql.createConnection({
-    host: "localhost",
-    user: "root",
-    password: "RIANA28@eg564",
-    database: "rpt-saes_db",
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 3306,
   });
 
   if (step === 'send_otp') {
@@ -26,10 +27,10 @@ export async function POST(req) {
     await db.execute("UPDATE users SET otp_code = ?, otp_expires_at = ? WHERE user_id = ?", [otpCode, expiresAt, user.user_id]);
     // Send OTP email
     const transporter = nodemailer.createTransport({
-      service: "gmail",
+      service: process.env.SMTP_SERVICE || "gmail",
       auth: {
-        user: "rptsaes.system@gmail.com",
-        pass: "brqu lxmz ozsf eqyw",
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
       },
     });
     await transporter.sendMail({
