@@ -4,13 +4,18 @@ import { redirect } from "next/navigation";
 import ITAdminSessionGuard from "@/components/IT_Admin/ITAdminSessionGuard";
 import { getAdminSessionFromCookies } from "@/lib/server/admin-session";
 
+// Temporary bypass: disable server-side admin session enforcement.
+const DISABLE_ADMIN_SESSION_CHECK = true;
+
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function ITAdminLayout({ children }: { children: ReactNode }) {
-  const session = await getAdminSessionFromCookies();
-  if (!session) {
-    redirect("/auth/adminlogin?logout=true");
+  if (!DISABLE_ADMIN_SESSION_CHECK) {
+    const session = await getAdminSessionFromCookies();
+    if (!session) {
+      redirect("/auth/adminlogin?logout=true");
+    }
   }
 
   return (

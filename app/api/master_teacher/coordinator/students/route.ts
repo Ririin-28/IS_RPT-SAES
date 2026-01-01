@@ -20,6 +20,15 @@ const normalizeOptionalString = (value: unknown): string | null | undefined => {
   return text.length > 0 ? text : null;
 };
 
+const normalizeLrn = (value: unknown): string | null | undefined => {
+  const raw = normalizeOptionalString(value);
+  if (!raw) return raw;
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length !== 12) return raw;
+  const formatted = `${digits.slice(0, 6)}-${digits.slice(6)}`;
+  return formatted;
+};
+
 const parsePositiveInteger = (value: string | null, fallback: number): number => {
   if (!value) {
     return fallback;
@@ -35,14 +44,20 @@ const mapCreateStudentInput = (raw: unknown): CreateStudentRecordInput => {
   const record = (raw ?? {}) as Record<string, unknown>;
   return {
     studentIdentifier: normalizeOptionalString(record.studentIdentifier ?? record.studentId),
+    lrn: normalizeLrn(record.lrn),
     firstName: normalizeOptionalString(record.firstName),
     middleName: normalizeOptionalString(record.middleName),
     lastName: normalizeOptionalString(record.lastName),
+    suffix: normalizeOptionalString(record.suffix),
     fullName: normalizeOptionalString(record.fullName ?? record.name),
     gradeLevel: normalizeOptionalString(record.gradeLevel ?? record.grade),
     section: normalizeOptionalString(record.section),
     age: normalizeOptionalString(record.age),
     guardianName: normalizeOptionalString(record.guardianName ?? record.guardian),
+    guardianFirstName: normalizeOptionalString(record.guardianFirstName),
+    guardianMiddleName: normalizeOptionalString(record.guardianMiddleName),
+    guardianLastName: normalizeOptionalString(record.guardianLastName),
+    guardianSuffix: normalizeOptionalString(record.guardianSuffix),
     guardianContact: normalizeOptionalString(record.guardianContact),
     relationship: normalizeOptionalString(record.relationship),
     address: normalizeOptionalString(record.address),
@@ -119,9 +134,10 @@ export async function POST(request: NextRequest) {
   }
 
   const studentsPayload = rawStudents.map(mapCreateStudentInput);
+  const requestTime = new Date();
 
   try {
-    await insertStudents(createdBy, subject, studentsPayload);
+    await insertStudents(createdBy, subject, studentsPayload, { requestTime });
     const result = await fetchStudentRecords({ subject, page: 1, pageSize: DEFAULT_PAGE_SIZE });
     return NextResponse.json({
       success: true,

@@ -1,78 +1,6 @@
 "use client";
 
-type ReportRow = {
-	learner: string;
-	section: string;
-	preAssessment: string;
-	october: string;
-	december: string;
-	midYear: string;
-	postAssessment: string;
-	endingProfile: string;
-};
-
-const rows: ReportRow[] = [
-	{
-		learner: "Agustia, Aiden Richard Paloma",
-		section: "III-Crimson",
-		preAssessment: "0",
-		october: "WR",
-		december: "WR",
-		midYear: "",
-		postAssessment: "",
-		endingProfile: "",
-	},
-	{
-		learner: "Romano, Gabriel Luis",
-		section: "III-Crimson",
-		preAssessment: "0",
-		october: "WR",
-		december: "WR",
-		midYear: "",
-		postAssessment: "",
-		endingProfile: "",
-	},
-	{
-		learner: "Sanchez, Eithan Jhara Encinares",
-		section: "III-Violet",
-		preAssessment: "0",
-		october: "WR",
-		december: "WR",
-		midYear: "",
-		postAssessment: "",
-		endingProfile: "",
-	},
-	{
-		learner: "Ano, Sebastian Renz Tabianan",
-		section: "III-White",
-		preAssessment: "5",
-		october: "WR",
-		december: "WR",
-		midYear: "",
-		postAssessment: "",
-		endingProfile: "",
-	},
-	{
-		learner: "Mauricio, Christian Habonero",
-		section: "III-Yellow",
-		preAssessment: "11",
-		october: "WR",
-		december: "WR",
-		midYear: "",
-		postAssessment: "",
-		endingProfile: "",
-	},
-	{
-		learner: "Morales, Nyhl Zion",
-		section: "III-Blue",
-		preAssessment: "16",
-		october: "SylR",
-		december: "WR",
-		midYear: "",
-		postAssessment: "",
-		endingProfile: "",
-	},
-];
+import type { RemedialReportComponentProps } from "../types";
 
 const legend = [
   "NR - Non-Reader",
@@ -83,49 +11,86 @@ const legend = [
   "PR - Paraphrase Reader",
 ];
 
-export default function EnglishReportTab() {
-	return (
-		<div className="space-y-6 text-black">
-			<div className="overflow-x-auto border border-gray-300">
-				<table className="w-full border-collapse">
-					<thead>
-						<tr className="bg-gray-50">
-							<th rowSpan={2} className="border border-gray-300 p-3 text-left font-semibold">Name of Learners</th>
-							<th rowSpan={2} className="border border-gray-300 p-3 text-left font-semibold">Section</th>
-							<th rowSpan={2} className="border border-gray-300 p-3 text-center font-semibold">Pre-Assessment<br />September</th>
-							<th colSpan={3} className="border border-gray-300 p-3 text-center font-semibold">School-Based Reading Assessment</th>
-							<th rowSpan={2} className="border border-gray-300 p-3 text-center font-semibold">Post-Assessment<br />March</th>
-							<th rowSpan={2} className="border border-gray-300 p-3 text-center font-semibold">Ending<br />Numeracy Profile</th>
-						</tr>
-						<tr className="bg-gray-50">
-							<th className="border border-gray-300 p-3 text-center font-semibold">October</th>
-							<th className="border border-gray-300 p-3 text-center font-semibold">December</th>
-							<th className="border border-gray-300 p-3 text-center font-semibold">Mid-Year<br />Assessment<br />February</th>
-						</tr>
-					</thead>
-					<tbody>
-						{rows.map((row) => (
-							<tr key={row.learner} className="hover:bg-gray-50">
-								<td className="border border-gray-300 p-3">{row.learner}</td>
-								<td className="border border-gray-300 p-3 text-center">{row.section}</td>
-								<td className="border border-gray-300 p-3 text-center">{row.preAssessment}</td>
-								<td className="border border-gray-300 p-3 text-center">{row.october}</td>
-								<td className="border border-gray-300 p-3 text-center">{row.december}</td>
-								<td className="border border-gray-300 p-3 text-center">{row.midYear}</td>
-								<td className="border border-gray-300 p-3 text-center">{row.postAssessment}</td>
-								<td className="border border-gray-300 p-3 text-center">{row.endingProfile}</td>
-							</tr>
-						))}
-					</tbody>
-				</table>
-			</div>
+const renderCell = (
+  value: string,
+  editable: boolean,
+  onChange: (nextValue: string) => void,
+) => {
+  if (!editable) {
+    return value || "—";
+  }
+  return (
+    <input
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className="w-full rounded border border-gray-300 px-2 py-1 text-sm focus:border-[#013300] focus:outline-none"
+    />
+  );
+};
 
-			<div className="grid gap-1 text-sm">
-				<p className="font-semibold">Legend:</p>
-				{legend.map((item) => (
-					<p key={item}>{item}</p>
-				))}
-			</div>
-		</div>
-	);
+export default function EnglishReportTab({ rows, editable, onCellChange }: RemedialReportComponentProps) {
+  return (
+    <div className="space-y-6 text-black">
+      <div className="overflow-x-auto border border-gray-300">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="bg-gray-50">
+              <th rowSpan={2} className="border border-gray-300 p-3 text-left font-semibold">Name of Learners</th>
+              <th rowSpan={2} className="border border-gray-300 p-3 text-left font-semibold">Section</th>
+              <th rowSpan={2} className="border border-gray-300 p-3 text-center font-semibold">Pre-Assessment<br />September</th>
+              <th colSpan={3} className="border border-gray-300 p-3 text-center font-semibold">School-Based Reading Assessment</th>
+              <th rowSpan={2} className="border border-gray-300 p-3 text-center font-semibold">Post-Assessment<br />March</th>
+              <th rowSpan={2} className="border border-gray-300 p-3 text-center font-semibold">Ending<br />Numeracy Profile</th>
+            </tr>
+            <tr className="bg-gray-50">
+              <th className="border border-gray-300 p-3 text-center font-semibold">October</th>
+              <th className="border border-gray-300 p-3 text-center font-semibold">December</th>
+              <th className="border border-gray-300 p-3 text-center font-semibold">Mid-Year<br />Assessment<br />February</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td className="border border-gray-300 p-6 text-center text-sm text-gray-500" colSpan={8}>
+                  No students found for this subject.
+                </td>
+              </tr>
+            ) : (
+              rows.map((row, index) => (
+                <tr key={row.id} className="hover:bg-gray-50">
+                  <td className="border border-gray-300 p-3">{row.learner}</td>
+                  <td className="border border-gray-300 p-3 text-center">{row.section || "—"}</td>
+                  <td className="border border-gray-300 p-3 text-center">
+                    {renderCell(row.preAssessment, editable, (value) => onCellChange(index, "preAssessment", value))}
+                  </td>
+                  <td className="border border-gray-300 p-3 text-center">
+                    {renderCell(row.october, editable, (value) => onCellChange(index, "october", value))}
+                  </td>
+                  <td className="border border-gray-300 p-3 text-center">
+                    {renderCell(row.december, editable, (value) => onCellChange(index, "december", value))}
+                  </td>
+                  <td className="border border-gray-300 p-3 text-center">
+                    {renderCell(row.midYear, editable, (value) => onCellChange(index, "midYear", value))}
+                  </td>
+                  <td className="border border-gray-300 p-3 text-center">
+                    {renderCell(row.postAssessment, editable, (value) => onCellChange(index, "postAssessment", value))}
+                  </td>
+                  <td className="border border-gray-300 p-3 text-center">
+                    {renderCell(row.endingProfile, editable, (value) => onCellChange(index, "endingProfile", value))}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="grid gap-1 text-sm">
+        <p className="font-semibold">Legend:</p>
+        {legend.map((item) => (
+          <p key={item}>{item}</p>
+        ))}
+      </div>
+    </div>
+  );
 }

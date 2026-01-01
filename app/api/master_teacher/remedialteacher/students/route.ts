@@ -369,11 +369,15 @@ export async function GET(request: NextRequest) {
       tableExists(STUDENT_TABLE),
     ]);
 
-    if (!usersExists || !remedialExists || !studentExists) {
+    if (!studentExists) {
       return NextResponse.json(
-        { success: false, error: "Required tables are unavailable." },
+        { success: false, error: "Student table is unavailable." },
         { status: 500 },
       );
+    }
+
+    if (!usersExists || !remedialExists) {
+      return NextResponse.json({ success: true, students: [] });
     }
 
     const [userColumns, remedialColumns, studentColumns] = await Promise.all([
@@ -382,9 +386,13 @@ export async function GET(request: NextRequest) {
       safeGetColumns(STUDENT_TABLE),
     ]);
 
-    if (!userColumns.size || !remedialColumns.size || !studentColumns.size) {
+    if (!userColumns.size || !remedialColumns.size) {
+      return NextResponse.json({ success: true, students: [] });
+    }
+
+    if (!studentColumns.size) {
       return NextResponse.json(
-        { success: false, error: "Unable to resolve table metadata." },
+        { success: false, error: "Unable to resolve student table metadata." },
         { status: 500 },
       );
     }

@@ -61,7 +61,13 @@ interface ActivityDetailModalProps {
 
 export default function ActivityDetailModal({ activity, onClose, onDelete }: ActivityDetailModalProps) {
   if (!activity) return null;
-  const gradeLabel = activity.gradeLevel ?? "Grade 3";
+  const formatGradeLabel = (value: unknown): string => {
+    const match = String(value ?? "").match(/(\d+)/);
+    const digit = match?.[1] ?? "";
+    return digit ? `Grade ${digit}` : "Grade 3";
+  };
+
+  const gradeLabel = formatGradeLabel(activity.gradeLevel);
   const subjectLabel = activity.subject ?? activity.title;
   const timeRange = `${activity.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} - ${activity.end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
   const dayLabel = activity.day ?? activity.date.toLocaleDateString("en-US", { weekday: "long" });

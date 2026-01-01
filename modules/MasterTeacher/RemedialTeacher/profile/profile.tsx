@@ -13,9 +13,9 @@ type ProfileFormState = {
   lastName: string;
   email: string;
   contactNumber: string;
-  grade: string;
-  room: string;
-  subject: string;
+  coordinatorGrade: string;
+  coordinatorSubject: string;
+  remedialGrade: string;
   position: string;
   profilePicture: string;
 };
@@ -27,9 +27,9 @@ function createEmptyProfileState(): ProfileFormState {
     lastName: "",
     email: "",
     contactNumber: "",
-    grade: "",
-    room: "",
-    subject: "",
+    coordinatorGrade: "",
+    coordinatorSubject: "",
+    remedialGrade: "",
     position: "Master Teacher",
     profilePicture: "",
   };
@@ -86,6 +86,54 @@ export default function MasterTeacherProfile() {
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [reloadVersion, setReloadVersion] = useState(0);
+  const [coordinatorProfile, setCoordinatorProfile] = useState<{gradeLevel: string; coordinatorSubject: string} | null>(null);
+  const [isLoadingCoordinator, setIsLoadingCoordinator] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCoordinatorProfile() {
+      setIsLoadingCoordinator(true);
+      try {
+        const storedProfile = getStoredUserProfile();
+        const userId = storedProfile?.userId ?? null;
+
+        if (!userId) {
+          return;
+        }
+
+        const response = await fetch(
+          `/api/master_teacher/coordinator/profile?userId=${encodeURIComponent(String(userId))}`,
+          { cache: "no-store" },
+        );
+
+        const payload = await response.json().catch(() => null);
+
+        if (cancelled) {
+          return;
+        }
+
+        if (response.ok && payload?.success && payload.coordinator) {
+          setCoordinatorProfile({
+            gradeLevel: payload.coordinator.gradeLevel?.trim() || "",
+            coordinatorSubject: payload.coordinator.coordinatorSubject?.trim() || "",
+          });
+        }
+      } catch (error) {
+        console.warn("Failed to load coordinator profile", error);
+      } finally {
+        if (!cancelled) {
+          setIsLoadingCoordinator(false);
+        }
+      }
+    }
+
+    loadCoordinatorProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -135,9 +183,9 @@ export default function MasterTeacherProfile() {
           lastName: profile.lastName ?? "",
           email: profile.email ?? "",
           contactNumber: profile.contactNumber ?? "",
-          grade: profile.grade ?? "",
-          room: profile.room ?? "",
-          subject: profile.subjectHandled ?? "",
+          coordinatorGrade: coordinatorProfile?.gradeLevel || profile.grade || "",
+          coordinatorSubject: coordinatorProfile?.coordinatorSubject || profile.subjectHandled || "",
+          remedialGrade: profile.gradeLabel || profile.grade || "",
           position: formatRoleLabel(derivedRole),
           profilePicture: "",
         };
@@ -176,7 +224,7 @@ export default function MasterTeacherProfile() {
     return () => {
       cancelled = true;
     };
-  }, [reloadVersion]);
+  }, [reloadVersion, coordinatorProfile]);
 
   const handleRetry = () => {
     setReloadVersion((prev) => prev + 1);
@@ -212,9 +260,8 @@ export default function MasterTeacherProfile() {
             lastName: formData.lastName,
             email: formData.email,
             contactNumber: formData.contactNumber,
-            grade: formData.grade,
-            room: formData.room,
-            subject: formData.subject,
+            grade: formData.coordinatorGrade,
+            subject: formData.coordinatorSubject,
           }),
         },
       );
@@ -309,9 +356,9 @@ export default function MasterTeacherProfile() {
     }
   };
 
-  const gradeDisplay = formatGradeLabel(formData.grade);
-  const subjectDisplay = formatDisplay(formData.subject);
-  const roomDisplay = formatDisplay(formData.room);
+  const coordinatorGradeDisplay = formatGradeLabel(formData.coordinatorGrade);
+  const coordinatorSubjectDisplay = formatDisplay(formData.coordinatorSubject);
+  const remedialGradeDisplay = formatGradeLabel(formData.remedialGrade);
   const positionDisplay = formData.position || "Master Teacher";
 
   return (
@@ -441,52 +488,52 @@ export default function MasterTeacherProfile() {
 
                     <div className="bg-gray-50 rounded-lg border border-gray-200 p-5 mb-5">
                       <h3 className="text-lg font-semibold text-gray-800 mb-4">Teaching Details</h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                      
+                      {/* 1st Row: Position */}
+                      <div className="mb-4">
                         <div className="space-y-1">
                           <label className="block text-sm font-medium text-gray-700">Position</label>
                           <div className="w-full bg-white/50 border border-gray-200 text-gray-700 rounded-md px-3 py-2 text-sm font-medium">
                             {positionDisplay}
                           </div>
                         </div>
-                        <div className="space-y-1">
-                          <label className="block text-sm font-medium text-gray-700">Grade Handled</label>
-                          <select
-                            name="grade"
-                            value={formData.grade}
-                            onChange={handleInputChange}
-                            disabled={!isEditing}
-                            className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-600"
-                          >
-                            <option value="">Select Grade</option>
-                            <option value="1">Grade 1</option>
-                            <option value="2">Grade 2</option>
-                            <option value="3">Grade 3</option>
-                            <option value="4">Grade 4</option>
-                            <option value="5">Grade 5</option>
-                            <option value="6">Grade 6</option>
-                          </select>
+                      </div>
+
+                      {/* 2nd Row: Coordinator Details */}
+                      <div className="mb-4">
+                        <h4 className="text-sm font-semibold text-gray-700 mb-2">Coordinator Details</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-1">
+                            <label className="block text-sm font-medium text-gray-700">Grade Assigned</label>
+                            <div className="w-full bg-gray-100 border border-gray-200 text-gray-600 rounded-md px-3 py-2 text-sm">
+                              {isLoadingCoordinator ? "Loading..." : (coordinatorGradeDisplay || "Not assigned")}
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-sm font-medium text-gray-700">Coordinator Subject</label>
+                            <div className="w-full bg-gray-100 border border-gray-200 text-gray-600 rounded-md px-3 py-2 text-sm">
+                              {isLoadingCoordinator ? "Loading..." : (coordinatorSubjectDisplay || "Not assigned")}
+                            </div>
+                          </div>
                         </div>
-                        <div className="space-y-1">
-                          <label className="block text-sm font-medium text-gray-700">Room</label>
-                          <input
-                            type="text"
-                            name="room"
-                            value={formData.room}
-                            onChange={handleInputChange}
-                            disabled={!isEditing}
-                            className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-600"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <label className="block text-sm font-medium text-gray-700">Subject Handled</label>
-                          <input
-                            type="text"
-                            name="subject"
-                            value={formData.subject}
-                            onChange={handleInputChange}
-                            disabled={!isEditing}
-                            className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-600"
-                          />
+                      </div>
+
+                      {/* 3rd Row: Remedial Teacher Details */}
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-700 mb-2">Remedial Teacher Details</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-1">
+                            <label className="block text-sm font-medium text-gray-700">Grade Assigned</label>
+                            <div className="w-full bg-gray-100 border border-gray-200 text-gray-600 rounded-md px-3 py-2 text-sm">
+                              {remedialGradeDisplay || "Not assigned"}
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-sm font-medium text-gray-700">Remedial Teacher Subjects</label>
+                            <div className="w-full bg-gray-100 border border-gray-200 text-gray-600 rounded-md px-3 py-2 text-sm">
+                              English, Filipino, Math
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>

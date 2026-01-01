@@ -60,6 +60,7 @@ const EMAIL_COLUMNS = [
 const IDENTIFIER_COLUMNS = [
   "teacher_id",
   "employee_id",
+  "user_code",
   "id",
   "user_id",
 ] as const;
@@ -69,6 +70,49 @@ type ColumnName = string;
 type ResolvedTeacherTable = {
   name: string;
   columns: Set<ColumnName>;
+};
+
+const loadTeacherHandledGrade = async (
+  teacherIds: Array<string | number | null | undefined>,
+): Promise<{ gradeRaw: string | null; gradeLabel: string | null; gradeNumber: number | null } | null> => {
+  const ids = teacherIds
+    .map((id) => {
+      if (id === null || id === undefined) return null;
+      const text = String(id).trim();
+      return text.length ? text : null;
+    })
+    .filter((id): id is string => Boolean(id));
+
+  if (!ids.length) {
+    return null;
+  }
+
+  const uniqueIds = Array.from(new Set(ids));
+
+  try {
+    const [rows] = await query<RowDataPacket[]>(
+      `SELECT th.grade_id, g.grade_level
+       FROM teacher_handled th
+       LEFT JOIN grade g ON g.grade_id = th.grade_id
+       WHERE th.teacher_id IN (${uniqueIds.map(() => "?").join(", ")})
+       LIMIT 1`,
+      uniqueIds,
+    );
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return null;
+    }
+
+    const row = rows[0];
+    const raw = row.grade_level ?? row.grade_id ?? null;
+    const gradeRaw = raw != null ? String(raw) : null;
+    const gradeLabel = formatGradeLabel(raw ?? row.grade_id);
+    const gradeNumber = extractGradeNumber(raw ?? row.grade_id);
+    return { gradeRaw, gradeLabel, gradeNumber };
+  } catch (error) {
+    console.error("Failed to load teacher_handled grade", error);
+    return null;
+  }
 };
 
 const toNullableString = (value: unknown): string | null => {
@@ -194,14 +238,6 @@ export async function PUT(request: NextRequest) {
       updates.push("contact_number = ?");
       params.push(body.contactNumber?.trim() || null);
     }
-    if (body.grade !== undefined && userColumns.has("grade")) {
-      updates.push("grade = ?");
-      params.push(body.grade?.trim() || null);
-    }
-    if (body.room !== undefined && userColumns.has("room")) {
-      updates.push("room = ?");
-      params.push(body.room?.trim() || null);
-    }
     if (body.subject !== undefined && userColumns.has("subject")) {
       updates.push("subject = ?");
       params.push(body.subject?.trim() || null);
@@ -250,10 +286,7 @@ export async function GET(request: NextRequest) {
 
     const teacherTable = await resolveTeacherTable();
 
-    const selectParts: string[] = [
-      "u.user_id AS user_id",
-      "u.role AS user_role",
-    ];
+    const selectParts: string[] = ["u.user_id AS user_id"];
 
     const addUserColumn = (column: string, alias: string) => {
       if (userColumns.has(column)) {
@@ -267,6 +300,9 @@ export async function GET(request: NextRequest) {
     addUserColumn("middle_name", "user_middle_name");
     addUserColumn("last_name", "user_last_name");
     addUserColumn("suffix", "user_suffix");
+    addUserColumn(userColumns.has("teacher_id") ? "teacher_id" : null, "user_teacher_id");
+    addUserColumn(userColumns.has("role") ? "role" : null, "user_role");
+    addUserColumn(userColumns.has("user_code") ? "user_code" : null, "user_code");
 
     const userGradeColumn = pickColumn(userColumns, GRADE_COLUMNS);
     if (userGradeColumn) {
@@ -296,8 +332,12 @@ export async function GET(request: NextRequest) {
       selectParts.push("NULL AS user_contact");
     }
 
-    const userEmailColumn = pickColumn(userColumns, EMAIL_COLUMNS) ?? "email";
-    selectParts.push(`u.${userEmailColumn} AS user_email`);
+    const userEmailColumn = pickColumn(userColumns, EMAIL_COLUMNS) ?? (userColumns.has("email") ? "email" : null);
+    if (userEmailColumn) {
+      selectParts.push(`u.${userEmailColumn} AS user_email`);
+    } else {
+      selectParts.push("NULL AS user_email");
+    }
 
     let joinClause = "";
 
@@ -324,7 +364,11 @@ export async function GET(request: NextRequest) {
         ["teacher_id", "user_id"],
         ["employee_id", "user_id"],
         ["id", "user_id"],
-        ["email", userEmailColumn],
+        ["user_code", "user_code"],
+        ["teacher_id", "teacher_id"],
+        ["user_code", "teacher_id"],
+        ["teacher_id", "user_code"],
+        userEmailColumn ? ["email", userEmailColumn] : ["", ""],
       ];
 
       for (const [teacherKey, userKey] of joinCandidatePairs) {
@@ -336,8 +380,13 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      if (!joinConditions.length && columns.has("user_id")) {
-        joinConditions.push("t.user_id = u.user_id");
+      if (!joinConditions.length) {
+        if (columns.has("user_id")) {
+          joinConditions.push("t.user_id = u.user_id");
+        }
+        if (columns.has("teacher_id") && userColumns.has("user_code")) {
+          joinConditions.push("t.teacher_id = u.user_code");
+        }
       }
 
       if (joinConditions.length) {
@@ -384,10 +433,24 @@ export async function GET(request: NextRequest) {
       user_middle_name?: unknown;
       user_last_name?: unknown;
       user_suffix?: unknown;
+      user_teacher_id?: unknown;
+      user_code?: unknown;
+      user_role?: unknown;
     };
 
-    const gradeRaw = toNullableString(row.teacher_grade) ?? toNullableString(row.user_grade);
-    const gradeLabel = formatGradeLabel(gradeRaw);
+    const teacherIds = [
+      row.teacher_identifier,
+      row.user_teacher_id,
+      row.user_code,
+      row.user_id,
+    ];
+    const handledGrade = await loadTeacherHandledGrade(teacherIds);
+
+    const gradeRaw = handledGrade?.gradeRaw
+      ?? toNullableString(row.teacher_grade)
+      ?? toNullableString(row.user_grade);
+    const gradeLabel = handledGrade?.gradeLabel ?? formatGradeLabel(gradeRaw);
+    const gradeNumber = handledGrade?.gradeNumber ?? extractGradeNumber(gradeRaw);
 
     const profilePayload = {
       userId: row.user_id,
@@ -399,7 +462,7 @@ export async function GET(request: NextRequest) {
       grade: gradeLabel,
       gradeLabel,
       gradeRaw,
-      gradeNumber: extractGradeNumber(gradeRaw),
+      gradeNumber,
       subjectHandled: toNullableString(row.teacher_subject) ?? toNullableString(row.user_subject),
       section: toNullableString(row.teacher_section) ?? toNullableString(row.user_section),
       contactNumber: toNullableString(row.teacher_contact) ?? toNullableString(row.user_contact),

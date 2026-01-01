@@ -18,6 +18,8 @@ const ROLE_FILTERS = ["admin", "it_admin", "it-admin"] as const;
 type RawItAdminRow = RowDataPacket & {
   user_id: number;
   user_admin_id?: string | null;
+  user_it_admin_id?: string | null;
+  user_code?: string | null;
   user_first_name?: string | null;
   user_middle_name?: string | null;
   user_last_name?: string | null;
@@ -27,8 +29,10 @@ type RawItAdminRow = RowDataPacket & {
   user_contact_number?: string | null;
   user_phone_number?: string | null;
   user_status?: string | null;
+  user_role_id?: number | null;
   user_created_at?: Date | null;
   admin_admin_id?: string | null;
+  admin_it_admin_id?: string | null;
   admin_first_name?: string | null;
   admin_middle_name?: string | null;
   admin_last_name?: string | null;
@@ -38,6 +42,7 @@ type RawItAdminRow = RowDataPacket & {
   admin_contact_number?: string | null;
   admin_phone_number?: string | null;
   admin_status?: string | null;
+  admin_role_id?: number | null;
   last_login?: Date | null;
 };
 
@@ -98,12 +103,17 @@ async function persistAdminIdentifiers(
   updates: Array<{
     userId: number;
     previousUserAdminId: string | null;
+    previousUserItAdminId: string | null;
+    previousUserCode: string | null;
     previousItAdminId: string | null;
+    previousItAdminItId: string | null;
     nextId: string;
   }>,
   options: {
     userHasAdminIdColumn: boolean;
-    itAdmin: { hasTable: boolean; hasAdminIdColumn: boolean; hasUserIdColumn: boolean };
+    userHasItAdminIdColumn: boolean;
+    userHasUserCodeColumn: boolean;
+    itAdmin: { hasTable: boolean; hasAdminIdColumn: boolean; hasItAdminIdColumn: boolean; hasUserIdColumn: boolean };
   },
 ) {
   if (updates.length === 0) {
@@ -121,6 +131,12 @@ async function persistAdminIdentifiers(
         if (options.userHasAdminIdColumn) {
           await query("UPDATE `users` SET `admin_id` = ? WHERE `user_id` = ? LIMIT 1", [normalizedNext, userId]);
         }
+        if (options.userHasItAdminIdColumn) {
+          await query("UPDATE `users` SET `it_admin_id` = ? WHERE `user_id` = ? LIMIT 1", [normalizedNext, userId]);
+        }
+        if (options.userHasUserCodeColumn) {
+          await query("UPDATE `users` SET `user_code` = ? WHERE `user_id` = ? LIMIT 1", [normalizedNext, userId]);
+        }
 
         if (options.itAdmin.hasTable && options.itAdmin.hasAdminIdColumn) {
           if (options.itAdmin.hasUserIdColumn) {
@@ -128,10 +144,37 @@ async function persistAdminIdentifiers(
           } else {
             const matchValue = previousItAdminId?.trim().length
               ? previousItAdminId.trim()
-              : previousUserAdminId?.trim().length
-                ? previousUserAdminId.trim()
-                : String(userId);
+              : previousUserItAdminId?.trim().length
+                ? previousUserItAdminId.trim()
+                : previousUserAdminId?.trim().length
+                  ? previousUserAdminId.trim()
+                  : previousUserCode?.trim().length
+                    ? previousUserCode.trim()
+                    : String(userId);
             await query("UPDATE `it_admin` SET `admin_id` = ? WHERE `admin_id` = ? LIMIT 1", [normalizedNext, matchValue]);
+          }
+        }
+        // Also update it_admin_id column when present
+        if (options.itAdmin.hasTable && options.itAdmin.hasItAdminIdColumn) {
+          try {
+            if (options.itAdmin.hasUserIdColumn) {
+              await query("UPDATE `it_admin` SET `it_admin_id` = ? WHERE `user_id` = ?", [normalizedNext, userId]);
+            } else {
+              const matchValue = previousItAdminItId?.trim()?.length
+                ? previousItAdminItId.trim()
+                : previousItAdminId?.trim()?.length
+                  ? previousItAdminId.trim()
+                  : previousUserItAdminId?.trim()?.length
+                    ? previousUserItAdminId.trim()
+                    : previousUserAdminId?.trim()?.length
+                      ? previousUserAdminId.trim()
+                      : previousUserCode?.trim()?.length
+                        ? previousUserCode.trim()
+                        : String(userId);
+              await query("UPDATE `it_admin` SET `it_admin_id` = ? WHERE `it_admin_id` = ? LIMIT 1", [normalizedNext, matchValue]);
+            }
+          } catch {
+            // ignore
           }
         }
       } catch (error) {
@@ -149,16 +192,46 @@ export async function GET() {
     }
 
     const userHasAdminId = userColumns.has("admin_id");
+    const hasRoleIdColumn = userColumns.has("role_id");
+    const hasRoleColumn = userColumns.has("role");
+
+    // Guard: need at least one role indicator
+    if (!hasRoleIdColumn && !hasRoleColumn) {
+      return NextResponse.json({ error: "Users table must have role_id or role column." }, { status: 500 });
+    }
+
+    // Resolve role ids for IT admins if role table exists
+    let adminRoleIds: number[] = [];
+    try {
+      const roleColumns = await safeGetColumns("role");
+      if (roleColumns.has("role_id") && roleColumns.has("role_name")) {
+        const placeholders = ROLE_FILTERS.map(() => "?").join(", ");
+        const [roleRows] = await query<RowDataPacket[]>(
+          `SELECT role_id FROM role WHERE LOWER(role_name) IN (${placeholders})`,
+          ROLE_FILTERS,
+        );
+        adminRoleIds = roleRows
+          .map((r) => Number(r.role_id))
+          .filter((id) => Number.isInteger(id) && id > 0);
+      }
+    } catch {
+      adminRoleIds = [];
+    }
 
     const itAdminTableExists = await tableExists("it_admin");
     const itAdminColumns = itAdminTableExists ? await safeGetColumns("it_admin") : new Set<string>();
     const itAdminHasAdminId = itAdminColumns.has("admin_id");
     const itAdminHasUserId = itAdminColumns.has("user_id");
+    const itAdminHasItAdminId = itAdminColumns.has("it_admin_id");
+    const requireItAdminOnly = itAdminTableExists && itAdminHasUserId;
     const accountLogsExists = await tableExists("account_logs");
     const accountLogsColumns = accountLogsExists ? await safeGetColumns("account_logs") : new Set<string>();
     const canJoinAccountLogs = accountLogsExists && accountLogsColumns.has("user_id");
 
     const selectParts: string[] = ["u.user_id AS user_id"];
+    if (hasRoleIdColumn) {
+      selectParts.push("u.role_id AS user_role_id");
+    }
 
     const addUserColumn = (column: string, alias: string) => {
       if (userColumns.has(column)) {
@@ -173,6 +246,8 @@ export async function GET() {
     };
 
     addUserColumn("admin_id", "user_admin_id");
+    addUserColumn("it_admin_id", "user_it_admin_id");
+    addUserColumn("user_code", "user_code");
     addUserColumn("first_name", "user_first_name");
     addUserColumn("middle_name", "user_middle_name");
     addUserColumn("last_name", "user_last_name");
@@ -182,9 +257,11 @@ export async function GET() {
     addUserColumn("contact_number", "user_contact_number");
     addUserColumn("phone_number", "user_phone_number");
     addUserColumn("status", "user_status");
+    addUserColumn("role_id", "user_role_id");
     addUserColumn("created_at", "user_created_at");
 
     addItAdminColumn("admin_id", "admin_admin_id");
+    addItAdminColumn("it_admin_id", "admin_it_admin_id");
     addItAdminColumn("first_name", "admin_first_name");
     addItAdminColumn("middle_name", "admin_middle_name");
     addItAdminColumn("last_name", "admin_last_name");
@@ -194,6 +271,7 @@ export async function GET() {
     addItAdminColumn("contact_number", "admin_contact_number");
     addItAdminColumn("phone_number", "admin_phone_number");
     addItAdminColumn("status", "admin_status");
+    addItAdminColumn("role_id", "admin_role_id");
 
     if (canJoinAccountLogs) {
       if (accountLogsColumns.has("last_login") || accountLogsColumns.has("created_at")) {
@@ -201,15 +279,31 @@ export async function GET() {
       }
     }
 
-    const rolePlaceholders = ROLE_FILTERS.map(() => "?").join(", ");
+    // Determine role filtering strategy. If role_id exists but no matching ids were found,
+    // prefer role_id when we have ids; otherwise use text role when column exists; otherwise no filter.
+    const useRoleIdFilter = hasRoleIdColumn && adminRoleIds.length > 0;
+    const canTextFilter = hasRoleColumn;
+
+    let roleFilterSql = "1=1";
+    let roleParams: Array<string | number> = [];
+
+    if (useRoleIdFilter) {
+      roleFilterSql = `u.role_id IN (${adminRoleIds.map(() => "?").join(", ")})`;
+      roleParams = [...adminRoleIds];
+    } else if (canTextFilter) {
+      roleFilterSql = `LOWER(u.role) IN (${ROLE_FILTERS.map(() => "?").join(", ")})`;
+      roleParams = [...ROLE_FILTERS];
+    }
 
     let joinClauses = "";
 
     if (itAdminTableExists && itAdminColumns.size > 0) {
       if (itAdminHasUserId) {
-        joinClauses += " LEFT JOIN `it_admin` AS ia ON ia.user_id = u.user_id";
-      } else if (itAdminHasAdminId) {
-        joinClauses += " LEFT JOIN `it_admin` AS ia ON ia.admin_id = u.user_id";
+        // Enforce only rows present in it_admin by inner join on user_id
+        joinClauses += " INNER JOIN `it_admin` AS ia ON ia.user_id = u.user_id";
+      } else if (itAdminHasAdminId && userHasAdminId) {
+        // Fall back to matching by admin_id when user_id is absent on it_admin
+        joinClauses += " LEFT JOIN `it_admin` AS ia ON ia.admin_id = u.admin_id";
       }
     }
 
@@ -226,21 +320,28 @@ export async function GET() {
       ? `COALESCE(latest.last_login, ${fallbackOrderColumn}) DESC`
       : `${fallbackOrderColumn} DESC`;
 
+    const itAdminPresenceFilter = itAdminTableExists
+      ? (itAdminHasUserId ? "" : itAdminHasAdminId ? " AND ia.admin_id IS NOT NULL" : "")
+      : "";
+
     const sql = `
       SELECT ${selectParts.join(", ")}
       FROM users AS u
       ${joinClauses}
-      WHERE u.role IN (${rolePlaceholders})
+      WHERE ${roleFilterSql}${itAdminPresenceFilter}
       ORDER BY ${orderByClause}
     `;
 
-    const params = [...ROLE_FILTERS];
+    const params = [...roleParams];
     const [rows] = await query<RawItAdminRow[]>(sql, params);
 
     const pendingAdminIdUpdates: Array<{
       userId: number;
       previousUserAdminId: string | null;
+      previousUserItAdminId: string | null;
+      previousUserCode: string | null;
       previousItAdminId: string | null;
+      previousItAdminItId: string | null;
       nextId: string;
     }> = [];
 
@@ -262,6 +363,9 @@ export async function GET() {
       const createdAt = row.user_created_at instanceof Date ? row.user_created_at.toISOString() : null;
       const lastLogin = row.last_login instanceof Date ? row.last_login.toISOString() : null;
       const storedAdminId = coalesce(
+        row.user_it_admin_id,
+        row.admin_it_admin_id,
+        row.user_code,
         row.user_admin_id,
         row.admin_admin_id,
         row.user_id != null ? String(row.user_id) : null,
@@ -275,7 +379,10 @@ export async function GET() {
         pendingAdminIdUpdates.push({
           userId: row.user_id,
           previousUserAdminId: typeof row.user_admin_id === "string" ? row.user_admin_id : null,
+          previousUserItAdminId: typeof row.user_it_admin_id === "string" ? row.user_it_admin_id : null,
+          previousUserCode: typeof row.user_code === "string" ? row.user_code : null,
           previousItAdminId: typeof row.admin_admin_id === "string" ? row.admin_admin_id : null,
+          previousItAdminItId: typeof row.admin_it_admin_id === "string" ? row.admin_it_admin_id : null,
           nextId: adminId,
         });
       }
@@ -298,9 +405,12 @@ export async function GET() {
 
     await persistAdminIdentifiers(pendingAdminIdUpdates, {
       userHasAdminIdColumn: userHasAdminId,
+      userHasItAdminIdColumn: userColumns.has("it_admin_id"),
+      userHasUserCodeColumn: userColumns.has("user_code"),
       itAdmin: {
         hasTable: itAdminTableExists,
         hasAdminIdColumn: itAdminHasAdminId,
+        hasItAdminIdColumn: itAdminHasItAdminId,
         hasUserIdColumn: itAdminHasUserId,
       },
     });

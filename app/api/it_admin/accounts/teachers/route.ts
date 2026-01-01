@@ -28,6 +28,7 @@ const REMEDIAL_TEACHER_TABLE_CANDIDATES = [
 type RawTeacherRow = RowDataPacket & {
   user_id: number;
   user_teacher_id?: string | null;
+  user_code?: string | null;
   user_first_name?: string | null;
   user_middle_name?: string | null;
   user_last_name?: string | null;
@@ -64,6 +65,7 @@ type RawTeacherRow = RowDataPacket & {
   rt_grade_level?: string | null;
   rt_gradeLevel?: string | null;
   rt_year_level?: string | null;
+  handled_grade_ids?: string | null;
   last_login?: Date | null;
 };
 
@@ -228,6 +230,8 @@ export async function GET() {
 
     const teacherInfo = await resolveTeacherTable();
     const remedialTeacherInfo = await resolveRemedialTeacherTable();
+    const teacherHandledExists = await tableExists("teacher_handled");
+    const teacherHandledColumns = teacherHandledExists ? await safeGetColumns("teacher_handled") : new Set<string>();
     const accountLogsExists = await tableExists("account_logs");
     const accountLogsColumns = accountLogsExists ? await safeGetColumns("account_logs") : new Set<string>();
     const canJoinAccountLogs = accountLogsExists && accountLogsColumns.has("user_id");
@@ -265,6 +269,7 @@ export async function GET() {
     addUserColumn("status", "user_status");
     addUserColumn("created_at", "user_created_at");
     addUserColumn("teacher_id", "user_teacher_id");
+    addUserColumn("user_code", "user_code");
 
     addTeacherColumn("teacher_id", "teacher_teacher_id");
     addTeacherColumn("teacherid", "teacher_teacherid");
@@ -294,13 +299,37 @@ export async function GET() {
     addRemedialTeacherColumn("gradeLevel", "rt_gradeLevel");
     addRemedialTeacherColumn("year_level", "rt_year_level");
 
+    if (teacherHandledExists && teacherHandledColumns.has("grade_id") && teacherHandledColumns.has("teacher_id")) {
+      selectParts.push("th.handled_grade_ids AS handled_grade_ids");
+    }
+
     if (canJoinAccountLogs) {
       if (accountLogsColumns.has("last_login") || accountLogsColumns.has("created_at")) {
         selectParts.push("latest.last_login AS last_login");
       }
     }
 
-    const rolePlaceholders = ROLE_FILTERS.map(() => "?").join(", ");
+    const roleTableColumns = await safeGetColumns("role");
+    const teacherRoleIds: number[] = [];
+    if (roleTableColumns.has("role_id") && roleTableColumns.has("role_name")) {
+      try {
+        const placeholders = ROLE_FILTERS.map(() => "?").join(", ");
+        const [roleRows] = await query<RowDataPacket[]>(
+          `SELECT role_id FROM role WHERE LOWER(role_name) IN (${placeholders})`,
+          [...ROLE_FILTERS],
+        );
+        if (Array.isArray(roleRows)) {
+          for (const row of roleRows) {
+            const parsed = Number(row.role_id);
+            if (Number.isFinite(parsed)) {
+              teacherRoleIds.push(parsed);
+            }
+          }
+        }
+      } catch {
+        // ignore role lookup errors; fall back to text filter
+      }
+    }
 
     let joinClauses = "";
 
@@ -314,12 +343,25 @@ export async function GET() {
     if (teacherTableName && teacherInfo.columns.size > 0) {
       const teacherTableSql = `\`${teacherTableName}\``;
       if (teacherHasUserId) {
-        joinClauses += ` LEFT JOIN ${teacherTableSql} AS t ON t.user_id = u.user_id`;
+        joinClauses += ` INNER JOIN ${teacherTableSql} AS t ON t.user_id = u.user_id`;
+      } else if (teacherInfo.columns.has("teacher_id") && userHasTeacherId) {
+        joinClauses += ` INNER JOIN ${teacherTableSql} AS t ON t.teacher_id = u.teacher_id`;
       } else if (teacherInfo.columns.has("teacher_id")) {
         joinClauses += ` LEFT JOIN ${teacherTableSql} AS t ON t.teacher_id = u.user_id`;
-      } else {
-        joinClauses += ` LEFT JOIN ${teacherTableSql} AS t ON t.user_id = u.user_id`;
       }
+    }
+
+    if (teacherHandledExists && teacherHandledColumns.has("grade_id") && teacherHandledColumns.has("teacher_id")) {
+      joinClauses += ` LEFT JOIN (
+        SELECT teacher_id, GROUP_CONCAT(grade_id) AS handled_grade_ids
+        FROM teacher_handled
+        GROUP BY teacher_id
+      ) AS th ON th.teacher_id = COALESCE(
+        ${teacherInfo.columns.has("teacher_id") ? "t.teacher_id," : ""}
+        ${userHasTeacherId ? "u.teacher_id," : ""}
+        ${userColumns.has("user_code") ? "u.user_code," : ""}
+        CAST(u.user_id AS CHAR)
+      )`;
     }
 
     if (
@@ -350,15 +392,32 @@ export async function GET() {
       ? `COALESCE(latest.last_login, ${fallbackOrderColumn}) DESC`
       : `${fallbackOrderColumn} DESC`;
 
+    const hasRoleIdColumn = userColumns.has("role_id");
+    const hasRoleColumn = userColumns.has("role");
+
+    const useRoleIdFilter = hasRoleIdColumn && teacherRoleIds.length > 0;
+    const canTextFilter = hasRoleColumn;
+
+    let roleFilterSql = "1=1";
+    let roleParams: Array<string | number> = [];
+
+    if (useRoleIdFilter) {
+      roleFilterSql = `u.role_id IN (${teacherRoleIds.map(() => "?").join(", ")})`;
+      roleParams = [...teacherRoleIds];
+    } else if (canTextFilter) {
+      roleFilterSql = `LOWER(u.role) IN (${ROLE_FILTERS.map(() => "?").join(", ")})`;
+      roleParams = [...ROLE_FILTERS];
+    }
+
     const sql = `
       SELECT ${selectParts.join(", ")}
       FROM users AS u
       ${joinClauses}
-      WHERE u.role IN (${rolePlaceholders})
+      WHERE ${roleFilterSql}
       ORDER BY ${orderByClause}
     `;
 
-    const params = [...ROLE_FILTERS];
+    const params = [...roleParams];
     const [rows] = await query<RawTeacherRow[]>(sql, params);
 
     const pendingTeacherUpdates: Array<{
@@ -394,6 +453,9 @@ export async function GET() {
         row.teacher_year_level,
         row.teacher_handled_grade,
       );
+      const handledGrades = typeof row.handled_grade_ids === "string" && row.handled_grade_ids.trim().length > 0
+        ? row.handled_grade_ids.split(",").map((part) => part.trim()).filter((part) => part.length > 0)
+        : null;
       const section = coalesce(row.teacher_section);
       const subjects = coalesce(
         row.teacher_subjects,
@@ -404,11 +466,12 @@ export async function GET() {
       const createdAt = row.user_created_at instanceof Date ? row.user_created_at.toISOString() : null;
       const lastLogin = row.last_login instanceof Date ? row.last_login.toISOString() : null;
       const storedTeacherId = coalesce(
-        row.user_teacher_id,
         row.teacher_teacher_id,
         row.teacher_teacherid,
         row.teacher_employee_id,
         row.teacher_faculty_id,
+        row.user_teacher_id,
+        row.user_code,
         row.user_id != null ? String(row.user_id) : null,
       );
       const teacherId = formatTeacherIdentifier(storedTeacherId, row.user_id);
@@ -459,6 +522,7 @@ export async function GET() {
         email,
         contactNumber,
         grade,
+        handledGrades,
         section,
         subjects,
         status,

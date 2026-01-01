@@ -12,6 +12,12 @@ export class HttpError extends Error {
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const COORDINATOR_SUBJECT_OPTIONS = ["English", "Filipino", "Math"] as const;
+const MASTER_TEACHER_ROLE_NAMES = ["master teacher", "master_teacher", "masterteacher"];
+const SUBJECT_NAME_TO_ID: Record<string, number> = {
+  English: 1,
+  Filipino: 2,
+  Math: 3,
+};
 
 export function sanitizeNamePart(value: unknown, field: string): string {
   if (typeof value !== "string") {
@@ -128,7 +134,7 @@ function generateTemporaryPassword(): string {
   return random.padEnd(8, "0");
 }
 
-const MASTER_TEACHER_ID_PATTERN = /^MT-\d{2}\d{4,}$/;
+const MASTER_TEACHER_ID_PATTERN = /^MT-(\d{2})(\d{4,})$/;
 
 export function formatMasterTeacherIdentifier(
   raw: string | null | undefined,
@@ -155,8 +161,12 @@ export function formatMasterTeacherIdentifier(
 async function generateMasterTeacherId(
   connection: PoolConnection,
   sources: Array<{ table: string; column: string }>,
+  yearOverride?: number | null,
 ): Promise<string> {
-  const year = new Date().getFullYear().toString().slice(-2);
+  const yearSource = typeof yearOverride === "number" && Number.isFinite(yearOverride)
+    ? yearOverride
+    : new Date().getFullYear();
+  const year = String(yearSource).slice(-2);
 
   let maxSequence = 0;
 
@@ -287,6 +297,81 @@ async function resolveMtCoordinatorTable(connection: PoolConnection): Promise<{ 
   return { table: null, columns: new Set<string>() };
 }
 
+async function getColumnsSafe(connection: PoolConnection, table: string): Promise<Set<string>> {
+  try {
+    return await getColumnsForTable(connection, table);
+  } catch {
+    return new Set<string>();
+  }
+}
+
+async function resolveGradeId(connection: PoolConnection, gradeValue: string): Promise<number | null> {
+  if (!gradeValue) {
+    return null;
+  }
+
+  const trimmed = gradeValue.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  let numeric = Number.parseInt(trimmed, 10);
+
+  if (!Number.isInteger(numeric)) {
+    const match = trimmed.match(/(\d+)/);
+    if (match && match[1]) {
+      numeric = Number.parseInt(match[1], 10);
+    }
+  }
+
+  if (Number.isInteger(numeric) && numeric >= 1 && numeric <= 6) {
+    try {
+      const [rows] = await connection.query<RowDataPacket[]>(
+        "SELECT grade_id FROM grade WHERE grade_level = ? LIMIT 1",
+        [numeric],
+      );
+      if (rows.length > 0 && rows[0].grade_id != null) {
+        return Number(rows[0].grade_id);
+      }
+    } catch {
+      // fall through if lookup fails so callers can still use numeric fallback
+    }
+    return numeric; // fallback mapping 1..6 even without grade table metadata
+  }
+
+  return null;
+}
+
+function subjectNameToIds(subjectsRaw: string | null | undefined): number[] {
+  if (!subjectsRaw) return [];
+  return subjectsRaw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+    .map((name) => SUBJECT_NAME_TO_ID[name as keyof typeof SUBJECT_NAME_TO_ID])
+    .filter((id): id is number => typeof id === "number");
+}
+
+async function resolveRoleId(connection: PoolConnection, roleNames: string[], fallbackId?: number): Promise<number | null> {
+  if (!roleNames.length) {
+    return fallbackId ?? null;
+  }
+  try {
+    const placeholders = roleNames.map(() => "?").join(", ");
+    const lowered = roleNames.map((name) => name.toLowerCase());
+    const [rows] = await connection.query<RowDataPacket[]>(
+      `SELECT role_id FROM role WHERE LOWER(role_name) IN (${placeholders}) ORDER BY role_id ASC LIMIT 1`,
+      lowered,
+    );
+    if (rows.length > 0 && rows[0].role_id != null) {
+      return Number(rows[0].role_id);
+    }
+  } catch {
+    // ignore lookup errors
+  }
+  return fallbackId ?? null;
+}
+
 export async function createMasterTeacher(input: CreateMasterTeacherInput): Promise<CreateMasterTeacherResult> {
   const {
     firstName,
@@ -303,12 +388,19 @@ export async function createMasterTeacher(input: CreateMasterTeacherInput): Prom
   } = input;
   const fullName = buildFullName(firstName, middleName, lastName, suffix);
   const temporaryPassword = generateTemporaryPassword();
+  const requestTime = new Date();
+  const currentYear = requestTime.getFullYear();
 
   const result = await runWithConnection(async (connection) => {
   const userColumns = await getColumnsForTable(connection, "users");
   const masterTeacherInfo = await resolveMasterTeacherTable(connection);
   const remedialTeacherInfo = await resolveRemedialTeacherTable(connection);
   const mtCoordinatorInfo = await resolveMtCoordinatorTable(connection);
+  const coordHandledColumns = await getColumnsSafe(connection, "mt_coordinator_handled");
+  const remedialHandledColumns = await getColumnsSafe(connection, "mt_remedialteacher_handled");
+  const masterTeacherRoleId = userColumns.has("role_id")
+    ? await resolveRoleId(connection, MASTER_TEACHER_ROLE_NAMES, 3)
+    : null;
 
   const masterTeacherIdSources: Array<{ table: string; column: string }> = [];
   if (userColumns.has("master_teacher_id")) {
@@ -382,6 +474,10 @@ export async function createMasterTeacher(input: CreateMasterTeacherInput): Prom
         userInsertColumns.push("role");
         userInsertValues.push("master_teacher");
       }
+      if (userColumns.has("role_id") && masterTeacherRoleId !== null) {
+        userInsertColumns.push("role_id");
+        userInsertValues.push(masterTeacherRoleId);
+      }
       if (userColumns.has("status")) {
         userInsertColumns.push("status");
         userInsertValues.push("Active");
@@ -390,7 +486,7 @@ export async function createMasterTeacher(input: CreateMasterTeacherInput): Prom
         userInsertColumns.push("password");
         userInsertValues.push(temporaryPassword);
       }
-      const now = new Date();
+      const now = requestTime;
       if (userColumns.has("created_at")) {
         userInsertColumns.push("created_at");
         userInsertValues.push(now);
@@ -419,18 +515,31 @@ export async function createMasterTeacher(input: CreateMasterTeacherInput): Prom
 
       let generatedMasterTeacherId: string | null = null;
       if (masterTeacherIdSources.length > 0) {
-        generatedMasterTeacherId = await generateMasterTeacherId(connection, masterTeacherIdSources);
+        generatedMasterTeacherId = await generateMasterTeacherId(connection, masterTeacherIdSources, currentYear);
       }
 
-      const masterTeacherId = formatMasterTeacherIdentifier(generatedMasterTeacherId, userId);
+      const masterTeacherId = formatMasterTeacherIdentifier(generatedMasterTeacherId, userId, currentYear);
       const teacherIdentifier = teacherId ?? masterTeacherId;
 
-      if (userColumns.has("master_teacher_id")) {
-        await connection.query<ResultSetHeader>(
-          "UPDATE `users` SET `master_teacher_id` = ? WHERE `user_id` = ? LIMIT 1",
-          [masterTeacherId, userId],
-        );
-      }
+          if (userColumns.has("master_teacher_id") || userColumns.has("user_code")) {
+            const updateSets: string[] = [];
+            const updateValues: any[] = [];
+            if (userColumns.has("master_teacher_id")) {
+              updateSets.push("master_teacher_id = ?");
+              updateValues.push(masterTeacherId);
+            }
+            if (userColumns.has("user_code")) {
+              updateSets.push("user_code = ?");
+              updateValues.push(masterTeacherId);
+            }
+            if (updateSets.length) {
+              updateValues.push(userId);
+              await connection.query<ResultSetHeader>(
+                `UPDATE \`users\` SET ${updateSets.join(", ")} WHERE \`user_id\` = ? LIMIT 1`,
+                updateValues,
+              );
+            }
+          }
 
       const insertIntoFlexibleTable = async (
         tableInfo: { table: string | null; columns: Set<string> },
@@ -730,6 +839,44 @@ export async function createMasterTeacher(input: CreateMasterTeacherInput): Prom
           insertValues.push(now);
         }
       });
+
+      // Write handled grade/subject to bridge tables when available
+      const gradeId = await resolveGradeId(connection, grade);
+      const coordinatorSubjectId = SUBJECT_NAME_TO_ID[coordinatorSubject as keyof typeof SUBJECT_NAME_TO_ID];
+
+      if (
+        coordHandledColumns.size > 0 &&
+        coordHandledColumns.has("master_teacher_id") &&
+        coordHandledColumns.has("grade_id") &&
+        coordHandledColumns.has("subject_id") &&
+        gradeId !== null &&
+        coordinatorSubjectId
+      ) {
+        try {
+          await connection.query<ResultSetHeader>(
+            "INSERT IGNORE INTO `mt_coordinator_handled` (master_teacher_id, grade_id, subject_id) VALUES (?, ?, ?)",
+            [masterTeacherId, gradeId, coordinatorSubjectId],
+          );
+        } catch {
+          // ignore insert issues to avoid failing primary flow
+        }
+      }
+
+      if (
+        remedialHandledColumns.size > 0 &&
+        remedialHandledColumns.has("master_teacher_id") &&
+        remedialHandledColumns.has("grade_id") &&
+        gradeId !== null
+      ) {
+        try {
+          await connection.query<ResultSetHeader>(
+            "INSERT IGNORE INTO `mt_remedialteacher_handled` (master_teacher_id, grade_id) VALUES (?, ?)",
+            [masterTeacherId, gradeId],
+          );
+        } catch {
+          // ignore insert failure
+        }
+      }
 
       await connection.commit();
 

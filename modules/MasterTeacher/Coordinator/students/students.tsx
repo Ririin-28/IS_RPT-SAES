@@ -5,11 +5,11 @@ import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import { FaTimes } from "react-icons/fa";
 import { useMemo, useState } from "react";
 import StudentTab from "./StudentsTab";
-import { useCoordinatorStudents } from "./useCoordinatorStudents";
+import { type MaterialSubject } from "@/lib/materials/shared";
 
 export default function MasterTeacherStudents() {
   const [searchTerm, setSearchTerm] = useState("");
-  const { subject, gradeLevel, students, loading, saving, error, refresh, addStudent, updateStudent, importStudents, deleteStudents } = useCoordinatorStudents();
+  const [subject, setSubject] = useState<MaterialSubject>("English");
   const headerTitle = useMemo(() => `${subject} Students Information List`, [subject]);
 
   return (
@@ -78,18 +78,8 @@ export default function MasterTeacherStudents() {
               {/*---------------------------------Tab Content---------------------------------*/}
               <div className="mt-4 sm:mt-6">
                 <StudentTab
-                  students={students}
                   searchTerm={searchTerm}
-                  subjectLabel={subject}
-                  gradeLabel={gradeLevel}
-                  loading={loading}
-                  saving={saving}
-                  error={error}
-                  onAddStudent={addStudent}
-                  onUpdateStudent={updateStudent}
-                  onImportStudents={importStudents}
-                  onDeleteStudents={deleteStudents}
-                  onRefresh={refresh}
+                  onMetaChange={(meta) => setSubject(meta.subject)}
                 />
               </div>
             </div>

@@ -2,25 +2,26 @@ import type { ComponentType } from "react";
 import EnglishReportTab from "@/modules/Teacher/report/EnglishTab/EnglishTab";
 import FilipinoReportTab from "@/modules/Teacher/report/FilipinoTab/FilipinoTab";
 import MathReportTab from "@/modules/Teacher/report/MathTab/MathTab";
+import type { RemedialReportComponentProps } from "@/modules/Teacher/report/types";
 
 export type SubjectKey = "english" | "filipino" | "math";
 
 export type SubjectConfig = {
-  title: string;
-  Component: ComponentType<Record<string, never>>;
+  subjectLabel: string;
+  Component: ComponentType<RemedialReportComponentProps>;
 };
 
 export const SUBJECT_CONFIG: Record<SubjectKey, SubjectConfig> = {
   english: {
-    title: "Progress Report for Grade Three - English",
+    subjectLabel: "English",
     Component: EnglishReportTab,
   },
   filipino: {
-    title: "Progress Report for Grade Three - Filipino",
+    subjectLabel: "Filipino",
     Component: FilipinoReportTab,
   },
   math: {
-    title: "Progress Report for Grade Three - Mathematics",
+    subjectLabel: "Mathematics",
     Component: MathReportTab,
   },
 };

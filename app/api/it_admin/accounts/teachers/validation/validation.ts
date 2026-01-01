@@ -127,7 +127,8 @@ function generateTemporaryPassword(): string {
   return random.padEnd(8, "0");
 }
 
-const TEACHER_ID_PATTERN = /^TH-\d{2}\d{4,}$/;
+// Teacher IDs follow TE-YYXXXX (year + zero-padded sequence)
+const TEACHER_ID_PATTERN = /^TE-(\d{2})(\d{4,})$/;
 
 export function formatTeacherIdentifier(
   raw: string | null | undefined,
@@ -148,21 +149,25 @@ export function formatTeacherIdentifier(
     ? Math.max(1, Math.trunc(fallbackSequence))
     : 1;
 
-  return `TH-${year}${String(sequenceValue).padStart(4, "0")}`;
+  return `TE-${year}${String(sequenceValue).padStart(4, "0")}`;
 }
 
 async function generateTeacherId(
   connection: PoolConnection,
   sources: Array<{ table: string; column: string }>,
+  yearOverride?: number | null,
 ): Promise<string> {
-  const year = new Date().getFullYear().toString().slice(-2);
+  const yearSource = typeof yearOverride === "number" && Number.isFinite(yearOverride)
+    ? yearOverride
+    : new Date().getFullYear();
+  const year = String(yearSource).slice(-2);
 
   let maxSequence = 0;
 
   for (const source of sources) {
     const [rows] = await connection.query<RowDataPacket[]>(
       `SELECT \`${source.column}\` AS teacher_id FROM \`${source.table}\` WHERE \`${source.column}\` LIKE ? ORDER BY \`${source.column}\` DESC LIMIT 1`,
-      [`TH-${year}%`],
+      [`TE-${year}%`],
     );
 
     if (rows.length === 0) {
@@ -170,7 +175,7 @@ async function generateTeacherId(
     }
 
     const lastId = rows[0]?.teacher_id;
-    const match = typeof lastId === "string" ? lastId.match(/TH-\d{2}(\d{4,})$/) : null;
+    const match = typeof lastId === "string" ? lastId.match(/TE-\d{2}(\d{4,})$/) : null;
     if (match) {
       const parsed = Number.parseInt(match[1], 10);
       if (Number.isFinite(parsed)) {
@@ -180,7 +185,7 @@ async function generateTeacherId(
   }
 
   const nextNum = maxSequence + 1;
-  return `TH-${year}${String(nextNum).padStart(4, "0")}`;
+  return `TE-${year}${String(nextNum).padStart(4, "0")}`;
 }
 
 export interface CreateTeacherInput {
@@ -266,11 +271,15 @@ export async function createTeacher(input: CreateTeacherInput): Promise<CreateTe
   const { firstName, middleName, lastName, suffix, email, phoneNumber, grade, section, subjects, teacherId } = input;
   const fullName = buildFullName(firstName, middleName, lastName, suffix);
   const temporaryPassword = generateTemporaryPassword();
+  const requestTime = new Date();
+  const currentYear = requestTime.getFullYear();
 
   const result = await runWithConnection(async (connection) => {
     const userColumns = await getColumnsForTable(connection, "users");
     const teacherInfo = await resolveTeacherTable(connection);
     const remedialTeacherInfo = await resolveRemedialTeacherTable(connection);
+    const teacherHandledColumns = await getColumnsForTable(connection, "teacher_handled").catch(() => new Set<string>());
+
 
     const teacherIdSources: Array<{ table: string; column: string }> = [];
     if (userColumns.has("teacher_id")) {
@@ -301,9 +310,26 @@ export async function createTeacher(input: CreateTeacherInput): Promise<CreateTe
         throw new HttpError(409, "Email already exists.");
       }
 
+      // Resolve role_id for teacher if available
+      let teacherRoleId: number | null = null;
+      try {
+        const roleColumns = await getColumnsForTable(connection, "role");
+        if (roleColumns.has("role_id") && roleColumns.has("role_name")) {
+          const [roleRows] = await connection.query<RowDataPacket[]>(
+            "SELECT role_id FROM role WHERE LOWER(role_name) IN ('teacher','faculty','instructor') LIMIT 1",
+          );
+          if (Array.isArray(roleRows) && roleRows.length > 0) {
+            const parsed = Number(roleRows[0].role_id);
+            teacherRoleId = Number.isFinite(parsed) ? parsed : null;
+          }
+        }
+      } catch {
+        teacherRoleId = null;
+      }
+
       const teacherIdValue = teacherId
-        ? formatTeacherIdentifier(teacherId)
-        : await generateTeacherId(connection, teacherIdSources);
+        ? formatTeacherIdentifier(teacherId, undefined, currentYear)
+        : await generateTeacherId(connection, teacherIdSources, currentYear);
 
       const userInsertColumns: string[] = [];
       const userInsertValues: any[] = [];
@@ -348,11 +374,19 @@ export async function createTeacher(input: CreateTeacherInput): Promise<CreateTe
         userInsertColumns.push("role");
         userInsertValues.push("teacher");
       }
+      if (userColumns.has("role_id") && teacherRoleId !== null) {
+        userInsertColumns.push("role_id");
+        userInsertValues.push(teacherRoleId);
+      }
       for (const column of ["teacher_id", "teacherid", "employee_id", "faculty_id"]) {
         if (userColumns.has(column)) {
           userInsertColumns.push(column);
           userInsertValues.push(teacherIdValue);
         }
+      }
+      if (userColumns.has("user_code")) {
+        userInsertColumns.push("user_code");
+        userInsertValues.push(teacherIdValue);
       }
 
       if (userColumns.has("status")) {
@@ -363,7 +397,7 @@ export async function createTeacher(input: CreateTeacherInput): Promise<CreateTe
         userInsertColumns.push("password");
         userInsertValues.push(temporaryPassword);
       }
-      const now = new Date();
+      const now = requestTime;
       if (userColumns.has("created_at")) {
         userInsertColumns.push("created_at");
         userInsertValues.push(now);
@@ -504,6 +538,16 @@ export async function createTeacher(input: CreateTeacherInput): Promise<CreateTe
           insertValues.push(now);
         }
       });
+
+      if (teacherHandledColumns.has("teacher_id") && teacherHandledColumns.has("grade_id")) {
+        const gradeIdNumeric = Number.parseInt(grade, 10);
+        if (Number.isFinite(gradeIdNumeric) && gradeIdNumeric > 0) {
+          await connection.query<ResultSetHeader>(
+            "INSERT INTO `teacher_handled` (teacher_id, grade_id) VALUES (?, ?)",
+            [teacherIdValue, gradeIdNumeric],
+          );
+        }
+      }
 
       if (remedialTeacherInfo.table && remedialTeacherInfo.table !== teacherInfo.table) {
         await insertIntoFlexibleTable(remedialTeacherInfo, (insertColumns, insertValues) => {

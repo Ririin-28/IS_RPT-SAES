@@ -8,6 +8,15 @@ import { getStoredUserProfile, storeUserProfile } from "@/lib/utils/user-profile
 
 const DEFAULT_LOGIN_ERROR_MESSAGE = "Email and password do not match our records. Please try again.";
 
+const normalizeRole = (role: string | null | undefined): string => {
+  if (!role) {
+    return "";
+  }
+  return role
+    .toLowerCase()
+    .replace(/[\s/\-]+/g, "_");
+};
+
 type LoginProps = {
   infoMessage?: string;
   requireUserId?: boolean;
@@ -32,10 +41,11 @@ export default function Login({
   const sanitizedUserId = useMemo(() => userId.trim(), [userId]);
 
   const resolveWelcomePath = useCallback((role: string | null | undefined): string => {
-    const normalized = (role ?? "").toLowerCase();
+    const normalized = normalizeRole(role);
     switch (normalized) {
       case "it_admin":
       case "admin":
+      case "itadmin":
         return "/IT_Admin/welcome";
       case "principal":
         return "/Principal/welcome";
@@ -204,11 +214,13 @@ export default function Login({
           console.warn("Unable to persist logout marker", storageError);
         }
 
+        const resolvedRedirectPath = data.redirectPath || resolveWelcomePath(data.role);
+
         if (data.skipOtp) {
           // Device is trusted, redirect to welcome page
-          const welcomePath = resolveWelcomePath(data.role);
+          const welcomePath = resolvedRedirectPath;
           console.log("[LOGIN] redirecting to:", welcomePath);
-          const normalizedRole = (data.role ?? "").toLowerCase().replace(/[\s/\-]+/g, "_");
+          const normalizedRole = normalizeRole(data.role);
           if (["parent", "admin", "it_admin", "itadmin"].includes(normalizedRole)) {
             window.location.replace(welcomePath);
             return;
@@ -220,6 +232,7 @@ export default function Login({
             email,
             role: data.role || "",
             user_id: data.user_id || "",
+            redirect_path: resolvedRedirectPath,
           }).toString();
           console.log("[LOGIN] redirecting to verification with params:", params);
           router.push(`/auth/verification?${params}`);

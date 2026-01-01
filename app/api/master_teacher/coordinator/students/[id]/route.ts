@@ -13,16 +13,31 @@ const normalizeOptionalString = (value: unknown): string | null | undefined => {
   return text.length > 0 ? text : null;
 };
 
+const normalizeLrn = (value: unknown): string | null | undefined => {
+  const raw = normalizeOptionalString(value);
+  if (!raw) return raw;
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length !== 12) return raw;
+  const formatted = `${digits.slice(0, 6)}-${digits.slice(6)}`;
+  return formatted;
+};
+
 const mapUpdateStudentInput = (raw: Record<string, unknown>): UpdateStudentRecordInput => ({
   studentIdentifier: normalizeOptionalString(raw.studentIdentifier ?? raw.studentId),
+  lrn: normalizeLrn(raw.lrn),
   firstName: normalizeOptionalString(raw.firstName),
   middleName: normalizeOptionalString(raw.middleName),
   lastName: normalizeOptionalString(raw.lastName),
+  suffix: normalizeOptionalString(raw.suffix),
   fullName: normalizeOptionalString(raw.fullName ?? raw.name),
   gradeLevel: normalizeOptionalString(raw.gradeLevel ?? raw.grade),
   section: normalizeOptionalString(raw.section),
   age: normalizeOptionalString(raw.age),
   guardianName: normalizeOptionalString(raw.guardianName ?? raw.guardian),
+  guardianFirstName: normalizeOptionalString(raw.guardianFirstName),
+  guardianMiddleName: normalizeOptionalString(raw.guardianMiddleName),
+  guardianLastName: normalizeOptionalString(raw.guardianLastName),
+  guardianSuffix: normalizeOptionalString(raw.guardianSuffix),
   guardianContact: normalizeOptionalString(raw.guardianContact),
   relationship: normalizeOptionalString(raw.relationship),
   address: normalizeOptionalString(raw.address),
@@ -34,15 +49,12 @@ const mapUpdateStudentInput = (raw: Record<string, unknown>): UpdateStudentRecor
 const respondWithError = (message: string, status = 400) =>
   NextResponse.json({ success: false, error: message }, { status });
 
-const parseId = (value: string | undefined): number | null => {
+const parseId = (value: string | undefined): string | null => {
   if (!value) {
     return null;
   }
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return null;
-  }
-  return parsed;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 };
 
 export async function PUT(

@@ -210,7 +210,7 @@ export default function PrincipalDashboard() {
   const monthlyReportsTooltip = `Total submitted reports in ${monthlyReportsMonthLabel}.`;
 
   // Grade levels for student progress chart
-  const gradeLevels = ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6'];
+  const gradeLevels = ['1', '2', '3', '4', '5', '6'];
 
   // Student Progress Data - 100% Stacked Bar Chart by Grade Level for each subject with original levels
   const [englishProgressData] = useState({

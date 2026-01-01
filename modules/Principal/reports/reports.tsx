@@ -43,39 +43,38 @@ type GradeTabProps = {
   gradeLevel?: string;
 };
 
-const GRADE_OPTIONS = [
-  "Grade 1",
-  "Grade 2",
-  "Grade 3",
-  "Grade 4",
-  "Grade 5",
-  "Grade 6",
-];
+const GRADE_OPTIONS = ["1", "2", "3", "4", "5", "6"];
+
+const toGradeLabel = (value: string | undefined): string => {
+  if (!value) return "";
+  const digits = value.match(/(\d+)/)?.[1] ?? "";
+  return digits ? `Grade ${digits}` : value;
+};
 
 const SUBJECT_GRADE_COMPONENTS: Record<SubjectKey, Record<string, ComponentType<GradeTabProps>>> = {
   english: {
-    "Grade 1": EnglishGradeOneTab,
-    "Grade 2": EnglishGradeTwoTab,
-    "Grade 3": EnglishGradeThreeTab,
-    "Grade 4": EnglishGradeFourTab,
-    "Grade 5": EnglishGradeFiveTab,
-    "Grade 6": EnglishGradeSixTab,
+    "1": EnglishGradeOneTab,
+    "2": EnglishGradeTwoTab,
+    "3": EnglishGradeThreeTab,
+    "4": EnglishGradeFourTab,
+    "5": EnglishGradeFiveTab,
+    "6": EnglishGradeSixTab,
   },
   filipino: {
-    "Grade 1": FilipinoGradeOneTab,
-    "Grade 2": FilipinoGradeTwoTab,
-    "Grade 3": FilipinoGradeThreeTab,
-    "Grade 4": FilipinoGradeFourTab,
-    "Grade 5": FilipinoGradeFiveTab,
-    "Grade 6": FilipinoGradeSixTab,
+    "1": FilipinoGradeOneTab,
+    "2": FilipinoGradeTwoTab,
+    "3": FilipinoGradeThreeTab,
+    "4": FilipinoGradeFourTab,
+    "5": FilipinoGradeFiveTab,
+    "6": FilipinoGradeSixTab,
   },
   math: {
-    "Grade 1": MathGradeOneTab,
-    "Grade 2": MathGradeTwoTab,
-    "Grade 3": MathGradeThreeTab,
-    "Grade 4": MathGradeFourTab,
-    "Grade 5": MathGradeFiveTab,
-    "Grade 6": MathGradeSixTab,
+    "1": MathGradeOneTab,
+    "2": MathGradeTwoTab,
+    "3": MathGradeThreeTab,
+    "4": MathGradeFourTab,
+    "5": MathGradeFiveTab,
+    "6": MathGradeSixTab,
   },
 };
 
@@ -189,7 +188,7 @@ export default function PrincipalReports({ subjectSlug }: PrincipalReportsProps)
                 <ActiveGradeComponent
                   searchTerm={searchTerm}
                   onSearchTermChange={(value) => setSearchTerm(value)}
-                  gradeLevel={activeGrade}
+                  gradeLevel={toGradeLabel(activeGrade)}
                 />
               </div>
             </div>

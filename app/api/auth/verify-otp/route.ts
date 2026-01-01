@@ -3,6 +3,7 @@ import { randomBytes } from "crypto";
 import { recordAccountLogin } from "@/lib/server/account-logs";
 import { buildParentSessionCookie, createParentSession } from "@/lib/server/parent-session";
 import { buildAdminSessionCookie, createAdminSession } from "@/lib/server/admin-session";
+import { normalizeRoleName, resolvePortalPath, resolveUserRole } from "@/lib/server/role-resolution";
 
 interface VerifyOtpPayload {
   email: string;
@@ -16,13 +17,6 @@ interface UserRow extends RowDataPacket {
   otp_code: string | null;
   otp_expires_at: Date | string | null;
   role: string | null;
-}
-
-function normalizeRole(role: string | null | undefined): string {
-  if (!role) {
-    return "";
-  }
-  return role.trim().toLowerCase().replace(/[\s/\-]+/g, "_");
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -63,10 +57,11 @@ export async function POST(req: Request): Promise<Response> {
     const { email, otp, deviceName } = (await req.json()) as VerifyOtpPayload;
 
     db = await mysql.createConnection({
-      host: "localhost",
-      user: "root",
-      password: "RIANA28@eg564",
-      database: "rpt-saes_db",
+      host: process.env.DB_HOST,
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_NAME,
+      port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 3306,
     });
 
     const [users] = await db.execute<UserRow[]>("SELECT * FROM users WHERE email = ?", [email]);
@@ -103,7 +98,10 @@ export async function POST(req: Request): Promise<Response> {
       [user.user_id, deviceToken]
     );
 
-    const normalizedRole = normalizeRole(user.role);
+    const resolvedRole = await resolveUserRole(db, user);
+    const roleForLogic = resolvedRole ?? user.role ?? null;
+    const normalizedRole = normalizeRoleName(roleForLogic);
+    const redirectPath = resolvePortalPath(normalizedRole);
     const responseCookies: string[] = [];
 
     if (normalizedRole === "parent") {
@@ -116,9 +114,13 @@ export async function POST(req: Request): Promise<Response> {
       responseCookies.push(buildAdminSessionCookie(token, expiresAt));
     }
 
-    await recordAccountLogin(db, user.user_id, user.role);
+    await recordAccountLogin(db, user.user_id, roleForLogic);
 
-    return respond(200, { success: true, deviceToken }, responseCookies.length > 0 ? { "Set-Cookie": responseCookies } : undefined);
+    return respond(
+      200,
+      { success: true, deviceToken, role: roleForLogic, redirectPath },
+      responseCookies.length > 0 ? { "Set-Cookie": responseCookies } : undefined,
+    );
   } catch (error) {
     console.error("OTP verification failed", error);
     return respond(500, { error: "Server error" });

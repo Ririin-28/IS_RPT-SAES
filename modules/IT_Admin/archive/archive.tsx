@@ -16,7 +16,7 @@ import ITAdminArchiveTab from "./ITAdminTab/ITAdminTab";
 // Student Tab
 import StudentArchiveTab from "./StudentTab/StudentTab";
 
-const GRADE_OPTIONS = ["All Grades", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"] as const;
+const GRADE_OPTIONS = ["All Grades", "1", "2", "3", "4", "5", "6"] as const;
 const ACCOUNT_OPTIONS = ["IT Admin", "Principal", "Master Teachers", "Teachers", "Students"] as const;
 
 type AccountOption = (typeof ACCOUNT_OPTIONS)[number];
@@ -59,7 +59,8 @@ const normalizeRoleKey = (role: string | null | undefined): ArchiveRoleKey | nul
 };
 
 const parseGradeFilter = (label: string): number | undefined => {
-  const match = /^Grade\s+(\d+)$/.exec(label.trim());
+  if (label === "All Grades") return undefined;
+  const match = /(\d+)/.exec(label.trim());
   if (!match) {
     return undefined;
   }

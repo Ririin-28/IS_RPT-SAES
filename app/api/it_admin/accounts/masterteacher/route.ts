@@ -243,6 +243,27 @@ export async function GET() {
       return NextResponse.json({ error: "Users table is not accessible." }, { status: 500 });
     }
 
+    const hasRoleIdColumn = userColumns.has("role_id");
+    const hasRoleColumn = userColumns.has("role");
+
+    // Resolve role ids for master teachers if role table is present
+    let masterTeacherRoleIds: number[] = [];
+    try {
+      const roleColumns = await safeGetColumns("role");
+      if (roleColumns.has("role_id") && roleColumns.has("role_name")) {
+        const placeholders = ROLE_FILTERS.map(() => "?").join(", ");
+        const [roleRows] = await query<RowDataPacket[]>(
+          `SELECT role_id FROM role WHERE LOWER(role_name) IN (${placeholders})`,
+          ROLE_FILTERS,
+        );
+        masterTeacherRoleIds = roleRows
+          .map((r) => Number(r.role_id))
+          .filter((id) => Number.isInteger(id) && id > 0);
+      }
+    } catch {
+      masterTeacherRoleIds = [];
+    }
+
     const masterTeacherInfo = await resolveMasterTeacherTable();
     const remedialTeacherInfo = await resolveRemedialTeacherTable();
     const mtCoordinatorInfo = await resolveMtCoordinatorTable();
@@ -251,6 +272,9 @@ export async function GET() {
     const canJoinAccountLogs = accountLogsExists && accountLogsColumns.has("user_id");
 
     const selectParts: string[] = ["u.user_id AS user_id"];
+    if (hasRoleIdColumn) {
+      selectParts.push("u.role_id AS user_role_id");
+    }
 
     const addUserColumn = (column: string, alias: string) => {
       if (userColumns.has(column)) {
@@ -323,8 +347,6 @@ export async function GET() {
       }
     }
 
-    const rolePlaceholders = ROLE_FILTERS.map(() => "?").join(", ");
-
     let joinClauses = "";
 
     const masterTeacherTableName = masterTeacherInfo.table;
@@ -382,16 +404,116 @@ export async function GET() {
       ? `COALESCE(latest.last_login, ${fallbackOrderColumn}) DESC`
       : `${fallbackOrderColumn} DESC`;
 
+    const canFilterByRoleId = hasRoleIdColumn && masterTeacherRoleIds.length > 0;
+    const canFilterByRoleName = hasRoleColumn;
+
+    let whereClause = "";
+    let params: Array<string | number> = [];
+
+    if (canFilterByRoleId) {
+      const placeholders = masterTeacherRoleIds.map(() => "?").join(", ");
+      whereClause = `u.role_id IN (${placeholders})`;
+      params = [...masterTeacherRoleIds];
+    } else if (canFilterByRoleName) {
+      const placeholders = ROLE_FILTERS.map(() => "?").join(", ");
+      whereClause = `LOWER(u.role) IN (${placeholders})`;
+      params = [...ROLE_FILTERS];
+    } else if (userColumns.has("master_teacher_id")) {
+      whereClause = "u.master_teacher_id IS NOT NULL";
+    } else if (masterTeacherTableName) {
+      if (masterTeacherHasUserId) {
+        whereClause = "mt.user_id IS NOT NULL";
+      } else if (masterTeacherInfo.columns.has("master_teacher_id")) {
+        whereClause = "mt.master_teacher_id IS NOT NULL";
+      } else if (masterTeacherInfo.columns.has("masterteacher_id")) {
+        whereClause = "mt.masterteacher_id IS NOT NULL";
+      } else {
+        whereClause = "1=0";
+      }
+    } else {
+      whereClause = "1=0";
+    }
+
     const sql = `
       SELECT ${selectParts.join(", ")}
       FROM users AS u
       ${joinClauses}
-      WHERE u.role IN (${rolePlaceholders})
+      WHERE ${whereClause}
       ORDER BY ${orderByClause}
     `;
 
-    const params = [...ROLE_FILTERS];
     const [rows] = await query<RawMasterTeacherRow[]>(sql, params);
+
+    // Preload handled subjects/grades for coordinator and remedial roles using the canonical masterTeacherId
+    const masterTeacherIds: string[] = [];
+    for (const row of rows) {
+      const storedId = coalesce(
+        row.user_master_teacher_id,
+        row.mt_master_teacher_id,
+        row.mt_masterteacher_id,
+        row.mt_teacher_id,
+        row.user_id != null ? String(row.user_id) : null,
+      );
+      const mtId = formatMasterTeacherIdentifier(storedId, row.user_id);
+      if (mtId) {
+        masterTeacherIds.push(mtId);
+      }
+    }
+
+    const coordHandled = new Map<string, { grades: Set<string>; subjects: Set<string> }>();
+    const remedialHandled = new Map<string, { grades: Set<string>; subjects: Set<string> }>();
+
+    if (masterTeacherIds.length > 0) {
+      const placeholders = masterTeacherIds.map(() => "?").join(", ");
+      try {
+        const [coordRows] = await query<RowDataPacket[]>(
+          `SELECT mch.master_teacher_id, g.grade_level, s.subject_name
+           FROM mt_coordinator_handled mch
+           LEFT JOIN grade g ON g.grade_id = mch.grade_id
+           LEFT JOIN subject s ON s.subject_id = mch.subject_id
+           WHERE mch.master_teacher_id IN (${placeholders})`,
+          masterTeacherIds,
+        );
+        for (const row of coordRows) {
+          const id = typeof row.master_teacher_id === "string" ? row.master_teacher_id : null;
+          if (!id) continue;
+          const grades = coordHandled.get(id)?.grades ?? new Set<string>();
+          const subjects = coordHandled.get(id)?.subjects ?? new Set<string>();
+          if (row.grade_level != null) {
+            grades.add(String(row.grade_level));
+          }
+          const subjectName = typeof row.subject_name === "string" ? row.subject_name : null;
+          if (subjectName) {
+            subjects.add(subjectName);
+          }
+          coordHandled.set(id, { grades, subjects });
+        }
+      } catch {
+        // ignore join failures
+      }
+
+      try {
+        const [remRows] = await query<RowDataPacket[]>(
+          `SELECT mr.master_teacher_id, g.grade_level
+           FROM mt_remedialteacher_handled mr
+           LEFT JOIN grade g ON g.grade_id = mr.grade_id
+           WHERE mr.master_teacher_id IN (${placeholders})`,
+          masterTeacherIds,
+        );
+        for (const row of remRows) {
+          const id = typeof row.master_teacher_id === "string" ? row.master_teacher_id : null;
+          if (!id) continue;
+          const grades = remedialHandled.get(id)?.grades ?? new Set<string>();
+          const subjects = remedialHandled.get(id)?.subjects ?? new Set<string>();
+          if (row.grade_level != null) {
+            grades.add(String(row.grade_level));
+          }
+          remedialHandled.set(id, { grades, subjects });
+        }
+      } catch {
+        // ignore join failures
+      }
+    }
 
     const pendingMasterTeacherUpdates: Array<{
       userId: number;
@@ -402,6 +524,15 @@ export async function GET() {
     }> = [];
 
     const records = rows.map((row) => {
+      const storedMasterTeacherId = coalesce(
+        row.user_master_teacher_id,
+        row.mt_master_teacher_id,
+        row.mt_masterteacher_id,
+        row.mt_teacher_id,
+        row.user_id != null ? String(row.user_id) : null,
+      );
+      const masterTeacherId = formatMasterTeacherIdentifier(storedMasterTeacherId, row.user_id);
+
       const firstName = coalesce(row.mt_first_name, row.user_first_name);
       const middleName = coalesce(row.mt_middle_name, row.user_middle_name);
       const lastName = coalesce(row.mt_last_name, row.user_last_name);
@@ -419,7 +550,11 @@ export async function GET() {
       const section = coalesce(row.mt_section);
   const subjects = coalesce(row.mt_subjects) || DEFAULT_SUBJECTS_STRING;
       const subjectHandled = coalesce(row.mt_subject_handled);
+      const coordinatorHandledEntry = coordHandled.get(masterTeacherId);
+      const coordinatorHandledSubjects = coordinatorHandledEntry ? Array.from(coordinatorHandledEntry.subjects) : [];
+      const coordinatorHandledGrades = coordinatorHandledEntry ? Array.from(coordinatorHandledEntry.grades) : [];
       const coordinatorSubject = coalesce(
+        coordinatorHandledSubjects.join(", "),
         row.mc_subject_handled,
         subjectHandled,
         row.mt_coordinator,
@@ -427,17 +562,13 @@ export async function GET() {
         row.mt_coordinator_generic,
         row.mt_coordinator_camel,
       );
+
+      const remedialHandledEntry = remedialHandled.get(masterTeacherId);
+      const remedialHandledSubjects = remedialHandledEntry ? Array.from(remedialHandledEntry.subjects) : [];
+      const remedialHandledGrades = remedialHandledEntry ? Array.from(remedialHandledEntry.grades) : [];
       const status = coalesce(row.user_status, row.mt_status, "Active") ?? "Active";
       const createdAt = row.user_created_at instanceof Date ? row.user_created_at.toISOString() : null;
       const lastLogin = row.last_login instanceof Date ? row.last_login.toISOString() : null;
-      const storedMasterTeacherId = coalesce(
-        row.user_master_teacher_id,
-        row.mt_master_teacher_id,
-        row.mt_masterteacher_id,
-        row.mt_teacher_id,
-        row.user_id != null ? String(row.user_id) : null,
-      );
-      const masterTeacherId = formatMasterTeacherIdentifier(storedMasterTeacherId, row.user_id);
       const teacherId = coalesce(row.mt_teacher_id, row.mt_master_teacher_id, row.mt_masterteacher_id, row.user_master_teacher_id, masterTeacherId);
 
       const masterTableIdValue = masterTeacherIdColumnName === "master_teacher_id"
@@ -478,6 +609,10 @@ export async function GET() {
         section,
         subjects,
         coordinatorSubject,
+        coordinatorHandledSubjects,
+        coordinatorHandledGrades,
+        remedialHandledSubjects,
+        remedialHandledGrades,
         status,
         createdAt,
         lastLogin,

@@ -136,10 +136,37 @@ type TeacherApiResponse = {
   error?: string;
 };
 
+type SubjectCounts = Record<"English" | "Filipino" | "Math", number>;
+
+type HandledCountsResponse = {
+  success: boolean;
+  counts?: SubjectCounts;
+  error?: string;
+};
+
+const DEFAULT_SUBJECT_COUNTS: SubjectCounts = {
+  English: 0,
+  Filipino: 0,
+  Math: 0,
+};
+
 const ROLE_LABELS: Record<string, string> = {
   teacher: "Teacher",
   master_teacher: "Master Teacher",
   coordinator: "Coordinator",
+};
+
+const formatGradeValue = (value?: string | null): string => {
+  if (!value) return "Not assigned";
+  const trimmed = value.trim();
+  if (!trimmed) return "Not assigned";
+
+  const gradeMatch = trimmed.match(/grade\s*(\d+)/i);
+  if (gradeMatch) {
+    return gradeMatch[1];
+  }
+
+  return trimmed;
 };
 
 function formatRoleLabel(role?: string | null): string {
@@ -157,6 +184,9 @@ export default function TeacherDashboard() {
   const [teacherProfile, setTeacherProfile] = useState<TeacherProfile | null>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [handledCounts, setHandledCounts] = useState<SubjectCounts>(() => ({ ...DEFAULT_SUBJECT_COUNTS }));
+  const [isLoadingCounts, setIsLoadingCounts] = useState(true);
+  const [countsError, setCountsError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -197,7 +227,7 @@ export default function TeacherDashboard() {
         setTeacherProfile({
           fullName: teacherName,
           role: formatRoleLabel(payload.profile.role ?? storedProfile?.role),
-          gradeHandled: payload.profile.gradeLabel?.trim() || payload.profile.grade?.trim() || "Not assigned",
+          gradeHandled: formatGradeValue(payload.profile.gradeLabel ?? payload.profile.grade ?? ""),
           subjectAssigned: payload.profile.subjectHandled?.trim() || "English, Filipino, Math",
         });
       } catch (error) {
@@ -219,6 +249,69 @@ export default function TeacherDashboard() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadHandledStudents() {
+      setIsLoadingCounts(true);
+      setCountsError(null);
+      try {
+        const storedProfile = getStoredUserProfile();
+        const userId = storedProfile?.userId;
+
+        if (!userId) {
+          throw new Error("Missing user information. Please log in again.");
+        }
+
+        const response = await fetch(
+          `/api/teacher/dashboard?userId=${encodeURIComponent(String(userId))}`,
+          { cache: "no-store" },
+        );
+
+        const payload: HandledCountsResponse | null = await response.json().catch(() => null);
+
+        if (cancelled) return;
+
+        if (!response.ok || !payload?.success || !payload.counts) {
+          const message = payload?.error ?? "Unable to load handled students.";
+          throw new Error(message);
+        }
+
+        setHandledCounts({
+          English: Number(payload.counts.English) || 0,
+          Filipino: Number(payload.counts.Filipino) || 0,
+          Math: Number(payload.counts.Math) || 0,
+        });
+      } catch (error) {
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : "Failed to load handled students.";
+          setCountsError(message);
+          setHandledCounts({ ...DEFAULT_SUBJECT_COUNTS });
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingCounts(false);
+        }
+      }
+    }
+
+    loadHandledStudents();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const getHandledValue = (subject: keyof SubjectCounts) => {
+    if (isLoadingCounts) {
+      return "...";
+    }
+    if (countsError) {
+      return "--";
+    }
+    return handledCounts[subject];
+  };
 
   // Get today's date in simplified month format (same as Principal)
   const today = new Date();
@@ -539,10 +632,15 @@ export default function TeacherDashboard() {
               <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
                 <SecondaryHeader title="Remedial Overview" />
               </div>
+              {countsError && (
+                <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+                  {countsError}
+                </div>
+              )}
               <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2 sm:gap-5 sm:mb-7 lg:grid-cols-4 lg:gap-6 lg:mb-8">
                 <OverviewCard
-                  value={12}
-                  label="Handled Students"
+                  value={getHandledValue("English")}
+                  label="English Handled Students"
                   icon={
                     <svg width="42" height="42" fill="none" viewBox="0 0 24 24">
                       <ellipse cx="12" cy="8" rx="4" ry="4" stroke="#013300" strokeWidth="2" />
@@ -552,32 +650,26 @@ export default function TeacherDashboard() {
                   onClick={() => handleNavigate("/Teacher/students")}
                 />
                 <OverviewCard
-                  value={4}
-                  label="Reports Submitted"
+                  value={getHandledValue("Filipino")}
+                  label="Filipino Handled Students"
                   icon={
-                    <svg width="40" height="40" fill="none" viewBox="0 0 24 24">
-                      <rect width="16" height="20" x="4" y="2" rx="2" stroke="#013300" strokeWidth="2" />
-                      <path d="M2 6h4" stroke="#013300" strokeWidth="2" />
-                      <path d="M2 10h4" stroke="#013300" strokeWidth="2" />
-                      <path d="M2 14h4" stroke="#013300" strokeWidth="2" />
-                      <path d="M2 18h4" stroke="#013300" strokeWidth="2" />
-                      <path d="M9.5 8h5" stroke="#013300" strokeWidth="2" />
-                      <path d="M9.5 12H16" stroke="#013300" strokeWidth="2" />
-                      <path d="M9.5 16H14" stroke="#013300" strokeWidth="2" />
+                    <svg width="42" height="42" fill="none" viewBox="0 0 24 24">
+                      <ellipse cx="12" cy="8" rx="4" ry="4" stroke="#013300" strokeWidth="2" />
+                      <path d="M4 18v-2c0-2.66 5.33-4 8-4s8 1.34 8 4v2" stroke="#013300" strokeWidth="2" strokeLinecap="round" />
                     </svg>
                   }
-                  onClick={() => handleNavigate("/Teacher/report")}
+                  onClick={() => handleNavigate("/Teacher/students")}
                 />
                 <OverviewCard
-                  value={5}
-                  label="Materials Created"
+                  value={getHandledValue("Math")}
+                  label="Math Handled Students"
                   icon={
-                    <svg width="40" height="40" fill="none" viewBox="0 0 24 24">
-                      <rect x="3" y="7" width="18" height="14" rx="2" stroke="#013300" strokeWidth="2" />
-                      <rect x="7" y="3" width="10" height="4" rx="1" stroke="#013300" strokeWidth="2" />
+                    <svg width="42" height="42" fill="none" viewBox="0 0 24 24">
+                      <ellipse cx="12" cy="8" rx="4" ry="4" stroke="#013300" strokeWidth="2" />
+                      <path d="M4 18v-2c0-2.66 5.33-4 8-4s8 1.34 8 4v2" stroke="#013300" strokeWidth="2" strokeLinecap="round" />
                     </svg>
                   }
-                  onClick={() => handleNavigate("/Teacher/materials")}
+                  onClick={() => handleNavigate("/Teacher/students")}
                 />
                 <OverviewCard
                   value={<span className="text-xl">{dateToday}</span>}

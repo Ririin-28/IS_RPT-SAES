@@ -52,7 +52,7 @@ type CalendarFormValues = {
   subject: string;
 };
 
-const FALLBACK_GRADE_LEVEL = "Grade 3";
+const FALLBACK_GRADE_LEVEL = "3";
 
 interface RemedialScheduleWindow {
   quarter: string | null;

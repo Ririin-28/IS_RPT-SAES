@@ -173,6 +173,17 @@ export default function StudentCardsGrid({ subject }: StudentCardsGridProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const normalizeGradeValue = (value: unknown): string => {
+    const match = String(value ?? "").match(/(\d+)/);
+    const digit = match?.[1] ?? "";
+    return ["1", "2", "3", "4", "5", "6"].includes(digit) ? digit : "";
+  };
+
+  const formatGradeLabel = (value: string | null | undefined): string => {
+    const numeric = normalizeGradeValue(value);
+    return numeric ? `Grade ${numeric}` : "Grade 3";
+  };
+
   const userProfile = useMemo(() => getStoredUserProfile(), []);
   const userId = useMemo(() => {
     if (!userProfile) {
@@ -193,7 +204,7 @@ export default function StudentCardsGrid({ subject }: StudentCardsGridProps) {
 
   const fallbackGrade = useMemo(() => {
     const grade = sanitize(userProfile?.gradeLevel ?? "");
-    return grade || "Grade 3";
+    return normalizeGradeValue(grade) || "3";
   }, [userProfile]);
 
   useEffect(() => {
@@ -247,7 +258,7 @@ export default function StudentCardsGrid({ subject }: StudentCardsGridProps) {
       const id = buildStudentIdentifier(student, index);
       const name = composeStudentName(student);
       const section = sanitize(student.section) || "—";
-      const gradeLevel = sanitize(student.grade) || fallbackGrade;
+      const gradeLevel = normalizeGradeValue(sanitize(student.grade)) || fallbackGrade;
       const config = SUBJECT_PROGRESS_FIELDS[subject];
       const startingLevel = sanitize(student[config.startingField]) || "—";
       const { value: currentLevel, label } = resolveProgressLevel(student, subject, today);
@@ -256,6 +267,7 @@ export default function StudentCardsGrid({ subject }: StudentCardsGridProps) {
         id,
         name,
         section,
+        gradeLevelLabel: formatGradeLabel(gradeLevel),
         gradeLevel,
         startingLevel,
         currentLevel,
@@ -267,7 +279,7 @@ export default function StudentCardsGrid({ subject }: StudentCardsGridProps) {
 
   const displayGradeLevel = useMemo(() => {
     if (cards.length > 0) {
-      const gradeCandidate = sanitize(cards[0].gradeLevel);
+      const gradeCandidate = normalizeGradeValue(sanitize(cards[0].gradeLevel));
       if (gradeCandidate) {
         return gradeCandidate;
       }
@@ -276,7 +288,7 @@ export default function StudentCardsGrid({ subject }: StudentCardsGridProps) {
   }, [cards, fallbackGrade]);
 
   const reportTitle = useMemo(
-    () => `Progress Report for ${displayGradeLevel} - ${subjectLabel}`,
+    () => `Progress Report for ${formatGradeLabel(displayGradeLevel)} - ${subjectLabel}`,
     [displayGradeLevel, subjectLabel],
   );
 

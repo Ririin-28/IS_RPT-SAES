@@ -8,6 +8,7 @@ import type { UseFormReturn } from "react-hook-form";
 
 export interface AddStudentFormValues {
   studentId: string;
+  lrn: string;
   role: string;
   firstName: string;
   middleName: string;
@@ -44,6 +45,7 @@ interface AddStudentModalProps {
  * Example: 0912-345-6789
  */
 const PHONE_FORMAT_REGEX = /^09\d{2}-\d{3}-\d{4}$/;
+const LRN_REGEX = /^\d{6}-\d{6}$/;
 const GRADE_OPTIONS = ["1", "2", "3", "4", "5", "6"];
 const SECTION_OPTIONS = ["A", "B", "C", "D", "E", "F"];
 const RELATIONSHIP_OPTIONS = ["Mother", "Father", "Grandmother", "Grandfather", "Aunt", "Uncle", "Guardian", "Other"];
@@ -127,6 +129,22 @@ export default function AddStudentModal({
   const phoneWatch = watch("guardianContact") || "";
   const [displayPhone, setDisplayPhone] = useState("");
 
+  const formatLrnValue = (input: string) => {
+    const digits = input.replace(/\D/g, "").slice(0, 12);
+    if (digits.length <= 6) return digits;
+    return `${digits.slice(0, 6)}-${digits.slice(6)}`;
+  };
+
+  const handleLrnInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = formatLrnValue(e.target.value);
+    setValue("lrn", formatted, { shouldValidate: true, shouldDirty: true });
+  };
+
+  const lrnRegistration = register("lrn", {
+    required: "LRN is required",
+    pattern: { value: LRN_REGEX, message: "Format must be 000000-000000" },
+  });
+
   useEffect(() => {
     setDisplayPhone(formatPhoneValue(phoneWatch));
   }, [phoneWatch]);
@@ -169,6 +187,22 @@ export default function AddStudentModal({
         {apiError && (
           <div className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
             {apiError}
+            <div className="space-y-1">
+              <ModalLabel required>LRN</ModalLabel>
+              <input
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                placeholder="000000-000000"
+                maxLength={13}
+                {...lrnRegistration}
+                onChange={(e) => {
+                  handleLrnInput(e);
+                  lrnRegistration.onChange?.(e);
+                }}
+              />
+              {errors.lrn && (
+                <span className="text-xs text-red-500">{errors.lrn.message as string}</span>
+              )}
+            </div>
           </div>
         )}
         
@@ -192,6 +226,23 @@ export default function AddStudentModal({
                 disabled
                 aria-disabled
               />
+            </div>
+            <div className="space-y-1">
+              <ModalLabel required>LRN</ModalLabel>
+              <input
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                placeholder="000000-000000"
+                inputMode="numeric"
+                maxLength={13}
+                {...lrnRegistration}
+                onChange={(e) => {
+                  handleLrnInput(e);
+                  lrnRegistration.onChange?.(e);
+                }}
+              />
+              {errors.lrn && (
+                <span className="text-xs text-red-500">{errors.lrn.message as string}</span>
+              )}
             </div>
           </div>
 
@@ -279,7 +330,7 @@ export default function AddStudentModal({
                   </option>
                   {GRADE_OPTIONS.map((grade) => (
                     <option key={grade} value={grade}>
-                      Grade {grade}
+                      {grade}
                     </option>
                   ))}
                 </select>

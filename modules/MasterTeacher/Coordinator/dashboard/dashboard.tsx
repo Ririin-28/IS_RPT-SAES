@@ -78,46 +78,6 @@ function formatRoleLabel(role?: string | null): string {
   return ROLE_LABELS[key] ?? role;
 }
 
-const GRADE_WORD_MAP: Record<string, number> = {
-  one: 1,
-  two: 2,
-  three: 3,
-  four: 4,
-  five: 5,
-  six: 6,
-  seven: 7,
-  eight: 8,
-  nine: 9,
-  ten: 10,
-};
-
-const normalizeGradeKey = (value?: string | number | null): string | null => {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return String(value);
-  }
-  const trimmed = String(value).trim();
-  if (!trimmed) {
-    return null;
-  }
-  const digitMatch = trimmed.match(/(\d+)/);
-  if (digitMatch) {
-    return digitMatch[1];
-  }
-  const lower = trimmed.toLowerCase();
-  if (GRADE_WORD_MAP[lower]) {
-    return String(GRADE_WORD_MAP[lower]);
-  }
-  const gradeWordMatch = lower.match(/grade\s+(one|two|three|four|five|six|seven|eight|nine|ten)/);
-  if (gradeWordMatch) {
-    const mapped = GRADE_WORD_MAP[gradeWordMatch[1]];
-    return mapped ? String(mapped) : trimmed.toLowerCase();
-  }
-  return lower;
-};
-
 const formatGradeDescriptor = (value?: string | null): string => {
   if (!value) {
     return "their assigned grade";
@@ -148,19 +108,6 @@ const formatSubjectDescriptor = (value?: string | null): string => {
     return "their subject focus";
   }
   return trimmed;
-};
-
-type PrincipalTeacherRecord = {
-  userId: number | null;
-  grade?: string | number | null;
-  gradeLabel?: string | null;
-  role?: string | null;
-};
-
-type PrincipalTeacherResponse = {
-  teachers?: PrincipalTeacherRecord[];
-  masterTeachers?: PrincipalTeacherRecord[];
-  error?: string;
 };
 
 type CoordinatorSubject = "Math" | "English" | "Filipino";
@@ -429,9 +376,9 @@ export default function MasterTeacherDashboard() {
   const [approvedMaterialsCount, setApprovedMaterialsCount] = useState<number | null>(null);
   const [isLoadingApprovals, setIsLoadingApprovals] = useState(false);
   const [approvalsError, setApprovalsError] = useState<string | null>(null);
-  const [teacherCount, setTeacherCount] = useState<number | null>(null);
-  const [isLoadingTeachers, setIsLoadingTeachers] = useState(false);
-  const [teacherError, setTeacherError] = useState<string | null>(null);
+  const [gradeCounts, setGradeCounts] = useState<{ students: number; teachers: number } | null>(null);
+  const [isLoadingGradeCounts, setIsLoadingGradeCounts] = useState(false);
+  const [gradeCountsError, setGradeCountsError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -544,9 +491,14 @@ export default function MasterTeacherDashboard() {
     let cancelled = false;
     const fetchMaterialCount = async (status: "pending" | "approved"): Promise<number> => {
       const params = new URLSearchParams({ status, pageSize: "1" });
-      if (subjectFilter) {
-        params.set("subject", subjectFilter);
+      const gradeValue = coordinatorProfile?.gradeHandled?.trim();
+      if (gradeValue && gradeValue.toLowerCase() !== "not assigned") {
+        params.set("grade", gradeValue);
       }
+      if (!subjectFilter) {
+        throw new Error("Subject is required (English, Filipino, or Math).");
+      }
+      params.set("subject", subjectFilter);
       const response = await fetch(`/api/master_teacher/coordinator/materials?${params.toString()}`, { cache: "no-store" });
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
@@ -568,10 +520,18 @@ export default function MasterTeacherDashboard() {
         return;
       }
 
+      if (!subjectFilter) {
+        setApprovalsError("Subject assignment is required before loading materials (English, Filipino, or Math).");
+        setPendingApprovalsCount(0);
+        setApprovedMaterialsCount(0);
+        setIsLoadingApprovals(false);
+        return;
+      }
+
       setIsLoadingApprovals(true);
       setApprovalsError(null);
-  setPendingApprovalsCount(null);
-  setApprovedMaterialsCount(null);
+      setPendingApprovalsCount(null);
+      setApprovedMaterialsCount(null);
 
       try {
         const [pendingTotal, approvedTotal] = await Promise.all([
@@ -602,69 +562,64 @@ export default function MasterTeacherDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [subjectFilter, userId]);
+  }, [coordinatorProfile?.gradeHandled, subjectFilter, userId]);
 
   useEffect(() => {
     if (!coordinatorProfile) {
-      setTeacherCount(null);
-      setTeacherError(null);
-      setIsLoadingTeachers(false);
+      setGradeCounts(null);
+      setGradeCountsError(null);
+      setIsLoadingGradeCounts(false);
       return;
     }
 
-    const gradeKey = normalizeGradeKey(coordinatorProfile.gradeHandled);
-    if (!gradeKey) {
-      setTeacherCount(0);
-      setTeacherError("Grade assignment unavailable.");
-      setIsLoadingTeachers(false);
+    const gradeValue = coordinatorProfile.gradeHandled?.trim();
+    if (!gradeValue || gradeValue.toLowerCase() === "not assigned") {
+      setGradeCounts(null);
+      setGradeCountsError("Grade assignment unavailable.");
+      setIsLoadingGradeCounts(false);
       return;
     }
 
     const controller = new AbortController();
 
-    const loadTeacherCount = async () => {
-      setIsLoadingTeachers(true);
-      setTeacherError(null);
+    const loadGradeCounts = async () => {
+      setIsLoadingGradeCounts(true);
+      setGradeCountsError(null);
       try {
-        const response = await fetch("/api/principal/teachers", { cache: "no-store", signal: controller.signal });
-        const payload = (await response.json()) as PrincipalTeacherResponse;
-        if (!response.ok) {
-          throw new Error(payload?.error ?? "Unable to load teachers.");
+        const params = new URLSearchParams({ grade: gradeValue });
+        const response = await fetch(`/api/master_teacher/coordinator/dashboard?${params.toString()}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.success) {
+          throw new Error(payload?.error ?? "Failed to load grade counts.");
         }
 
-        const combined = [
-          ...(payload.teachers ?? []),
-          ...(payload.masterTeachers ?? []),
-        ];
+        const studentsTotal = Number(payload?.data?.students);
+        const teachersTotal = Number(payload?.data?.teachers);
 
-        const count = combined.reduce((total, record) => {
-          const recordKey = normalizeGradeKey(record.gradeLabel ?? record.grade ?? null);
-          if (recordKey && recordKey === gradeKey) {
-            return total + 1;
-          }
-          return total;
-        }, 0);
-
-        setTeacherCount(count);
+        setGradeCounts({
+          students: Number.isFinite(studentsTotal) ? studentsTotal : 0,
+          teachers: Number.isFinite(teachersTotal) ? teachersTotal : 0,
+        });
       } catch (error) {
         if (controller.signal.aborted) {
           return;
         }
-        console.error("Failed to load teacher count", error);
-        setTeacherError(error instanceof Error ? error.message : "Failed to load teacher count.");
-        setTeacherCount(0);
+        console.error("Failed to load grade counts", error);
+        setGradeCounts({ students: 0, teachers: 0 });
+        setGradeCountsError(error instanceof Error ? error.message : "Failed to load grade counts.");
       } finally {
         if (!controller.signal.aborted) {
-          setIsLoadingTeachers(false);
+          setIsLoadingGradeCounts(false);
         }
       }
     };
 
-    loadTeacherCount();
+    loadGradeCounts();
 
-    return () => {
-      controller.abort();
-    };
+    return () => controller.abort();
   }, [coordinatorProfile?.gradeHandled]);
 
   // Get today's date in simplified month format (same as Principal)
@@ -686,8 +641,8 @@ export default function MasterTeacherDashboard() {
   const pendingCount = pendingApprovalsCount ?? 0;
   const approvedCount = approvedMaterialsCount ?? 0;
   const pendingMaterialsValue = isLoadingApprovals ? '—' : approvalsError ? '—' : pendingCount;
-  const totalStudentsValue = isLoadingStudents ? '—' : students.length;
-  const teacherCardValue = isLoadingTeachers ? '—' : teacherError ? '—' : (teacherCount ?? 0);
+  const totalStudentsValue = isLoadingGradeCounts ? '—' : gradeCountsError ? '—' : (gradeCounts?.students ?? 0);
+  const teacherCardValue = isLoadingGradeCounts ? '—' : gradeCountsError ? '—' : (gradeCounts?.teachers ?? 0);
   const gradeDescriptor = formatGradeDescriptor(coordinatorProfile?.gradeHandled);
   const subjectDescriptor = formatSubjectDescriptor(coordinatorProfile?.subjectAssigned);
   const readableGrade = gradeDescriptor === "their assigned grade" ? "the assigned grade" : gradeDescriptor;
