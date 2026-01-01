@@ -5,10 +5,11 @@ interface VerificationFormProps {
   email: string;
   user_id: string;
   role: string;
-  onVerified: (device_token: string) => void;
+  redirectPath?: string;
+  onVerified: (device_token: string, redirectPath?: string | null) => void;
 }
 
-export default function VerificationForm({ email, user_id, role, onVerified }: VerificationFormProps) {
+export default function VerificationForm({ email, user_id, role, redirectPath, onVerified }: VerificationFormProps) {
 
   const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
@@ -59,7 +60,7 @@ export default function VerificationForm({ email, user_id, role, onVerified }: V
     setLoading(false);
     if (data.success) {
       localStorage.setItem("deviceToken", data.deviceToken);
-      onVerified(data.deviceToken);
+      onVerified(data.deviceToken, data.redirectPath ?? redirectPath ?? null);
     } else {
       setError(data.error || "Invalid OTP or expired. Please try again.");
     }

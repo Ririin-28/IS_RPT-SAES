@@ -1,9 +1,7 @@
 "use client";
 import Sidebar from "@/components/MasterTeacher/RemedialTeacher/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
-import UtilityButton from "@/components/Common/Buttons/UtilityButton";
-import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
-import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
+import KebabMenu from "@/components/Common/Menus/KebabMenu";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import html2canvas from "html2canvas";
@@ -94,6 +92,17 @@ export default function MasterTeacherReport({ subjectSlug }: MasterTeacherReport
   const { subjectLabel, Component } = SUBJECT_CONFIG[subject];
   const reportRef = useRef<HTMLDivElement>(null);
 
+  const normalizeGradeValue = (value: unknown): string => {
+    const match = String(value ?? "").match(/(\d+)/);
+    const digit = match?.[1] ?? "";
+    return ["1", "2", "3", "4", "5", "6"].includes(digit) ? digit : "";
+  };
+
+  const formatGradeLabel = (value: string | null | undefined): string => {
+    const numeric = normalizeGradeValue(value);
+    return numeric ? `Grade ${numeric}` : "Grade 3";
+  };
+
   const userProfile = useMemo(() => getStoredUserProfile(), []);
   const userId = useMemo(() => {
     if (!userProfile) {
@@ -119,7 +128,7 @@ export default function MasterTeacherReport({ subjectSlug }: MasterTeacherReport
 
   const fallbackGrade = useMemo(() => {
     const grade = sanitize(userProfile?.gradeLevel ?? "");
-    return grade || "Grade 3";
+    return normalizeGradeValue(grade) || "3";
   }, [userProfile]);
 
   const [rowsBySubject, setRowsBySubject] = useState<Record<SubjectKey, RemedialReportRow[]>>(createEmptyRows);
@@ -133,15 +142,16 @@ export default function MasterTeacherReport({ subjectSlug }: MasterTeacherReport
   const displayGradeLevel = useMemo(() => {
     if (activeRows.length > 0) {
       const gradeCandidate = sanitize(activeRows[0].gradeLevel);
-      if (gradeCandidate) {
-        return gradeCandidate;
+      const normalized = normalizeGradeValue(gradeCandidate);
+      if (normalized) {
+        return normalized;
       }
     }
     return fallbackGrade;
   }, [activeRows, fallbackGrade]);
 
   const reportTitle = useMemo(
-    () => `Progress Report for ${displayGradeLevel} - ${subjectLabel}`,
+    () => `Progress Report for ${formatGradeLabel(displayGradeLevel)} - ${subjectLabel}`,
     [displayGradeLevel, subjectLabel],
   );
 
@@ -375,32 +385,55 @@ export default function MasterTeacherReport({ subjectSlug }: MasterTeacherReport
                     </svg>
                     <span>View Individual Progress</span>
                   </Link>
-                  <SecondaryButton small onClick={handleEditToggle} disabled={disableActions}>
-                    {isEditing ? "Save" : "Edit"}
-                  </SecondaryButton>
-                  <PrimaryButton small onClick={handleSend} disabled={disableActions || isSending}>
-                    {isSending ? "Sending..." : "Send Report"}
-                  </PrimaryButton>
-                  <UtilityButton small onClick={handlePrint} disabled={disableActions}>
-                    <div className="flex items-center gap-2">
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="24"
-                        height="24"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-                        <path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6" />
-                        <rect x="6" y="14" width="12" height="8" rx="1" />
-                      </svg>
-                      <span>Print</span>
-                    </div>
-                  </UtilityButton>
+                  <KebabMenu
+                    small
+                    renderItems={(close) => (
+                      <div className="py-1">
+                        <button
+                          onClick={() => {
+                            handleEditToggle();
+                            close();
+                          }}
+                          disabled={disableActions}
+                          className="w-full px-4 py-2 text-left text-sm text-[#013300] hover:bg-gray-50 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                          </svg>
+                          {isEditing ? "Save" : "Edit"}
+                        </button>
+                        <button
+                          onClick={() => {
+                            handleSend();
+                            close();
+                          }}
+                          disabled={disableActions || isSending}
+                          className="w-full px-4 py-2 text-left text-sm text-[#013300] hover:bg-gray-50 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="m22 2-7 20-4-9-9-4Z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M22 2 11 13" />
+                          </svg>
+                          {isSending ? "Sending..." : "Send Report"}
+                        </button>
+                        <button
+                          onClick={() => {
+                            handlePrint();
+                            close();
+                          }}
+                          disabled={disableActions}
+                          className="w-full px-4 py-2 text-left text-sm text-[#013300] hover:bg-gray-50 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6" />
+                            <rect x="6" y="14" width="12" height="8" rx="1" />
+                          </svg>
+                          Print
+                        </button>
+                      </div>
+                    )}
+                  />
                 </div>
               </div>
 

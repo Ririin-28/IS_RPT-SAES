@@ -6,6 +6,7 @@ export const dynamic = "force-dynamic";
 
 const REMEDIAL_TABLE = "remedial_teachers";
 const COORDINATOR_TABLE = "mt_coordinator";
+const COORDINATOR_HANDLED_TABLE = "mt_coordinator_handled";
 
 const MASTER_TEACHER_TABLE_CANDIDATES = [
   "master_teacher",
@@ -186,6 +187,14 @@ const COORDINATOR_COLUMN_CANDIDATES = [
   { column: "coordinator_subject_handled", alias: "mt_coordinator_subject_handled" },
 ] as const;
 
+const COORDINATOR_TABLE_GRADE_CANDIDATES = [
+  { column: "grade_handled", alias: "mc_grade_handled" },
+  { column: "grade_level", alias: "mc_grade_level" },
+  { column: "grade", alias: "mc_grade" },
+  { column: "gradeLevel", alias: "mc_gradeLevel" },
+  { column: "handled_grade", alias: "mc_handled_grade" },
+] as const;
+
 const COORDINATOR_TABLE_SUBJECT_CANDIDATES = [
   { column: "subject_handled", alias: "mc_subject_handled" },
   { column: "coordinator_subject", alias: "mc_coordinator_subject" },
@@ -263,6 +272,43 @@ const toNullableString = (value: unknown): string | null => {
   const text = String(value).trim();
   return text.length > 0 ? text : null;
 };
+
+async function loadCoordinatorHandled(masterTeacherIds: Array<string | number>): Promise<{ gradeLevel: string | null; subject: string | null }> {
+  const ids = masterTeacherIds
+    .map((id) => {
+      if (id === null || id === undefined) return null;
+      const text = String(id).trim();
+      return text.length ? text : null;
+    })
+    .filter((id): id is string => Boolean(id));
+
+  if (ids.length === 0) {
+    return { gradeLevel: null, subject: null };
+  }
+
+  try {
+    const [rows] = await query<RowDataPacket[]>(
+      `SELECT g.grade_level, s.subject_name
+       FROM ${COORDINATOR_HANDLED_TABLE} mch
+       LEFT JOIN grade g ON g.grade_id = mch.grade_id
+       LEFT JOIN subject s ON s.subject_id = mch.subject_id
+       WHERE mch.master_teacher_id IN (${ids.map(() => "?").join(", ")})
+       LIMIT 1`,
+      ids,
+    );
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return { gradeLevel: null, subject: null };
+    }
+
+    const row = rows[0];
+    const gradeLevel = row.grade_level != null ? String(row.grade_level) : null;
+    const subject = typeof row.subject_name === "string" ? row.subject_name : null;
+    return { gradeLevel, subject };
+  } catch {
+    return { gradeLevel: null, subject: null };
+  }
+}
 
 const normalizeStatusValue = (value: string | null): string | null => {
   if (!value) {
@@ -884,6 +930,11 @@ function buildName(
 
 type RawCoordinatorRow = RowDataPacket & {
   user_id: number;
+  mt_master_teacher_id?: string | null;
+  mt_masterteacher_id?: string | null;
+  mt_teacher_id?: string | null;
+  mc_master_teacher_id?: string | null;
+  mc_coordinator_id?: string | null;
   user_first_name?: string | null;
   user_middle_name?: string | null;
   user_last_name?: string | null;
@@ -996,6 +1047,12 @@ export async function GET(request: NextRequest) {
     addUserColumn("phone_number", "user_phone_number");
     addUserColumn("role", "user_role");
 
+    addMasterColumn("master_teacher_id", "mt_master_teacher_id");
+    addMasterColumn("masterteacher_id", "mt_masterteacher_id");
+    addMasterColumn("teacher_id", "mt_teacher_id");
+    addCoordinatorTableColumn("master_teacher_id", "mc_master_teacher_id");
+    addCoordinatorTableColumn("coordinator_id", "mc_coordinator_id");
+
     if (masterTeacherInfo.table && masterTeacherInfo.columns.size > 0) {
       addMasterColumn("first_name", "mt_first_name");
       addMasterColumn("middle_name", "mt_middle_name");
@@ -1018,6 +1075,9 @@ export async function GET(request: NextRequest) {
       }
       for (const candidate of REMEDIAL_GRADE_COLUMN_CANDIDATES) {
         addRemedialColumn(candidate.column, candidate.alias);
+      }
+      for (const candidate of COORDINATOR_TABLE_GRADE_CANDIDATES) {
+        addCoordinatorTableColumn(candidate.column, candidate.alias);
       }
       for (const candidate of COORDINATOR_TABLE_SUBJECT_CANDIDATES) {
         addCoordinatorTableColumn(candidate.column, candidate.alias);
@@ -1117,7 +1177,23 @@ export async function GET(request: NextRequest) {
 
     const row = rows[0];
 
+    const handledIds: Array<string | number> = [];
+    if (Number.isFinite(row.user_id)) {
+      handledIds.push(Number(row.user_id));
+    }
+    if (row.mc_master_teacher_id) handledIds.push(row.mc_master_teacher_id);
+    if (row.mc_coordinator_id) handledIds.push(row.mc_coordinator_id);
+    if (row.mt_master_teacher_id) handledIds.push(row.mt_master_teacher_id);
+    if (row.mt_masterteacher_id) handledIds.push(row.mt_masterteacher_id);
+    if (row.mt_teacher_id) handledIds.push(row.mt_teacher_id);
+
+    const handled = await loadCoordinatorHandled(handledIds);
+
     const grade = pickFirst(
+      handled.gradeLevel,
+      row.mc_grade_handled,
+      row.mc_grade_level,
+      row.mc_grade,
       row.rt_grade,
       row.rt_grade_level,
       row.rt_handled_grade,
@@ -1131,6 +1207,7 @@ export async function GET(request: NextRequest) {
     );
 
     const coordinatorSubject = pickFirst(
+      handled.subject,
       row.mc_subject_handled,
       row.mc_coordinator_subject,
       row.mc_coordinator_subject_handled,

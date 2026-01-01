@@ -4,6 +4,7 @@ import PrincipalHeader from "@/components/Principal/Header";
 import { useEffect, useState } from "react";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
+import { useMemo } from "react";
 import { FaTimes } from "react-icons/fa";
 // Tabs
 import AllGradesTab from "./Tabs/AllGradesTab";
@@ -14,8 +15,15 @@ import GradeFourTab from "./Tabs/GradeFourTab";
 import GradeFiveTab from "./Tabs/GradeFiveTab";
 import GradeSixTab from "./Tabs/GradeSixTab";
 
+const GRADE_OPTIONS = ["All Grades", "1", "2", "3", "4", "5", "6"] as const;
+
+const normalizeGradeTab = (value: string): string => {
+  if (value === "All Grades") return "All Grades";
+  return GRADE_OPTIONS.includes(value as typeof GRADE_OPTIONS[number]) ? value : "All Grades";
+};
+
 export default function PrincipalStudents() {
-  const [activeTab, setActiveTab] = useState("All Grades");
+  const [activeTab, setActiveTab] = useState<string>("All Grades");
   const [students, setStudents] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -59,6 +67,8 @@ export default function PrincipalStudents() {
     };
   }, []);
 
+  const gradeOptions = useMemo(() => [...GRADE_OPTIONS], []);
+
   return (
     <div className="flex h-screen bg-white overflow-hidden">
       <Sidebar />
@@ -71,9 +81,9 @@ export default function PrincipalStudents() {
                 <div className="flex items-center gap-0">
                   <SecondaryHeader title="Students in" />
                   <HeaderDropdown
-                    options={["All Grades", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"]}
+                    options={gradeOptions as string[]}
                     value={activeTab}
-                    onChange={setActiveTab}
+                    onChange={(value) => setActiveTab(normalizeGradeTab(value))}
                     className="pl-2"
                   />
                 </div>
@@ -111,12 +121,12 @@ export default function PrincipalStudents() {
 
               <div className="mt-4 sm:mt-6">
                 {activeTab === "All Grades" && <AllGradesTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
-                {activeTab === "Grade 1" && <GradeOneTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
-                {activeTab === "Grade 2" && <GradeTwoTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
-                {activeTab === "Grade 3" && <GradeThreeTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
-                {activeTab === "Grade 4" && <GradeFourTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
-                {activeTab === "Grade 5" && <GradeFiveTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
-                {activeTab === "Grade 6" && <GradeSixTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
+                {activeTab === "1" && <GradeOneTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
+                {activeTab === "2" && <GradeTwoTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
+                {activeTab === "3" && <GradeThreeTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
+                {activeTab === "4" && <GradeFourTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
+                {activeTab === "5" && <GradeFiveTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
+                {activeTab === "6" && <GradeSixTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
               </div>
             </div>
           </div>

@@ -316,7 +316,7 @@ export default function AddMasterTeacherModal({
               )}
             </div>
             <div className="space-y-1">
-              <ModalLabel>Subjects Handled</ModalLabel>
+              <ModalLabel>Remedial Teacher Subjects</ModalLabel>
               <div className="space-y-2 border border-gray-300 rounded-md bg-gray-50 p-3">
                 {FIXED_SUBJECTS.map((subject) => (
                   <div key={subject} className="flex items-center space-x-2">

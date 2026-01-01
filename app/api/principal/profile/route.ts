@@ -126,15 +126,25 @@ export async function PUT(request: NextRequest) {
 
   try {
     const userColumns = await getTableColumns("users");
+    const principalTable = await resolvePrincipalTable();
     const updates: string[] = [];
     const params: any[] = [];
+
+    const [userRows] = await query<RowDataPacket[]>(
+      "SELECT user_id, principal_id, user_code FROM users WHERE user_id = ? LIMIT 1",
+      [userId],
+    );
+    if (!userRows.length) {
+      return NextResponse.json({ success: false, error: "User not found." }, { status: 404 });
+    }
+
+    const existingPrincipalId = toNullableString(userRows[0]?.principal_id) ?? toNullableString(userRows[0]?.user_code);
 
     const firstNameCol = pickColumn(userColumns, FIRST_NAME_COLUMNS);
     if (body.firstName !== undefined && firstNameCol) {
       updates.push(`${firstNameCol} = ?`);
       params.push(body.firstName?.trim() || null);
     }
-
     const middleNameCol = pickColumn(userColumns, MIDDLE_NAME_COLUMNS);
     if (body.middleName !== undefined && middleNameCol) {
       updates.push(`${middleNameCol} = ?`);
@@ -162,6 +172,53 @@ export async function PUT(request: NextRequest) {
     if (updates.length > 0) {
       params.push(userId);
       await query(`UPDATE users SET ${updates.join(", ")} WHERE user_id = ?`, params);
+    }
+
+    if (principalTable) {
+      const { name, columns } = principalTable;
+      const principalUpdates: string[] = [];
+      const principalParams: any[] = [];
+
+      const pushUpdate = (candidate: readonly string[], value: any) => {
+        const column = pickColumn(columns, candidate);
+        if (column !== null && value !== undefined) {
+          principalUpdates.push(`p.${column} = ?`);
+          principalParams.push(value?.trim ? value.trim() : value);
+        }
+      };
+
+      pushUpdate(FIRST_NAME_COLUMNS, body.firstName);
+      pushUpdate(MIDDLE_NAME_COLUMNS, body.middleName);
+      pushUpdate(LAST_NAME_COLUMNS, body.lastName);
+      pushUpdate(SUFFIX_COLUMNS, body.suffix);
+      pushUpdate(EMAIL_COLUMNS, body.email);
+      pushUpdate(CONTACT_COLUMNS, body.contactNumber);
+      pushUpdate(SCHOOL_COLUMNS, body.school);
+
+      if (principalUpdates.length > 0) {
+        const whereParts: string[] = [];
+        const whereParams: any[] = [];
+
+        if (columns.has("user_id")) {
+          whereParts.push("p.user_id = ?");
+          whereParams.push(userId);
+        }
+        if (columns.has("principal_id") && existingPrincipalId) {
+          whereParts.push("p.principal_id = ?");
+          whereParams.push(existingPrincipalId);
+        }
+        if (!whereParts.length && columns.has("principal_id")) {
+          whereParts.push("p.principal_id = ?");
+          whereParams.push(String(userId));
+        }
+
+        if (whereParts.length) {
+          await query(
+            `UPDATE \`${name}\` AS p SET ${principalUpdates.join(", ")} WHERE ${whereParts.join(" OR ")} LIMIT 1`,
+            [...principalParams, ...whereParams],
+          );
+        }
+      }
     }
 
     return NextResponse.json({ success: true });
@@ -204,7 +261,6 @@ export async function GET(request: NextRequest) {
 
     const selectParts: string[] = [
       "u.user_id AS user_id",
-      "u.role AS user_role",
     ];
 
     const addUserColumn = (column: string | null, alias: string) => {
@@ -221,6 +277,9 @@ export async function GET(request: NextRequest) {
     addUserColumn(pickColumn(userColumns, SUFFIX_COLUMNS), "user_suffix");
     addUserColumn(pickColumn(userColumns, EMAIL_COLUMNS), "user_email");
     addUserColumn(pickColumn(userColumns, CONTACT_COLUMNS), "user_contact_number");
+    addUserColumn(userColumns.has("role") ? "role" : null, "user_role");
+    addUserColumn(userColumns.has("principal_id") ? "principal_id" : null, "user_principal_id");
+    addUserColumn(userColumns.has("user_code") ? "user_code" : null, "user_code");
 
     let joinClause = "";
 
@@ -241,27 +300,17 @@ export async function GET(request: NextRequest) {
       addPrincipalColumn(pickColumn(columns, EMAIL_COLUMNS), "principal_email");
       addPrincipalColumn(pickColumn(columns, CONTACT_COLUMNS), "principal_contact_number");
       addPrincipalColumn(pickColumn(columns, SCHOOL_COLUMNS), "principal_school");
+      addPrincipalColumn(columns.has("principal_id") ? "principal_id" : null, "principal_principal_id");
 
       const joinConditions: string[] = [];
-      const joinPairs: Array<[string, string]> = [
-        ["user_id", "user_id"],
-        ["principal_id", "user_id"],
-        ["employee_id", "user_id"],
-        ["id", "user_id"],
-        [pickColumn(columns, EMAIL_COLUMNS) ?? "", pickColumn(userColumns, EMAIL_COLUMNS) ?? ""],
-      ];
-
-      for (const [pColumn, uColumn] of joinPairs) {
-        if (!pColumn || !uColumn) {
-          continue;
-        }
-        if (columns.has(pColumn) && userColumns.has(uColumn)) {
-          joinConditions.push(`p.${pColumn} = u.${uColumn}`);
-        }
-      }
-
-      if (!joinConditions.length && columns.has("user_id")) {
+      if (columns.has("user_id") && userColumns.has("user_id")) {
         joinConditions.push("p.user_id = u.user_id");
+      }
+      if (columns.has("principal_id") && userColumns.has("principal_id")) {
+        joinConditions.push("p.principal_id = u.principal_id");
+      }
+      if (columns.has("principal_id") && userColumns.has("user_code")) {
+        joinConditions.push("p.principal_id = u.user_code");
       }
 
       if (joinConditions.length) {
@@ -275,6 +324,7 @@ export async function GET(request: NextRequest) {
       selectParts.push("NULL AS principal_email");
       selectParts.push("NULL AS principal_contact_number");
       selectParts.push("NULL AS principal_school");
+      selectParts.push("NULL AS principal_principal_id");
     }
 
     const sql = `
@@ -313,6 +363,11 @@ export async function GET(request: NextRequest) {
           toNullableString(row.principal_contact_number) ??
           toNullableString(row.user_contact_number),
         school: toNullableString(row.principal_school),
+        principalId:
+          toNullableString(row.principal_principal_id) ??
+          toNullableString(row.user_principal_id) ??
+          toNullableString(row.user_code) ??
+          String(row.user_id),
       },
     });
   } catch (error) {

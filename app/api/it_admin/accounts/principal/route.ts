@@ -38,6 +38,7 @@ type RawPrincipalRow = RowDataPacket & {
   principal_contact_number?: string | null;
   principal_phone_number?: string | null;
   principal_status?: string | null;
+  user_code?: string | null;
   last_login?: Date | null;
 };
 
@@ -204,6 +205,7 @@ export async function GET() {
     addUserColumn("status", "user_status");
     addUserColumn("created_at", "user_created_at");
     addUserColumn("principal_id", "user_principal_id");
+    addUserColumn("user_code", "user_code");
 
     addPrincipalColumn("principal_id", "principal_principal_id");
     addPrincipalColumn("first_name", "principal_first_name");
@@ -222,7 +224,27 @@ export async function GET() {
       }
     }
 
-    const rolePlaceholders = ROLE_FILTERS.map(() => "?").join(", ");
+    const roleTableColumns = await safeGetColumns("role");
+    const principalRoleIds: number[] = [];
+    if (roleTableColumns.has("role_id") && roleTableColumns.has("role_name")) {
+      try {
+        const placeholders = ROLE_FILTERS.map(() => "?").join(", ");
+        const [roleRows] = await query<RowDataPacket[]>(
+          `SELECT role_id FROM role WHERE LOWER(role_name) IN (${placeholders})`,
+          [...ROLE_FILTERS],
+        );
+        if (Array.isArray(roleRows)) {
+          for (const row of roleRows) {
+            const parsed = Number(row.role_id);
+            if (Number.isFinite(parsed)) {
+              principalRoleIds.push(parsed);
+            }
+          }
+        }
+      } catch {
+        // ignore role lookup errors; fall back to text filter
+      }
+    }
 
     let joinClauses = "";
 
@@ -233,7 +255,10 @@ export async function GET() {
 
     if (principalTableName && principalInfo.columns.size > 0) {
       if (principalHasUserId) {
-        joinClauses += ` LEFT JOIN \`${principalTableName}\` AS p ON p.user_id = u.user_id`;
+        // Only include principals present in principal table
+        joinClauses += ` INNER JOIN \`${principalTableName}\` AS p ON p.user_id = u.user_id`;
+      } else if (principalHasPrincipalId && userHasPrincipalId) {
+        joinClauses += ` INNER JOIN \`${principalTableName}\` AS p ON p.principal_id = u.principal_id`;
       } else if (principalHasPrincipalId) {
         joinClauses += ` LEFT JOIN \`${principalTableName}\` AS p ON p.principal_id = u.user_id`;
       }
@@ -252,15 +277,32 @@ export async function GET() {
       ? `COALESCE(latest.last_login, ${fallbackOrderColumn}) DESC`
       : `${fallbackOrderColumn} DESC`;
 
+    const hasRoleIdColumn = userColumns.has("role_id");
+    const hasRoleColumn = userColumns.has("role");
+
+    const useRoleIdFilter = hasRoleIdColumn && principalRoleIds.length > 0;
+    const canTextFilter = hasRoleColumn;
+
+    let roleFilterSql = "1=1";
+    let roleParams: Array<string | number> = [];
+
+    if (useRoleIdFilter) {
+      roleFilterSql = `u.role_id IN (${principalRoleIds.map(() => "?").join(", ")})`;
+      roleParams = [...principalRoleIds];
+    } else if (canTextFilter) {
+      roleFilterSql = `LOWER(u.role) IN (${ROLE_FILTERS.map(() => "?").join(", ")})`;
+      roleParams = [...ROLE_FILTERS];
+    }
+
     const sql = `
       SELECT ${selectParts.join(", ")}
       FROM users AS u
       ${joinClauses}
-      WHERE u.role IN (${rolePlaceholders})
+      WHERE ${roleFilterSql}
       ORDER BY ${orderByClause}
     `;
 
-    const params = [...ROLE_FILTERS];
+    const params = [...roleParams];
     const [rows] = await query<RawPrincipalRow[]>(sql, params);
 
     const pendingPrincipalUpdates: Array<{
@@ -288,8 +330,9 @@ export async function GET() {
       const createdAt = row.user_created_at instanceof Date ? row.user_created_at.toISOString() : null;
       const lastLogin = row.last_login instanceof Date ? row.last_login.toISOString() : null;
       const storedPrincipalId = coalesce(
-        row.user_principal_id,
         row.principal_principal_id,
+        row.user_principal_id,
+        row.user_code,
         row.user_id != null ? String(row.user_id) : null,
       );
       const principalId = formatPrincipalIdentifier(storedPrincipalId, row.user_id);

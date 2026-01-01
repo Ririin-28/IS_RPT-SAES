@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import InstallPWAButton from "@/components/Common/Buttons/InstallPWAButton";
@@ -11,6 +11,11 @@ export default function LandingPageAssessment() {
   const [studentId, setStudentId] = useState("");
   const [surname, setSurname] = useState("");
   const [showAssessment, setShowAssessment] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleStart = () => {
     setShowAssessment(true);
@@ -28,19 +33,41 @@ export default function LandingPageAssessment() {
       </div>
 
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
+        initial={mounted ? { opacity: 0, y: 20 } : false}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
         className="w-full max-w-sm"
       >
         <div className="rounded-2xl shadow-lg p-2">
           <div className="p-4 space-y-4">
+            {/* Quiz Icon Section */}
+            <div className="flex justify-center mb-2">
+              <motion.div
+                initial={mounted ? { scale: 0.8, rotate: -10 } : false}
+                animate={{ scale: 1, rotate: 0 }}
+                transition={{ type: "spring", stiffness: 200 }}
+                className="w-20 h-20 rounded-full bg-gradient-to-r from-[#1b5e20] to-[#2e7d32] flex items-center justify-center shadow-md"
+              >
+                <svg
+                  className="w-10 h-10 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
+                  />
+                </svg>
+              </motion.div>
+            </div>
+
             <h1 className="text-center text-2xl font-bold text-[#1b5e20]">
-              Quiz Access
+              Quiz Time!
             </h1>
-            <p className="text-center text-sm text-gray-600">
-              Enter the required details to start the quiz.
-            </p>
 
             <div className="space-y-3 mt-4">
               <div>

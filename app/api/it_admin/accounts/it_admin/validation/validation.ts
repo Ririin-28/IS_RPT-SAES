@@ -78,7 +78,8 @@ function generateTemporaryPassword(): string {
   return random.padEnd(8, "0");
 }
 
-const ADMIN_ID_PATTERN = /^IA-\d{2}\d{4,}$/;
+// IT Admin IDs follow IA-YYXXXX (year + zero-padded sequence)
+const ADMIN_ID_PATTERN = /^IA-(\d{2})(\d{4,})$/;
 
 export function formatAdminIdentifier(
   raw: string | null | undefined,
@@ -132,8 +133,12 @@ export interface CreateItAdminResult {
 async function generateAdminId(
   connection: PoolConnection,
   sources: Array<{ table: string; column: string }>,
+  yearOverride?: number | null,
 ): Promise<string> {
-  const year = new Date().getFullYear().toString().slice(-2);
+  const yearSource = typeof yearOverride === "number" && Number.isFinite(yearOverride)
+    ? yearOverride
+    : new Date().getFullYear();
+  const year = String(yearSource).slice(-2);
 
   let maxSequence = 0;
 
@@ -165,6 +170,8 @@ export async function createItAdmin(input: CreateItAdminInput): Promise<CreateIt
   const { firstName, middleName, lastName, suffix, email, phoneNumber } = input;
   const fullName = buildFullName(firstName, middleName, lastName, suffix);
   const temporaryPassword = generateTemporaryPassword();
+  const requestTime = new Date();
+  const currentYear = requestTime.getFullYear();
 
   const result = await runWithConnection(async (connection) => {
     const userColumns = await getColumnsForTable(connection, "users");
@@ -173,6 +180,43 @@ export async function createItAdmin(input: CreateItAdminInput): Promise<CreateIt
       itAdminColumns = await getColumnsForTable(connection, "it_admin");
     } catch {
       itAdminColumns = null;
+    }
+
+    // Resolve role_id for admin if available
+    let adminRoleId: number | null = null;
+    try {
+      const roleColumns = await getColumnsForTable(connection, "role");
+      if (roleColumns.has("role_id") && roleColumns.has("role_name")) {
+        const [roleRows] = await connection.query<RowDataPacket[]>(
+          "SELECT role_id FROM role WHERE LOWER(role_name) IN ('admin','it_admin','it-admin') LIMIT 1",
+        );
+        if (Array.isArray(roleRows) && roleRows.length > 0) {
+          const parsed = Number(roleRows[0].role_id);
+          adminRoleId = Number.isFinite(parsed) ? parsed : null;
+        }
+      }
+    } catch {
+      adminRoleId = null;
+    }
+
+    // Fallback: derive from existing users table if role_id present
+    if (adminRoleId == null && userColumns.has("role_id")) {
+      try {
+        const [userRoleRows] = await connection.query<RowDataPacket[]>(
+          "SELECT role_id FROM users WHERE role_id IS NOT NULL AND LOWER(role) IN ('admin','it_admin','it-admin') ORDER BY role_id LIMIT 1",
+        );
+        if (Array.isArray(userRoleRows) && userRoleRows.length > 0) {
+          const parsed = Number(userRoleRows[0].role_id);
+          adminRoleId = Number.isFinite(parsed) ? parsed : null;
+        }
+      } catch {
+        adminRoleId = adminRoleId ?? null;
+      }
+    }
+
+    // Final fallback: default to 1 when column exists but no lookup worked
+    if (adminRoleId == null && userColumns.has("role_id")) {
+      adminRoleId = 1;
     }
 
     await connection.beginTransaction();
@@ -191,12 +235,18 @@ export async function createItAdmin(input: CreateItAdminInput): Promise<CreateIt
       if (userColumns.has("admin_id")) {
         adminIdSources.push({ table: "users", column: "admin_id" });
       }
+      if (userColumns.has("it_admin_id")) {
+        adminIdSources.push({ table: "users", column: "it_admin_id" });
+      }
       if (itAdminColumns?.has("admin_id")) {
         adminIdSources.push({ table: "it_admin", column: "admin_id" });
       }
+      if (itAdminColumns?.has("it_admin_id")) {
+        adminIdSources.push({ table: "it_admin", column: "it_admin_id" });
+      }
 
       if (adminIdSources.length > 0) {
-        adminId = await generateAdminId(connection, adminIdSources);
+        adminId = await generateAdminId(connection, adminIdSources, currentYear);
       }
 
       const userInsertColumns: string[] = [];
@@ -242,6 +292,10 @@ export async function createItAdmin(input: CreateItAdminInput): Promise<CreateIt
         userInsertColumns.push("role");
         userInsertValues.push("admin");
       }
+      if (userColumns.has("role_id") && adminRoleId !== null) {
+        userInsertColumns.push("role_id");
+        userInsertValues.push(adminRoleId);
+      }
       if (userColumns.has("status")) {
         userInsertColumns.push("status");
         userInsertValues.push("Active");
@@ -250,11 +304,19 @@ export async function createItAdmin(input: CreateItAdminInput): Promise<CreateIt
         userInsertColumns.push("password");
         userInsertValues.push(temporaryPassword);
       }
+      if (adminId && userColumns.has("user_code")) {
+        userInsertColumns.push("user_code");
+        userInsertValues.push(adminId);
+      }
+      if (adminId && userColumns.has("it_admin_id")) {
+        userInsertColumns.push("it_admin_id");
+        userInsertValues.push(adminId);
+      }
       if (adminId && userColumns.has("admin_id")) {
         userInsertColumns.push("admin_id");
         userInsertValues.push(adminId);
       }
-      const now = new Date();
+      const now = requestTime;
       if (userColumns.has("created_at")) {
         userInsertColumns.push("created_at");
         userInsertValues.push(now);
@@ -288,6 +350,10 @@ export async function createItAdmin(input: CreateItAdminInput): Promise<CreateIt
         itAdminInsertColumns.push("user_id");
         itAdminValues.push(userId);
 
+        if (adminId && itAdminColumns.has("it_admin_id")) {
+          itAdminInsertColumns.push("it_admin_id");
+          itAdminValues.push(adminId);
+        }
         if (adminId && itAdminColumns.has("admin_id")) {
           itAdminInsertColumns.push("admin_id");
           itAdminValues.push(adminId);
@@ -332,6 +398,10 @@ export async function createItAdmin(input: CreateItAdminInput): Promise<CreateIt
           itAdminInsertColumns.push("role");
           itAdminValues.push("admin");
         }
+        if (itAdminColumns.has("role_id") && adminRoleId !== null) {
+          itAdminInsertColumns.push("role_id");
+          itAdminValues.push(adminRoleId);
+        }
         if (itAdminColumns.has("created_at")) {
           itAdminInsertColumns.push("created_at");
           itAdminValues.push(now);
@@ -356,7 +426,7 @@ export async function createItAdmin(input: CreateItAdminInput): Promise<CreateIt
 
       const record = {
         userId,
-        adminId: formatAdminIdentifier(adminId, userId),
+        adminId: formatAdminIdentifier(adminId, userId, currentYear),
         firstName,
         middleName,
         lastName,

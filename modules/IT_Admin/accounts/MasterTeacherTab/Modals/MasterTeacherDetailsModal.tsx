@@ -54,13 +54,33 @@ export default function MasterTeacherDetailsModal({ show, onClose, masterTeacher
 
       <ModalSection title="Teaching Information">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <ModalInfoItem label="Grade Handled" value={masterTeacher.grade || masterTeacher.handledGrade || masterTeacher.handled_grade} />
-          <ModalInfoItem label="Coordinator Subject" value={masterTeacher.coordinatorSubject || "—"} />
-          <ModalInfoItem label="Subjects Handled" value={
-            Array.isArray(masterTeacher.subjects) 
-              ? masterTeacher.subjects.join(", ") 
-              : (masterTeacher.subjects || masterTeacher.handledSubjects || masterTeacher.handled_subjects || "—")
-          } />
+          <ModalInfoItem
+            label="Grade Handled"
+            value={
+              Array.isArray(masterTeacher.coordinatorHandledGrades) && masterTeacher.coordinatorHandledGrades.length > 0
+                ? masterTeacher.coordinatorHandledGrades.join(", ")
+                : (masterTeacher.grade || masterTeacher.handledGrade || masterTeacher.handled_grade || "—")
+            }
+          />
+          <ModalInfoItem
+            label="Coordinator Subject"
+            value={
+              Array.isArray(masterTeacher.coordinatorHandledSubjects) && masterTeacher.coordinatorHandledSubjects.length > 0
+                ? masterTeacher.coordinatorHandledSubjects.join(", ")
+                : (masterTeacher.coordinatorSubject || "—")
+            }
+          />
+          <ModalInfoItem
+            label="Remedial Teacher Handled"
+            value={
+              Array.isArray(masterTeacher.remedialHandledSubjects) && masterTeacher.remedialHandledSubjects.length > 0
+                ? masterTeacher.remedialHandledSubjects.join(", ")
+                : (Array.isArray(masterTeacher.subjects)
+                    ? masterTeacher.subjects.join(", ")
+                    : (masterTeacher.subjects || masterTeacher.handledSubjects || masterTeacher.handled_subjects || "—")
+                  )
+            }
+          />
         </div>
       </ModalSection>
     </BaseModal>

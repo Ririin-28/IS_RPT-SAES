@@ -29,7 +29,7 @@ import MathNearlyProficientTab from "./MathTabs/NearlyProficientTab";
 import MathProficientTab from "./MathTabs/ProficientTab";
 import MathHighlyProficientTab from "./MathTabs/HighlyProficientTab";
 
-const GRADE_OPTIONS = ["Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"];
+const GRADE_OPTIONS = ["1", "2", "3", "4", "5", "6"];
 const ENGLISH_TABS = ["Non Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"] as const;
 const FILIPINO_TABS = ["Non Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"] as const;
 const MATH_TABS = [

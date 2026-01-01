@@ -1,25 +1,124 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useForm } from "react-hook-form";
-import * as XLSX from 'xlsx';
+import * as XLSX from "xlsx";
 import AddStudentModal, { type AddStudentFormValues } from "./Modals/AddStudentModal";
-import StudentDetailModal from "./Modals/StudentDetailModal"; // Import the modal
+import StudentDetailModal from "./Modals/StudentDetailModal";
 import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
 import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
 // Button Components
-import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import TableList from "@/components/Common/Tables/TableList";
 import KebabMenu from "@/components/Common/Menus/KebabMenu";
-// Text Components
-import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
-import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
-import BodyText from "@/components/Common/Texts/BodyText";
-import BodyLabel from "@/components/Common/Texts/BodyLabel";
-import type { CoordinatorStudent } from "./useCoordinatorStudents";
+import { getStoredUserProfile } from "@/lib/utils/user-profile";
+import { normalizeMaterialSubject, type MaterialSubject } from "@/lib/materials/shared";
 
 const sections = ["All Sections", "A", "B", "C"];
+const SUBJECT_FALLBACK: MaterialSubject = "English";
+
+// Normalize grade values to numeric strings ("1"-"6")
+const normalizeGradeLabel = (value?: string | null): string | undefined => {
+  if (!value) return undefined;
+  const match = String(value).match(/\d+/);
+  if (!match) return undefined;
+  const parsed = Number.parseInt(match[0], 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+  return String(parsed);
+};
+
+const hashLrnForDisplay = (lrn?: string | null): string => {
+  if (!lrn) return "N/A";
+  const normalized = lrn.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  if (!normalized) return "N/A";
+  let hash = 2166136261;
+  for (let i = 0; i < normalized.length; i += 1) {
+    hash ^= normalized.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+    hash >>>= 0;
+  }
+  return `#${hash.toString(16).toUpperCase().padStart(8, "0")}`;
+};
+
+const resolveStudentPhonemic = (
+  student: CoordinatorStudent,
+  subjectLabel?: MaterialSubject | null,
+): string => {
+  const normalizedSubject = normalizeMaterialSubject(subjectLabel ?? SUBJECT_FALLBACK) ?? SUBJECT_FALLBACK;
+  switch (normalizedSubject) {
+    case "English":
+      return student.englishPhonemic || student.filipinoPhonemic || student.mathProficiency || "";
+    case "Filipino":
+      return student.filipinoPhonemic || student.englishPhonemic || student.mathProficiency || "";
+    case "Math":
+      return student.mathProficiency || student.englishPhonemic || student.filipinoPhonemic || "";
+    default:
+      return student.englishPhonemic || student.filipinoPhonemic || student.mathProficiency || "";
+  }
+};
+
+export type CoordinatorStudent = {
+  id: string;
+  studentId: string;
+  lrn?: string;
+  name: string;
+  grade: string;
+  section: string;
+  age: string;
+  guardian: string;
+  guardianContact: string;
+  address: string;
+  relationship: string;
+  englishPhonemic: string;
+  filipinoPhonemic: string;
+  mathProficiency: string;
+};
+
+type CreateStudentPayload = {
+  studentId?: string;
+  lrn?: string;
+  firstName?: string;
+  middleName?: string;
+  lastName?: string;
+  suffix?: string;
+  name: string;
+  grade?: string;
+  section?: string;
+  guardian?: string;
+  guardianFirstName?: string;
+  guardianMiddleName?: string;
+  guardianLastName?: string;
+  guardianSuffix?: string;
+  guardianContact?: string;
+  address?: string;
+  age?: string;
+  relationship?: string;
+  englishPhonemic?: string;
+  filipinoPhonemic?: string;
+  mathProficiency?: string;
+};
+
+type CoordinatorAssignment = {
+  subject: MaterialSubject;
+  gradeLevel: string | null;
+};
+
+const transformApiRecord = (record: any): CoordinatorStudent => ({
+  id: record.id ? String(record.id) : "",
+  studentId: record.studentIdentifier ?? record.id ?? "",
+  lrn: record.lrn ?? null,
+  name: record.fullName ?? record.name ?? "Unnamed Student",
+  grade: record.gradeLevel ?? record.grade ?? "",
+  section: record.section ?? "",
+  age: record.age ?? "",
+  guardian: record.guardianName ?? record.guardian ?? "",
+  guardianContact: record.guardianContact ?? "",
+  address: record.address ?? "",
+  relationship: record.relationship ?? "",
+  englishPhonemic: record.englishPhonemic ?? "",
+  filipinoPhonemic: record.filipinoPhonemic ?? "",
+  mathProficiency: record.mathProficiency ?? "",
+});
 
 const ExportIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -95,49 +194,20 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
 };
 
 interface StudentTabProps {
-  students: CoordinatorStudent[];
   searchTerm: string;
-  subjectLabel: string;
-  gradeLabel: string | null;
-  loading: boolean;
-  saving: boolean;
-  error: string | null;
-  onAddStudent: (input: CoordinatorStudentFormInput) => Promise<void>;
-  onUpdateStudent: (id: number, input: CoordinatorStudentFormInput) => Promise<void>;
-  onImportStudents: (inputs: CoordinatorStudentFormInput[]) => Promise<void>;
-  onDeleteStudents: (ids: number[]) => Promise<void>;
-  onRefresh: () => Promise<void>;
+  onMetaChange?: (meta: { subject: MaterialSubject; gradeLevel: string | null }) => void;
 }
 
-type CoordinatorStudentFormInput = {
-  studentId?: string;
-  name: string;
-  grade?: string;
-  section?: string;
-  age?: string;
-  address?: string;
-  guardian?: string;
-  guardianContact?: string;
-  relationship?: string;
-  englishPhonemic?: string;
-  filipinoPhonemic?: string;
-  mathProficiency?: string;
-};
+type CoordinatorStudentFormInput = CreateStudentPayload;
 
-export default function StudentTab({
-  students,
-  searchTerm,
-  subjectLabel,
-  gradeLabel,
-  loading,
-  saving,
-  error,
-  onAddStudent,
-  onUpdateStudent,
-  onImportStudents,
-  onDeleteStudents,
-  onRefresh,
-}: StudentTabProps) {
+export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps) {
+  const [subject, setSubject] = useState<MaterialSubject>(SUBJECT_FALLBACK);
+  const [gradeLevel, setGradeLevel] = useState<string | null>(null);
+  const [students, setStudents] = useState<CoordinatorStudent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const [showModal, setShowModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
@@ -145,19 +215,279 @@ export default function StudentTab({
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [selectedStudents, setSelectedStudents] = useState<Set<number>>(new Set());
+  const [selectedStudents, setSelectedStudents] = useState<Set<string>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
   const [filter, setFilter] = useState({ section: "All Sections" });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const userProfile = useMemo(() => getStoredUserProfile(), []);
+  const userId = useMemo(() => {
+    const raw = userProfile?.userId;
+    if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+    if (typeof raw === "string") {
+      const parsed = Number.parseInt(raw, 10);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return null;
+  }, [userProfile]);
+
+  const fetchSubject = useCallback(async (): Promise<CoordinatorAssignment> => {
+    if (!userId) {
+      setError("Missing coordinator profile. Please log in again.");
+      setGradeLevel(null);
+      return { subject: SUBJECT_FALLBACK, gradeLevel: null } satisfies CoordinatorAssignment;
+    }
+
+    try {
+      const response = await fetch(
+        `/api/master_teacher/coordinator/profile?userId=${encodeURIComponent(String(userId))}`,
+        {
+          cache: "no-store",
+        },
+      );
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error ?? "Unable to determine coordinator subject.");
+      }
+      const subjectCandidate = payload.coordinator?.coordinatorSubject ?? payload.coordinator?.subjectsHandled ?? null;
+      const resolved = normalizeMaterialSubject(subjectCandidate) ?? SUBJECT_FALLBACK;
+      const gradeCandidate = payload.coordinator?.gradeLevel ?? null;
+      const normalizedGrade = normalizeGradeLabel(
+        typeof gradeCandidate === "string"
+          ? gradeCandidate
+          : gradeCandidate !== null && gradeCandidate !== undefined
+            ? String(gradeCandidate)
+            : undefined,
+      ) ?? null;
+      setGradeLevel(normalizedGrade);
+      setSubject(resolved);
+      return { subject: resolved, gradeLevel: normalizedGrade } satisfies CoordinatorAssignment;
+    } catch (err) {
+      console.error("Failed to load coordinator subject", err);
+      setError(err instanceof Error ? err.message : "Unable to determine subject.");
+      setGradeLevel(null);
+      setSubject(SUBJECT_FALLBACK);
+      return { subject: SUBJECT_FALLBACK, gradeLevel: null } satisfies CoordinatorAssignment;
+    }
+  }, [userId]);
+
+  const fetchStudents = useCallback(
+    async (resolvedSubject?: MaterialSubject, resolvedGradeLevel?: string | null) => {
+      const subjectToUse = resolvedSubject ?? subject;
+      const gradeLevelToUse = resolvedGradeLevel ?? gradeLevel;
+      if (!userId) {
+        setError("Missing coordinator profile. Please log in again.");
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      setError(null);
+      if (!gradeLevelToUse || !gradeLevelToUse.trim()) {
+        setStudents([]);
+        setError("Grade assignment is required to load students.");
+        setLoading(false);
+        return;
+      }
+      try {
+        const params = new URLSearchParams({ subject: subjectToUse });
+        params.set("gradeLevel", gradeLevelToUse.trim());
+
+        const response = await fetch(`/api/master_teacher/coordinator/students?${params.toString()}`, {
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          throw new Error(`Failed to fetch students (${response.status})`);
+        }
+        const payload = await response.json();
+        const data = Array.isArray(payload?.data) ? payload.data : [];
+        setStudents(data.map(transformApiRecord));
+      } catch (err) {
+        console.error("Failed to fetch coordinator students", err);
+        setError(err instanceof Error ? err.message : "Unable to load students.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [gradeLevel, subject, userId],
+  );
+
+  useEffect(() => {
+    (async () => {
+      const assignment = await fetchSubject();
+      await fetchStudents(assignment.subject, assignment.gradeLevel);
+    })();
+  }, [fetchSubject, fetchStudents]);
+
+  useEffect(() => {
+    onMetaChange?.({ subject, gradeLevel });
+  }, [subject, gradeLevel, onMetaChange]);
+
+  const persistStudents = useCallback(
+    async (studentsPayload: CreateStudentPayload[]) => {
+      if (!userId) {
+        setError("Missing coordinator profile. Please log in again.");
+        return;
+      }
+      if (studentsPayload.length === 0) {
+        return;
+      }
+      setSaving(true);
+      setError(null);
+      try {
+        const response = await fetch("/api/master_teacher/coordinator/students", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            createdBy: userId,
+            subject,
+            students: studentsPayload.map((student) => ({
+              studentIdentifier: student.studentId ?? null,
+              lrn: student.lrn ?? null,
+              firstName: student.firstName ?? null,
+              middleName: student.middleName ?? null,
+              lastName: student.lastName ?? null,
+              suffix: student.suffix ?? null,
+              fullName: student.name,
+              gradeLevel: student.grade ?? null,
+              section: student.section ?? null,
+              age: student.age ?? null,
+              guardianName: student.guardian ?? null,
+              guardianFirstName: student.guardianFirstName ?? null,
+              guardianMiddleName: student.guardianMiddleName ?? null,
+              guardianLastName: student.guardianLastName ?? null,
+              guardianSuffix: student.guardianSuffix ?? null,
+              guardianContact: student.guardianContact ?? null,
+              relationship: student.relationship ?? null,
+              address: student.address ?? null,
+              englishPhonemic: student.englishPhonemic ?? null,
+              filipinoPhonemic: student.filipinoPhonemic ?? null,
+              mathProficiency: student.mathProficiency ?? null,
+            })),
+          }),
+        });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          throw new Error(payload?.error ?? "Failed to save students");
+        }
+        await fetchStudents();
+      } catch (err) {
+        console.error("Failed to persist students", err);
+        setError(err instanceof Error ? err.message : "Failed to save students.");
+        throw err;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [fetchStudents, subject, userId],
+  );
+
+  const addStudent = useCallback(async (student: CreateStudentPayload) => {
+    await persistStudents([student]);
+  }, [persistStudents]);
+
+  const updateStudent = useCallback(
+    async (id: number, student: CreateStudentPayload) => {
+      if (!userId) {
+        setError("Missing coordinator profile. Please log in again.");
+        return;
+      }
+      setSaving(true);
+      setError(null);
+      try {
+        const response = await fetch(`/api/master_teacher/coordinator/students/${id}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            userId,
+            studentIdentifier: student.studentId ?? null,
+            lrn: student.lrn ?? null,
+              firstName: student.firstName ?? null,
+              middleName: student.middleName ?? null,
+              lastName: student.lastName ?? null,
+              suffix: student.suffix ?? null,
+            fullName: student.name,
+            gradeLevel: student.grade ?? null,
+            section: student.section ?? null,
+            age: student.age ?? null,
+            guardianName: student.guardian ?? null,
+              guardianFirstName: student.guardianFirstName ?? null,
+              guardianMiddleName: student.guardianMiddleName ?? null,
+              guardianLastName: student.guardianLastName ?? null,
+              guardianSuffix: student.guardianSuffix ?? null,
+            guardianContact: student.guardianContact ?? null,
+            relationship: student.relationship ?? null,
+            address: student.address ?? null,
+            englishPhonemic: student.englishPhonemic ?? null,
+            filipinoPhonemic: student.filipinoPhonemic ?? null,
+            mathProficiency: student.mathProficiency ?? null,
+          }),
+        });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          throw new Error(payload?.error ?? "Failed to update student");
+        }
+        await fetchStudents();
+      } catch (err) {
+        console.error("Failed to update student", err);
+        setError(err instanceof Error ? err.message : "Failed to update student.");
+        throw err;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [fetchStudents, userId],
+  );
+
+  const importStudents = useCallback(async (studentList: CreateStudentPayload[]) => {
+    await persistStudents(studentList);
+  }, [persistStudents]);
+
+  const deleteStudents = useCallback(
+    async (ids: string[]) => {
+      if (!userId || ids.length === 0) {
+        return;
+      }
+      setSaving(true);
+      setError(null);
+      try {
+        await Promise.all(
+          ids.map(async (id) => {
+            const response = await fetch(
+              `/api/master_teacher/coordinator/students/${id}?userId=${encodeURIComponent(String(userId))}`,
+              {
+                method: "DELETE",
+              },
+            );
+            if (!response.ok) {
+              const payload = await response.json().catch(() => null);
+              throw new Error(payload?.error ?? "Failed to delete student");
+            }
+          }),
+        );
+        await fetchStudents();
+      } catch (err) {
+        console.error("Failed to delete students", err);
+        setError(err instanceof Error ? err.message : "Failed to delete students.");
+      } finally {
+        setSaving(false);
+      }
+    },
+    [fetchStudents, userId],
+  );
+
   const buildDefaultValues = useCallback((): AddStudentFormValues => ({
     studentId: "",
+    lrn: "",
     role: "Student",
     firstName: "",
     middleName: "",
     lastName: "",
     suffix: "",
-    grade: gradeLabel?.trim() ?? "",
+    grade: gradeLevel?.trim() ?? "",
     section: "",
     guardianFirstName: "",
     guardianMiddleName: "",
@@ -169,27 +499,27 @@ export default function StudentTab({
     englishPhonemic: "",
     filipinoPhonemic: "",
     mathPhonemic: "",
-  }), [gradeLabel]);
+  }), [gradeLevel]);
 
   // React Hook Form setup
   const formMethods = useForm<AddStudentFormValues>({
     defaultValues: buildDefaultValues(),
   });
-  const { register, handleSubmit, reset, formState: { errors }, setValue } = formMethods;
+  const { reset, setValue } = formMethods;
 
   useEffect(() => {
     reset(buildDefaultValues());
   }, [buildDefaultValues, reset]);
 
   useEffect(() => {
-    if (gradeLabel && gradeLabel.trim().length > 0) {
-      setValue("grade", gradeLabel.trim(), { shouldDirty: false, shouldTouch: false, shouldValidate: false });
+    if (gradeLevel && gradeLevel.trim().length > 0) {
+      setValue("grade", gradeLevel.trim(), { shouldDirty: false, shouldTouch: false, shouldValidate: false });
     }
-  }, [gradeLabel, setValue]);
+  }, [gradeLevel, setValue]);
 
   // Add or update student
   const onSubmit = async (data: AddStudentFormValues) => {
-    const effectiveGrade = gradeLabel && gradeLabel.trim().length > 0 ? gradeLabel.trim() : data.grade;
+    const effectiveGrade = gradeLevel && gradeLevel.trim().length > 0 ? gradeLevel.trim() : data.grade;
     if (!effectiveGrade || effectiveGrade.trim().length === 0) {
       alert("Grade level is required.");
       return;
@@ -197,14 +527,23 @@ export default function StudentTab({
     try {
       const payload: CoordinatorStudentFormInput = {
         studentId: data.studentId || undefined,
+        lrn: data.lrn?.trim() || undefined,
+        firstName: data.firstName?.trim() || undefined,
+        middleName: data.middleName?.trim() || undefined,
+        lastName: data.lastName?.trim() || undefined,
+        suffix: data.suffix?.trim() || undefined,
         name: [data.firstName, data.middleName, data.lastName, data.suffix].filter((part) => part && part.trim().length > 0).join(" ") || "Unnamed Student",
-        grade: effectiveGrade,
+        grade: normalizeGradeLabel(effectiveGrade) ?? "",
         section: data.section || undefined,
         age: undefined,
         address: data.address || undefined,
         guardian: [data.guardianFirstName, data.guardianMiddleName, data.guardianLastName, data.guardianSuffix]
           .filter((part) => part && part.trim().length > 0)
           .join(" ") || undefined,
+        guardianFirstName: data.guardianFirstName?.trim() || undefined,
+        guardianMiddleName: data.guardianMiddleName?.trim() || undefined,
+        guardianLastName: data.guardianLastName?.trim() || undefined,
+        guardianSuffix: data.guardianSuffix?.trim() || undefined,
         guardianContact: data.guardianContact || undefined,
         relationship: data.relationship || undefined,
         englishPhonemic: data.englishPhonemic || undefined,
@@ -213,10 +552,10 @@ export default function StudentTab({
       };
       
       if (editingStudent) {
-        await onUpdateStudent(editingStudent.id, payload);
+        await updateStudent(editingStudent.id, payload);
         setEditingStudent(null);
       } else {
-        await onAddStudent(payload);
+        await addStudent(payload);
       }
       
       reset();
@@ -228,7 +567,7 @@ export default function StudentTab({
   };
 
   // Handle student selection
-  const handleSelectStudent = (id: number, checked: boolean) => {
+  const handleSelectStudent = (id: string, checked: boolean) => {
     const newSelected = new Set(selectedStudents);
     if (checked) {
       newSelected.add(id);
@@ -250,16 +589,27 @@ export default function StudentTab({
     return matchSection && matchSearch;
   });
 
+  const tableRows = useMemo(() => (
+    filteredStudents.map((student, idx) => ({
+      ...student,
+      no: idx + 1,
+      hashedLrn: hashLrnForDisplay(student.lrn),
+      phonemic: resolveStudentPhonemic(student, subject),
+    }))
+  ), [filteredStudents, subject]);
+
   const handleExport = () => {
-    if (filteredStudents.length === 0) {
+    if (tableRows.length === 0) {
       alert("No students available to export.");
       return;
     }
 
-    const exportData = filteredStudents.map((student, index) => ({
-      "No#": index + 1,
+    const exportData = tableRows.map((student) => ({
+      "No#": student.no,
       "Student ID": student.studentId ?? "",
+      "LRN (Hashed)": student.hashedLrn,
       "Full Name": student.name ?? "",
+      Phonemic: student.phonemic ?? "",
       Grade: student.grade ?? "",
       Section: student.section ?? "",
       Guardian: student.guardian ?? "",
@@ -272,7 +622,7 @@ export default function StudentTab({
   XLSX.utils.book_append_sheet(workbook, worksheet, "Students");
 
   const timestamp = new Date().toISOString().replace(/[:.-]/g, "");
-  const sanitizedSubject = subjectLabel.replace(/\s+/g, "");
+  const sanitizedSubject = subject.replace(/\s+/g, "");
   const filename = `MasterTeacher_${sanitizedSubject}_Students_${timestamp}.xlsx`;
     XLSX.writeFile(workbook, filename);
   };
@@ -303,7 +653,7 @@ export default function StudentTab({
 
   const confirmDelete = async () => {
     try {
-      await onDeleteStudents(Array.from(selectedStudents));
+      await deleteStudents(Array.from(selectedStudents));
       setSelectedStudents(new Set());
       setSelectMode(false);
       setShowDeleteModal(false);
@@ -315,7 +665,7 @@ export default function StudentTab({
 
   // Handle viewing student details
   const handleViewDetails = (student: any) => {
-    setSelectedStudent({ ...student, subjectAssigned: subjectLabel });
+    setSelectedStudent({ ...student, subjectAssigned: subject });
     setShowDetailModal(true);
   };
 
@@ -336,12 +686,13 @@ export default function StudentTab({
     
     reset({
       studentId: student.studentId || "",
+      lrn: student.lrn || "",
       role: "Student",
       firstName,
       middleName,
       lastName,
       suffix: "",
-      grade: student.grade || gradeLabel?.trim() || "",
+      grade: student.grade || gradeLevel?.trim() || "",
       section: student.section || "",
       guardianFirstName,
       guardianMiddleName,
@@ -378,6 +729,12 @@ export default function StudentTab({
   const handleUploadConfirm = async () => {
     if (!selectedFile) return;
 
+    const assignedGrade = normalizeGradeLabel(gradeLevel);
+    if (!assignedGrade) {
+      alert("Grade assignment is required before uploading.");
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
@@ -403,30 +760,41 @@ export default function StudentTab({
           const lastName = readField(row, ['SURNAME', 'LASTNAME', 'LAST_NAME', 'LAST NAME', 'Last Name', 'lastName']);
           const studentName = `${firstName} ${middleName} ${lastName}`.trim();
 
+          const lrn = readField(row, ['LRN', 'Lrn', 'lrn']);
+
           const guardianFirst = readField(row, ["GUARDIAN'S FIRSTNAME", "GUARDIAN FIRSTNAME", "Guardian First Name", 'guardianFirstName']);
           const guardianMiddle = readField(row, ["GUARDIAN'S MIDDLENAME", "GUARDIAN MIDDLENAME", "Guardian Middle Name", 'guardianMiddleName']);
           const guardianLast = readField(row, ["GUARDIAN'S SURNAME", "GUARDIAN SURNAME", "Guardian Last Name", 'guardianLastName']);
           const guardianName = `${guardianFirst} ${guardianMiddle} ${guardianLast}`.trim();
 
           const subjectPhonemic = readField(row, ['SUBJECT PHONEMIC', 'Subject Phonemic', 'subjectPhonemic', 'PHONEMIC', 'Phonemic']);
+          const gradeFromSheet = readField(row, ['GRADE', 'Grade', 'grade']);
+          const resolvedGrade = normalizeGradeLabel(assignedGrade ?? gradeFromSheet) ?? "";
 
           return {
             studentId: readField(row, ['STUDENT ID', 'Student ID', 'studentId', 'ID']),
+            lrn: lrn || undefined,
+            firstName: firstName || '',
+            middleName: middleName || '',
+            lastName: lastName || '',
             name: studentName || 'Unnamed Student',
-            grade: readField(row, ['GRADE', 'Grade', 'grade']),
+            grade: resolvedGrade,
             section: readField(row, ['SECTION', 'Section', 'section']),
             age: readField(row, ['AGE', 'Age', 'age']),
             address: readField(row, ['ADDRESS', 'Address', 'address']),
             guardian: guardianName || '',
+            guardianFirstName: guardianFirst || '',
+            guardianMiddleName: guardianMiddle || '',
+            guardianLastName: guardianLast || '',
             guardianContact: readField(row, ["GUARDIAN'S CONTACT", "GUARDIAN'S CONTACT NUMBER", 'CONTACT NUMBER', 'CONTACT_NUMBER', 'Contact Number', 'contactNumber', 'GUARDIAN CONTACT', 'Guardian Contact', 'GUARDIAN_CONTACT', 'guardianContact']),
             relationship: readField(row, ['RELATIONSHIP', 'Relationship', 'relationship']),
-            englishPhonemic: subjectLabel?.toLowerCase() === 'english' ? subjectPhonemic : '',
-            filipinoPhonemic: subjectLabel?.toLowerCase() === 'filipino' ? subjectPhonemic : '',
-            mathProficiency: subjectLabel?.toLowerCase() === 'math' ? subjectPhonemic : '',
+            englishPhonemic: subject?.toLowerCase() === 'english' ? subjectPhonemic : '',
+            filipinoPhonemic: subject?.toLowerCase() === 'filipino' ? subjectPhonemic : '',
+            mathProficiency: subject?.toLowerCase() === 'math' ? subjectPhonemic : '',
           } satisfies CoordinatorStudentFormInput;
         });
 
-        void onImportStudents(newStudents).catch((error) => {
+        void importStudents(newStudents).catch((error) => {
           console.error('Failed to import students', error);
           alert(error instanceof Error ? error.message : 'Failed to import students.');
         });
@@ -600,8 +968,8 @@ export default function StudentTab({
         onSubmit={onSubmit}
         isSubmitting={saving}
         apiError={error}
-        subjectLabel={subjectLabel}
-        gradeLabel={gradeLabel}
+        subjectLabel={subject}
+        gradeLabel={gradeLevel}
         isEditing={!!editingStudent}
       />
 
@@ -614,29 +982,26 @@ export default function StudentTab({
       />
 
       {/* Student Table Section */}
-<TableList
-  columns={[
-    { key: "no", title: "No#" },
-    { key: "studentId", title: "Student ID" },
-    { key: "name", title: "Full Name" },
-    { key: "grade", title: "Grade" },
-    { key: "section", title: "Section" },
-  ]}
-  data={filteredStudents.map((student, idx) => ({
-    ...student,
-    no: idx + 1,
-  }))}
-  actions={(row: any) => (
-    <UtilityButton small onClick={() => handleViewDetails(row)} title="View student details">
-      View
-    </UtilityButton>
-  )}
-  selectable={selectMode}
-  selectedItems={selectedStudents}
-  onSelectAll={handleSelectAll}
-  onSelectItem={handleSelectStudent}
-  pageSize={10}
-/>
+      <TableList
+        columns={[
+          { key: "no", title: "No#" },
+          { key: "studentId", title: "Student ID" },
+          { key: "hashedLrn", title: "LRN" },
+          { key: "name", title: "Full Name" },
+          { key: "phonemic", title: "Phonemic" },
+        ]}
+        data={tableRows}
+        actions={(row: any) => (
+          <UtilityButton small onClick={() => handleViewDetails(row)} title="View student details">
+            View
+          </UtilityButton>
+        )}
+        selectable={selectMode}
+        selectedItems={selectedStudents}
+        onSelectAll={handleSelectAll}
+        onSelectItem={handleSelectStudent}
+        pageSize={10}
+      />
       <ConfirmationModal
         isOpen={showConfirmModal}
         onClose={handleUploadCancel}

@@ -49,7 +49,7 @@ export default function MasterTeacherHeader({ title, onSearch }: HeaderProps) {
       {
         label: "Remedial Teacher View",
         active: isRemedial,
-        onSelect: () => handleRoleSwitch("/MasterTeacher/RemedialTeacher/calendar"),
+        onSelect: () => handleRoleSwitch("/MasterTeacher/RemedialTeacher/dashboard"),
       },
     ];
   }, [handleRoleSwitch, pathname]);

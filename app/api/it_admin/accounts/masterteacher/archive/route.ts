@@ -22,6 +22,8 @@ const MASTER_TEACHER_RELATED_TABLES = [
   "master_teacher_assignment",
 ];
 
+const ARCHIVE_TABLE = "archived_users";
+
 const MASTER_TEACHER_TABLE_CANDIDATES = Array.from(
   new Set<string>([...MASTER_TEACHER_PRIMARY_TABLES, ...MASTER_TEACHER_RELATED_TABLES]),
 );
@@ -183,9 +185,23 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await runWithConnection(async (connection) => {
-      const archiveColumns = await tryFetchTableColumns(connection, "archive_users");
+      const archiveColumns = await tryFetchTableColumns(connection, ARCHIVE_TABLE);
       if (!archiveColumns || archiveColumns.size === 0) {
         throw new HttpError(500, "Archive table is not available.");
+      }
+
+      // Preload role ids to avoid FK violations on archive insert.
+      const roleIds = new Set<number>();
+      try {
+        const [roleRows] = await connection.query<RowDataPacket[]>("SELECT role_id FROM role");
+        for (const row of roleRows) {
+          const id = Number(row.role_id);
+          if (Number.isInteger(id)) {
+            roleIds.add(id);
+          }
+        }
+      } catch {
+        // If role table is missing, leave set empty; we will skip role_id insert to avoid FK errors.
       }
 
       const masterTeacherTables = await resolveMasterTeacherTables(connection);
@@ -201,6 +217,9 @@ export async function POST(request: NextRequest) {
       try {
         const archived: ArchiveResult[] = [];
         const archiveReason = reason && reason.length > 0 ? reason : "Archived by IT Administrator";
+        const archivedByValueRaw = payload?.archivedBy;
+        const archivedByValue = Number(archivedByValueRaw);
+        const archivedBy = Number.isInteger(archivedByValue) && archivedByValue > 0 ? archivedByValue : null;
 
         for (const userId of userIds) {
           const [userRows] = await connection.query<RowDataPacket[]>(
@@ -216,7 +235,8 @@ export async function POST(request: NextRequest) {
           const name = computeFullName(userRow);
           const email = typeof userRow.email === "string" ? userRow.email : null;
           const contactNumber = normalizeContact(userRow);
-          const role = typeof userRow.role === "string" && userRow.role.trim().length > 0 ? userRow.role : "master_teacher";
+          const roleId = Number.isInteger(userRow.role_id) ? (userRow.role_id as number) : null;
+          const userCode = typeof userRow.user_code === "string" ? userRow.user_code : null;
 
           const masterTeacherRows = new Map<string, RowDataPacket>();
           for (const { table, columns } of masterTeacherTables) {
@@ -242,7 +262,7 @@ export async function POST(request: NextRequest) {
           }
 
           const [existingArchive] = await connection.query<RowDataPacket[]>(
-            "SELECT archive_id FROM archive_users WHERE user_id = ? LIMIT 1",
+            `SELECT archived_id FROM ${ARCHIVE_TABLE} WHERE user_id = ? LIMIT 1`,
             [userId],
           );
 
@@ -256,8 +276,11 @@ export async function POST(request: NextRequest) {
             };
 
             pushValue("user_id", userId);
-            if (archiveColumns.has("role")) {
-              pushValue("role", role);
+            if (archiveColumns.has("user_code") && userCode) {
+              pushValue("user_code", userCode);
+            }
+            if (archiveColumns.has("role_id") && roleId !== null && roleIds.has(roleId)) {
+              pushValue("role_id", roleId);
             }
             if (archiveColumns.has("name") && name) {
               pushValue("name", name);
@@ -271,15 +294,29 @@ export async function POST(request: NextRequest) {
             if (archiveColumns.has("reason")) {
               pushValue("reason", archiveReason);
             }
-            if (archiveColumns.has("timestamp")) {
-              pushValue("timestamp", new Date());
+            if (archiveColumns.has("archived_at")) {
+              pushValue("archived_at", new Date());
+            }
+            if (archiveColumns.has("archived_by") && archivedBy !== null) {
+              pushValue("archived_by", archivedBy);
+            }
+
+            if (archiveColumns.has("snapshot_json")) {
+              const masterTeacherSnapshot = Object.fromEntries(
+                Array.from(masterTeacherRows.entries()).map(([tableName, row]) => [tableName, row]),
+              );
+              const snapshot = {
+                user: userRow,
+                masterTeacher: masterTeacherSnapshot,
+              };
+              pushValue("snapshot_json", JSON.stringify(snapshot));
             }
 
             const placeholders = columns.map(() => "?").join(", ");
             const columnsSql = columns.join(", ");
 
             await connection.query<ResultSetHeader>(
-              `INSERT INTO archive_users (${columnsSql}) VALUES (${placeholders})`,
+              `INSERT INTO ${ARCHIVE_TABLE} (${columnsSql}) VALUES (${placeholders})`,
               values,
             );
           }
@@ -301,7 +338,7 @@ export async function POST(request: NextRequest) {
                 if (normalizedReferencedTable === table.toLowerCase()) {
                   continue;
                 }
-                if (normalizedReferencedTable === "archive_users" || normalizedReferencedTable === "account_logs") {
+                if (normalizedReferencedTable === ARCHIVE_TABLE.toLowerCase() || normalizedReferencedTable === "account_logs") {
                   continue;
                 }
 
@@ -364,7 +401,7 @@ export async function POST(request: NextRequest) {
             if (normalizedTableName === "users") {
               continue;
             }
-            if (normalizedTableName === "archive_users") {
+            if (normalizedTableName === ARCHIVE_TABLE.toLowerCase()) {
               continue;
             }
             if (normalizedTableName === "account_logs") {

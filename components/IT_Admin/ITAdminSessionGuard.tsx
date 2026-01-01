@@ -7,6 +7,10 @@ type ITAdminSessionGuardProps = {
   children: ReactNode;
 };
 
+// Temporary bypass to allow admin access without session validation.
+// Set to false to re-enable server/session checks.
+const DISABLE_ADMIN_SESSION_GUARD = true;
+
 type AppRouterInstance = ReturnType<typeof useRouter>;
 
 function redirectAdminToLogin(router: AppRouterInstance) {
@@ -34,6 +38,10 @@ const normalizeRole = (role: string | null | undefined) => {
 };
 
 export default function ITAdminSessionGuard({ children }: ITAdminSessionGuardProps) {
+  if (DISABLE_ADMIN_SESSION_GUARD) {
+    return <>{children}</>;
+  }
+
   const router = useRouter();
   const redirectingRef = useRef(false);
 

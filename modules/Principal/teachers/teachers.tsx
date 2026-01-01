@@ -4,6 +4,7 @@ import PrincipalHeader from "@/components/Principal/Header";
 import { useEffect, useState } from "react";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
+import { useMemo } from "react";
 import { FaTimes } from "react-icons/fa";
 // Teacher Tabs
 import TeacherAllGradesTab from "./TeacherTab/AllGradesTab";
@@ -23,8 +24,15 @@ import MasterTeacherGradeFiveTab from "./MasterTeacherTab/GradeFiveTab";
 import MasterTeacherGradeSixTab from "./MasterTeacherTab/GradeSixTab";
 
 
+const GRADE_OPTIONS = ["All Grades", "1", "2", "3", "4", "5", "6"] as const;
+
+const normalizeGradeTab = (value: string): string => {
+  if (value === "All Grades") return "All Grades";
+  return GRADE_OPTIONS.includes(value as typeof GRADE_OPTIONS[number]) ? value : "All Grades";
+};
+
 export default function PrincipalTeachers() {
-  const [activeTab, setActiveTab] = useState("All Grades");
+  const [activeTab, setActiveTab] = useState<string>("All Grades");
   const [teacherType, setTeacherType] = useState("Master Teachers");
   const [teachers, setTeachers] = useState<any[]>([]);
   const [masterTeachers, setMasterTeachers] = useState<any[]>([]);
@@ -71,6 +79,8 @@ export default function PrincipalTeachers() {
     };
   }, []);
 
+  const gradeOptions = useMemo(() => [...GRADE_OPTIONS], []);
+
   return (
     <div className="flex h-screen bg-white overflow-hidden">
       <Sidebar />
@@ -88,9 +98,9 @@ export default function PrincipalTeachers() {
                   />
                   <SecondaryHeader title="in" />
                   <HeaderDropdown
-                    options={["All Grades", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"]}
+                    options={gradeOptions as string[]}
                     value={activeTab}
-                    onChange={setActiveTab}
+                    onChange={(value) => setActiveTab(normalizeGradeTab(value))}
                     className="pl-2"
                   />
                 </div>
@@ -131,23 +141,23 @@ export default function PrincipalTeachers() {
                 {teacherType === "Master Teachers" && (
                   <>
                     {activeTab === "All Grades" && <MasterTeacherAllGradesTab teachers={masterTeachers} setTeachers={setMasterTeachers} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 1" && <MasterTeacherGradeOneTab teachers={masterTeachers} setTeachers={setMasterTeachers} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 2" && <MasterTeacherGradeTwoTab teachers={masterTeachers} setTeachers={setMasterTeachers} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 3" && <MasterTeacherGradeThreeTab teachers={masterTeachers} setTeachers={setMasterTeachers} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 4" && <MasterTeacherGradeFourTab teachers={masterTeachers} setTeachers={setMasterTeachers} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 5" && <MasterTeacherGradeFiveTab teachers={masterTeachers} setTeachers={setMasterTeachers} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 6" && <MasterTeacherGradeSixTab teachers={masterTeachers} setTeachers={setMasterTeachers} searchTerm={searchTerm} />}
+                    {activeTab === "1" && <MasterTeacherGradeOneTab teachers={masterTeachers} setTeachers={setMasterTeachers} searchTerm={searchTerm} />}
+                    {activeTab === "2" && <MasterTeacherGradeTwoTab teachers={masterTeachers} setTeachers={setMasterTeachers} searchTerm={searchTerm} />}
+                    {activeTab === "3" && <MasterTeacherGradeThreeTab teachers={masterTeachers} setTeachers={setMasterTeachers} searchTerm={searchTerm} />}
+                    {activeTab === "4" && <MasterTeacherGradeFourTab teachers={masterTeachers} setTeachers={setMasterTeachers} searchTerm={searchTerm} />}
+                    {activeTab === "5" && <MasterTeacherGradeFiveTab teachers={masterTeachers} setTeachers={setMasterTeachers} searchTerm={searchTerm} />}
+                    {activeTab === "6" && <MasterTeacherGradeSixTab teachers={masterTeachers} setTeachers={setMasterTeachers} searchTerm={searchTerm} />}
                   </>
                 )}
                 {teacherType === "Teachers" && (
                   <>
                     {activeTab === "All Grades" && <TeacherAllGradesTab teachers={teachers} setTeachers={setTeachers} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 1" && <TeacherGradeOneTab teachers={teachers} setTeachers={setTeachers} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 2" && <TeacherGradeTwoTab teachers={teachers} setTeachers={setTeachers} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 3" && <TeacherGradeThreeTab teachers={teachers} setTeachers={setTeachers} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 4" && <TeacherGradeFourTab teachers={teachers} setTeachers={setTeachers} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 5" && <TeacherGradeFiveTab teachers={teachers} setTeachers={setTeachers} searchTerm={searchTerm} />}
-                    {activeTab === "Grade 6" && <TeacherGradeSixTab teachers={teachers} setTeachers={setTeachers} searchTerm={searchTerm} />}
+                    {activeTab === "1" && <TeacherGradeOneTab teachers={teachers} setTeachers={setTeachers} searchTerm={searchTerm} />}
+                    {activeTab === "2" && <TeacherGradeTwoTab teachers={teachers} setTeachers={setTeachers} searchTerm={searchTerm} />}
+                    {activeTab === "3" && <TeacherGradeThreeTab teachers={teachers} setTeachers={setTeachers} searchTerm={searchTerm} />}
+                    {activeTab === "4" && <TeacherGradeFourTab teachers={teachers} setTeachers={setTeachers} searchTerm={searchTerm} />}
+                    {activeTab === "5" && <TeacherGradeFiveTab teachers={teachers} setTeachers={setTeachers} searchTerm={searchTerm} />}
+                    {activeTab === "6" && <TeacherGradeSixTab teachers={teachers} setTeachers={setTeachers} searchTerm={searchTerm} />}
                   </>
                 )}
               </div>

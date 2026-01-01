@@ -1,27 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
-import { getTableColumns, query } from "@/lib/db";
+import { getTableColumns, query, tableExists } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-const REMEDIAL_TABLE = "remedial_teachers" as const;
+const REMEDIAL_HANDLED_TABLE = "mt_remedialteacher_handled" as const;
 const COORDINATOR_TABLE = "mt_coordinator" as const;
-
-const REMEDIAL_GRADE_COLUMNS = [
-  { column: "grade", alias: "rt_grade" },
-  { column: "grade_level", alias: "rt_grade_level" },
-  { column: "handled_grade", alias: "rt_handled_grade" },
-  { column: "gradelevel", alias: "rt_gradelevel" },
-  { column: "gradeLevel", alias: "rt_gradeLevel" },
-] as const;
-
-const REMEDIAL_ROOM_COLUMNS = [
-  { column: "room", alias: "rt_room" },
-  { column: "room_number", alias: "rt_room_number" },
-  { column: "homeroom", alias: "rt_homeroom" },
-  { column: "classroom", alias: "rt_classroom" },
-  { column: "room_assigned", alias: "rt_room_assigned" },
-] as const;
 
 const COORDINATOR_SUBJECT_COLUMNS = [
   { column: "subject_handled", alias: "mc_subject_handled" },
@@ -71,8 +55,54 @@ async function safeGetColumns(tableName: string): Promise<Set<string>> {
   }
 }
 
+async function safeTableExists(tableName: string): Promise<boolean> {
+  try {
+    return await tableExists(tableName);
+  } catch {
+    return false;
+  }
+}
+
+async function resolveMasterTeacherIds(userId: number): Promise<string[]> {
+  const ids = new Set<string>();
+
+  const columns = await safeGetColumns("master_teacher");
+  if (!columns.size || !columns.has("user_id")) {
+    return Array.from(ids);
+  }
+
+  const hasMasterTeacherId = columns.has("master_teacher_id");
+  const selectParts = ["user_id AS user_id"];
+  if (hasMasterTeacherId) {
+    selectParts.push("master_teacher_id AS master_teacher_id");
+  }
+
+  const sql = `SELECT ${selectParts.join(", ")} FROM \`master_teacher\` WHERE user_id = ?`;
+  const [rows] = await query<RowDataPacket[]>(sql, [userId]);
+
+  for (const row of rows ?? []) {
+    if (row.user_id != null) {
+      ids.add(String(row.user_id));
+    }
+    if (hasMasterTeacherId && row.master_teacher_id != null) {
+      const mtId = String(row.master_teacher_id).trim();
+      if (mtId) {
+        ids.add(mtId);
+      }
+    }
+  }
+
+  return Array.from(ids);
+}
+
 type RawProfileRow = RowDataPacket & {
   user_id: number;
+  user_master_teacher_id?: string | null;
+  mt_master_teacher_id?: string | null;
+  mt_masterteacher_id?: string | null;
+  mt_teacher_id?: string | null;
+  rt_master_teacher_id?: string | null;
+  rt_remedial_teacher_id?: string | null;
   user_first_name?: string | null;
   user_middle_name?: string | null;
   user_last_name?: string | null;
@@ -118,6 +148,77 @@ function buildName(
   return parts.join(" ");
 }
 
+async function loadRemedialHandled(masterTeacherIds: Array<string | number>): Promise<{ gradeLevel: string | null }> {
+  const ids = masterTeacherIds
+    .map((id) => {
+      if (id === null || id === undefined) return null;
+      const text = String(id).trim();
+      return text.length ? text : null;
+    })
+    .filter((id): id is string => Boolean(id));
+
+  if (ids.length === 0) {
+    return { gradeLevel: null };
+  }
+
+  const uniqueIds = Array.from(new Set(ids));
+
+  try {
+    const handledColumns = await safeGetColumns(REMEDIAL_HANDLED_TABLE);
+    const hasHandledGradeId = handledColumns.has("grade_id");
+
+    const gradeColumns = await safeGetColumns("grade");
+    const gradeLabelColumn = gradeColumns.has("grade_level")
+      ? "grade_level"
+      : gradeColumns.has("label")
+        ? "label"
+        : gradeColumns.has("name")
+          ? "name"
+          : gradeColumns.has("grade")
+            ? "grade"
+            : null;
+
+    const selectParts = ["mr.master_teacher_id"];
+    if (hasHandledGradeId) {
+      selectParts.push("mr.grade_id AS handled_grade_id");
+    }
+    if (gradeLabelColumn) {
+      selectParts.push(`g.${gradeLabelColumn} AS grade_table_label`);
+    }
+
+    const joinClause = gradeLabelColumn ? `LEFT JOIN grade g ON g.grade_id = mr.grade_id` : "";
+
+    const sql = `
+      SELECT ${selectParts.join(", ")}
+      FROM ${REMEDIAL_HANDLED_TABLE} mr
+      ${joinClause}
+      WHERE mr.master_teacher_id IN (${uniqueIds.map(() => "?").join(", ")})
+      LIMIT 1`;
+
+    const [rows] = await query<RowDataPacket[]>(sql, uniqueIds);
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return { gradeLevel: null };
+    }
+
+    const row = rows[0];
+    const tableLabel = row.grade_table_label != null ? String(row.grade_table_label) : null;
+    const handledGradeId = row.handled_grade_id != null ? Number(row.handled_grade_id) : null;
+
+    if (tableLabel && tableLabel.trim().length) {
+      return { gradeLevel: tableLabel.trim() };
+    }
+
+    if (Number.isFinite(handledGradeId)) {
+      return { gradeLevel: `Grade ${handledGradeId}` };
+    }
+
+    return { gradeLevel: null };
+  } catch {
+    return { gradeLevel: null };
+  }
+}
+
 export async function PUT(request: NextRequest) {
   const url = new URL(request.url);
   const userIdParam = url.searchParams.get("userId");
@@ -143,8 +244,8 @@ export async function PUT(request: NextRequest) {
 
   try {
     const userColumns = await safeGetColumns("users");
-    const remedialColumns = await safeGetColumns(REMEDIAL_TABLE);
     const coordinatorColumns = await safeGetColumns(COORDINATOR_TABLE);
+    const coordinatorTableExists = coordinatorColumns.size > 0 || await safeTableExists(COORDINATOR_TABLE);
 
     const updates: string[] = [];
     const params: any[] = [];
@@ -175,19 +276,7 @@ export async function PUT(request: NextRequest) {
       await query(`UPDATE users SET ${updates.join(", ")} WHERE user_id = ?`, params);
     }
 
-    if (body.grade !== undefined && remedialColumns.size > 0) {
-      const gradeCol = remedialColumns.has("grade") ? "grade" : remedialColumns.has("grade_level") ? "grade_level" : null;
-      if (gradeCol) {
-        await query(`UPDATE \`${REMEDIAL_TABLE}\` SET ${gradeCol} = ? WHERE user_id = ?`, [body.grade?.trim() || null, userId]);
-      }
-    }
-
-    if (body.room !== undefined && remedialColumns.size > 0) {
-      const roomCol = remedialColumns.has("room") ? "room" : remedialColumns.has("room_number") ? "room_number" : null;
-      if (roomCol) {
-        await query(`UPDATE \`${REMEDIAL_TABLE}\` SET ${roomCol} = ? WHERE user_id = ?`, [body.room?.trim() || null, userId]);
-      }
-    }
+    // No remedial_teachers table available; grade and room updates are skipped here.
 
     if (body.subject !== undefined && coordinatorColumns.size > 0) {
       const subjectCol = coordinatorColumns.has("subject_handled") ? "subject_handled" : coordinatorColumns.has("coordinator_subject") ? "coordinator_subject" : null;
@@ -224,35 +313,30 @@ export async function GET(request: NextRequest) {
 
   try {
     const userColumns = await safeGetColumns("users");
-    if (userColumns.size === 0) {
-      return NextResponse.json(
-        { success: false, error: "Users table is not accessible." },
-        { status: 500 },
-      );
-    }
-
-    const remedialColumns = await safeGetColumns(REMEDIAL_TABLE);
     const coordinatorColumns = await safeGetColumns(COORDINATOR_TABLE);
+    const coordinatorTableExists = coordinatorColumns.size > 0 || await safeTableExists(COORDINATOR_TABLE);
+
+    const userColumnsUnknown = userColumns.size === 0;
+    const coordinatorColumnsUnknown = coordinatorTableExists && coordinatorColumns.size === 0;
 
     const selectParts: string[] = ["u.user_id AS user_id"];
 
     const addUserColumn = (column: string, alias: string) => {
-      if (userColumns.has(column)) {
+      if (userColumnsUnknown || userColumns.has(column)) {
         selectParts.push(`u.${column} AS ${alias}`);
       }
     };
 
-    const addRemedialColumn = (column: string, alias: string) => {
-      if (remedialColumns.has(column)) {
-        selectParts.push(`rt.${column} AS ${alias}`);
-      }
-    };
-
     const addCoordinatorColumn = (column: string, alias: string) => {
-      if (coordinatorColumns.has(column)) {
+      if (!coordinatorTableExists) {
+        return;
+      }
+      if (coordinatorColumnsUnknown || coordinatorColumns.has(column)) {
         selectParts.push(`mc.${column} AS ${alias}`);
       }
     };
+
+    addUserColumn("master_teacher_id", "user_master_teacher_id");
 
     for (const { column, alias } of NAME_COLUMNS) {
       addUserColumn(column, alias);
@@ -262,50 +346,23 @@ export async function GET(request: NextRequest) {
     }
     addUserColumn("role", "user_role");
 
-    for (const candidate of REMEDIAL_GRADE_COLUMNS) {
-      addRemedialColumn(candidate.column, candidate.alias);
-    }
-    for (const candidate of REMEDIAL_ROOM_COLUMNS) {
-      addRemedialColumn(candidate.column, candidate.alias);
-    }
     for (const candidate of COORDINATOR_SUBJECT_COLUMNS) {
       addCoordinatorColumn(candidate.column, candidate.alias);
     }
 
-    let remedialJoin = "";
-    if (remedialColumns.size > 0) {
-      const conditions: string[] = [];
-      if (remedialColumns.has("user_id")) {
-        conditions.push("rt.user_id = u.user_id");
-      }
-      if (remedialColumns.has("teacher_id")) {
-        conditions.push("rt.teacher_id = u.user_id");
-      }
-      if (remedialColumns.has("master_teacher_id")) {
-        conditions.push("rt.master_teacher_id = u.user_id");
-      }
-      if (remedialColumns.has("remedial_teacher_id")) {
-        conditions.push("rt.remedial_teacher_id = u.user_id");
-      }
-      if (remedialColumns.has("email") && userColumns.has("email")) {
-        conditions.push("rt.email = u.email");
-      }
-      remedialJoin = ` LEFT JOIN \`${REMEDIAL_TABLE}\` AS rt ON ${conditions.join(" OR ") || "FALSE"}`;
-    }
-
     let coordinatorJoin = "";
-    if (coordinatorColumns.size > 0) {
+    if (coordinatorTableExists && (coordinatorColumnsUnknown || coordinatorColumns.size > 0)) {
       const conditions: string[] = [];
-      if (coordinatorColumns.has("user_id")) {
+      if (coordinatorColumnsUnknown || coordinatorColumns.has("user_id")) {
         conditions.push("mc.user_id = u.user_id");
       }
-      if (coordinatorColumns.has("master_teacher_id")) {
+      if (coordinatorColumnsUnknown || coordinatorColumns.has("master_teacher_id")) {
         conditions.push("mc.master_teacher_id = u.user_id");
       }
-      if (coordinatorColumns.has("coordinator_id")) {
+      if (coordinatorColumnsUnknown || coordinatorColumns.has("coordinator_id")) {
         conditions.push("mc.coordinator_id = u.user_id");
       }
-      if (coordinatorColumns.has("email") && userColumns.has("email")) {
+      if ((coordinatorColumnsUnknown || coordinatorColumns.has("email")) && (userColumnsUnknown || userColumns.has("email"))) {
         conditions.push("mc.email = u.email");
       }
       coordinatorJoin = ` LEFT JOIN \`${COORDINATOR_TABLE}\` AS mc ON ${conditions.join(" OR ") || "FALSE"}`;
@@ -314,7 +371,6 @@ export async function GET(request: NextRequest) {
     const sql = `
       SELECT ${selectParts.join(", ")}
       FROM users AS u
-      ${remedialJoin}
       ${coordinatorJoin}
       WHERE u.user_id = ?
       LIMIT 1
@@ -330,6 +386,23 @@ export async function GET(request: NextRequest) {
 
     const row = rows[0];
 
+    const handledIds: Array<string | number> = [];
+    if (row.user_master_teacher_id) handledIds.push(row.user_master_teacher_id);
+    if (row.mt_master_teacher_id) handledIds.push(row.mt_master_teacher_id);
+    if (row.mt_masterteacher_id) handledIds.push(row.mt_masterteacher_id);
+    if (row.mt_teacher_id) handledIds.push(row.mt_teacher_id);
+    if (row.rt_master_teacher_id) handledIds.push(row.rt_master_teacher_id);
+    if (row.rt_remedial_teacher_id) handledIds.push(row.rt_remedial_teacher_id);
+    if (Number.isFinite(row.user_id)) {
+      handledIds.push(Number(row.user_id));
+    }
+
+    // Also resolve master_teacher.master_teacher_id linked to this user_id
+    const masterTeacherIds = await resolveMasterTeacherIds(userId);
+    masterTeacherIds.forEach((id) => handledIds.push(id));
+
+    const handled = await loadRemedialHandled(handledIds);
+
     const firstName = pickFirst(row.user_first_name);
     const middleName = pickFirst(row.user_middle_name);
     const lastName = pickFirst(row.user_last_name);
@@ -339,21 +412,9 @@ export async function GET(request: NextRequest) {
     const email = pickFirst(row.user_email);
     const contactNumber = pickFirst(row.user_contact_number, row.user_phone_number);
 
-    const grade = pickFirst(
-      row.rt_grade,
-      row.rt_grade_level,
-      row.rt_handled_grade,
-      row.rt_gradeLevel,
-      row.rt_gradelevel,
-    );
+    const grade = pickFirst(handled.gradeLevel);
 
-    const room = pickFirst(
-      row.rt_room,
-      row.rt_room_number,
-      row.rt_homeroom,
-      row.rt_classroom,
-      row.rt_room_assigned,
-    );
+    const room = null;
 
     const subjectHandled = pickFirst(
       row.mc_subject_handled,
@@ -362,7 +423,7 @@ export async function GET(request: NextRequest) {
       row.mc_subject,
       row.mc_subjects,
       row.mc_handled_subjects,
-    );
+    ) ?? "English, Filipino, Math";
 
     return NextResponse.json({
       success: true,
@@ -376,6 +437,7 @@ export async function GET(request: NextRequest) {
         email,
         contactNumber,
         grade,
+        gradeLabel: grade,
         room,
         subjectHandled,
         role: pickFirst(row.user_role),

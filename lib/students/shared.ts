@@ -4,11 +4,13 @@ export const STUDENT_SUBJECTS = MATERIAL_SUBJECTS;
 export type StudentSubject = MaterialSubject;
 
 export type StudentRecordDto = {
-  id: number;
+  id: string;
   studentIdentifier: string | null;
+  lrn: string | null;
   firstName: string | null;
   middleName: string | null;
   lastName: string | null;
+  suffix: string | null;
   fullName: string;
   gradeLevel: string | null;
   section: string | null;
@@ -21,22 +23,26 @@ export type StudentRecordDto = {
   englishPhonemic: string | null;
   filipinoPhonemic: string | null;
   mathProficiency: string | null;
-  createdBy: number;
-  updatedBy: number | null;
   createdAt: string;
   updatedAt: string;
 };
 
 export type CreateStudentRecordInput = {
   studentIdentifier?: string | null;
+  lrn?: string | null;
   firstName?: string | null;
   middleName?: string | null;
   lastName?: string | null;
+  suffix?: string | null;
   fullName?: string | null;
   gradeLevel?: string | null;
   section?: string | null;
   age?: string | null;
   guardianName?: string | null;
+  guardianFirstName?: string | null;
+  guardianMiddleName?: string | null;
+  guardianLastName?: string | null;
+  guardianSuffix?: string | null;
   guardianContact?: string | null;
   address?: string | null;
   englishPhonemic?: string | null;

@@ -380,7 +380,7 @@ const FALLBACK_CHILD_VIEW: ChildView = {
   firstName: "John",
   middleName: "Michael",
   lastName: "Doe",
-  grade: "Grade 5",
+  grade: "5",
   section: "Section A",
   age: 10,
   teacher: "Ms. Johnson",
