@@ -526,13 +526,13 @@ export default function SystemConfiguration() {
   }, [logoPreviewUrl, carouselPreviews]);
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-white overflow-hidden">
       <ITAdminSidebar />
-      <div className="flex flex-1 flex-col">
+      <div className="flex-1 pt-16 flex flex-col overflow-hidden">
         <ITAdminHeader title="Settings" />
-        <main className="flex-1 overflow-y-auto px-4 pb-6 pt-[5.5rem] sm:px-6 md:pt-24">
-          <div className="mx-auto max-w-7xl">
-            <form className="bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[400px] overflow-y-auto p-4 sm:p-6">
+        <main className="flex-1 overflow-y-auto">
+          <div className="p-4 h-full sm:p-5 md:p-6">
+            <div className="bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[400px] overflow-y-auto p-4 sm:p-5 md:p-6">
               <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
                 <SecondaryHeader title="System Configuration" />
               </div>
@@ -1210,7 +1210,7 @@ export default function SystemConfiguration() {
                   </div>
                 </div>
               </section>
-            </form>
+            </div>
           </div>
         </main>
       </div>

@@ -218,11 +218,12 @@ export default function MasterTeacherStudents({ subjectSlug }: MasterTeacherStud
       setLoadError(null);
 
       try {
-        const params = new URLSearchParams({ userId: String(userId) });
-        const response = await fetch(
-          `/api/master_teacher/remedialteacher/students?${params.toString()}`,
-          { method: "GET", cache: "no-store", signal: controller.signal },
-        );
+        const params = new URLSearchParams({ userId: String(userId), subject });
+        const response = await fetch(`/api/master_teacher/remedialteacher/students?${params.toString()}`, {
+          method: "GET",
+          cache: "no-store",
+          signal: controller.signal,
+        });
 
         if (!response.ok) {
           throw new Error(`Request failed with status ${response.status}`);

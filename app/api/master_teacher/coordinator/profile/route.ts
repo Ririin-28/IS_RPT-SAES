@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { getTableColumns, query } from "@/lib/db";
+import { normalizeMaterialSubject } from "@/lib/materials/shared";
 
 export const dynamic = "force-dynamic";
 
@@ -610,6 +611,42 @@ const deriveSubjectList = (...values: Array<string | null>): string[] => {
   }
 
   return Array.from(subjects.values());
+};
+
+const mapSubjectTokensToNames = async (tokens: string[]): Promise<string[]> => {
+  if (tokens.length === 0) return tokens;
+
+  const numericIds = tokens
+    .map((token) => token.trim())
+    .filter((token) => /^\d+$/.test(token))
+    .map((token) => Number.parseInt(token, 10))
+    .filter((id) => Number.isFinite(id));
+
+  let subjectIdNameMap = new Map<number, string>();
+  if (numericIds.length) {
+    const placeholders = numericIds.map(() => "?").join(", ");
+    const [rows] = await query<RowDataPacket[]>(
+      `SELECT subject_id, subject_name FROM subject WHERE subject_id IN (${placeholders})`,
+      numericIds,
+    );
+    subjectIdNameMap = new Map<number, string>(
+      rows
+        .map((row) => [Number(row.subject_id), typeof row.subject_name === "string" ? row.subject_name : null] as const)
+        .filter((entry): entry is [number, string] => Number.isFinite(entry[0]) && !!entry[1]),
+    );
+  }
+
+  return tokens
+    .map((token) => token.trim())
+    .map((token) => {
+      if (/^\d+$/.test(token)) {
+        const id = Number.parseInt(token, 10);
+        const name = subjectIdNameMap.get(id);
+        if (name) return name;
+      }
+      return normalizeMaterialSubject(token) ?? token;
+    })
+    .filter((token) => token.length > 0);
 };
 
 async function safeGetColumns(tableName: string): Promise<Set<string>> {
@@ -1246,7 +1283,9 @@ export async function GET(request: NextRequest) {
     const contactNumber = pickFirst(row.user_contact_number, row.user_phone_number);
 
     const normalizedGrade = normalizeGradeValue(grade);
-    const allowedSubjects = deriveSubjectList(coordinatorSubject, subjects);
+    const allowedSubjectsRaw = deriveSubjectList(coordinatorSubject, subjects);
+    const allowedSubjects = await mapSubjectTokensToNames(allowedSubjectsRaw);
+    const normalizedCoordinatorSubject = allowedSubjects[0] ?? coordinatorSubject ?? null;
     const coordinatorIdForActivities = Number.isFinite(row.user_id) ? Number(row.user_id) : null;
     const coordinatorActivities = await loadCoordinatorActivities(
       coordinatorIdForActivities,
@@ -1261,8 +1300,8 @@ export async function GET(request: NextRequest) {
         userId: row.user_id,
         name: displayName,
         gradeLevel: grade,
-        coordinatorSubject,
-        subjectsHandled: subjects,
+        coordinatorSubject: normalizedCoordinatorSubject,
+        subjectsHandled: allowedSubjects.join(", "),
         section,
         email,
         contactNumber,

@@ -22,6 +22,7 @@ export interface AddStudentFormValues {
   guardianSuffix: string;
   relationship: string;
   guardianContact: string;
+  guardianEmail: string;
   address: string;
   englishPhonemic: string;
   filipinoPhonemic: string;
@@ -416,8 +417,8 @@ export default function AddStudentModal({
             </div>
           </div>
 
-          {/* 2nd Row: Relationship and Contact */}
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {/* 2nd Row: Relationship, Contact Number, and Email */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <div className="space-y-1">
               <ModalLabel required>Relationship</ModalLabel>
               <select
@@ -454,6 +455,24 @@ export default function AddStudentModal({
                 <p className="text-xs text-gray-500">Format: 09XX-XXX-XXXX</p>
               ) : (
                 <span className="text-xs text-red-500">{errors.guardianContact.message as string}</span>
+              )}
+            </div>
+            <div className="space-y-1">
+              <ModalLabel required>Email</ModalLabel>
+              <input
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                placeholder="email@example.com"
+                type="email"
+                {...register("guardianEmail", {
+                  required: "Email is required",
+                  pattern: {
+                    value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+                    message: "Please enter a valid email address"
+                  }
+                })}
+              />
+              {errors.guardianEmail && (
+                <span className="text-xs text-red-500">{errors.guardianEmail.message as string}</span>
               )}
             </div>
           </div>

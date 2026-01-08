@@ -80,17 +80,15 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
 export default function AllGradesTab({ students, searchTerm }: AllGradesTabProps) {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
-  const [filter, setFilter] = useState({ section: "All Sections" });
 
   const AllGradesStudents = students;
 
   const filteredStudents = AllGradesStudents.filter((student) => {
-    const matchSection = filter.section === "All Sections" || student.section === filter.section;
     const matchSearch = searchTerm === "" || 
       student.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       student.studentId?.toLowerCase().includes(searchTerm.toLowerCase());
       
-    return matchSection && matchSearch;
+    return matchSearch;
   });
 
   const handleViewDetails = (student: any) => {
@@ -104,16 +102,6 @@ export default function AllGradesTab({ students, searchTerm }: AllGradesTabProps
         <p className="text-gray-700 text-md font-medium">
           Total: {AllGradesStudents.length}
         </p>
-       
-        <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
-          <span className="text-sm text-gray-700 whitespace-nowrap">Section:</span>
-          <CustomDropdown 
-            options={sections}
-            value={filter.section}
-            onChange={(value) => setFilter({ section: value })}
-            className="min-w-[120px]"
-          />
-        </div>
       </div>
 
       <StudentDetailModal

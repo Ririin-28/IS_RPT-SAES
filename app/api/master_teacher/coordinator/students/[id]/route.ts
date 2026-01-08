@@ -39,6 +39,7 @@ const mapUpdateStudentInput = (raw: Record<string, unknown>): UpdateStudentRecor
   guardianLastName: normalizeOptionalString(raw.guardianLastName),
   guardianSuffix: normalizeOptionalString(raw.guardianSuffix),
   guardianContact: normalizeOptionalString(raw.guardianContact),
+  guardianEmail: normalizeOptionalString(raw.guardianEmail),
   relationship: normalizeOptionalString(raw.relationship),
   address: normalizeOptionalString(raw.address),
   englishPhonemic: normalizeOptionalString(raw.englishPhonemic),

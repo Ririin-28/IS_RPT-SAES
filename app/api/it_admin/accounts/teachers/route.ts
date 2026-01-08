@@ -15,6 +15,9 @@ import {
 
 export const dynamic = "force-dynamic";
 
+// Normalize collation across dynamic string joins to avoid MySQL "Illegal mix of collations" errors
+const STRING_COLLATION = "utf8mb4_general_ci";
+
 const ROLE_FILTERS = ["teacher"] as const;
 
 const REMEDIAL_TEACHER_TABLE_CANDIDATES = [
@@ -236,6 +239,27 @@ export async function GET() {
     const accountLogsColumns = accountLogsExists ? await safeGetColumns("account_logs") : new Set<string>();
     const canJoinAccountLogs = accountLogsExists && accountLogsColumns.has("user_id");
 
+    // Determine whether we can safely join teacher/remedial tables before selecting their columns.
+    const teacherTableName = teacherInfo.table;
+    const teacherHasUserId = teacherInfo.columns.has("user_id");
+    const teacherIdColumnName = ["teacher_id", "teacherid", "employee_id", "faculty_id"].find((column) =>
+      teacherInfo.columns.has(column),
+    ) ?? null;
+    const userHasTeacherId = userColumns.has("teacher_id");
+
+    const teacherJoinEnabled = Boolean(
+      teacherTableName &&
+        teacherInfo.columns.size > 0 &&
+        (teacherHasUserId || teacherInfo.columns.has("teacher_id")),
+    );
+
+    const remedialJoinEnabled = Boolean(
+      remedialTeacherInfo.table &&
+        remedialTeacherInfo.columns.size > 0 &&
+        remedialTeacherInfo.table !== teacherTableName &&
+        (remedialTeacherInfo.columns.has("user_id") || remedialTeacherInfo.columns.has("teacher_id") || remedialTeacherInfo.columns.has("master_teacher_id")),
+    );
+
     const selectParts: string[] = ["u.user_id AS user_id"];
 
     const addUserColumn = (column: string, alias: string) => {
@@ -245,7 +269,7 @@ export async function GET() {
     };
 
     const addTeacherColumn = (column: string, alias: string) => {
-      if (teacherInfo.columns.has(column)) {
+      if (teacherJoinEnabled && teacherInfo.columns.has(column)) {
         selectParts.push(`t.${column} AS ${alias}`);
       }
     };
@@ -253,7 +277,7 @@ export async function GET() {
     const remedialAlias = remedialTeacherInfo.table && remedialTeacherInfo.table !== teacherInfo.table ? "rt" : "t";
 
     const addRemedialTeacherColumn = (column: string, alias: string) => {
-      if (remedialTeacherInfo.columns.has(column)) {
+      if (remedialJoinEnabled && remedialTeacherInfo.columns.has(column)) {
         selectParts.push(`${remedialAlias}.${column} AS ${alias}`);
       }
     };
@@ -333,14 +357,7 @@ export async function GET() {
 
     let joinClauses = "";
 
-    const teacherTableName = teacherInfo.table;
-    const teacherHasUserId = teacherInfo.columns.has("user_id");
-    const teacherIdColumnName = ["teacher_id", "teacherid", "employee_id", "faculty_id"].find((column) =>
-      teacherInfo.columns.has(column),
-    ) ?? null;
-    const userHasTeacherId = userColumns.has("teacher_id");
-
-    if (teacherTableName && teacherInfo.columns.size > 0) {
+    if (teacherJoinEnabled && teacherTableName && teacherInfo.columns.size > 0) {
       const teacherTableSql = `\`${teacherTableName}\``;
       if (teacherHasUserId) {
         joinClauses += ` INNER JOIN ${teacherTableSql} AS t ON t.user_id = u.user_id`;
@@ -352,23 +369,21 @@ export async function GET() {
     }
 
     if (teacherHandledExists && teacherHandledColumns.has("grade_id") && teacherHandledColumns.has("teacher_id")) {
+      const handledJoinKey = `COALESCE(
+        ${teacherJoinEnabled && teacherInfo.columns.has("teacher_id") ? "t.teacher_id," : ""}
+        ${userHasTeacherId ? "u.teacher_id," : ""}
+        ${userColumns.has("user_code") ? "u.user_code," : ""}
+        CAST(u.user_id AS CHAR)
+      ) COLLATE ${STRING_COLLATION}`;
+
       joinClauses += ` LEFT JOIN (
         SELECT teacher_id, GROUP_CONCAT(grade_id) AS handled_grade_ids
         FROM teacher_handled
         GROUP BY teacher_id
-      ) AS th ON th.teacher_id = COALESCE(
-        ${teacherInfo.columns.has("teacher_id") ? "t.teacher_id," : ""}
-        ${userHasTeacherId ? "u.teacher_id," : ""}
-        ${userColumns.has("user_code") ? "u.user_code," : ""}
-        CAST(u.user_id AS CHAR)
-      )`;
+      ) AS th ON th.teacher_id COLLATE ${STRING_COLLATION} = ${handledJoinKey}`;
     }
 
-    if (
-      remedialTeacherInfo.table &&
-      remedialTeacherInfo.columns.size > 0 &&
-      remedialTeacherInfo.table !== teacherInfo.table
-    ) {
+    if (remedialJoinEnabled && remedialTeacherInfo.table && remedialTeacherInfo.columns.size > 0 && remedialTeacherInfo.table !== teacherInfo.table) {
       const remedialTableSql = `\`${remedialTeacherInfo.table}\``;
       if (remedialTeacherInfo.columns.has("user_id")) {
         joinClauses += ` LEFT JOIN ${remedialTableSql} AS rt ON rt.user_id = u.user_id`;
@@ -442,6 +457,10 @@ export async function GET() {
         row.user_contact_number,
         row.user_phone_number,
       );
+      const handledGrades = typeof row.handled_grade_ids === "string" && row.handled_grade_ids.trim().length > 0
+        ? row.handled_grade_ids.split(",").map((part) => part.trim()).filter((part) => part.length > 0)
+        : null;
+
       const grade = coalesce(
         row.rt_grade,
         row.rt_handled_grade,
@@ -452,10 +471,8 @@ export async function GET() {
         row.teacher_grade_level,
         row.teacher_year_level,
         row.teacher_handled_grade,
+        handledGrades && handledGrades.length > 0 ? handledGrades[0] : null,
       );
-      const handledGrades = typeof row.handled_grade_ids === "string" && row.handled_grade_ids.trim().length > 0
-        ? row.handled_grade_ids.split(",").map((part) => part.trim()).filter((part) => part.length > 0)
-        : null;
       const section = coalesce(row.teacher_section);
       const subjects = coalesce(
         row.teacher_subjects,

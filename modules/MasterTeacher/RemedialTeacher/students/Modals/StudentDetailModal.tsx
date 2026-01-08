@@ -30,7 +30,6 @@ export default function StudentDetailModal({ show, onClose, student }: StudentDe
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <ModalInfoItem label="Student ID" value={student.studentId} />
           <ModalInfoItem label="Full Name" value={student.name} />
-          <ModalInfoItem label="Age" value={student.age} />
           <ModalInfoItem label="Grade" value={student.grade} />
           <ModalInfoItem label="Section" value={student.section} />
         </div>

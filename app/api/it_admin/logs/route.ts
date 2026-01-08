@@ -180,9 +180,19 @@ export async function GET(request: NextRequest) {
     selectUserColumn("first_name");
     selectUserColumn("last_name");
 
+    // Check if it_admin, principal, master_teacher, and teacher tables exist
+    const hasItAdminTable = await tableExists("it_admin");
+    const hasPrincipalTable = await tableExists("principal");
+    const hasMasterTeacherTable = await tableExists("master_teacher");
+    const hasTeacherTable = await tableExists("teacher");
+
     const selectFragments = [
       "al.*",
       ...selectedUserColumns,
+      ...(hasItAdminTable ? ["ia.it_admin_id"] : []),
+      ...(hasPrincipalTable ? ["p.principal_id"] : []),
+      ...(hasMasterTeacherTable ? ["mt.master_teacher_id"] : []),
+      ...(hasTeacherTable ? ["t.teacher_id"] : []),
     ];
 
     const orderByClause = (() => {
@@ -223,8 +233,22 @@ export async function GET(request: NextRequest) {
       );
 
       const rawRoleExpr = accountLogColumns.role
-        ? `COALESCE(al.\`${accountLogColumns.role}\`, u.role)`
-        : "u.role";
+        ? `al.\`${accountLogColumns.role}\``
+        : userColumns.has("role")
+          ? "u.role"
+          : null;
+
+      if (!rawRoleExpr) {
+        return NextResponse.json(
+          {
+            error: "Role filtering is not available: no role column found on account_logs or users.",
+            metadata: {
+              missingColumns: ["account_logs.role", "users.role"],
+            },
+          },
+          { status: 400 },
+        );
+      }
       const roleExpr = normalizeRoleExpression(rawRoleExpr);
       const placeholders = normalizedVariants.map(() => "?").join(", ");
       filters.push(`${roleExpr} IN (${placeholders})`);
@@ -244,6 +268,10 @@ export async function GET(request: NextRequest) {
         ${selectFragments.join(",\n        ")}
       FROM account_logs al
       LEFT JOIN users u ON u.user_id = al.\`${accountLogColumns.userId}\`
+      ${hasItAdminTable ? `LEFT JOIN it_admin ia ON ia.user_id = al.\`${accountLogColumns.userId}\`` : ""}
+      ${hasPrincipalTable ? `LEFT JOIN principal p ON p.user_id = al.\`${accountLogColumns.userId}\`` : ""}
+      ${hasMasterTeacherTable ? `LEFT JOIN master_teacher mt ON mt.user_id = al.\`${accountLogColumns.userId}\`` : ""}
+      ${hasTeacherTable ? `LEFT JOIN teacher t ON t.user_id = al.\`${accountLogColumns.userId}\`` : ""}
       ${whereClause}
       ${orderByClause}`
       , params
@@ -268,6 +296,21 @@ export async function GET(request: NextRequest) {
       const loginIso = lastLoginValue ?? createdAtValue;
       const status = determineStatusFromIso(loginIso, loggedOutAtValue);
 
+      // Use role-specific ID when available
+      const itAdminId = row.it_admin_id ?? null;
+      const principalId = row.principal_id ?? null;
+      const masterTeacherId = row.master_teacher_id ?? null;
+      const teacherId = row.teacher_id ?? null;
+      const displayId = (resolvedRole === "admin" && itAdminId) 
+        ? itAdminId 
+        : (resolvedRole === "principal" && principalId)
+          ? principalId
+          : (resolvedRole === "master_teacher" && masterTeacherId)
+            ? masterTeacherId
+            : (resolvedRole === "teacher" && teacherId)
+              ? teacherId
+              : userIdValue;
+
       return {
         id: (typeof logIdValue === "number" && !Number.isNaN(logIdValue))
           ? logIdValue
@@ -276,6 +319,11 @@ export async function GET(request: NextRequest) {
             : index + 1,
         logId: logIdValue ?? null,
         userId: typeof userIdValue === "number" ? userIdValue : userIdValue != null ? Number(userIdValue) : null,
+        itAdminId: itAdminId,
+        principalId: principalId,
+        masterTeacherId: masterTeacherId,
+        teacherId: teacherId,
+        displayId: displayId,
         role: resolvedRole,
         roleLabel: resolvedRole ? ROLE_VARIANTS[resolvedRole] ?? resolvedRole : (typeof rawRoleValue === "string" ? rawRoleValue : "Unknown"),
         lastLogin: lastLoginValue,

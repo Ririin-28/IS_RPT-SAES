@@ -90,6 +90,7 @@ type CreateStudentPayload = {
   guardianLastName?: string;
   guardianSuffix?: string;
   guardianContact?: string;
+  guardianEmail?: string;
   address?: string;
   age?: string;
   relationship?: string;
@@ -359,6 +360,7 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
               guardianLastName: student.guardianLastName ?? null,
               guardianSuffix: student.guardianSuffix ?? null,
               guardianContact: student.guardianContact ?? null,
+              guardianEmail: student.guardianEmail ?? null,
               relationship: student.relationship ?? null,
               address: student.address ?? null,
               englishPhonemic: student.englishPhonemic ?? null,
@@ -545,6 +547,7 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
         guardianLastName: data.guardianLastName?.trim() || undefined,
         guardianSuffix: data.guardianSuffix?.trim() || undefined,
         guardianContact: data.guardianContact || undefined,
+        guardianEmail: data.guardianEmail?.trim() || undefined,
         relationship: data.relationship || undefined,
         englishPhonemic: data.englishPhonemic || undefined,
         filipinoPhonemic: data.filipinoPhonemic || undefined,

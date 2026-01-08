@@ -13,13 +13,13 @@ const SCHEDULE_DAYS = [
 ] as const;
 
 type ParentRow = RowDataPacket & {
-  parent_id: number;
-  student_id: number;
+  parent_id: string | number;
+  student_id: string | number;
   relationship: string | null;
 };
 
 type StudentRow = RowDataPacket & {
-  student_id: number;
+  student_id: string | number;
   user_id: number;
   grade: string | null;
   section: string | null;

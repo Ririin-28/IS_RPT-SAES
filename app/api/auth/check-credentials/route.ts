@@ -6,6 +6,7 @@ interface CheckCredentialsPayload {
   email: string;
   password: string;
   userId?: string | number | null;
+  itAdminId?: string | null;
 }
 
 interface UserRow extends RowDataPacket {
@@ -17,7 +18,7 @@ interface UserRow extends RowDataPacket {
 
 const ADMIN_ROLES = new Set(["admin", "it_admin", "itadmin"]);
 
-function requiresUserId(normalizedRole: string): boolean {
+function requiresItAdminId(normalizedRole: string): boolean {
   return ADMIN_ROLES.has(normalizedRole);
 }
 
@@ -29,11 +30,19 @@ function toNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function sanitizeItAdminId(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const trimmed = String(value).trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 export async function POST(req: Request): Promise<Response> {
   try {
     return await runWithConnection(async (db) => {
       try {
-        const { email, password, userId } = (await req.json()) as CheckCredentialsPayload;
+        const { email, password, userId, itAdminId } = (await req.json()) as CheckCredentialsPayload;
 
         let normalizedUserId: number | null = null;
         if (userId !== undefined && userId !== null && String(userId).trim().length > 0) {
@@ -42,6 +51,8 @@ export async function POST(req: Request): Promise<Response> {
             return new Response(JSON.stringify({ match: false }), { status: 200 });
           }
         }
+
+        const normalizedItAdminId = sanitizeItAdminId(itAdminId);
 
         const params: Array<string | number> = [email];
         let query = "SELECT * FROM users WHERE email = ?";
@@ -60,11 +71,22 @@ export async function POST(req: Request): Promise<Response> {
         const roleForLogic = resolvedRole ?? user.role ?? null;
         const normalizedRole = normalizeRoleName(roleForLogic);
 
-        if (requiresUserId(normalizedRole) && normalizedUserId === null) {
-          return new Response(
-            JSON.stringify({ match: false, requireUserId: true, role: roleForLogic }),
-            { status: 200 },
+        if (requiresItAdminId(normalizedRole)) {
+          if (!normalizedItAdminId) {
+            return new Response(
+              JSON.stringify({ match: false, requireItAdminId: true, requireUserId: true, role: roleForLogic }),
+              { status: 200 },
+            );
+          }
+
+          const [itAdmins] = await db.execute<RowDataPacket[]>(
+            "SELECT user_id FROM it_admin WHERE it_admin_id = ? LIMIT 1",
+            [normalizedItAdminId],
           );
+          const linkedUserId = itAdmins[0]?.user_id;
+          if (!linkedUserId || Number(linkedUserId) !== Number(user.user_id)) {
+            return new Response(JSON.stringify({ match: false }), { status: 200 });
+          }
         }
 
         if (password !== user.password) {
