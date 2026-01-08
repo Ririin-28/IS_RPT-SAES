@@ -8,7 +8,6 @@ const STUDENT_TABLE = "student" as const;
 const MASTER_TEACHER_TABLE = "master_teacher" as const;
 const HANDLED_TABLE = "mt_remedialteacher_handled" as const;
 const SUBJECT_TABLE = "subject" as const;
-const STUDENT_SUBJECT_TABLE = "student_subject" as const;
 const STUDENT_SUBJECT_ASSESSMENT_TABLE = "student_subject_assessment" as const;
 
 const SUBJECT_NAMES = ["English", "Filipino", "Math"] as const;
@@ -363,19 +362,6 @@ async function resolveSubjectIds(names: readonly string[]): Promise<Map<string, 
 }
 
 async function resolveSubjectCountSource(): Promise<SubjectCountSource | null> {
-  const studentSubjectColumns = await safeGetColumns(STUDENT_SUBJECT_TABLE);
-  if (studentSubjectColumns.size) {
-    const studentColumn = pickColumn(studentSubjectColumns, STUDENT_ID_COLUMNS);
-    const subjectColumn = pickColumn(studentSubjectColumns, SUBJECT_ID_COLUMNS);
-    if (studentColumn && subjectColumn) {
-      return {
-        table: STUDENT_SUBJECT_TABLE,
-        studentColumn,
-        subjectColumn,
-      } satisfies SubjectCountSource;
-    }
-  }
-
   const assessmentColumns = await safeGetColumns(STUDENT_SUBJECT_ASSESSMENT_TABLE);
   if (assessmentColumns.size) {
     const studentColumn = pickColumn(assessmentColumns, STUDENT_ID_COLUMNS);

@@ -25,6 +25,46 @@ function toStringOrNull(value: unknown): string | null {
   return str.length > 0 ? str : null;
 }
 
+function normalizeGradeValue(value: unknown): string | null {
+  const str = toStringOrNull(value);
+  if (!str) {
+    return null;
+  }
+  const match = /\b(\d{1,2})\b/.exec(str);
+  if (!match) {
+    return null;
+  }
+  const normalized = match[1].replace(/^0+/, "");
+  return normalized.length > 0 ? normalized : "0";
+}
+
+function collectTeacherGrades(teacher: any): Set<string> {
+  const grades = new Set<string>();
+  const candidates = [
+    teacher.grade,
+    teacher.handledGrade,
+    teacher.remedial_teacher_grade,
+  ];
+
+  const spread = (list: unknown) => {
+    if (Array.isArray(list)) {
+      list.forEach((item) => candidates.push(item));
+    }
+  };
+
+  spread(teacher.coordinatorHandledGrades);
+  spread(teacher.remedialHandledGrades);
+
+  for (const candidate of candidates) {
+    const normalized = normalizeGradeValue(candidate);
+    if (normalized) {
+      grades.add(normalized);
+    }
+  }
+
+  return grades;
+}
+
 function formatTimestamp(value: string | Date | null | undefined): string {
   if (!value) {
     return "—";
@@ -191,9 +231,10 @@ interface MasterTeacherTabProps {
   teachers: any[];
   setTeachers: Dispatch<SetStateAction<any[]>>;
   searchTerm: string;
+  gradeFilter?: string;
 }
 
-export default function MasterTeacherTab({ teachers, setTeachers, searchTerm }: MasterTeacherTabProps) {
+export default function MasterTeacherTab({ teachers, setTeachers, searchTerm, gradeFilter = "All Grades" }: MasterTeacherTabProps) {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedTeacher, setSelectedTeacher] = useState<any>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -262,11 +303,19 @@ export default function MasterTeacherTab({ teachers, setTeachers, searchTerm }: 
 
   const filteredTeachers = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
-    if (query.length === 0) {
-      return teachers;
-    }
+    const normalizedGradeFilter = normalizeGradeValue(gradeFilter);
 
     return teachers.filter((teacher) => {
+      const gradeSet = collectTeacherGrades(teacher);
+      const gradeMatches = !normalizedGradeFilter || gradeSet.has(normalizedGradeFilter);
+      if (!gradeMatches) {
+        return false;
+      }
+
+      if (query.length === 0) {
+        return true;
+      }
+
       const nameMatch = teacher.name?.toLowerCase().includes(query);
       const emailMatch = teacher.email?.toLowerCase().includes(query);
       const idMatch = (teacher.masterTeacherId ?? "").toLowerCase().includes(query);
@@ -274,7 +323,7 @@ export default function MasterTeacherTab({ teachers, setTeachers, searchTerm }: 
 
       return Boolean(nameMatch || emailMatch || idMatch || coordinatorMatch);
     });
-  }, [teachers, searchTerm]);
+  }, [teachers, searchTerm, gradeFilter]);
 
   const handleExport = useCallback(() => {
     void exportAccountRows({
@@ -747,7 +796,7 @@ export default function MasterTeacherTab({ teachers, setTeachers, searchTerm }: 
     <div>
       <div className="flex flex-row justify-between items-center mb-4 gap-4">
         <p className="text-gray-600 text-md font-medium">
-          Total: {teachers.length}
+          Total: {filteredTeachers.length}
         </p>
         <div className="flex items-center gap-3">
           {selectMode ? (

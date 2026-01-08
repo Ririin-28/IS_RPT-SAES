@@ -1,35 +1,35 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import { FaFileWord } from "react-icons/fa";
 
-type ReportFile = {
+interface FilipinoTabProps {
+  searchTerm: string;
+  onSearchTermChange: (value: string) => void;
+  gradeLevel?: string;
+}
+
+const sortOptions = ["Newest first", "Oldest first", "Name (A-Z)", "Name (Z-A)"];
+
+interface ReportFile {
   id: number;
   name: string;
   uploadedAt: string;
   teacher: string;
   grade: string;
   url: string;
-};
+}
 
 const initialFiles: ReportFile[] = [
   {
     id: 1,
     name: "Filipino Progress Report",
-    uploadedAt: "2024-01-25",
-    teacher: "Jeffrey Reyes",
-    grade: "Grade 6",
-    url: "#"
-  }
+    uploadedAt: "2024-01-20",
+    teacher: "Juan Dela Cruz",
+    grade: "Grade 1",
+    url: "#",
+  },
 ];
 
-const sortOptions = ["Newest first", "Oldest first", "Name (A-Z)", "Name (Z-A)"];
-
-interface Props {
-  searchTerm: string;
-  onSearchTermChange: (value: string) => void;
-}
-
-// Custom Dropdown Component for filters
 interface CustomDropdownProps {
   options: string[];
   value: string;
@@ -65,24 +65,22 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
         onClick={() => setIsOpen(!isOpen)}
       >
         {value}
-        <svg 
-          className={`ml-2 h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-          fill="currentColor" 
+        <svg
+          className={`ml-2 h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`}
+          fill="currentColor"
           viewBox="0 0 20 20"
         >
           <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
         </svg>
       </button>
-      
+
       {isOpen && (
         <div className="absolute z-50 mt-1 left-0 bg-white border border-gray-300 rounded-md shadow-lg w-full overflow-hidden">
           {options.map((option) => (
             <div
               key={option}
               className={`px-4 py-2 cursor-pointer transition-colors ${
-                option === value
-                  ? "bg-[#013300] text-white"
-                  : "text-gray-700 hover:bg-gray-100"
+                option === value ? "bg-[#013300] text-white" : "text-gray-700 hover:bg-gray-100"
               }`}
               onClick={() => handleOptionClick(option)}
             >
@@ -95,67 +93,60 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
   );
 };
 
-export default function GradeSixTab({
-  searchTerm,
-  onSearchTermChange
-}: Props) {
-  const [files] = useState(initialFiles);
-  const [sortBy, setSortBy] = useState("Newest first");
+export default function FilipinoTab({ searchTerm, onSearchTermChange, gradeLevel }: FilipinoTabProps) {
+  const [files] = useState<ReportFile[]>(initialFiles);
+  const [sortBy, setSortBy] = useState(sortOptions[0]);
 
-  const filteredFiles = files.filter((file) => {
-    const matchSearch = searchTerm === "" || 
-      file.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      file.teacher.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchSearch;
-  });
+  const filteredFiles = useMemo(() => {
+    return files.filter((file) => {
+      const matchGrade = !gradeLevel || file.grade === gradeLevel;
+      const query = searchTerm.trim().toLowerCase();
+      const matchSearch =
+        !query ||
+        file.name.toLowerCase().includes(query) ||
+        file.teacher.toLowerCase().includes(query);
+      return matchGrade && matchSearch;
+    });
+  }, [files, gradeLevel, searchTerm]);
 
-  const sortedFiles = [...filteredFiles].sort((a, b) => {
-    if (sortBy === "Newest first") {
-      return new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime();
-    } else if (sortBy === "Oldest first") {
-      return new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime();
-    } else if (sortBy === "Name (A-Z)") {
-      return a.name.localeCompare(b.name);
-    } else if (sortBy === "Name (Z-A)") {
-      return b.name.localeCompare(a.name);
-    }
-    return 0;
-  });
+  const sortedFiles = useMemo(() => {
+    return [...filteredFiles].sort((a, b) => {
+      if (sortBy === "Newest first") return new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime();
+      if (sortBy === "Oldest first") return new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime();
+      if (sortBy === "Name (A-Z)") return a.name.localeCompare(b.name);
+      if (sortBy === "Name (Z-A)") return b.name.localeCompare(a.name);
+      return 0;
+    });
+  }, [filteredFiles, sortBy]);
 
   const clearFilters = () => {
     onSearchTermChange("");
-    setSortBy("Newest first");
+    setSortBy(sortOptions[0]);
   };
 
-  function formatDateTime(dateString: string) {
+  const formatDateTime = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
+    return date.toLocaleString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
       hour12: true,
     });
-  }
+  };
 
   return (
     <div>
       <div className="flex flex-col lg:flex-row gap-6">
         <div className="flex-1">
           <div className="flex flex-row justify-between items-center mb-4">
-            <p className="text-gray-600 text-md font-medium">
-              Total: {filteredFiles.length}
-            </p>
-            
+            <p className="text-gray-600 text-md font-medium">Total: {filteredFiles.length}</p>
+
             <div className="flex items-center gap-3 bg-gray-100 rounded-lg p-2 w-fit">
               <div className="flex items-center gap-2 text-sm text-gray-700">
                 <span className="whitespace-nowrap">Sort by:</span>
-                <CustomDropdown 
-                  options={sortOptions}
-                  value={sortBy}
-                  onChange={setSortBy}
-                />
+                <CustomDropdown options={sortOptions} value={sortBy} onChange={setSortBy} />
               </div>
             </div>
           </div>
@@ -164,9 +155,7 @@ export default function GradeSixTab({
             <div className="text-center py-12 bg-gray-50 rounded-lg border border-dashed border-gray-300">
               <FaFileWord className="mx-auto text-gray-400 text-4xl mb-4" />
               <h3 className="text-lg font-medium text-gray-700 mb-2">No reports found</h3>
-              <p className="text-gray-500 mb-4">
-                Try adjusting your filters or search term to find what you're looking for.
-              </p>
+              <p className="text-gray-500 mb-4">Try adjusting your filters or search term to find what you're looking for.</p>
               <button
                 onClick={clearFilters}
                 className="px-4 py-2 bg-green-700 hover:bg-green-800 text-white font-semibold rounded-lg shadow"
@@ -182,20 +171,20 @@ export default function GradeSixTab({
                   className="bg-white rounded-xl shadow hover:shadow-lg transition p-4 flex flex-col border border-gray-200 cursor-pointer min-h-[240px] relative group"
                 >
                   <button className="absolute top-3 right-3 p-2 bg-gray-100 rounded-lg text-gray-600 hover:bg-gray-200">
-                    <svg 
-                      xmlns="http://www.w3.org/2000/svg" 
-                      width="16" 
-                      height="16" 
-                      viewBox="0 0 24 24" 
-                      fill="none" 
-                      stroke="currentColor" 
-                      strokeWidth="2" 
-                      strokeLinecap="round" 
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
                       strokeLinejoin="round"
                     >
-                      <path d="M12 15V3"/>
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                      <path d="m7 10 5 5 5-5"/>
+                      <path d="M12 15V3" />
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <path d="m7 10 5 5 5-5" />
                     </svg>
                   </button>
                   <div className="w-full h-24 bg-gray-100 rounded-lg flex items-center justify-center mb-4 overflow-hidden">

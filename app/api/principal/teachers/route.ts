@@ -29,6 +29,10 @@ const GRADE_COLUMNS = ["grade", "grade_level", "handled_grade", "year_level"] as
 const SECTION_COLUMNS = ["section", "section_name", "class_section", "handled_section", "sections"] as const;
 const SUBJECT_COLUMNS = ["subjects", "handled_subjects", "subject", "subject_list"] as const;
 const IDENTIFIER_COLUMNS = ["teacher_id", "employee_id", "id", "master_teacher_id", "masterteacher_id"] as const;
+const ROLE_COLUMN_CANDIDATES = ["role", "user_role", "userrole", "type", "user_type", "position"] as const;
+const ROLE_TABLE_NAME = "role";
+const ROLE_TABLE_NAME_COLUMN = "role_name";
+const ROLE_TABLE_ID_COLUMN = "role_id";
 
 function extractGradeNumber(value: unknown): number | null {
   if (value === null || value === undefined) return null;
@@ -107,6 +111,11 @@ function resolveName(row: Record<string, any>): {
 async function fetchRoleRecords(role: "teacher" | "master_teacher") {
   const tableInfo = await resolveRoleTable(role);
   const userColumns = await getTableColumns("users");
+  const roleTableExists = await tableExists(ROLE_TABLE_NAME);
+  const roleTableColumns = roleTableExists ? await getTableColumns(ROLE_TABLE_NAME) : null;
+  const canJoinRoleTable = Boolean(
+    roleTableColumns?.has(ROLE_TABLE_ID_COLUMN) && roleTableColumns?.has(ROLE_TABLE_NAME_COLUMN),
+  );
 
   const baseSelect: string[] = [
     "u.user_id AS user_id",
@@ -130,7 +139,18 @@ async function fetchRoleRecords(role: "teacher" | "master_teacher") {
 
   const userEmailColumn = pickFirst(userColumns, EMAIL_COLUMNS) ?? "email";
   baseSelect.push(`u.${userEmailColumn} AS user_email`);
-  baseSelect.push("u.role AS user_role");
+  const userRoleColumn = pickFirst(userColumns, ROLE_COLUMN_CANDIDATES);
+  const tableRoleColumn = tableInfo ? pickFirst(tableInfo.columns, ROLE_COLUMN_CANDIDATES) : null;
+
+  if (canJoinRoleTable) {
+    baseSelect.push(`r.${ROLE_TABLE_NAME_COLUMN} AS user_role`);
+  } else if (userRoleColumn) {
+    baseSelect.push(`u.${userRoleColumn} AS user_role`);
+  } else if (tableRoleColumn) {
+    baseSelect.push(`t.${tableRoleColumn} AS user_role`);
+  } else {
+    baseSelect.push("NULL AS user_role");
+  }
 
   let joinClause = "";
   if (tableInfo) {
@@ -206,15 +226,30 @@ async function fetchRoleRecords(role: "teacher" | "master_teacher") {
 
   const orderClause = orderClauses.join(", ");
 
+  let whereClause = "";
+  let params: (string | number)[] = [];
+
+  if (canJoinRoleTable) {
+    joinClause = `${joinClause}\n    LEFT JOIN ${ROLE_TABLE_NAME} AS r ON r.${ROLE_TABLE_ID_COLUMN} = u.${ROLE_TABLE_ID_COLUMN}`;
+    whereClause = `WHERE r.${ROLE_TABLE_NAME_COLUMN} IN (${placeholders})`;
+    params = roleFilters;
+  } else if (userRoleColumn) {
+    whereClause = `WHERE u.${userRoleColumn} IN (${placeholders})`;
+    params = roleFilters;
+  } else if (tableRoleColumn) {
+    whereClause = `WHERE t.${tableRoleColumn} IN (${placeholders})`;
+    params = roleFilters;
+  }
+
   const sql = `
     SELECT ${baseSelect.join(", ")}
     FROM users AS u
     ${joinClause}
-    WHERE u.role IN (${placeholders})
+    ${whereClause}
     ORDER BY ${orderClause}
   `;
 
-  const [rows] = await query<RowDataPacket[]>(sql, roleFilters);
+  const [rows] = await query<RowDataPacket[]>(sql, params);
 
   const records = rows.map((row) => {
     const identifier = row.table_identifier ?? row.user_id;

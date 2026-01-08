@@ -19,26 +19,29 @@ const normalizeRole = (role: string | null | undefined): string => {
 
 type LoginProps = {
   infoMessage?: string;
-  requireUserId?: boolean;
+  requireUserId?: boolean; // backward compatibility
+  requireItAdminId?: boolean;
 };
 
 export default function Login({
   infoMessage = "For San Agustin Elementary School authorized accounts only.",
   requireUserId = false,
+  requireItAdminId = false,
 }: LoginProps = {}) {
+  const adminIdRequired = Boolean(requireItAdminId || requireUserId);
   const [showErrorModal, setShowErrorModal] = useState(false);
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [userId, setUserId] = useState("");
+  const [itAdminId, setItAdminId] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(false);
   const [errorMessage, setErrorMessage] = useState(DEFAULT_LOGIN_ERROR_MESSAGE);
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const sanitizedUserId = useMemo(() => userId.trim(), [userId]);
+  const sanitizedItAdminId = useMemo(() => itAdminId.trim(), [itAdminId]);
 
   const resolveWelcomePath = useCallback((role: string | null | undefined): string => {
     const normalized = normalizeRole(role);
@@ -64,8 +67,8 @@ export default function Login({
   // Live credential check
   useEffect(() => {
     let active = true;
-    const hasValidUserId = sanitizedUserId && !Number.isNaN(Number(sanitizedUserId));
-    const canVerify = requireUserId ? Boolean(email && password && hasValidUserId) : Boolean(email && password);
+    const hasValidAdminId = sanitizedItAdminId.length > 0;
+    const canVerify = adminIdRequired ? Boolean(email && password && hasValidAdminId) : Boolean(email && password);
     if (canVerify) {
       setVerifying(true);
       setSuccess(false);
@@ -76,7 +79,7 @@ export default function Login({
         body: JSON.stringify({
           email,
           password,
-          userId: requireUserId ? sanitizedUserId : undefined,
+          itAdminId: adminIdRequired ? sanitizedItAdminId : undefined,
         }),
       })
         .then(async res => {
@@ -107,7 +110,7 @@ export default function Login({
     return () => {
       active = false;
     };
-  }, [email, password, requireUserId, sanitizedUserId]);
+  }, [adminIdRequired, email, password, sanitizedItAdminId]);
 
   useEffect(() => {
     return () => {
@@ -153,15 +156,9 @@ export default function Login({
     e.preventDefault();
     setIsLoading(true);
     try {
-      if (requireUserId) {
-        if (!sanitizedUserId) {
-          setErrorMessage("Please enter your numeric User ID to sign in.");
-          setShowErrorModal(true);
-          setIsLoading(false);
-          return;
-        }
-        if (Number.isNaN(Number(sanitizedUserId))) {
-          setErrorMessage("User ID must be a valid number.");
+      if (adminIdRequired) {
+        if (!sanitizedItAdminId) {
+          setErrorMessage("Please enter your IT Admin ID to sign in.");
           setShowErrorModal(true);
           setIsLoading(false);
           return;
@@ -177,7 +174,7 @@ export default function Login({
         body: JSON.stringify({
           email,
           password,
-          userId: requireUserId ? sanitizedUserId : undefined,
+          itAdminId: adminIdRequired ? sanitizedItAdminId : undefined,
           deviceToken,
           deviceName,
         }),
@@ -185,9 +182,10 @@ export default function Login({
       const data = await res.json();
       console.log("[LOGIN] backend response:", data);
       if (res.status === 401 || data.error) {
-        if (!requireUserId && (data.requireUserId || data.errorCode === "ADMIN_USER_ID_REQUIRED")) {
+        const adminIdMissing = data.requireItAdminId || data.requireUserId || data.errorCode === "ADMIN_IT_ADMIN_ID_REQUIRED" || data.errorCode === "ADMIN_USER_ID_REQUIRED";
+        if (!adminIdRequired && adminIdMissing) {
           setIsLoading(false);
-          setErrorMessage("IT Admin accounts must use the Admin Login and provide their User ID.");
+          setErrorMessage("IT Admin accounts must use the Admin Login and provide their IT Admin ID.");
           setShowErrorModal(true);
           if (redirectTimerRef.current) {
             clearTimeout(redirectTimerRef.current);
@@ -308,22 +306,18 @@ export default function Login({
             </div>
 
             <form onSubmit={handleLogin}>
-              {requireUserId && (
+              {adminIdRequired && (
                 <div className="mb-3">
-                  <label htmlFor="userId" className="block text-sm font-medium text-[#013300] mb-1 sm:text-base">User ID</label>
+                  <label htmlFor="itAdminId" className="block text-sm font-medium text-[#013300] mb-1 sm:text-base">IT Admin ID</label>
                   <input
-                    id="userId"
+                    id="itAdminId"
                     type="text"
-                    inputMode="numeric"
-                    value={userId}
-                    onChange={e => setUserId(e.target.value)}
-                    placeholder="Enter your user ID"
+                    value={itAdminId}
+                    onChange={e => setItAdminId(e.target.value)}
+                    placeholder="Enter your IT Admin ID"
                     className="w-full px-4 py-2 border-2 border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#013300] focus:border-transparent transition placeholder-gray-400 text-[#013300] sm:py-2"
-                    required={requireUserId}
+                    required={adminIdRequired}
                   />
-                  {sanitizedUserId && Number.isNaN(Number(sanitizedUserId)) && (
-                    <div className="text-xs text-red-700 mt-1">User ID must be a valid number.</div>
-                  )}
                 </div>
               )}
               {/* Email Field */}

@@ -196,7 +196,7 @@ function normalizeArchiveRecord(record: any): ArchiveEntry {
 
 export default function ITAdminArchive() {
   const [activeTab, setActiveTab] = useState<string>("All Grades");
-  const [accountType, setAccountType] = useState<AccountOption>("Master Teachers");
+  const [accountType, setAccountType] = useState<AccountOption>("IT Admin");
   const [accounts, setAccounts] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [archiveRecords, setArchiveRecords] = useState<ArchiveEntry[]>([]);

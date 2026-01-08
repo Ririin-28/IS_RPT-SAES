@@ -12,7 +12,7 @@ const ROLE_OPTIONS = [
   "All Users",
   "IT Admin",
   "Principal",
-  "Master Teacher/s",
+  "Master Teacher",
   "Teacher",
   "Parent",
   "Student",
@@ -22,7 +22,7 @@ const ROLE_LABEL_TO_KEY: Record<(typeof ROLE_OPTIONS)[number], string | null> = 
   "All Users": null,
   "IT Admin": "admin",
   "Principal": "principal",
-  "Master Teacher/s": "master_teacher",
+  "Master Teacher": "master_teacher",
   "Teacher": "teacher",
   "Parent": "parent",
   "Student": "student",
@@ -31,7 +31,7 @@ const ROLE_LABEL_TO_KEY: Record<(typeof ROLE_OPTIONS)[number], string | null> = 
 const ROLE_KEY_TO_LABEL: Record<string, string> = {
   admin: "IT Admin",
   principal: "Principal", 
-  master_teacher: "Master Teacher/s",
+  master_teacher: "Master Teacher",
   teacher: "Teacher",
   parent: "Parent",
   student: "Student",
@@ -51,6 +51,11 @@ interface LogRecord {
   id: number;
   logId: number | null;
   userId: number | null;
+  itAdminId?: string | null;
+  principalId?: string | null;
+  masterTeacherId?: string | null;
+  teacherId?: string | null;
+  displayId?: string | number | null;
   role?: string;
   roleLabel: string;
   lastLogin: string | null;
@@ -178,6 +183,11 @@ export default function ITAdminLogs() {
             id: Number(id) || index + 1,
             logId: record.logId ? Number(record.logId) : null,
             userId: record.userId ? Number(record.userId) : null,
+            itAdminId: record.itAdminId || null,
+            principalId: record.principalId || null,
+            masterTeacherId: record.masterTeacherId || null,
+            teacherId: record.teacherId || null,
+            displayId: record.displayId || record.userId,
             role: canonicalRole,
             roleLabel,
             lastLogin: record.lastLogin || record.loginTime || null,
@@ -254,12 +264,28 @@ export default function ITAdminLogs() {
 
   const tableColumns = [
     { key: "no", title: "No#" },
-    { key: "logId", title: "Log ID", render: (row: LogRecord) => row.logId ?? "—" },
     { key: "roleLabel", title: "Role" },
-    { key: "userId", title: "User ID", render: (row: LogRecord) => row.userId ?? "—" },
+    { 
+      key: "displayId", 
+      title: "User ID", 
+      render: (row: LogRecord) => {
+        // Show role-specific ID when available
+        if (row.role === "admin" && row.itAdminId) {
+          return row.itAdminId;
+        }
+        if (row.role === "principal" && row.principalId) {
+          return row.principalId;
+        }
+        if (row.role === "master_teacher" && row.masterTeacherId) {
+          return row.masterTeacherId;
+        }
+        if (row.role === "teacher" && row.teacherId) {
+          return row.teacherId;
+        }
+        return row.userId ?? "—";
+      }
+    },
     { key: "name", title: "Name", render: (row: LogRecord) => row.name ?? "—" },
-    { key: "email", title: "Email", render: (row: LogRecord) => row.email ?? "—" },
-    { key: "createdAt", title: "Logged At", render: (row: LogRecord) => formatTimestamp(row.createdAt) },
     { key: "lastLogin", title: "Last Login", render: (row: LogRecord) => formatTimestamp(row.lastLogin) },
     {
       key: "status",
@@ -335,6 +361,7 @@ export default function ITAdminLogs() {
                       no: idx + 1,
                     }))}
                     pageSize={10}
+                    showFullScreenToggle
                   />
                   
                   {filteredLogs.length === 0 && (

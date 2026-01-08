@@ -16,6 +16,7 @@ interface TableListProps {
   data: any[];
   actions?: (row: any) => React.ReactNode;
   pageSize?: number;
+  showFullScreenToggle?: boolean;
   selectable?: boolean;
   selectedItems?: Set<any>;
   onSelectAll?: (checked: boolean) => void;
@@ -29,6 +30,7 @@ export default function TableList({
   data,
   actions,
   pageSize = 10,
+  showFullScreenToggle = false,
   selectable = false,
   selectedItems = new Set(),
   onSelectAll,
@@ -61,6 +63,51 @@ export default function TableList({
     }
   }, [page, totalPages]);
 
+  const renderFullScreenToggle = (className: string) => (
+    <button
+      onClick={() => setIsFullScreen(!isFullScreen)}
+      className={className}
+      aria-label={isFullScreen ? 'Exit full screen' : 'Enter full screen'}
+      aria-pressed={isFullScreen}
+    >
+      {isFullScreen ? (
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="m14 10 7-7" />
+          <path d="M20 10h-6V4" />
+          <path d="m3 21 7-7" />
+          <path d="M4 14h6v6" />
+        </svg>
+      ) : (
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M15 3h6v6" />
+          <path d="m21 3-7 7" />
+          <path d="m3 21 7-7" />
+          <path d="M9 21H3v-6" />
+        </svg>
+      )}
+    </button>
+  );
+
   // Updated height classes for better mobile responsiveness
   const bodyMaxHeightClass = isFullScreen
     ? 'max-h-[calc(100vh-8rem)]'
@@ -72,9 +119,16 @@ export default function TableList({
       style={isFullScreen ? { height: '100vh' } : undefined}
     >
       {/* Main table container with improved flex behavior */}
-      <div className={`flex-1 min-h-0 rounded-lg border border-gray-200 bg-white shadow-md ${
+      <div className={`relative flex-1 min-h-0 rounded-lg border border-gray-200 bg-white shadow-md ${
         isFullScreen ? '' : 'mb-2' // Add margin bottom only in non-fullscreen
       }`}>
+        {showFullScreenToggle && !actions && (
+          <div className="absolute right-6 top-0 z-20">
+            {renderFullScreenToggle(
+              'p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors'
+            )}
+          </div>
+        )}
         <div className={`h-full w-full overflow-auto rounded-lg ${bodyMaxHeightClass}`}>
           <table className="min-w-full text-sm" role="table">
             <thead className="text-[#013300] bg-green-50 border-b border-gray-200 sticky top-0 z-10">
@@ -105,46 +159,9 @@ export default function TableList({
                   <th className="px-4 py-2 text-center">
                     <div className="flex items-center justify-center gap-4">
                       <TertiaryHeader title="Actions" className="mb-0" />
-                      <button
-                        onClick={() => setIsFullScreen(!isFullScreen)}
-                        className="p-1 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"
-                      >
-                        {isFullScreen ? (
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="20"
-                            height="20"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="m14 10 7-7" />
-                            <path d="M20 10h-6V4" />
-                            <path d="m3 21 7-7" />
-                            <path d="M4 14h6v6" />
-                          </svg>
-                        ) : (
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="20"
-                            height="20"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M15 3h6v6" />
-                            <path d="m21 3-7 7" />
-                            <path d="m3 21 7-7" />
-                            <path d="M9 21H3v-6" />
-                          </svg>
-                        )}
-                      </button>
+                      {renderFullScreenToggle(
+                        'p-1 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors'
+                      )}
                     </div>
                   </th>
                 )}

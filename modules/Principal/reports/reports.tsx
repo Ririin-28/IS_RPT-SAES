@@ -5,25 +5,10 @@ import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import { useEffect, useMemo, useState, type ComponentType } from "react";
 import { FaTimes } from "react-icons/fa";
-// Tabs
-import EnglishGradeOneTab from "./EnglishTabs/GradeOneTab";
-import EnglishGradeTwoTab from "./EnglishTabs/GradeTwoTab";
-import EnglishGradeThreeTab from "./EnglishTabs/GradeThreeTab";
-import EnglishGradeFourTab from "./EnglishTabs/GradeFourTab";
-import EnglishGradeFiveTab from "./EnglishTabs/GradeFiveTab";
-import EnglishGradeSixTab from "./EnglishTabs/GradeSixTab";
-import FilipinoGradeOneTab from "./FilipinoTabs/GradeOneTab";
-import FilipinoGradeTwoTab from "./FilipinoTabs/GradeTwoTab";
-import FilipinoGradeThreeTab from "./FilipinoTabs/GradeThreeTab";
-import FilipinoGradeFourTab from "./FilipinoTabs/GradeFourTab";
-import FilipinoGradeFiveTab from "./FilipinoTabs/GradeFiveTab";
-import FilipinoGradeSixTab from "./FilipinoTabs/GradeSixTab";
-import MathGradeOneTab from "./MathTabs/GradeOneTab";
-import MathGradeTwoTab from "./MathTabs/GradeTwoTab";
-import MathGradeThreeTab from "./MathTabs/GradeThreeTab";
-import MathGradeFourTab from "./MathTabs/GradeFourTab";
-import MathGradeFiveTab from "./MathTabs/GradeFiveTab";
-import MathGradeSixTab from "./MathTabs/GradeSixTab";
+// English Tabs (single unified component)
+import EnglishTab from "./EnglishTabs/EnglishTab";
+import FilipinoTab from "./FilipinoTabs/FilipinoTab";
+import MathTab from "./MathTabs/MathTab";
 
 type SubjectKey = "english" | "filipino" | "math";
 
@@ -43,38 +28,39 @@ type GradeTabProps = {
   gradeLevel?: string;
 };
 
-const GRADE_OPTIONS = ["1", "2", "3", "4", "5", "6"];
+const GRADE_OPTIONS = ["All Grades", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"];
 
 const toGradeLabel = (value: string | undefined): string => {
   if (!value) return "";
+  if (value.startsWith("Grade")) return value;
   const digits = value.match(/(\d+)/)?.[1] ?? "";
   return digits ? `Grade ${digits}` : value;
 };
 
 const SUBJECT_GRADE_COMPONENTS: Record<SubjectKey, Record<string, ComponentType<GradeTabProps>>> = {
   english: {
-    "1": EnglishGradeOneTab,
-    "2": EnglishGradeTwoTab,
-    "3": EnglishGradeThreeTab,
-    "4": EnglishGradeFourTab,
-    "5": EnglishGradeFiveTab,
-    "6": EnglishGradeSixTab,
+    "Grade 1": EnglishTab,
+    "Grade 2": EnglishTab,
+    "Grade 3": EnglishTab,
+    "Grade 4": EnglishTab,
+    "Grade 5": EnglishTab,
+    "Grade 6": EnglishTab,
   },
   filipino: {
-    "1": FilipinoGradeOneTab,
-    "2": FilipinoGradeTwoTab,
-    "3": FilipinoGradeThreeTab,
-    "4": FilipinoGradeFourTab,
-    "5": FilipinoGradeFiveTab,
-    "6": FilipinoGradeSixTab,
+    "Grade 1": FilipinoTab,
+    "Grade 2": FilipinoTab,
+    "Grade 3": FilipinoTab,
+    "Grade 4": FilipinoTab,
+    "Grade 5": FilipinoTab,
+    "Grade 6": FilipinoTab,
   },
   math: {
-    "1": MathGradeOneTab,
-    "2": MathGradeTwoTab,
-    "3": MathGradeThreeTab,
-    "4": MathGradeFourTab,
-    "5": MathGradeFiveTab,
-    "6": MathGradeSixTab,
+    "Grade 1": MathTab,
+    "Grade 2": MathTab,
+    "Grade 3": MathTab,
+    "Grade 4": MathTab,
+    "Grade 5": MathTab,
+    "Grade 6": MathTab,
   },
 };
 
@@ -99,7 +85,7 @@ export default function PrincipalReports({ subjectSlug }: PrincipalReportsProps)
   const ActiveGradeComponent =
     subjectGradeComponents[activeGrade] ??
     (fallbackGrade ? subjectGradeComponents[fallbackGrade] : undefined) ??
-    EnglishGradeOneTab;
+    EnglishTab;
 
   useEffect(() => {
     if (!activeGrade || !(activeGrade in subjectGradeComponents)) {

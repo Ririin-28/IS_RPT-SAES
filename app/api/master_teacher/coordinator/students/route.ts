@@ -59,6 +59,7 @@ const mapCreateStudentInput = (raw: unknown): CreateStudentRecordInput => {
     guardianLastName: normalizeOptionalString(record.guardianLastName),
     guardianSuffix: normalizeOptionalString(record.guardianSuffix),
     guardianContact: normalizeOptionalString(record.guardianContact),
+    guardianEmail: normalizeOptionalString(record.guardianEmail),
     relationship: normalizeOptionalString(record.relationship),
     address: normalizeOptionalString(record.address),
     englishPhonemic: normalizeOptionalString(record.englishPhonemic),

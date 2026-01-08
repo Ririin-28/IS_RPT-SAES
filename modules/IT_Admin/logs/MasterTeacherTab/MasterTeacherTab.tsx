@@ -1,18 +1,19 @@
-import { useState, useRef, useEffect } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import TableList from "@/components/Common/Tables/TableList";
-import UserDetailModal from "../Modals/UserDetailsModal";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
+import UserDetailModal from "../Modals/UserDetailsModal";
 
-const sections = ["All Sections", "A", "B", "C"];
+const SECTIONS = ["All Sections", "A", "B", "C"] as const;
+const GRADES = ["All Grades", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"] as const;
 
-interface GradeSixTabProps {
+interface MasterTeacherTabProps {
   teachers: any[];
   setTeachers: (teachers: any[]) => void;
   searchTerm: string;
 }
 
 interface CustomDropdownProps {
-  options: string[];
+  options: readonly string[];
   value: string;
   onChange: (value: string) => void;
   className?: string;
@@ -46,24 +47,22 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
         onClick={() => setIsOpen(!isOpen)}
       >
         {value}
-        <svg 
-          className={`ml-2 h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-          fill="currentColor" 
+        <svg
+          className={`ml-2 h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`}
+          fill="currentColor"
           viewBox="0 0 20 20"
         >
           <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
         </svg>
       </button>
-      
+
       {isOpen && (
         <div className="absolute z-50 mt-1 left-0 bg-white border border-gray-300 rounded-md shadow-lg w-full overflow-hidden">
           {options.map((option) => (
             <div
               key={option}
               className={`px-4 py-2 cursor-pointer transition-colors ${
-                option === value
-                  ? "bg-[#013300] text-white"
-                  : "text-gray-700 hover:bg-gray-100"
+                option === value ? "bg-[#013300] text-white" : "text-gray-700 hover:bg-gray-100"
               }`}
               onClick={() => handleOptionClick(option)}
             >
@@ -76,24 +75,44 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
   );
 };
 
-export default function MasterTeacherGradeSixTab({ teachers, setTeachers, searchTerm }: GradeSixTabProps) {
+function normalizeGradeToken(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const match = String(value).match(/(\d+)/);
+  return match ? match[1] : null;
+}
+
+export default function MasterTeacherTab({ teachers, setTeachers, searchTerm }: MasterTeacherTabProps) {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedTeacher, setSelectedTeacher] = useState<any>(null);
-  const [filter, setFilter] = useState({ section: "All Sections" });
+  const [sectionFilter, setSectionFilter] = useState<(typeof SECTIONS)[number]>("All Sections");
+  const [gradeFilter, setGradeFilter] = useState<(typeof GRADES)[number]>("All Grades");
 
-  const GradeSixTeachers = teachers.filter(teacher => 
-    teacher.grade === 6 || teacher.grade === "6"
-  );
+  const filteredTeachers = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    const gradeToken = normalizeGradeToken(gradeFilter);
 
-  const filteredTeachers = GradeSixTeachers.filter((teacher) => {
-    const matchSection = filter.section === "All Sections" || teacher.section === filter.section;
-    const matchSearch = searchTerm === "" || 
-      teacher.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      teacher.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      teacher.teacherId?.toLowerCase().includes(searchTerm.toLowerCase());
-      
-    return matchSection && matchSearch;
-  });
+    return teachers.filter((teacher) => {
+      const teacherGradeToken = normalizeGradeToken(
+        teacher.grade ?? teacher.grade_id ?? teacher.gradeId ?? teacher.handledGrade ?? teacher.handled_grade,
+      );
+
+      if (gradeToken && teacherGradeToken !== gradeToken) {
+        return false;
+      }
+
+      if (sectionFilter !== "All Sections" && teacher.section !== sectionFilter) {
+        return false;
+      }
+
+      if (!query) return true;
+
+      return (
+        teacher.name?.toLowerCase().includes(query) ||
+        teacher.email?.toLowerCase().includes(query) ||
+        teacher.teacherId?.toLowerCase().includes(query)
+      );
+    });
+  }, [teachers, searchTerm, gradeFilter, sectionFilter]);
 
   const handleShowDetails = (teacher: any) => {
     setSelectedTeacher(teacher);
@@ -102,22 +121,24 @@ export default function MasterTeacherGradeSixTab({ teachers, setTeachers, search
 
   return (
     <div>
-      <div className="flex flex-row justify-between items-center mb-4">
-        <p className="text-gray-600 text-md font-medium">
-          Total: {GradeSixTeachers.length}
-        </p>
-        
-        <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
-          <span className="text-sm text-gray-700 whitespace-nowrap">Section:</span>
-          <CustomDropdown 
-            options={sections}
-            value={filter.section}
-            onChange={(value) => setFilter({ section: value })}
-            className="min-w-[120px]"
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <CustomDropdown
+            options={GRADES}
+            value={gradeFilter}
+            onChange={(value) => setGradeFilter(value as (typeof GRADES)[number])}
+            className="min-w-[140px]"
           />
+          <CustomDropdown
+            options={SECTIONS}
+            value={sectionFilter}
+            onChange={(value) => setSectionFilter(value as (typeof SECTIONS)[number])}
+            className="min-w-[140px]"
+          />
+          <p className="text-gray-600 text-md font-medium">Total: {filteredTeachers.length}</p>
         </div>
       </div>
-      
+
       <UserDetailModal
         show={showDetailModal}
         onClose={() => setShowDetailModal(false)}

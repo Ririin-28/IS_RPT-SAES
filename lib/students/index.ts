@@ -18,7 +18,7 @@ export type StudentRecordRow = RowDataPacket & {
   lrn?: string | null;
   grade_id?: number | null;
   section?: string | null;
-  parent_id?: number | null;
+  parent_id?: string | number | null;
   first_name?: string | null;
   middle_name?: string | null;
   last_name?: string | null;
@@ -85,6 +85,12 @@ function normalizeGradeValue(value: string | null | undefined): string | null {
   if (!Number.isFinite(parsed) || parsed <= 0) return null;
   return String(parsed);
 }
+
+const normalizeParentIdentifier = (value: unknown): string | null => {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return text.length ? text : null;
+};
 
 const subjectIdCache = new Map<string, number>();
 
@@ -256,6 +262,7 @@ export function studentRowToDto(row: StudentRecordRow): StudentRecordDto {
       ...(row.parent_suffix ? { suffix: row.parent_suffix } as any : {}),
     }, row.guardian_name ?? null),
     guardianContact: row.parent_phone_number ?? row.guardian_contact ?? null,
+    guardianEmail: row.parent_email ?? null,
     relationship: row.relationship ?? null,
     address: row.parent_address ?? row.address ?? null,
     englishPhonemic: row.english_phonemic ?? (row.english_phonemic_id != null ? String(row.english_phonemic_id) : null),
@@ -274,6 +281,13 @@ type StudentIdSequence = {
 };
 
 const studentIdSequenceCache = new WeakMap<any, StudentIdSequence>();
+
+type ParentIdSequence = {
+  prefix: string;
+  next: number;
+};
+
+const parentIdSequenceCache = new WeakMap<any, ParentIdSequence>();
 
 const deriveYearSuffix = (timestamp: Date) => timestamp.getFullYear().toString().slice(-2);
 
@@ -312,6 +326,41 @@ async function generateStudentId(connection: any, requestTime?: Date): Promise<s
   return identifier;
 }
 
+async function generateParentId(connection: any, requestTime?: Date): Promise<string> {
+  const timestamp = requestTime ?? new Date();
+  const yearSuffix = deriveYearSuffix(timestamp);
+  const expectedPrefix = `PA-${yearSuffix}`;
+
+  let sequence = parentIdSequenceCache.get(connection);
+
+  if (!sequence || sequence.prefix !== expectedPrefix) {
+    const [rows] = (await connection.query(
+      "SELECT parent_id FROM `parent` WHERE parent_id LIKE ? ORDER BY parent_id DESC LIMIT 1",
+      [`${expectedPrefix}%`],
+    )) as [RowDataPacket[]];
+
+    let nextNum = 1;
+    if (rows.length > 0) {
+      const lastId = rows[0].parent_id;
+      const match = typeof lastId === "string" ? lastId.match(/^PA-\d{2}(\d{4,})$/) : null;
+      if (match) {
+        const parsed = Number.parseInt(match[1], 10);
+        if (Number.isFinite(parsed)) {
+          nextNum = parsed + 1;
+        }
+      }
+    }
+
+    sequence = { prefix: expectedPrefix, next: nextNum };
+  }
+
+  const identifier = `${sequence.prefix}${String(sequence.next).padStart(4, "0")}`;
+  sequence.next += 1;
+  parentIdSequenceCache.set(connection, sequence);
+
+  return identifier;
+}
+
 
 
 export async function insertStudents(
@@ -328,9 +377,11 @@ export async function insertStudents(
   const requestTime = options?.requestTime ?? new Date();
   const studentColumns = await safeGetColumns(STUDENT_TABLE);
   const assessmentColumns = await safeGetColumns("student_subject_assessment");
-  const studentSubjectColumns = await safeGetColumns("student_subject");
   const subjectColumns = await safeGetColumns("subject");
   const parentColumns = await safeGetColumns("parent");
+  const userColumns = await safeGetColumns("users");
+  const roleColumns = await safeGetColumns("role");
+  const parentStudentColumns = await safeGetColumns("parent_student");
 
   const availableStudentCols = [
     studentColumns.has("student_id") && "student_id",
@@ -368,40 +419,148 @@ export async function insertStudents(
   return runWithConnection(async (connection) => {
     await connection.beginTransaction();
     try {
+      const resolveParentRoleId = async (): Promise<number | null> => {
+        if (!userColumns.has("role_id")) {
+          return null;
+        }
+
+        if (roleColumns.size && roleColumns.has("role_id") && roleColumns.has("role_name")) {
+          try {
+            const [roleRows] = await connection.query<RowDataPacket[]>(
+              "SELECT role_id FROM role WHERE LOWER(role_name) IN ('parent','guardian') LIMIT 1",
+            );
+            const candidate = Number(roleRows?.[0]?.role_id);
+            if (Number.isFinite(candidate)) {
+              return candidate;
+            }
+          } catch (error) {
+            // ignore and fall back to user-derived role ids
+            console.warn("Unable to resolve parent role_id from role table", error);
+          }
+        }
+
+        try {
+          const [userRoleRows] = await connection.query<RowDataPacket[]>(
+            "SELECT role_id FROM users WHERE role_id IS NOT NULL AND LOWER(role) IN ('parent','guardian') ORDER BY role_id LIMIT 1",
+          );
+          const candidate = Number(userRoleRows?.[0]?.role_id);
+          if (Number.isFinite(candidate)) {
+            return candidate;
+          }
+        } catch {
+          // ignore
+        }
+
+        return null;
+      };
+
+      const parentRoleId = await resolveParentRoleId();
       let inserted = 0;
 
       for (const student of students) {
         const normalizedGrade = normalizeGradeValue(student.gradeLevel);
         const gradeId = normalizedGrade ? Number(normalizedGrade) : null;
 
-        let parentId: number | null = null;
-        const hasParentData = [student.guardianName, student.guardianContact, student.address, student.guardianFirstName, student.guardianLastName]
+        let parentId: string | null = null;
+        let parentUserId: number | null = null;
+
+        const parentName = (student.guardianName ?? "").trim();
+        const parentFirstName = student.guardianFirstName ?? parentName.split(" ")[0] ?? null;
+        const parentLastName = student.guardianLastName
+          ?? (parentName.split(" ").length > 1 ? parentName.split(" ").slice(-1).join(" ") : null);
+        const parentMiddleName = student.guardianMiddleName ?? null;
+        const parentSuffix = student.guardianSuffix ?? null;
+        const parentEmail = student.guardianEmail ?? null;
+        const parentPhone = student.guardianContact ?? null;
+        const parentAddress = student.address ?? null;
+        const parentRelationship = (student as any).relationship ?? null;
+
+        const hasParentData = [parentName, parentFirstName, parentLastName, parentEmail, parentPhone, parentAddress]
           .some((v) => typeof v === "string" && v.trim().length > 0);
 
         if (hasParentData && parentColumns.size) {
-          const parentCols: string[] = [];
-          const parentVals: Array<string | null> = [];
-          const parentName = (student.guardianName ?? "").trim();
-          const firstName = student.guardianFirstName ?? parentName.split(" ")[0] ?? null;
-          const lastName = student.guardianLastName ?? (parentName.split(" ").length > 1 ? parentName.split(" ").slice(-1).join(" ") : null);
-          const middleName = student.guardianMiddleName ?? null;
-          const suffix = student.guardianSuffix ?? null;
+          const parentIdentifier = parentColumns.has("parent_id") ? await generateParentId(connection, requestTime) : null;
+          const parentUsername = parentEmail?.trim()
+            || parentPhone?.trim()
+            || parentIdentifier
+            || (student.lrn ?? "").trim()
+            || null;
+          const parentPassword = (student.lrn ?? "").trim() || null;
 
-          if (parentColumns.has("first_name")) { parentCols.push("first_name"); parentVals.push(firstName ?? null); }
-          if (parentColumns.has("middle_name")) { parentCols.push("middle_name"); parentVals.push(middleName ?? null); }
-          if (parentColumns.has("last_name")) { parentCols.push("last_name"); parentVals.push(lastName ?? null); }
-          if (parentColumns.has("suffix")) { parentCols.push("suffix"); parentVals.push(suffix ?? null); }
-          if (parentColumns.has("phone_number")) { parentCols.push("phone_number"); parentVals.push(student.guardianContact ?? null); }
-          if (parentColumns.has("address")) { parentCols.push("address"); parentVals.push(student.address ?? null); }
-          if (parentColumns.has("created_at")) { parentCols.push("created_at"); parentVals.push(requestTime as any); }
-          if (parentColumns.has("updated_at")) { parentCols.push("updated_at"); parentVals.push(requestTime as any); }
+          if (userColumns.size) {
+            const userInsertColumns: string[] = [];
+            const userInsertValues: Array<string | number | null> = [];
+            const pushUser = (column: string, value: any) => {
+              userInsertColumns.push(column);
+              userInsertValues.push(value);
+            };
+
+            if (userColumns.has("first_name")) pushUser("first_name", parentFirstName ?? null);
+            if (userColumns.has("middle_name")) pushUser("middle_name", parentMiddleName ?? null);
+            if (userColumns.has("last_name")) pushUser("last_name", parentLastName ?? null);
+            if (userColumns.has("suffix")) pushUser("suffix", parentSuffix ?? null);
+            if (userColumns.has("name")) pushUser("name", parentName || [parentFirstName, parentMiddleName, parentLastName].filter(Boolean).join(" "));
+            if (userColumns.has("email")) pushUser("email", parentEmail ?? null);
+            if (userColumns.has("username")) pushUser("username", parentUsername);
+            if (userColumns.has("contact_number")) pushUser("contact_number", parentPhone ?? null);
+            if (userColumns.has("phone_number")) pushUser("phone_number", parentPhone ?? null);
+            if (userColumns.has("role")) pushUser("role", "parent");
+            if (userColumns.has("role_id") && parentRoleId !== null) pushUser("role_id", parentRoleId);
+            if (userColumns.has("user_code") && parentIdentifier) pushUser("user_code", parentIdentifier);
+            if (userColumns.has("password")) pushUser("password", parentPassword);
+            if (userColumns.has("status")) pushUser("status", "Active");
+            if (userColumns.has("created_at")) pushUser("created_at", requestTime as any);
+            if (userColumns.has("updated_at")) pushUser("updated_at", requestTime as any);
+
+            if (userInsertColumns.length) {
+              const columnsSql = userInsertColumns.map((c) => `\`${c}\``).join(", ");
+              const placeholders = userInsertColumns.map(() => "?").join(", ");
+              const [userResult] = await connection.query<ResultSetHeader>(
+                `INSERT INTO users (${columnsSql}) VALUES (${placeholders})`,
+                userInsertValues,
+              );
+              const newUserId = Number((userResult as any)?.insertId);
+              if (!Number.isFinite(newUserId) || newUserId <= 0) {
+                throw new Error("Failed to create parent user record");
+              }
+              parentUserId = newUserId;
+            }
+          }
+
+          const parentCols: string[] = [];
+          const parentVals: Array<string | number | null> = [];
+          const pushParent = (column: string, value: any) => {
+            parentCols.push(column);
+            parentVals.push(value);
+          };
+
+          const numericParentIdentifier = parentIdentifier && /^\d+$/.test(parentIdentifier) ? parentIdentifier : null;
+          if (parentColumns.has("parent_id") && numericParentIdentifier) {
+            pushParent("parent_id", numericParentIdentifier);
+          }
+          if (parentColumns.has("user_id") && parentUserId !== null) pushParent("user_id", parentUserId);
+          if (parentColumns.has("first_name")) pushParent("first_name", parentFirstName ?? null);
+          if (parentColumns.has("middle_name")) pushParent("middle_name", parentMiddleName ?? null);
+          if (parentColumns.has("last_name")) pushParent("last_name", parentLastName ?? null);
+          if (parentColumns.has("suffix")) pushParent("suffix", parentSuffix ?? null);
+          if (parentColumns.has("phone_number")) pushParent("phone_number", parentPhone ?? null);
+          if (parentColumns.has("email")) pushParent("email", parentEmail ?? null);
+          if (parentColumns.has("address")) pushParent("address", parentAddress ?? null);
+          if (parentColumns.has("relationship")) pushParent("relationship", parentRelationship ?? null);
+          if (parentColumns.has("created_at")) pushParent("created_at", requestTime as any);
+          if (parentColumns.has("updated_at")) pushParent("updated_at", requestTime as any);
 
           if (parentCols.length) {
             const parentSql = `INSERT INTO parent (${parentCols.map((c) => `\`${c}\``).join(", ")}) VALUES (${parentCols.map(() => "?").join(", ")})`;
             const [parentResult] = await connection.query<ResultSetHeader>(parentSql, parentVals);
-            const newParentId = Number((parentResult as any)?.insertId);
-            if (Number.isFinite(newParentId) && newParentId > 0) {
-              parentId = newParentId;
+
+            const insertIdCandidate = normalizeParentIdentifier((parentResult as any)?.insertId ?? null);
+            const formattedCandidate = normalizeParentIdentifier(parentIdentifier);
+
+            if (insertIdCandidate) {
+              parentId = insertIdCandidate;
+            } else {
+              parentId = formattedCandidate ?? null;
             }
           }
         }
@@ -453,6 +612,22 @@ export async function insertStudents(
         } else {
           const updateCols: string[] = [];
           const updateVals: Array<string | number | null> = [];
+          if (studentColumns.has("first_name") && student.firstName !== undefined) {
+            updateCols.push("first_name = ?");
+            updateVals.push(student.firstName ?? null);
+          }
+          if (studentColumns.has("middle_name") && student.middleName !== undefined) {
+            updateCols.push("middle_name = ?");
+            updateVals.push(student.middleName ?? null);
+          }
+          if (studentColumns.has("last_name") && student.lastName !== undefined) {
+            updateCols.push("last_name = ?");
+            updateVals.push(student.lastName ?? null);
+          }
+          if (studentColumns.has("suffix") && (student as any).suffix !== undefined) {
+            updateCols.push("suffix = ?");
+            updateVals.push((student as any).suffix ?? null);
+          }
           if (studentColumns.has("grade_id") && gradeId !== null) {
             updateCols.push("grade_id = ?");
             updateVals.push(gradeId);
@@ -475,8 +650,52 @@ export async function insertStudents(
           }
         }
 
-        if (studentSubjectColumns.has("student_id") && studentSubjectColumns.has("subject_id") && resolvedMainSubjectId) {
-          await connection.query("INSERT IGNORE INTO student_subject (student_id, subject_id) VALUES (?, ?)", [studentId, resolvedMainSubjectId]);
+        const linkedParentId = normalizeParentIdentifier(parentId);
+        if (parentStudentColumns.size && linkedParentId && studentId) {
+          const [existingLink] = await connection.query<RowDataPacket[]>(
+            "SELECT parent_student_id FROM parent_student WHERE parent_id = ? AND student_id = ? LIMIT 1",
+            [linkedParentId, studentId],
+          );
+
+          const relationCols: string[] = [];
+          const relationVals: Array<string | null> = [];
+          const pushRel = (column: string, value: any) => {
+            relationCols.push(column);
+            relationVals.push(value);
+          };
+
+          if (existingLink.length === 0) {
+            if (parentStudentColumns.has("parent_id")) pushRel("parent_id", linkedParentId);
+            if (parentStudentColumns.has("student_id")) pushRel("student_id", studentId);
+            if (parentStudentColumns.has("relationship")) pushRel("relationship", parentRelationship ?? null);
+
+            if (relationCols.length) {
+              const relSql = `INSERT INTO parent_student (${relationCols.map((c) => `\`${c}\``).join(", ")}) VALUES (${relationCols.map(() => "?").join(", ")})`;
+              await connection.query<ResultSetHeader>(relSql, relationVals);
+            }
+          } else if (parentRelationship && parentStudentColumns.has("relationship")) {
+            await connection.query(
+              "UPDATE parent_student SET relationship = ? WHERE parent_id = ? AND student_id = ? LIMIT 1",
+              [parentRelationship, linkedParentId, studentId],
+            );
+          }
+        }
+
+        // Only insert a placeholder row when the assessment table does NOT enforce phonemic_id.
+        // If phonemic_id exists, we rely on the explicit phonemic inserts below to avoid NULL constraint errors.
+        if (
+          assessmentColumns.has("student_id") &&
+          assessmentColumns.has("subject_id") &&
+          !assessmentColumns.has("phonemic_id")
+        ) {
+          if (resolvedMainSubjectId) {
+            await connection.query(
+              `INSERT INTO student_subject_assessment (student_id, subject_id, phonemic_id, assessed_at)
+               VALUES (?, ?, NULL, ?)
+               ON DUPLICATE KEY UPDATE assessed_at = VALUES(assessed_at)`,
+              [studentId, resolvedMainSubjectId, requestTime]
+            );
+          }
         }
 
         if (assessmentColumns.has("student_id") && assessmentColumns.has("subject_id") && assessmentColumns.has("phonemic_id")) {
@@ -516,6 +735,7 @@ export async function deleteStudents(userId: number, subject: StudentSubject, id
   }
 
   await ensureStudentSchema();
+  const parentStudentColumns = await safeGetColumns("parent_student");
   const studentIds = ids;
   const placeholders = studentIds.map(() => "?").join(", ");
 
@@ -527,14 +747,16 @@ export async function deleteStudents(userId: number, subject: StudentSubject, id
     ? Array.from(
         new Set(
           parentRows
-            .map((row) => (row.parent_id != null ? Number(row.parent_id) : null))
-            .filter((value): value is number => Number.isFinite(value)),
+            .map((row) => normalizeParentIdentifier(row.parent_id))
+            .filter((value): value is string => typeof value === "string" && value.length > 0),
         ),
       )
     : [];
 
-  await query(`DELETE FROM student_subject WHERE student_id IN (${placeholders})`, studentIds);
   await query(`DELETE FROM student_subject_assessment WHERE student_id IN (${placeholders})`, studentIds);
+  if (parentStudentColumns.size) {
+    await query(`DELETE FROM parent_student WHERE student_id IN (${placeholders})`, studentIds);
+  }
 
   const [result] = await query(`DELETE FROM \`${STUDENT_TABLE}\` WHERE student_id IN (${placeholders})`, studentIds);
   const affected = "affectedRows" in result ? Number((result as any).affectedRows) : 0;
@@ -572,7 +794,6 @@ export async function fetchStudents({
   const gradeColumns = await safeGetColumns("grade");
   const parentColumns = await safeGetColumns("parent");
   const assessmentColumns = await safeGetColumns("student_subject_assessment");
-  const studentSubjectColumns = await safeGetColumns("student_subject");
   const subjectColumns = await safeGetColumns("subject");
   const phonemicLevelColumns = await safeGetColumns("phonemic_level");
 
@@ -611,6 +832,7 @@ export async function fetchStudents({
       parentColumns.has("last_name") ? "p.last_name AS parent_last_name" : "NULL AS parent_last_name",
       parentColumns.has("suffix") ? "p.suffix AS parent_suffix" : "NULL AS parent_suffix",
       parentColumns.has("phone_number") ? "p.phone_number AS parent_phone_number" : "NULL AS parent_phone_number",
+      parentColumns.has("email") ? "p.email AS parent_email" : "NULL AS parent_email",
     );
   } else {
     selectParts.push(
@@ -621,6 +843,7 @@ export async function fetchStudents({
       "NULL AS parent_last_name",
       "NULL AS parent_suffix",
       "NULL AS parent_phone_number",
+      "NULL AS parent_email",
     );
   }
 
@@ -660,8 +883,8 @@ export async function fetchStudents({
     );
   }
 
-  if (studentSubjectColumns.size) {
-    selectParts.push("GROUP_CONCAT(DISTINCT ss.subject_id) AS subject_ids");
+  if (assessmentColumns.size) {
+    selectParts.push("GROUP_CONCAT(DISTINCT ssa.subject_id) AS subject_ids");
   }
 
   const joins: string[] = [];
@@ -676,9 +899,6 @@ export async function fetchStudents({
     if (canJoinPhonemicLevels) {
       joins.push("LEFT JOIN phonemic_level pl ON pl.phonemic_id = ssa.phonemic_id");
     }
-  }
-  if (studentSubjectColumns.size) {
-    joins.push("LEFT JOIN student_subject ss ON ss.student_id = s.student_id");
   }
 
   const filters: string[] = [];
@@ -718,8 +938,8 @@ export async function fetchStudents({
   if (!subjectId && subjectColumns.size) {
     subjectId = await resolveSubjectIdByName(subject, subjectColumns);
   }
-  if (subjectId && studentSubjectColumns.size) {
-    subjectFilter = "EXISTS (SELECT 1 FROM student_subject ss2 WHERE ss2.student_id = s.student_id AND ss2.subject_id = ?)";
+  if (subjectId && assessmentColumns.size) {
+    subjectFilter = "EXISTS (SELECT 1 FROM student_subject_assessment ssa2 WHERE ssa2.student_id = s.student_id AND ssa2.subject_id = ?)";
     filters.push(subjectFilter);
     params.push(subjectId);
   }
@@ -764,7 +984,6 @@ export async function fetchStudentById(id: string): Promise<StudentRecordDto | n
   const parentColumns = await safeGetColumns("parent");
   const assessmentColumns = await safeGetColumns("student_subject_assessment");
   const phonemicLevelColumns = await safeGetColumns("phonemic_level");
-  const studentSubjectColumns = await safeGetColumns("student_subject");
   const subjectColumns = await safeGetColumns("subject");
 
   const englishSubjectId = await resolveSubjectIdByName("English", subjectColumns);
@@ -804,6 +1023,7 @@ export async function fetchStudentById(id: string): Promise<StudentRecordDto | n
       parentColumns.has("last_name") ? "p.last_name AS parent_last_name" : "NULL AS parent_last_name",
       parentColumns.has("suffix") ? "p.suffix AS parent_suffix" : "NULL AS parent_suffix",
       parentColumns.has("phone_number") ? "p.phone_number AS parent_phone_number" : "NULL AS parent_phone_number",
+      parentColumns.has("email") ? "p.email AS parent_email" : "NULL AS parent_email",
     );
     joins.push("LEFT JOIN parent p ON p.parent_id = s.parent_id");
   } else {
@@ -815,6 +1035,7 @@ export async function fetchStudentById(id: string): Promise<StudentRecordDto | n
       "NULL AS parent_last_name",
       "NULL AS parent_suffix",
       "NULL AS parent_phone_number",
+      "NULL AS parent_email",
     );
   }
 
@@ -856,9 +1077,9 @@ export async function fetchStudentById(id: string): Promise<StudentRecordDto | n
     );
   }
 
-  if (studentSubjectColumns.size) {
-    selectParts.push("GROUP_CONCAT(DISTINCT ss.subject_id) AS subject_ids");
-    joins.push("LEFT JOIN student_subject ss ON ss.student_id = s.student_id");
+  if (assessmentColumns.size) {
+    selectParts.push("GROUP_CONCAT(DISTINCT ssa.subject_id) AS subject_ids");
+    joins.push("LEFT JOIN student_subject_assessment ssa2 ON ssa2.student_id = s.student_id");
   }
 
   const sql = `
@@ -887,7 +1108,6 @@ export async function updateStudent(
   const studentColumns = await safeGetColumns(STUDENT_TABLE);
   const assessmentColumns = await safeGetColumns("student_subject_assessment");
   const phonemicLevelColumns = await safeGetColumns("phonemic_level");
-  const studentSubjectColumns = await safeGetColumns("student_subject");
   const subjectColumns = await safeGetColumns("subject");
   const parentColumns = await safeGetColumns("parent");
 
@@ -940,8 +1160,8 @@ export async function updateStudent(
 
   if (parentColumns.size) {
     const [existing] = await query<RowDataPacket[]>(`SELECT parent_id FROM \`${STUDENT_TABLE}\` WHERE student_id = ? LIMIT 1`, [id]);
-    const parentId = existing.length > 0 && existing[0].parent_id ? Number(existing[0].parent_id) : null;
-    const hasParentData = [input.guardianName, input.guardianContact, input.address, (input as any).guardianFirstName, (input as any).guardianLastName]
+    const parentId = existing.length > 0 ? normalizeParentIdentifier(existing[0].parent_id) : null;
+    const hasParentData = [input.guardianName, input.guardianContact, input.guardianEmail, input.address, (input as any).guardianFirstName, (input as any).guardianLastName]
       .some((v) => typeof v === "string" && v.trim().length > 0);
 
     if (hasParentData) {
@@ -959,23 +1179,28 @@ export async function updateStudent(
       if (parentColumns.has("last_name")) pushVal("last_name", lastName ?? null);
       if (parentColumns.has("suffix")) pushVal("suffix", suffix ?? null);
       if (parentColumns.has("phone_number")) pushVal("phone_number", input.guardianContact ?? null);
+      if (parentColumns.has("email")) pushVal("email", (input as any).guardianEmail ?? null);
       if (parentColumns.has("address")) pushVal("address", input.address ?? null);
 
-      if (parentCols.length) {
-        if (parentId) {
-          const setClause = parentCols.map((c) => `${c} = ?`).join(", ");
-          await query(`UPDATE parent SET ${setClause} WHERE parent_id = ? LIMIT 1`, [...parentVals, parentId]);
-        } else {
-          if (parentColumns.has("created_at")) { parentCols.push("created_at"); parentVals.push(new Date() as any); }
-          if (parentColumns.has("updated_at")) { parentCols.push("updated_at"); parentVals.push(new Date() as any); }
-          const insertSql = `INSERT INTO parent (${parentCols.map((c) => `\`${c}\``).join(", ")}) VALUES (${parentCols.map(() => "?").join(", ")})`;
-          const [result] = await query<ResultSetHeader>(insertSql, parentVals);
-          const newParentId = Number((result as any)?.insertId);
-          if (studentColumns.has("parent_id") && Number.isFinite(newParentId)) {
-            await query(`UPDATE \`${STUDENT_TABLE}\` SET parent_id = ? WHERE student_id = ? LIMIT 1`, [newParentId, id]);
+        if (parentCols.length) {
+          if (parentId) {
+            const setClause = parentCols.map((c) => `${c} = ?`).join(", ");
+            await query(`UPDATE parent SET ${setClause} WHERE parent_id = ? LIMIT 1`, [...parentVals, parentId]);
+          } else {
+            const parentIdentifier = parentColumns.has("parent_id")
+              ? await runWithConnection((conn) => generateParentId(conn, new Date()))
+              : null;
+            if (parentColumns.has("parent_id") && parentIdentifier) { parentCols.push("parent_id"); parentVals.push(parentIdentifier); }
+            if (parentColumns.has("created_at")) { parentCols.push("created_at"); parentVals.push(new Date() as any); }
+            if (parentColumns.has("updated_at")) { parentCols.push("updated_at"); parentVals.push(new Date() as any); }
+            const insertSql = `INSERT INTO parent (${parentCols.map((c) => `\`${c}\``).join(", ")}) VALUES (${parentCols.map(() => "?").join(", ")})`;
+            const [result] = await query<ResultSetHeader>(insertSql, parentVals);
+            const newParentId = normalizeParentIdentifier(parentIdentifier ?? (result as any)?.insertId);
+            if (studentColumns.has("parent_id") && newParentId) {
+              await query(`UPDATE \`${STUDENT_TABLE}\` SET parent_id = ? WHERE student_id = ? LIMIT 1`, [newParentId, id]);
+            }
           }
         }
-      }
     }
   }
 
@@ -998,14 +1223,19 @@ export async function updateStudent(
     }
   }
 
-  if (studentSubjectColumns.has("student_id") && studentSubjectColumns.has("subject_id")) {
+  if (assessmentColumns.has("student_id") && assessmentColumns.has("subject_id")) {
     let subjectId = subjectSubjectId(subject, subjectColumns);
     if (!subjectId && subjectColumns.size) {
       subjectId = await resolveSubjectIdByName(subject, subjectColumns);
     }
     if (subjectId) {
-      await query("DELETE FROM student_subject WHERE student_id = ?", [id]);
-      await query("INSERT INTO student_subject (student_id, subject_id) VALUES (?, ?)", [id, subjectId]);
+      await query("DELETE FROM student_subject_assessment WHERE student_id = ?", [id]);
+      await query(
+        `INSERT INTO student_subject_assessment (student_id, subject_id, phonemic_id, assessed_at)
+         VALUES (?, ?, NULL, ?)
+         ON DUPLICATE KEY UPDATE assessed_at = VALUES(assessed_at)`,
+        [id, subjectId, new Date()]
+      );
     }
   }
 

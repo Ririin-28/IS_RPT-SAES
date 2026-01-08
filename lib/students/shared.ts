@@ -18,6 +18,7 @@ export type StudentRecordDto = {
   subject: StudentSubject;
   guardianName: string | null;
   guardianContact: string | null;
+  guardianEmail: string | null;
   address: string | null;
   relationship: string | null;
   englishPhonemic: string | null;
@@ -44,6 +45,7 @@ export type CreateStudentRecordInput = {
   guardianLastName?: string | null;
   guardianSuffix?: string | null;
   guardianContact?: string | null;
+  guardianEmail?: string | null;
   address?: string | null;
   englishPhonemic?: string | null;
   filipinoPhonemic?: string | null;

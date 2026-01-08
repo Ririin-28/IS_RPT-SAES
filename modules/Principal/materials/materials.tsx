@@ -6,30 +6,16 @@ import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import { FaTimes } from "react-icons/fa";
 
-// English Tabs
-import EnglishNonReaderTab from "./EnglishTabs/NonReaderTab";
-import EnglishSyllableTab from "./EnglishTabs/SyllableTab";
-import EnglishWordTab from "./EnglishTabs/WordTab";
-import EnglishPhraseTab from "./EnglishTabs/PhraseTab";
-import EnglishSentenceTab from "./EnglishTabs/SentenceTab";
-import EnglishParagraphTab from "./EnglishTabs/ParagraphTab";
+// English Tabs (single unified component)
+import EnglishTab from "./EnglishTabs/EnglishTab";
 
-// Filipino Tabs
-import FilipinoNonReaderTab from "./FilipinoTabs/NonReaderTab";
-import FilipinoSyllableTab from "./FilipinoTabs/SyllableTab";
-import FilipinoWordTab from "./FilipinoTabs/WordTab";
-import FilipinoPhraseTab from "./FilipinoTabs/PhraseTab";
-import FilipinoSentenceTab from "./FilipinoTabs/SentenceTab";
-import FilipinoParagraphTab from "./FilipinoTabs/ParagraphTab";
+// Filipino Tabs (single unified component)
+import FilipinoTab from "./FilipinoTabs/FilipinoTab";
 
-// Math Tabs
-import MathNotProficientTab from "./MathTabs/NotProficientTab";
-import MathLowProficientTab from "./MathTabs/LowProficientTab";
-import MathNearlyProficientTab from "./MathTabs/NearlyProficientTab";
-import MathProficientTab from "./MathTabs/ProficientTab";
-import MathHighlyProficientTab from "./MathTabs/HighlyProficientTab";
+// Math Tabs (single unified component)
+import MathTab from "./MathTabs/MathTab";
 
-const GRADE_OPTIONS = ["1", "2", "3", "4", "5", "6"];
+const GRADE_OPTIONS = ["All Grades", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"];
 const ENGLISH_TABS = ["Non Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"] as const;
 const FILIPINO_TABS = ["Non Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"] as const;
 const MATH_TABS = [
@@ -117,33 +103,13 @@ export default function PrincipalMaterials({ subjectSlug }: PrincipalMaterialsPr
               </div>
               <div className="mt-2 sm:mt-2">
                 {normalizedSubject === "English" && (
-                  <>
-                    {activeTab === "Non Reader" && <EnglishNonReaderTab />}
-                    {activeTab === "Syllable" && <EnglishSyllableTab />}
-                    {activeTab === "Word" && <EnglishWordTab />}
-                    {activeTab === "Phrase" && <EnglishPhraseTab />}
-                    {activeTab === "Sentence" && <EnglishSentenceTab />}
-                    {activeTab === "Paragraph" && <EnglishParagraphTab />}
-                  </>
+                  <EnglishTab level={activeTab} grade={selectedGrade} searchTerm={searchTerm} />
                 )}
                 {normalizedSubject === "Filipino" && (
-                  <>
-                    {activeTab === "Non Reader" && <FilipinoNonReaderTab />}
-                    {activeTab === "Syllable" && <FilipinoSyllableTab />}
-                    {activeTab === "Word" && <FilipinoWordTab />}
-                    {activeTab === "Phrase" && <FilipinoPhraseTab />}
-                    {activeTab === "Sentence" && <FilipinoSentenceTab />}
-                    {activeTab === "Paragraph" && <FilipinoParagraphTab />}
-                  </>
+                  <FilipinoTab level={activeTab} grade={selectedGrade} searchTerm={searchTerm} />
                 )}
                 {normalizedSubject === "Mathematics" && (
-                  <>
-                    {activeTab === "Not Proficient" && <MathNotProficientTab />}
-                    {activeTab === "Low Proficient" && <MathLowProficientTab />}
-                    {activeTab === "Nearly Proficient" && <MathNearlyProficientTab />}
-                    {activeTab === "Proficient" && <MathProficientTab />}
-                    {activeTab === "Highly Proficient" && <MathHighlyProficientTab />}
-                  </>
+                  <MathTab level={activeTab} grade={selectedGrade} searchTerm={searchTerm} />
                 )}
               </div>
             </div>

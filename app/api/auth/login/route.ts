@@ -9,6 +9,7 @@ interface LoginRequestPayload {
   email: string;
   password: string;
   userId?: string | number | null;
+  itAdminId?: string | null;
   deviceToken?: string | null;
   deviceName?: string | null;
 }
@@ -23,7 +24,7 @@ interface UserRow extends RowDataPacket {
   last_name: string | null;
 }
 
-function roleRequiresUserId(role: string | null | undefined): boolean {
+function roleRequiresItAdminId(role: string | null | undefined): boolean {
   if (!role) return false;
   const normalized = normalizeRoleName(role);
   return normalized === "it_admin" || normalized === "admin" || normalized === "itadmin";
@@ -35,6 +36,14 @@ function toNumber(value: unknown): number | null {
   }
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function sanitizeItAdminId(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const trimmed = String(value).trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -67,7 +76,7 @@ export async function POST(req: Request): Promise<Response> {
       };
 
       try {
-        const { email, password, userId, deviceToken, deviceName } = (await req.json()) as LoginRequestPayload;
+        const { email, password, userId, itAdminId, deviceToken, deviceName } = (await req.json()) as LoginRequestPayload;
 
         const [users] = await db.execute<UserRow[]>("SELECT * FROM users WHERE email = ?", [email]);
         const user = users[0];
@@ -88,17 +97,31 @@ export async function POST(req: Request): Promise<Response> {
           }
         }
 
+        const normalizedItAdminId = sanitizeItAdminId(itAdminId);
+
         const resolvedRole = await resolveUserRole(db, user);
         const roleForLogic = resolvedRole ?? user.role ?? null;
         const normalizedRole = normalizeRoleName(roleForLogic);
         const redirectPath = resolvePortalPath(normalizedRole);
 
-        if (roleRequiresUserId(roleForLogic) && normalizedUserId === null) {
-          return respond(401, {
-            error: "Admin login requires user ID",
-            errorCode: "ADMIN_USER_ID_REQUIRED",
-            requireUserId: true,
-          });
+        if (roleRequiresItAdminId(roleForLogic)) {
+          if (!normalizedItAdminId) {
+            return respond(401, {
+              error: "Admin login requires IT Admin ID",
+              errorCode: "ADMIN_IT_ADMIN_ID_REQUIRED",
+              requireItAdminId: true,
+              requireUserId: true,
+            });
+          }
+
+          const [itAdmins] = await db.execute<RowDataPacket[]>(
+            "SELECT user_id FROM it_admin WHERE it_admin_id = ? LIMIT 1",
+            [normalizedItAdminId],
+          );
+          const linkedUserId = itAdmins[0]?.user_id;
+          if (!linkedUserId || Number(linkedUserId) !== Number(user.user_id)) {
+            return respond(401, { error: "Invalid credentials" });
+          }
         }
 
         if (password !== user.password) {
