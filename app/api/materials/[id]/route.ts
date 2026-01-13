@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import type { ResultSetHeader } from "mysql2/promise";
 import { getTableColumns, query, tableExists } from "@/lib/db";
 
@@ -29,14 +29,16 @@ async function resolveColumns() {
   };
 }
 
-export async function DELETE(request: Request, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
+
     const columns = await resolveColumns();
     if (!columns) {
       return NextResponse.json({ success: false, error: "Materials table unavailable." }, { status: 404 });
     }
 
-    const materialId = Number.parseInt(params.id, 10);
+    const materialId = Number.parseInt(id, 10);
     if (!Number.isFinite(materialId)) {
       return NextResponse.json({ success: false, error: "Invalid material id." }, { status: 400 });
     }
