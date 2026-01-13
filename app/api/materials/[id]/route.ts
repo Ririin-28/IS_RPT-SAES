@@ -29,8 +29,11 @@ async function resolveColumns() {
   };
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+type DeleteContext = { params: { id: string } };
+
+export async function DELETE(request: NextRequest, context: DeleteContext) {
   try {
+    const { params } = context;
     const columns = await resolveColumns();
     if (!columns) {
       return NextResponse.json({ success: false, error: "Materials table unavailable." }, { status: 404 });
