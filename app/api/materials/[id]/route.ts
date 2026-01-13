@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import type { ResultSetHeader } from "mysql2/promise";
 import { getTableColumns, query, tableExists } from "@/lib/db";
 
@@ -29,11 +29,8 @@ async function resolveColumns() {
   };
 }
 
-type DeleteContext = { params: { id: string } };
-
-export async function DELETE(request: NextRequest, context: DeleteContext) {
+export async function DELETE(request: Request, { params }: { params: { id: string } }) {
   try {
-    const { params } = context;
     const columns = await resolveColumns();
     if (!columns) {
       return NextResponse.json({ success: false, error: "Materials table unavailable." }, { status: 404 });
