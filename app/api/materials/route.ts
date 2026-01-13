@@ -228,6 +228,7 @@ export async function POST(request: NextRequest) {
     }
 
     const now = new Date();
+    const nowIso = now.toISOString();
     const insertCols: string[] = [columns.teacherUserId, columns.level, columns.title];
     const placeholders: string[] = ["?", "?", "?"];
     const values: Array<string | number | null> = [teacherUserId, level, title];
@@ -253,13 +254,13 @@ export async function POST(request: NextRequest) {
     if (columns.createdAt) {
       insertCols.push(columns.createdAt);
       placeholders.push("?");
-      values.push(now);
+      values.push(nowIso);
     }
 
     if (columns.updatedAt) {
       insertCols.push(columns.updatedAt);
       placeholders.push("?");
-      values.push(now);
+      values.push(nowIso);
     }
 
     const [result] = await query<ResultSetHeader>(
