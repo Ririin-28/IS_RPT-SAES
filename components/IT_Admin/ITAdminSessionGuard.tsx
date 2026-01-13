@@ -38,14 +38,14 @@ const normalizeRole = (role: string | null | undefined) => {
 };
 
 export default function ITAdminSessionGuard({ children }: ITAdminSessionGuardProps) {
-  if (DISABLE_ADMIN_SESSION_GUARD) {
-    return <>{children}</>;
-  }
-
   const router = useRouter();
   const redirectingRef = useRef(false);
 
   useEffect(() => {
+    if (DISABLE_ADMIN_SESSION_GUARD) {
+      return;
+    }
+
     let active = true;
 
     const redirectToLogin = () => {
@@ -152,6 +152,10 @@ export default function ITAdminSessionGuard({ children }: ITAdminSessionGuardPro
   }, [router]);
 
   useLayoutEffect(() => {
+    if (DISABLE_ADMIN_SESSION_GUARD) {
+      return;
+    }
+
     if (typeof window === "undefined") {
       return;
     }
