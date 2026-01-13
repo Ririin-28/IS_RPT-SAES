@@ -300,9 +300,9 @@ export async function GET(request: NextRequest) {
     addUserColumn("middle_name", "user_middle_name");
     addUserColumn("last_name", "user_last_name");
     addUserColumn("suffix", "user_suffix");
-    addUserColumn(userColumns.has("teacher_id") ? "teacher_id" : null, "user_teacher_id");
-    addUserColumn(userColumns.has("role") ? "role" : null, "user_role");
-    addUserColumn(userColumns.has("user_code") ? "user_code" : null, "user_code");
+    addUserColumn(userColumns.has("teacher_id") ? "teacher_id" : "", "user_teacher_id");
+    addUserColumn(userColumns.has("role") ? "role" : "", "user_role");
+    addUserColumn(userColumns.has("user_code") ? "user_code" : "", "user_code");
 
     const userGradeColumn = pickColumn(userColumns, GRADE_COLUMNS);
     if (userGradeColumn) {
