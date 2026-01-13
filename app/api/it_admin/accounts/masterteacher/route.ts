@@ -17,6 +17,7 @@ import {
 export const dynamic = "force-dynamic";
 
 const ROLE_FILTERS = ["master_teacher", "master teacher", "master-teacher"] as const;
+const ROLE_FILTER_PARAMS: Array<string | number | null> = [...ROLE_FILTERS];
 const DEFAULT_SUBJECTS_STRING = "English, Filipino, Math";
 
 type RawMasterTeacherRow = RowDataPacket & {
@@ -254,7 +255,7 @@ export async function GET() {
         const placeholders = ROLE_FILTERS.map(() => "?").join(", ");
         const [roleRows] = await query<RowDataPacket[]>(
           `SELECT role_id FROM role WHERE LOWER(role_name) IN (${placeholders})`,
-          ROLE_FILTERS,
+          ROLE_FILTER_PARAMS,
         );
         masterTeacherRoleIds = roleRows
           .map((r) => Number(r.role_id))
