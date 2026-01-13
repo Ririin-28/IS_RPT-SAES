@@ -121,7 +121,15 @@ async function persistAdminIdentifiers(
   }
 
   await Promise.all(
-    updates.map(async ({ userId, previousUserAdminId, previousItAdminId, nextId }) => {
+    updates.map(async ({
+      userId,
+      previousUserAdminId,
+      previousUserItAdminId,
+      previousUserCode,
+      previousItAdminId,
+      previousItAdminItId,
+      nextId,
+    }) => {
       try {
         const normalizedNext = nextId.trim();
         if (!normalizedNext) {
