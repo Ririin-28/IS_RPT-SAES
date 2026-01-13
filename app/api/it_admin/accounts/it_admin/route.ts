@@ -14,6 +14,7 @@ import {
 export const dynamic = "force-dynamic";
 
 const ROLE_FILTERS = ["admin", "it_admin", "it-admin"] as const;
+const ROLE_FILTER_PARAMS: Array<string | number | null> = [...ROLE_FILTERS];
 
 type RawItAdminRow = RowDataPacket & {
   user_id: number;
@@ -216,7 +217,7 @@ export async function GET() {
         const placeholders = ROLE_FILTERS.map(() => "?").join(", ");
         const [roleRows] = await query<RowDataPacket[]>(
           `SELECT role_id FROM role WHERE LOWER(role_name) IN (${placeholders})`,
-          ROLE_FILTERS,
+          ROLE_FILTER_PARAMS,
         );
         adminRoleIds = roleRows
           .map((r) => Number(r.role_id))
