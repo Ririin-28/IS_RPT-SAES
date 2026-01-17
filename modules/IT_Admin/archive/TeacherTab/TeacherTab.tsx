@@ -1,4 +1,4 @@
-import { useMemo, useCallback, type Dispatch, type SetStateAction } from "react";
+import { useMemo, useCallback, useState, type Dispatch, type SetStateAction } from "react";
 import TableList from "@/components/Common/Tables/TableList";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
@@ -10,6 +10,7 @@ import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmati
 import { useArchiveRestoreDelete } from "../Common/useArchiveRestoreDelete";
 import { ensureArchiveRowKey } from "../Common/archiveRowKey";
 import { exportArchiveRows } from "../utils/export-columns";
+import TeacherDetailsModal from "@/modules/IT_Admin/accounts/TeacherTab/Modals/TeacherDetailsModal";
 
 const ExportIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -25,6 +26,7 @@ interface TeacherArchiveTabProps {
   searchTerm: string;
   gradeFilter?: number;
   gradeLabel?: string;
+  onEntriesRemoved?: (archiveIds: number[]) => void;
 }
 
 const extractGradeNumber = (raw: unknown): number | null => {
@@ -72,10 +74,215 @@ export default function TeacherArchiveTab({
   searchTerm,
   gradeFilter,
   gradeLabel,
+  onEntriesRemoved,
 }: TeacherArchiveTabProps) {
+  const [selectedTeacher, setSelectedTeacher] = useState<any>(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
   const normalizedLabel = gradeLabel ?? (gradeFilter ? `Grade ${gradeFilter}` : "All Grades");
 
-  const keySelector = (item: any) => ensureArchiveRowKey(item);
+  const keySelector = useCallback((item: any) => {
+    if (!item) {
+      return undefined;
+    }
+    if (item.archiveId != null) {
+      return String(item.archiveId);
+    }
+    if (item.archive_id != null) {
+      return String(item.archive_id);
+    }
+    return ensureArchiveRowKey(item);
+  }, []);
+
+  const resolveRecordsByKeys = useCallback(
+    (keys: string[]) => {
+      if (!keys.length) {
+        return [];
+      }
+      const keySet = new Set(keys.map(String));
+      return teachers.filter((item: any) => {
+        const key = keySelector(item);
+        return key ? keySet.has(String(key)) : false;
+      });
+    },
+    [teachers, keySelector],
+  );
+
+  const handleRestoreAction = useCallback(
+    async (selectedKeys: string[], resetSelection: () => void) => {
+      const selectedRecords = resolveRecordsByKeys(selectedKeys);
+      const archiveIds = Array.from(
+        new Set(
+          selectedRecords
+            .map((record) => {
+              const value = record?.archiveId ?? record?.archive_id;
+              const numeric = Number(value);
+              return Number.isInteger(numeric) && numeric > 0 ? numeric : null;
+            })
+            .filter((value: number | null): value is number => value !== null),
+        ),
+      );
+
+      if (archiveIds.length === 0) {
+        if (selectedRecords.length > 0 && typeof window !== "undefined") {
+          window.alert("Selected archive entries are missing identifiers. Please refresh and try again.");
+        }
+        resetSelection();
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/it_admin/archive/restore", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ archiveIds }),
+        });
+
+        const data: any = await response.json();
+
+        if (!response.ok) {
+          const message = typeof data?.error === "string" && data.error.trim().length > 0
+            ? data.error
+            : "Failed to restore archived accounts.";
+          throw new Error(message);
+        }
+
+        const restoredEntries: Array<{
+          archiveId: number;
+          userId: number;
+          name?: string;
+          email?: string;
+          temporaryPassword?: string;
+        }> = Array.isArray(data?.restored) ? data.restored : [];
+
+        const restoredArchiveIds = restoredEntries
+          .map((entry) => Number(entry.archiveId))
+          .filter((value) => Number.isInteger(value) && value > 0);
+
+        if (restoredArchiveIds.length > 0) {
+          const removedSet = new Set(restoredArchiveIds);
+          setTeachers((prev) =>
+            prev.filter((entry: any) => {
+              const value = entry?.archiveId ?? entry?.archive_id;
+              return !(typeof value === "number" && removedSet.has(value));
+            }),
+          );
+          onEntriesRemoved?.(restoredArchiveIds);
+        }
+
+        if (restoredEntries.length > 0 && typeof window !== "undefined") {
+          const lines = restoredEntries.map((entry) => {
+            const label = entry.name || entry.email || `User ${entry.userId}`;
+            return entry.temporaryPassword
+              ? `${label} — temporary password: ${entry.temporaryPassword}`
+              : label;
+          });
+          window.alert(
+            `Restored ${restoredEntries.length} account${restoredEntries.length === 1 ? "" : "s"}.
+
+${lines.join("\n")}`,
+          );
+        }
+
+        if (Array.isArray(data?.errors) && data.errors.length > 0) {
+          console.warn("Some archive entries failed to restore:", data.errors);
+          if (restoredEntries.length === 0 && typeof window !== "undefined") {
+            const errorLines = data.errors
+              .map((err: any) => `#${err?.archiveId ?? "?"}: ${err?.message ?? "Unable to restore."}`)
+              .join("\n");
+            window.alert(`Unable to restore the selected accounts.\n\n${errorLines}`);
+          }
+        }
+
+        if (restoredEntries.length > 0) {
+          resetSelection();
+        }
+      } catch (error) {
+        console.error("Failed to restore archived Teacher accounts", error);
+        if (typeof window !== "undefined") {
+          const message = error instanceof Error ? error.message : "Failed to restore archived accounts.";
+          window.alert(message);
+        }
+      }
+    },
+    [resolveRecordsByKeys, setTeachers, onEntriesRemoved],
+  );
+
+  const handleDeleteAction = useCallback(
+    async (selectedKeys: string[], resetSelection: () => void) => {
+      const selectedRecords = resolveRecordsByKeys(selectedKeys);
+      const archiveIds = Array.from(
+        new Set(
+          selectedRecords
+            .map((record) => {
+              const value = record?.archiveId ?? record?.archive_id;
+              const numeric = Number(value);
+              return Number.isInteger(numeric) && numeric > 0 ? numeric : null;
+            })
+            .filter((value: number | null): value is number => value !== null),
+        ),
+      );
+
+      if (archiveIds.length === 0) {
+        if (selectedRecords.length > 0 && typeof window !== "undefined") {
+          window.alert("Selected archive entries are missing identifiers. Please refresh and try again.");
+        }
+        resetSelection();
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/it_admin/archive/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ archiveIds }),
+        });
+
+        const data: any = await response.json();
+
+        if (!response.ok) {
+          const message = typeof data?.error === "string" && data.error.trim().length > 0
+            ? data.error
+            : "Failed to delete archived accounts.";
+          throw new Error(message);
+        }
+
+        const deletedArchiveIds: number[] = Array.isArray(data?.deletedArchiveIds)
+          ? data.deletedArchiveIds
+              .map((value: unknown) => {
+                const numeric = Number(value);
+                return Number.isInteger(numeric) && numeric > 0 ? numeric : null;
+              })
+              .filter((value: number | null): value is number => value !== null)
+          : [];
+
+        if (deletedArchiveIds.length > 0) {
+          const removedSet = new Set(deletedArchiveIds);
+          setTeachers((prev) =>
+            prev.filter((entry: any) => {
+              const value = entry?.archiveId ?? entry?.archive_id;
+              return !(typeof value === "number" && removedSet.has(value));
+            }),
+          );
+          onEntriesRemoved?.(deletedArchiveIds);
+        }
+
+        if (deletedArchiveIds.length > 0 && typeof window !== "undefined") {
+          window.alert(
+            `Deleted ${deletedArchiveIds.length} archived account${deletedArchiveIds.length === 1 ? "" : "s"}.`,
+          );
+        }
+
+        resetSelection();
+      } catch (error) {
+        console.error("Failed to delete archived Teacher accounts", error);
+        if (typeof window !== "undefined") {
+          const message = error instanceof Error ? error.message : "Failed to delete archived accounts.";
+          window.alert(message);
+        }
+      }
+    },
+    [resolveRecordsByKeys, setTeachers, onEntriesRemoved],
+  );
 
   const {
     action,
@@ -93,35 +300,64 @@ export default function TeacherArchiveTab({
     setDeleteModalOpen,
     confirmRestore,
     confirmDelete,
-  } = useArchiveRestoreDelete(setTeachers, { keySelector });
+  } = useArchiveRestoreDelete(setTeachers, {
+    keySelector,
+    onRestore: handleRestoreAction,
+    onDelete: handleDeleteAction,
+  });
 
   const scopedTeachers = useMemo(
     () => teachers.filter((teacher: any) => matchesGrade(teacher, gradeFilter)),
     [teachers, gradeFilter],
   );
 
+  const resolveTeacherId = useCallback((teacher: any) => {
+    return (
+      teacher?.teacherId ??
+      teacher?.teacher_id ??
+      teacher?.employee_id ??
+      teacher?.faculty_id ??
+      teacher?.user_code ??
+      teacher?.userId ??
+      teacher?.user_id ??
+      ""
+    );
+  }, []);
+
   const filteredTeachers = useMemo(() => {
     const loweredSearch = searchTerm.trim().toLowerCase();
     return scopedTeachers.filter((teacher) => {
-      const teacherId = String(teacher?.userId ?? teacher?.user_id ?? teacher?.teacherId ?? "");
+      const teacherId = String(resolveTeacherId(teacher));
       return (
         loweredSearch.length === 0 ||
         teacher.name?.toLowerCase().includes(loweredSearch) ||
         teacherId.toLowerCase().includes(loweredSearch)
       );
     });
-  }, [scopedTeachers, searchTerm]);
+  }, [resolveTeacherId, scopedTeachers, searchTerm]);
 
   const handleViewDetails = useCallback((teacher: any) => {
-    console.log("View details:", teacher);
-    // TODO: Implement details modal
+    const resolvedTeacherId = resolveTeacherId(teacher);
+    setSelectedTeacher({
+      ...teacher,
+      teacherId: resolvedTeacherId || teacher?.teacherId,
+    });
+    setShowDetailsModal(true);
+  }, [resolveTeacherId]);
+
+  const handleCloseDetails = useCallback(() => {
+    setShowDetailsModal(false);
+    setSelectedTeacher(null);
   }, []);
 
   const tableData = useMemo(
     () =>
       filteredTeachers.map((teacher, idx) => {
-        const archiveKey = ensureArchiveRowKey(teacher);
+        const archiveKey = keySelector(teacher) ?? ensureArchiveRowKey(teacher);
         const resolvedGrade =
+          (Array.isArray(teacher.handledGrades) && teacher.handledGrades.length > 0
+            ? teacher.handledGrades.join(", ")
+            : null) ??
           teacher.grade ??
           teacher.grade_level ??
           teacher.gradeLevel ??
@@ -139,12 +375,7 @@ export default function TeacherArchiveTab({
           teacher.phone_number ??
           null;
 
-        const teacherIdValue =
-          teacher.teacherId ??
-          teacher.teacher_id ??
-          teacher.userId ??
-          teacher.user_id ??
-          null;
+        const teacherIdValue = resolveTeacherId(teacher) || null;
 
         return {
           ...teacher,
@@ -156,7 +387,7 @@ export default function TeacherArchiveTab({
           contactNumber: resolvedContact,
         };
       }),
-    [filteredTeachers],
+    [filteredTeachers, resolveTeacherId, keySelector],
   );
 
   const handleExport = () => {
@@ -287,7 +518,15 @@ export default function TeacherArchiveTab({
           { 
             key: "teacherId", 
             title: "Teacher ID",
-            render: (row: any) => row.userId ?? row.user_id ?? row.teacherId ?? "—"
+            render: (row: any) =>
+              row.teacherId ??
+              row.teacher_id ??
+              row.employee_id ??
+              row.faculty_id ??
+              row.user_code ??
+              row.userId ??
+              row.user_id ??
+              "—",
           },
           { key: "name", title: "Full Name" },
           {
@@ -322,6 +561,12 @@ export default function TeacherArchiveTab({
         onConfirm={confirmDelete}
         title="Delete Archived Accounts"
         message={`Permanently delete ${selectedCount} archived account${selectedCount === 1 ? "" : "s"}? This action cannot be undone.`}
+      />
+
+      <TeacherDetailsModal
+        show={showDetailsModal}
+        onClose={handleCloseDetails}
+        teacher={selectedTeacher}
       />
     </div>
   );

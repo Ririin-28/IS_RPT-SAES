@@ -420,6 +420,16 @@ export async function createMasterTeacher(input: CreateMasterTeacherInput): Prom
   if (mtCoordinatorInfo.table && mtCoordinatorInfo.columns.has("master_teacher_id")) {
     masterTeacherIdSources.push({ table: mtCoordinatorInfo.table, column: "master_teacher_id" });
   }
+  try {
+    const archivedColumns = await getColumnsForTable(connection, "archived_users");
+    if (archivedColumns.has("master_teacher_id")) {
+      masterTeacherIdSources.push({ table: "archived_users", column: "master_teacher_id" });
+    } else if (archivedColumns.has("user_code")) {
+      masterTeacherIdSources.push({ table: "archived_users", column: "user_code" });
+    }
+  } catch {
+    // ignore archived_users absence
+  }
 
     await connection.beginTransaction();
     try {

@@ -4,6 +4,25 @@ import { runWithConnection } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
+const LEGACY_ARCHIVE_TABLE = "archive_users";
+const NEW_ARCHIVE_TABLE = "archived_users";
+
+async function fetchTableColumns(connection: import("mysql2/promise").PoolConnection, tableName: string): Promise<Set<string>> {
+  const [rows] = await connection.query<RowDataPacket[]>(`SHOW COLUMNS FROM \`${tableName}\``);
+  return new Set(rows.map((row) => String(row.Field)));
+}
+
+async function tryFetchTableColumns(
+  connection: import("mysql2/promise").PoolConnection,
+  tableName: string,
+): Promise<Set<string> | null> {
+  try {
+    return await fetchTableColumns(connection, tableName);
+  } catch {
+    return null;
+  }
+}
+
 function parseIdArray(value: unknown): number[] {
   if (!Array.isArray(value)) {
     return [];
@@ -32,31 +51,70 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await runWithConnection(async (connection) => {
-      const placeholders = archiveIds.map(() => "?").join(", ");
-      const [existing] = await connection.query<RowDataPacket[]>(
-        `SELECT archive_id FROM archive_users WHERE archive_id IN (${placeholders})`,
-        archiveIds,
-      );
+      const legacyColumns = await tryFetchTableColumns(connection, LEGACY_ARCHIVE_TABLE);
+      const newColumns = await tryFetchTableColumns(connection, NEW_ARCHIVE_TABLE);
 
-      if (existing.length === 0) {
+      const legacyExists = !!legacyColumns && legacyColumns.size > 0;
+      const newExists = !!newColumns && newColumns.size > 0;
+
+      if (!legacyExists && !newExists) {
         return { deleted: [], affectedRows: 0 };
       }
 
-      const archiveIdsToDelete = existing
-        .map((row) => Number(row.archive_id))
-        .filter((value) => Number.isInteger(value) && value > 0);
+      const placeholders = archiveIds.map(() => "?").join(", ");
+      const existingIds = new Set<number>();
 
+      if (legacyExists) {
+        const [existingLegacy] = await connection.query<RowDataPacket[]>(
+          `SELECT archive_id FROM ${LEGACY_ARCHIVE_TABLE} WHERE archive_id IN (${placeholders})`,
+          archiveIds,
+        );
+        for (const row of existingLegacy) {
+          const id = Number(row.archive_id);
+          if (Number.isInteger(id) && id > 0) {
+            existingIds.add(id);
+          }
+        }
+      }
+
+      if (newExists) {
+        const [existingNew] = await connection.query<RowDataPacket[]>(
+          `SELECT archived_id FROM ${NEW_ARCHIVE_TABLE} WHERE archived_id IN (${placeholders})`,
+          archiveIds,
+        );
+        for (const row of existingNew) {
+          const id = Number(row.archived_id);
+          if (Number.isInteger(id) && id > 0) {
+            existingIds.add(id);
+          }
+        }
+      }
+
+      const archiveIdsToDelete = Array.from(existingIds);
       if (archiveIdsToDelete.length === 0) {
         return { deleted: [], affectedRows: 0 };
       }
 
       const deletePlaceholders = archiveIdsToDelete.map(() => "?").join(", ");
-      const [deleteResult] = await connection.query<ResultSetHeader>(
-        `DELETE FROM archive_users WHERE archive_id IN (${deletePlaceholders})`,
-        archiveIdsToDelete,
-      );
+      let affectedRows = 0;
 
-      return { deleted: archiveIdsToDelete, affectedRows: deleteResult.affectedRows ?? 0 };
+      if (legacyExists) {
+        const [deleteLegacy] = await connection.query<ResultSetHeader>(
+          `DELETE FROM ${LEGACY_ARCHIVE_TABLE} WHERE archive_id IN (${deletePlaceholders})`,
+          archiveIdsToDelete,
+        );
+        affectedRows += deleteLegacy.affectedRows ?? 0;
+      }
+
+      if (newExists) {
+        const [deleteNew] = await connection.query<ResultSetHeader>(
+          `DELETE FROM ${NEW_ARCHIVE_TABLE} WHERE archived_id IN (${deletePlaceholders})`,
+          archiveIdsToDelete,
+        );
+        affectedRows += deleteNew.affectedRows ?? 0;
+      }
+
+      return { deleted: archiveIdsToDelete, affectedRows };
     });
 
     return NextResponse.json({
