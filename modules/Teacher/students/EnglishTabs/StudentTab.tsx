@@ -481,13 +481,15 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
         columns={[
           { key: "no", title: "No#" },
           { key: "studentId", title: "Student ID" },
+          { key: "lrn", title: "LRN" },
           { key: "name", title: "Full Name" },
-          { key: "grade", title: "Grade" },
-          { key: "section", title: "Section" },
+          { key: "phonemic", title: "Phonemic" },
         ]}
         data={sortedStudents.map((student, idx) => ({
           ...student,
           name: formatStudentDisplayName(student), // Display as "Surname, FirstName M.I."
+          lrn: student.lrn ?? "",
+          phonemic: student.englishPhonemic ?? student.english ?? "",
           no: idx + 1,
         }))}
         actions={(row: any) => (

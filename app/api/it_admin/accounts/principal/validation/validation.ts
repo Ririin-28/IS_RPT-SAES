@@ -175,6 +175,12 @@ export async function createPrincipal(input: CreatePrincipalInput): Promise<Crea
 
   const result = await runWithConnection(async (connection) => {
     const userColumns = await getColumnsForTable(connection, "users");
+    let archivedUserColumns: Set<string> | null = null;
+    try {
+      archivedUserColumns = await getColumnsForTable(connection, "archived_users");
+    } catch {
+      archivedUserColumns = null;
+    }
     let principalColumns: Set<string> | null = null;
     let principalTable: string | null = null;
     const principalCandidates = ["principal", "principals", "principal_info"];
@@ -240,6 +246,11 @@ export async function createPrincipal(input: CreatePrincipalInput): Promise<Crea
       }
       if (principalTable && principalColumns?.has("principal_id")) {
         principalIdSources.push({ table: principalTable, column: "principal_id" });
+      }
+      if (archivedUserColumns?.has("principal_id")) {
+        principalIdSources.push({ table: "archived_users", column: "principal_id" });
+      } else if (archivedUserColumns?.has("user_code")) {
+        principalIdSources.push({ table: "archived_users", column: "user_code" });
       }
 
       let generatedPrincipalId: string | null = null;

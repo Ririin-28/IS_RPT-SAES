@@ -75,10 +75,11 @@ type MasterTeacherStudentsProps = {
 };
 
 type RemedialStudent = {
-  studentId: number | null;
+  studentId: string | number | null;
   userId: number | null;
   remedialId: number | null;
   studentIdentifier: string | null;
+  lrn?: string | null;
   grade: string | null;
   section: string | null;
   english: string | null;
@@ -86,10 +87,13 @@ type RemedialStudent = {
   math: string | null;
   guardian: string | null;
   guardianContact: string | null;
+  guardianEmail?: string | null;
+  relationship?: string | null;
   address: string | null;
   firstName: string | null;
   middleName: string | null;
   lastName: string | null;
+  suffix?: string | null;
   fullName: string | null;
 };
 
@@ -130,27 +134,34 @@ const composeDisplayName = (student: RemedialStudent): string => {
 };
 
 const toDisplayStudent = (student: RemedialStudent, index: number) => {
-  const numericStudentId = coerceNumber(student.studentId);
   const numericUserId = coerceNumber(student.userId);
   const numericRemedialId = coerceNumber(student.remedialId);
 
-  const resolvedNumericId = numericStudentId ?? numericUserId ?? numericRemedialId ?? index + 1;
+  const rawStudentId = typeof student.studentId === "string" && student.studentId.trim().length
+    ? student.studentId.trim()
+    : coerceNumber(student.studentId) !== null
+      ? String(coerceNumber(student.studentId))
+      : null;
+
+  const fallbackId = rawStudentId ?? (numericUserId !== null ? `U-${numericUserId}` : (numericRemedialId !== null ? `R-${numericRemedialId}` : String(index + 1)));
 
   const trimmedIdentifier = student.studentIdentifier?.trim();
-  const identifier = trimmedIdentifier?.length
-    ? trimmedIdentifier
-    : numericStudentId !== null
-    ? `ST-${String(numericStudentId).padStart(4, "0")}`
-    : String(resolvedNumericId);
+  const identifier = rawStudentId ?? (trimmedIdentifier?.length ? trimmedIdentifier : fallbackId);
 
   return {
-    id: resolvedNumericId,
+    id: fallbackId,
     studentId: identifier,
-    name: composeDisplayName(student),
+    lrn: student.lrn ?? student.studentIdentifier ?? null,
+    name: student.fullName ?? composeDisplayName(student),
+    firstName: student.firstName ?? null,
+    middleName: student.middleName ?? null,
+    lastName: student.lastName ?? null,
     grade: student.grade ?? "",
     section: student.section ?? "",
     guardian: student.guardian ?? "",
     guardianContact: student.guardianContact ?? "",
+    guardianEmail: student.guardianEmail ?? "",
+    relationship: student.relationship ?? "",
     address: student.address ?? "",
     age: "",
     englishPhonemic: student.english ?? "",

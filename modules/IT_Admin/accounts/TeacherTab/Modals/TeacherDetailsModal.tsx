@@ -31,7 +31,7 @@ export default function TeacherDetailsModal({ show, onClose, teacher }: TeacherD
           {/* 1st Row: Teacher ID and Role */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <ModalInfoItem label="Teacher ID" value={teacher.teacherId} />
-            <ModalInfoItem label="Role" value={teacher.role || "Teacher"} />
+            <ModalInfoItem label="Role" value={teacher.roleLabel || teacher.role || "Teacher"} />
           </div>
           
           {/* 2nd Row: Full Name with helper text */}

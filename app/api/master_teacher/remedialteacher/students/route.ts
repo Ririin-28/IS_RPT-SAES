@@ -19,15 +19,19 @@ const sanitize = (value: unknown): string | null => {
 
 type RawStudentRow = RowDataPacket & {
 	student_id: string | null;
+	lrn: string | null;
 	student_identifier: string | null;
 	student_grade_level: string | null;
 	student_section: string | null;
 	guardian: string | null;
 	guardian_contact: string | null;
+	guardian_email: string | null;
+	relationship: string | null;
 	address: string | null;
 	first_name: string | null;
 	middle_name: string | null;
 	last_name: string | null;
+	suffix: string | null;
 	subject_phonemic: number | null;
 	subject_phonemic_name: string | null;
 };
@@ -36,7 +40,10 @@ const normalizeStudentRow = (row: RawStudentRow, subject: string) => {
 	const firstName = sanitize(row.first_name);
 	const middleName = sanitize(row.middle_name);
 	const lastName = sanitize(row.last_name);
+	const suffix = sanitize(row.suffix);
 	const parts = [firstName, middleName, lastName].filter((part) => typeof part === "string" && part.length > 0);
+	const fullName = parts.length ? parts.join(" ") : null;
+	const fullNameWithSuffix = suffix ? [fullName ?? "", suffix].filter(Boolean).join(" ") : fullName;
 
 	const phonemic = row.subject_phonemic;
 	const phonemicName = sanitize(row.subject_phonemic_name);
@@ -44,6 +51,7 @@ const normalizeStudentRow = (row: RawStudentRow, subject: string) => {
 
 	return {
 		studentId: sanitize(row.student_id),
+		lrn: sanitize(row.lrn),
 		userId: null,
 		remedialId: null,
 		studentIdentifier: sanitize(row.student_identifier),
@@ -54,11 +62,14 @@ const normalizeStudentRow = (row: RawStudentRow, subject: string) => {
 		math: subject === "Math" ? valueText : null,
 		guardian: sanitize(row.guardian),
 		guardianContact: sanitize(row.guardian_contact),
+		guardianEmail: sanitize(row.guardian_email),
+		relationship: sanitize(row.relationship),
 		address: sanitize(row.address),
 		firstName,
 		middleName,
 		lastName,
-		fullName: parts.length ? parts.join(" ") : null,
+		suffix,
+		fullName: fullNameWithSuffix,
 	};
 };
 
@@ -127,12 +138,15 @@ export async function GET(request: NextRequest) {
 		const sql = `
 			SELECT
 				s.student_id,
-				s.lrn AS student_identifier,
+				s.lrn AS lrn,
+				s.student_id AS student_identifier,
 				g.grade_level AS student_grade_level,
 				s.section AS student_section,
 				gi.guardian AS guardian,
 				gi.guardian_contact AS guardian_contact,
-				NULL AS address,
+				gi.guardian_email AS guardian_email,
+				gi.relationship AS relationship,
+				gi.address AS address,
 				s.first_name,
 				s.middle_name,
 				s.last_name,
@@ -144,9 +158,12 @@ export async function GET(request: NextRequest) {
 				SELECT
 					ps.student_id,
 					MIN(
-						NULLIF(TRIM(CONCAT(u.first_name, ' ', u.last_name)), '')
+						NULLIF(TRIM(CONCAT_WS(' ', u.first_name, u.middle_name, u.last_name, u.suffix)), '')
 					) AS guardian,
-					MIN(u.phone_number) AS guardian_contact
+					MIN(u.phone_number) AS guardian_contact,
+					MIN(u.email) AS guardian_email,
+					MIN(ps.relationship) AS relationship,
+					MIN(ps.address) AS address
 				FROM parent_student ps
 				JOIN parent p ON p.parent_id = ps.parent_id
 				JOIN users u ON u.user_id = p.user_id

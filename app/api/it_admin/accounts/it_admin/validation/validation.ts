@@ -232,6 +232,9 @@ export async function createItAdmin(input: CreateItAdminInput): Promise<CreateIt
       let adminId: string | null = null;
       const adminIdSources: Array<{ table: string; column: string }> = [];
 
+      if (userColumns.has("user_code")) {
+        adminIdSources.push({ table: "users", column: "user_code" });
+      }
       if (userColumns.has("admin_id")) {
         adminIdSources.push({ table: "users", column: "admin_id" });
       }
@@ -243,6 +246,18 @@ export async function createItAdmin(input: CreateItAdminInput): Promise<CreateIt
       }
       if (itAdminColumns?.has("it_admin_id")) {
         adminIdSources.push({ table: "it_admin", column: "it_admin_id" });
+      }
+      try {
+        const archivedColumns = await getColumnsForTable(connection, "archived_users");
+        if (archivedColumns.has("it_admin_id")) {
+          adminIdSources.push({ table: "archived_users", column: "it_admin_id" });
+        } else if (archivedColumns.has("admin_id")) {
+          adminIdSources.push({ table: "archived_users", column: "admin_id" });
+        } else if (archivedColumns.has("user_code")) {
+          adminIdSources.push({ table: "archived_users", column: "user_code" });
+        }
+      } catch {
+        // ignore archived_users absence
       }
 
       if (adminIdSources.length > 0) {
