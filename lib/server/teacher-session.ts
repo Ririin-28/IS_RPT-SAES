@@ -2,26 +2,15 @@ import crypto from "crypto";
 import { cookies } from "next/headers";
 import type { PoolConnection, RowDataPacket } from "mysql2/promise";
 
-/* ======================
-   Config
-====================== */
-
-const COOKIE_NAME = "principal_session";
+const COOKIE_NAME = "rpt_teacher_session";
 const SESSION_DURATION_HOURS = 24;
+const SESSION_TABLE = "teacher_sessions";
 
-/* ======================
-   Types
-====================== */
-
-export type PrincipalSession = {
+export type TeacherSession = {
   sessionId: number;
-  principalId: string;
+  teacherId: string | null;
   userId: number;
 };
-
-/* ======================
-   Helpers
-====================== */
 
 function sha256(value: string): string {
   return crypto.createHash("sha256").update(value).digest("hex");
@@ -31,13 +20,9 @@ function generateToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
-/* ======================
-   Create Session
-====================== */
-
-export async function createPrincipalSession(
+export async function createTeacherSession(
   db: PoolConnection,
-  principalId: string,
+  teacherId: string | null,
   userId: number,
   deviceName?: string | null,
 ): Promise<{ token: string; expiresAt: Date }> {
@@ -49,21 +34,17 @@ export async function createPrincipalSession(
 
   await db.execute(
     `
-    INSERT INTO principal_sessions
-      (principal_id, user_id, token_hash, user_agent, expires_at)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO ${SESSION_TABLE}
+      (teacher_id, user_id, token_hash, user_agent, created_at, last_active_at, expires_at)
+    VALUES (?, ?, ?, ?, NOW(), NOW(), ?)
     `,
-    [principalId, userId, tokenHash, deviceName ?? null, expiresAt],
+    [teacherId, userId, tokenHash, deviceName ?? null, expiresAt],
   );
 
   return { token, expiresAt };
 }
 
-/* ======================
-   Cookie Builder
-====================== */
-
-export function buildPrincipalSessionCookie(token: string, expiresAt: Date): string {
+export function buildTeacherSessionCookie(token: string, expiresAt: Date): string {
   return [
     `${COOKIE_NAME}=${token}`,
     "Path=/",
@@ -76,29 +57,24 @@ export function buildPrincipalSessionCookie(token: string, expiresAt: Date): str
     .join("; ");
 }
 
-/* ======================
-   Read Session (Auth)
-====================== */
-
-export async function getPrincipalSessionFromCookies(): Promise<PrincipalSession | null> {
+export async function getTeacherSessionFromCookies(): Promise<TeacherSession | null> {
   const cookieStore = await cookies();
   const rawToken = cookieStore.get(COOKIE_NAME)?.value;
 
   if (!rawToken) return null;
 
   const tokenHash = sha256(rawToken);
-
   const { query } = await import("@/lib/db");
 
   const [rows] = await query<RowDataPacket[]>(
     `
     SELECT
       session_id,
-      principal_id,
+      teacher_id,
       user_id,
       expires_at,
       revoked_at
-    FROM principal_sessions
+    FROM ${SESSION_TABLE}
     WHERE token_hash = ?
       AND revoked_at IS NULL
       AND expires_at > NOW()
@@ -111,27 +87,19 @@ export async function getPrincipalSessionFromCookies(): Promise<PrincipalSession
 
   const session = rows[0];
 
-  // update activity
   await query(
-    `UPDATE principal_sessions SET last_active_at = NOW() WHERE session_id = ?`,
+    `UPDATE ${SESSION_TABLE} SET last_active_at = NOW() WHERE session_id = ?`,
     [session.session_id],
   );
 
   return {
     sessionId: session.session_id,
-    principalId: session.principal_id,
+    teacherId: session.teacher_id ? String(session.teacher_id) : null,
     userId: session.user_id,
   };
 }
 
-/* ======================
-   Logout / Revoke
-====================== */
-
-export async function revokePrincipalSession(sessionId: number): Promise<void> {
+export async function revokeTeacherSession(sessionId: number): Promise<void> {
   const { query } = await import("@/lib/db");
-  await query(
-    `UPDATE principal_sessions SET revoked_at = NOW() WHERE session_id = ?`,
-    [sessionId],
-  );
+  await query(`UPDATE ${SESSION_TABLE} SET revoked_at = NOW() WHERE session_id = ?`, [sessionId]);
 }

@@ -158,19 +158,38 @@ export default function TeacherCalendar() {
     if (!dateStr) {
       return null;
     }
+
     const parts = dateStr.split("-");
-    if (parts.length !== 3) {
-      return null;
+    if (parts.length === 3 && parts.every((part) => part.trim().length > 0)) {
+      const [yearRaw, monthRaw, dayRaw] = parts;
+      const year = Number(yearRaw);
+      const monthIndex = Number(monthRaw) - 1;
+      const day = Number(dayRaw);
+      if (Number.isFinite(year) && Number.isFinite(monthIndex) && Number.isFinite(day)) {
+        const date = new Date(year, monthIndex, day, 8, 0, 0, 0);
+        if (Number.isFinite(date.getTime())) {
+          if (timeStr) {
+            const [hoursRaw, minutesRaw, secondsRaw] = timeStr.split(":");
+            const hours = Number(hoursRaw);
+            const minutes = Number(minutesRaw);
+            const seconds = Number(secondsRaw ?? 0);
+            if (Number.isFinite(hours)) {
+              date.setHours(hours);
+            }
+            if (Number.isFinite(minutes)) {
+              date.setMinutes(minutes);
+            }
+            if (Number.isFinite(seconds)) {
+              date.setSeconds(seconds);
+            }
+          }
+          return date;
+        }
+      }
     }
-    const [yearRaw, monthRaw, dayRaw] = parts;
-    const year = Number(yearRaw);
-    const monthIndex = Number(monthRaw) - 1;
-    const day = Number(dayRaw);
-    if (!Number.isFinite(year) || !Number.isFinite(monthIndex) || !Number.isFinite(day)) {
-      return null;
-    }
-    const date = new Date(year, monthIndex, day, 8, 0, 0, 0);
-    if (!Number.isFinite(date.getTime())) {
+
+    const fallback = new Date(dateStr);
+    if (!Number.isFinite(fallback.getTime())) {
       return null;
     }
 
@@ -180,17 +199,17 @@ export default function TeacherCalendar() {
       const minutes = Number(minutesRaw);
       const seconds = Number(secondsRaw ?? 0);
       if (Number.isFinite(hours)) {
-        date.setHours(hours);
+        fallback.setHours(hours);
       }
       if (Number.isFinite(minutes)) {
-        date.setMinutes(minutes);
+        fallback.setMinutes(minutes);
       }
       if (Number.isFinite(seconds)) {
-        date.setSeconds(seconds);
+        fallback.setSeconds(seconds);
       }
     }
 
-    return date;
+    return fallback;
   }, []);
 
   const fetchActivities = useCallback(async (gradeOverride: string | null) => {
@@ -563,6 +582,21 @@ export default function TeacherCalendar() {
     } as const;
   };
 
+  const getActivityColor = (type: string) => {
+    switch (type) {
+      case "class":
+        return "bg-blue-100 text-blue-800 border-blue-200";
+      case "meeting":
+        return "bg-green-100 text-green-800 border-green-200";
+      case "appointment":
+        return "bg-purple-100 text-purple-800 border-purple-200";
+      case "event":
+        return "bg-amber-100 text-amber-800 border-amber-200";
+      default:
+        return "bg-gray-100 text-gray-800 border-gray-200";
+    }
+  };
+
   // Render the calendar based on view
   const renderCalendar = () => {
     if (profileLoading) {
@@ -629,37 +663,18 @@ export default function TeacherCalendar() {
                 )}
               </div>
               <div className="overflow-y-auto max-h-12 space-y-1">
-                {dayActivities.slice(0, 2).map((activity) => {
-                  const viewOnly = isViewOnlyStatus(activity.status);
-                  const tone = resolveActivityTone(activity.type);
-                  const statusClass = activity.status ? statusBadgeTone(viewOnly ? "Pending" : activity.status) : null;
-
-                  return (
-                    <div
-                      key={activity.id}
-                      className={`text-xs p-1 rounded truncate border ${tone.backgroundClass} ${tone.borderClass}`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <span className={`block truncate font-semibold ${tone.titleClass}`}>{activity.title}</span>
-                          <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[0.6rem] text-gray-600">
-                            <span className="truncate capitalize">
-                              {[activity.subject, activity.grade].filter(Boolean).join(" • ") || "Scheduled activity"}
-                            </span>
-                            {activity.status && statusClass && (
-                              <span
-                                className={`inline-flex items-center rounded-full px-1.5 py-0.5 font-semibold ${statusClass}`}
-                              >
-                                {activity.status}
-                              </span>
-                            )}
-                            {viewOnly && <span className="font-semibold text-gray-600">View Only</span>}
-                          </div>
-                        </div>
-                      </div>
+                {dayActivities.slice(0, 2).map((activity) => (
+                  <div
+                    key={activity.id}
+                    className={`text-xs p-1 rounded truncate cursor-pointer border ${getActivityColor(activity.type)}`}
+                  >
+                    <div className="flex justify-between items-center gap-2">
+                      <span className="truncate font-semibold text-[#013300]">
+                        {activity.title}
+                      </span>
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
                 {dayActivities.length > 2 && (
                   <div className="text-xs text-gray-500 text-center bg-gray-100 rounded p-1">
                     +{dayActivities.length - 2} more

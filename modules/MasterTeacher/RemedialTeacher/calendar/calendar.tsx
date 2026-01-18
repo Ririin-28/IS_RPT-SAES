@@ -1,7 +1,7 @@
 "use client";
 import Sidebar from "@/components/MasterTeacher/RemedialTeacher/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 
 interface Activity {
@@ -22,6 +22,56 @@ export default function MasterTeacherCalendar() {
 
   // Activities data in state - Start with empty array
   const [activities, setActivities] = useState<Activity[]>([]);
+
+  const loadApprovedActivities = useCallback(async () => {
+    try {
+      const response = await fetch("/api/teacher/calendar", { cache: "no-store" });
+      const payload = (await response.json().catch(() => null)) as {
+        success?: boolean;
+        activities?: Array<{
+          id?: string | number | null;
+          title?: string | null;
+          activityDate?: string | null;
+          date?: string | null;
+          day?: string | null;
+          description?: string | null;
+        }>;
+        error?: string | null;
+      } | null;
+
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error ?? `Unable to load activities (status ${response.status})`);
+      }
+
+      const parsed = Array.isArray(payload.activities) ? payload.activities : [];
+      const mapped = parsed
+        .map<Activity | null>((item, index) => {
+          const rawDate = item.activityDate ?? item.date ?? null;
+          const dateValue = rawDate ? new Date(rawDate) : null;
+          if (!dateValue || Number.isNaN(dateValue.getTime())) return null;
+          return {
+            id: Number(item.id ?? index + 1),
+            title: item.title ?? "Remedial Activity",
+            day: item.day ?? dateValue.toLocaleDateString("en-US", { weekday: "long" }),
+            roomNo: "",
+            description: item.description ?? "",
+            date: dateValue,
+            end: new Date(dateValue.getTime() + 60 * 60 * 1000),
+            type: "class",
+          } satisfies Activity;
+        })
+        .filter((item): item is Activity => item !== null);
+
+      setActivities(mapped);
+    } catch (error) {
+      console.warn("Failed to load approved activities", error);
+      setActivities([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadApprovedActivities();
+  }, [loadApprovedActivities]);
 
   // Get week number for a date
   const getWeekNumber = (date: Date): number => {
@@ -188,9 +238,13 @@ export default function MasterTeacherCalendar() {
                 {dayActivities.slice(0, 2).map((activity) => (
                   <div
                     key={activity.id}
-                    className={`text-xs p-1 rounded truncate border ${getActivityColor(activity.type)}`}
+                    className={`text-xs p-1 rounded truncate cursor-pointer border ${getActivityColor(activity.type)}`}
                   >
-                    <span className="truncate">{activity.title}</span>
+                    <div className="flex justify-between items-center gap-2">
+                      <span className="truncate font-semibold text-[#013300]">
+                        {activity.title}
+                      </span>
+                    </div>
                   </div>
                 ))}
                 {dayActivities.length > 2 && (

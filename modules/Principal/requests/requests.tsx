@@ -5,6 +5,7 @@ import PrincipalHeader from "@/components/Principal/Header";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
+import BaseModal, { ModalLabel } from "@/components/Common/Modals/BaseModal";
 
 interface CalendarRequestRow {
   id: string;
@@ -13,6 +14,7 @@ interface CalendarRequestRow {
   requesterId?: string | null;
   grade: string | null;
   subject: string | null;
+  quarter?: string | null;
   status: string | null;
   requestedDate: string | null;
   requestedTimestamp?: number | null;
@@ -27,6 +29,9 @@ interface CalendarRequestRow {
     startTime: string | null;
     endTime: string | null;
     day: string | null;
+    quarter?: string | null;
+    subject?: string | null;
+    grade?: string | null;
   }> | null;
   approvedAt?: string | null;
   approvedBy?: string | null;
@@ -66,34 +71,42 @@ const formatDate = (value: string | null): string | null => {
 
 const deriveActivities = (request: CalendarRequestRow): ActivitiesListItem[] => {
   if (Array.isArray(request.activitiesPlan) && request.activitiesPlan.length > 0) {
-    return request.activitiesPlan.map((activity, index) => {
-      const dateLabel = activity.activityDate
-        ? (() => {
-            const parsed = new Date(`${activity.activityDate}T00:00:00`);
-            return Number.isNaN(parsed.getTime())
-              ? activity.activityDate
-              : parsed.toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                });
-          })()
-        : null;
+    const parseActivityDate = (value: string | null): Date | null => {
+      if (!value) return null;
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) return parsed;
+      const fallback = new Date(`${value}T00:00:00`);
+      if (!Number.isNaN(fallback.getTime())) return fallback;
+      return null;
+    };
 
-      const timeLabel = [activity.startTime, activity.endTime].filter(Boolean).join(" – ");
+    const sortedActivities = [...request.activitiesPlan].sort((a, b) => {
+      const aDate = parseActivityDate(a.activityDate);
+      const bDate = parseActivityDate(b.activityDate);
+      const aTime = aDate ? aDate.getTime() : Number.MAX_SAFE_INTEGER;
+      const bTime = bDate ? bDate.getTime() : Number.MAX_SAFE_INTEGER;
+      return aTime - bTime;
+    });
 
-      const detailTokens = [activity.title ?? request.title ?? `Activity ${index + 1}`];
-      if (activity.description && activity.description !== activity.title) {
-        detailTokens.push(activity.description);
-      }
-      if (timeLabel) {
-        detailTokens.push(timeLabel);
-      }
+    return sortedActivities.map((activity, index) => {
+      const parsed = parseActivityDate(activity.activityDate);
+      const dateLabel = parsed
+        ? parsed.toLocaleDateString("en-US", {
+            weekday: "long",
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+          })
+        : activity.activityDate;
+
+      const resolvedDate = dateLabel ?? activity.day ?? "";
+      const resolvedTitle = activity.title ?? request.title ?? `Activity ${index + 1}`;
+      const detailTokens = [`Title: ${resolvedTitle}`];
 
       return {
-        label: activity.day ?? dateLabel ?? `Activity ${index + 1}`,
-        detail: detailTokens.filter(Boolean).join(" • "),
-        dateLabel,
+        label: resolvedDate ? `Date: ${resolvedDate}` : `Date: Activity ${index + 1}`,
+        detail: detailTokens.join(" • "),
+        dateLabel: null,
       } satisfies ActivitiesListItem;
     });
   }
@@ -154,10 +167,11 @@ const deriveActivities = (request: CalendarRequestRow): ActivitiesListItem[] => 
   return [
     {
       label: "Schedule",
-      detail:
-        request.subject && request.grade
-          ? `${request.subject} activities for ${request.grade}`
-          : request.title ?? "Activity details pending",
+      detail: (
+        [request.quarter ?? null, request.subject ?? null, request.grade ?? null]
+          .filter(Boolean)
+          .join(" • ") || request.title
+      ) ?? "Activity details pending",
     },
   ];
 };
@@ -194,6 +208,9 @@ export default function PrincipalRequests() {
     action: null,
   });
   const [actionError, setActionError] = useState<string | null>(null);
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejectTarget, setRejectTarget] = useState<CalendarRequestRow | null>(null);
 
   const fetchRequests = useCallback(async () => {
     setLoading(true);
@@ -230,7 +247,7 @@ export default function PrincipalRequests() {
   }, []);
 
   const handleAction = useCallback(
-    async (requestInfo: CalendarRequestRow, action: ActionType) => {
+    async (requestInfo: CalendarRequestRow, action: ActionType, reason?: string) => {
       if (!requestInfo.sourceTable) {
         setActionError("The selected request cannot be updated.");
         return;
@@ -250,6 +267,7 @@ export default function PrincipalRequests() {
             sourceTable: requestInfo.sourceTable,
             action,
             approverName: DEFAULT_APPROVER_NAME,
+            rejectionReason: action === "reject" ? reason ?? null : null,
             relatedRowIds: requestInfo.relatedRowIds,
             planBatchId: requestInfo.planBatchId,
           }),
@@ -284,6 +302,32 @@ export default function PrincipalRequests() {
     },
     [],
   );
+
+  const openRejectModal = useCallback((requestInfo: CalendarRequestRow) => {
+    setRejectTarget(requestInfo);
+    setRejectReason("");
+    setActionError(null);
+    setRejectModalOpen(true);
+  }, []);
+
+  const closeRejectModal = useCallback(() => {
+    setRejectModalOpen(false);
+    setRejectTarget(null);
+    setRejectReason("");
+  }, []);
+
+  const confirmReject = useCallback(async () => {
+    if (!rejectTarget) {
+      return;
+    }
+    const trimmed = rejectReason.trim();
+    if (!trimmed) {
+      setActionError("Rejection reason is required.");
+      return;
+    }
+    await handleAction(rejectTarget, "reject", trimmed);
+    closeRejectModal();
+  }, [closeRejectModal, handleAction, rejectReason, rejectTarget]);
 
   const emptyMessage = useMemo(() => {
     if (loading) {
@@ -348,11 +392,15 @@ export default function PrincipalRequests() {
                         <div className="flex flex-col gap-2">
                           <div className="flex items-start justify-between gap-3">
                             <div>
-                              <p className="text-sm font-medium text-green-950 uppercase tracking-wide">{request.grade ?? "Unassigned Grade"}</p>
+                              <p className="text-sm font-medium text-green-950 uppercase tracking-wide">
+                                {request.quarter ?? "Remedial Schedule"}
+                              </p>
                               <h3 className="text-xl font-semibold text-green-950">
-                                {request.subject ?? request.displayLabel ?? request.title ?? `Request #${request.id}`}
+                                {request.subject ?? "Subject"}{request.grade ? ` • ${request.grade}` : ""}
                               </h3>
-                              <p className="text-sm text-gray-600">Calendar of Activities</p>
+                              <p className="text-sm text-gray-600">
+                                {request.requester ?? "Master Teacher"}
+                              </p>
                             </div>
                             <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${badgeTone}`}>
                               {statusLabel}
@@ -360,9 +408,29 @@ export default function PrincipalRequests() {
                           </div>
 
                           <div className="flex flex-col gap-1 text-sm text-gray-600">
-                            {request.requester && <p>Requested by: <span className="font-medium text-gray-800">{request.requester}</span></p>}
-                            {requestedDateLabel && <p>Requested on: <span className="font-medium text-gray-800">{requestedDateLabel}</span></p>}
-                            {request.type && <p>Type: <span className="font-medium text-gray-800">{request.type}</span></p>}
+                            {request.quarter && (
+                              <p>
+                                Quarter: <span className="font-medium text-gray-800">{request.quarter}</span>
+                              </p>
+                            )}
+                            {(request.subject || request.grade) && (
+                              <p>
+                                Subject - Grade Level:{" "}
+                                <span className="font-medium text-gray-800">
+                                  {request.subject ?? "Subject"}{request.grade ? ` • ${request.grade}` : ""}
+                                </span>
+                              </p>
+                            )}
+                            {request.requester && (
+                              <p>
+                                Master Teacher: <span className="font-medium text-gray-800">{request.requester}</span>
+                              </p>
+                            )}
+                            {requestedDateLabel && (
+                              <p>
+                                Requested on: <span className="font-medium text-gray-800">{requestedDateLabel}</span>
+                              </p>
+                            )}
                           </div>
 
                           <button
@@ -412,7 +480,7 @@ export default function PrincipalRequests() {
                               type="button"
                               small
                               disabled={actionDisabled || (actionState.id === requestKey && actionState.action === "reject")}
-                              onClick={() => handleAction(request, "reject")}
+                              onClick={() => openRejectModal(request)}
                             >
                               {actionState.id === requestKey && actionState.action === "reject" ? "Rejecting..." : "Reject"}
                             </DangerButton>
@@ -427,6 +495,34 @@ export default function PrincipalRequests() {
           </div>
         </main>
       </div>
+
+      <BaseModal
+        show={rejectModalOpen}
+        onClose={closeRejectModal}
+        title="Reject Request"
+        maxWidth="md"
+        footer={(
+          <>
+            <SecondaryButton type="button" onClick={closeRejectModal}>
+              Cancel
+            </SecondaryButton>
+            <DangerButton type="button" onClick={confirmReject}>
+              Confirm Reject
+            </DangerButton>
+          </>
+        )}
+      >
+        <div className="space-y-3">
+          <ModalLabel required>Reason for rejection</ModalLabel>
+          <textarea
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-green-600 focus:outline-none"
+            rows={4}
+            value={rejectReason}
+            onChange={(event) => setRejectReason(event.target.value)}
+            placeholder="Enter the reason for rejecting this request"
+          />
+        </div>
+      </BaseModal>
     </div>
   );
 }

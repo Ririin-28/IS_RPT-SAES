@@ -17,152 +17,12 @@ const MASTER_TEACHER_TABLE_CANDIDATES = [
   "master_teacher_tbl",
 ] as const;
 
-const SUBJECT_ACTIVITY_TABLES: Array<{ table: string; subject: string }> = [
-  { table: "english_activity_schedule", subject: "English" },
-  { table: "filipino_activity_schedule", subject: "Filipino" },
-  { table: "math_activity_schedule", subject: "Math" },
-];
+const APPROVED_REMEDIAL_TABLE = "approved_remedial_schedule";
+const REMEDIAL_QUARTER_TABLE = "remedial_quarter";
+const WEEKLY_SUBJECT_TABLE = "weekly_subject_schedule";
+const SUBJECT_TABLE = "subject";
 
-const ACTIVITY_ID_COLUMNS = [
-  "id",
-  "schedule_id",
-  "request_id",
-  "calendar_request_id",
-  "activity_id",
-  "identifier",
-] as const;
-
-const ACTIVITY_TITLE_COLUMNS = [
-  "title",
-  "activity_title",
-  "session_title",
-  "name",
-  "event_title",
-] as const;
-
-const ACTIVITY_GRADE_COLUMNS = [
-  "grade_level",
-  "grade",
-  "class",
-  "section",
-  "grade_section",
-] as const;
-
-const ACTIVITY_SUBJECT_COLUMNS = [
-  "subject",
-  "subject_area",
-  "focus_subject",
-] as const;
-
-const ACTIVITY_STATUS_COLUMNS = [
-  "status",
-  "request_status",
-  "approval_status",
-  "state",
-  "is_approved",
-] as const;
-
-const ACTIVITY_DATE_COLUMNS = [
-  "date",
-  "activity_date",
-  "schedule_date",
-  "day_date",
-] as const;
-
-const ACTIVITY_START_COLUMNS = [
-  "start_time",
-  "start",
-  "start_datetime",
-  "startDate",
-  "time_start",
-] as const;
-
-const ACTIVITY_END_COLUMNS = [
-  "end_time",
-  "end",
-  "end_datetime",
-  "endDate",
-  "time_end",
-] as const;
-
-const ACTIVITY_DESCRIPTION_COLUMNS = [
-  "description",
-  "details",
-  "remarks",
-  "notes",
-] as const;
-
-const ACTIVITY_DAY_COLUMNS = [
-  "day",
-  "weekday",
-  "day_name",
-] as const;
-
-const ACTIVITY_REQUESTER_COLUMNS = [
-  "requested_by",
-  "submitted_by",
-  "requester",
-  "coordinator",
-  "teacher",
-] as const;
-
-const ACTIVITY_REQUESTER_ID_COLUMNS = [
-  "requested_by_id",
-  "requester_id",
-  "submitted_by_id",
-  "teacher_id",
-  "user_id",
-] as const;
-
-const ACTIVITY_MT_ID_COLUMNS = [
-  "mt_id",
-  "master_teacher_id",
-  "coordinator_id",
-  "masterteacher_id",
-] as const;
-
-const ACTIVITY_REQUESTED_AT_COLUMNS = [
-  "requested_at",
-  "submitted_at",
-  "datestamp",
-  "created_at",
-  "createdAt",
-] as const;
-
-const ACTIVITY_UPDATED_AT_COLUMNS = [
-  "updated_at",
-  "updatedAt",
-  "modified_at",
-  "modifiedAt",
-] as const;
-
-const ACTIVITY_APPROVED_AT_COLUMNS = [
-  "approved_at",
-  "approval_timestamp",
-  "approvedAt",
-] as const;
-
-const ACTIVITY_APPROVED_BY_COLUMNS = [
-  "approved_by",
-  "approved_by_id",
-  "approver_id",
-] as const;
-
-const ACTIVITY_PLAN_COLUMNS = [
-  "activity_plan_json",
-  "activities_plan",
-  "plan_json",
-] as const;
-
-const ACTIVITY_WEEK_REF_COLUMNS = [
-  "week_ref",
-  "weekRef",
-  "week_reference",
-  "plan_batch_id",
-  "request_batch",
-] as const;
-
-const MAX_ACTIVITIES_PER_TABLE = 300;
+const MAX_ACTIVITIES_PER_TABLE = 500;
 
 const GRADE_COLUMN_CANDIDATES = [
   { column: "grade", alias: "mt_grade" },
@@ -217,6 +77,32 @@ const SECTION_COLUMN_CANDIDATES = [
   { column: "section_name", alias: "mt_section_name" },
   { column: "class_section", alias: "mt_class_section" },
 ] as const;
+
+const ACTIVITY_ID_COLUMNS = ["request_id", "activity_id", "id"] as const;
+const ACTIVITY_TITLE_COLUMNS = ["activity_title", "title", "activity_name", "name"] as const;
+const ACTIVITY_GRADE_COLUMNS = ["grade_level", "grade", "grade_id"] as const;
+const ACTIVITY_SUBJECT_COLUMNS = ["subject_name", "subject", "subject_id"] as const;
+const ACTIVITY_STATUS_COLUMNS = ["status", "activity_status", "approval_status"] as const;
+const ACTIVITY_DATE_COLUMNS = ["date", "activity_date", "schedule_date"] as const;
+const ACTIVITY_START_COLUMNS = ["start_time", "start", "start_date", "start_datetime", "start_at"] as const;
+const ACTIVITY_END_COLUMNS = ["end_time", "end", "end_date", "end_datetime", "end_at"] as const;
+const ACTIVITY_DESCRIPTION_COLUMNS = ["description", "activity_description", "remarks", "notes"] as const;
+const ACTIVITY_DAY_COLUMNS = ["day", "day_of_week"] as const;
+const ACTIVITY_REQUESTER_COLUMNS = ["requested_by", "requester", "requested_by_name"] as const;
+const ACTIVITY_REQUESTER_ID_COLUMNS = [
+  "requested_by_id",
+  "requester_id",
+  "submitted_by",
+  "submitted_by_id",
+  "submitted_by_mt_id",
+] as const;
+const ACTIVITY_MT_ID_COLUMNS = ["master_teacher_id", "mt_id", "teacher_id"] as const;
+const ACTIVITY_REQUESTED_AT_COLUMNS = ["requested_at", "submitted_at", "created_at"] as const;
+const ACTIVITY_UPDATED_AT_COLUMNS = ["updated_at", "modified_at"] as const;
+const ACTIVITY_APPROVED_AT_COLUMNS = ["approved_at", "approved_date"] as const;
+const ACTIVITY_APPROVED_BY_COLUMNS = ["approved_by", "approved_by_id", "approver"] as const;
+const ACTIVITY_PLAN_COLUMNS = ["plan", "activity_plan", "plan_json"] as const;
+const ACTIVITY_WEEK_REF_COLUMNS = ["week_ref", "week_id", "week_reference"] as const;
 
 interface MasterTeacherTableInfo {
   table: string | null;
@@ -811,111 +697,141 @@ const mapCoordinatorActivityRow = (
   } satisfies CoordinatorActivity;
 };
 
+const DAY_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] as const;
+
+const parseGradeId = (value: string | null | undefined): number | null => {
+  if (!value) return null;
+  const match = value.match(/(\d+)/);
+  if (!match) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const buildDateFromWeek = (weekStart: string | null, dayName: string | null): Date | null => {
+  if (!weekStart) return null;
+  const base = new Date(weekStart);
+  if (Number.isNaN(base.getTime())) return null;
+  if (!dayName) return base;
+  const dayIndex = DAY_ORDER.findIndex((day) => day.toLowerCase() === dayName.toLowerCase());
+  if (dayIndex < 0) return base;
+  const result = new Date(base);
+  result.setDate(result.getDate() + dayIndex);
+  return result;
+};
+
 const loadCoordinatorActivities = async (
-  coordinatorId: number | null,
+  coordinatorIds: string[],
   coordinatorName: string | null,
   grade: string | null,
-  allowedSubjects: string[],
 ): Promise<CoordinatorActivity[]> => {
-  const results: CoordinatorActivity[] = [];
-
-  for (const table of SUBJECT_ACTIVITY_TABLES) {
-    let columns: Set<string>;
-    try {
-      columns = await getTableColumns(table.table);
-    } catch (error) {
-      console.warn(`Unable to read columns for ${table.table}`, error);
-      continue;
-    }
-
-    if (!columns.size) {
-      continue;
-    }
-
-    const map = buildCoordinatorActivityColumnMap(columns);
-    if (!map) {
-      continue;
-    }
-
-    const selectParts = buildActivitySelectClause(map);
-    const orderColumn = resolveActivityOrderColumn(map);
-
-    const filters: string[] = [];
-    const params: Array<string | number> = [];
-
-    if (grade && map.grade) {
-      const gradeVariants = buildGradeSearchVariants(grade);
-      if (gradeVariants.length) {
-        const gradeFilters = gradeVariants.map(() => `LOWER(\`${map.grade}\`) LIKE ?`);
-        filters.push(`(${gradeFilters.join(" OR ")})`);
-        for (const variant of gradeVariants) {
-          params.push(`%${variant.toLowerCase()}%`);
-        }
-      }
-    }
-
-    let coordinatorFilterApplied = false;
-
-    if (coordinatorId !== null) {
-      if (map.requesterId) {
-        filters.push(`\`${map.requesterId}\` = ?`);
-        params.push(coordinatorId);
-        coordinatorFilterApplied = true;
-      } else if (map.mtId) {
-        filters.push(`\`${map.mtId}\` = ?`);
-        params.push(coordinatorId);
-        coordinatorFilterApplied = true;
-      }
-    }
-
-    if (!coordinatorFilterApplied && coordinatorName && map.requester) {
-      filters.push(`\`${map.requester}\` LIKE ?`);
-      params.push(`%${coordinatorName}%`);
-    }
-
-    if (allowedSubjects.length > 0 && map.subject) {
-      const subjectConditions: string[] = [];
-      for (const subject of allowedSubjects) {
-        subjectConditions.push(`\`${map.subject}\` LIKE ?`);
-        params.push(`%${subject}%`);
-      }
-      if (subjectConditions.length) {
-        filters.push(`(${subjectConditions.join(" OR ")})`);
-      }
-    }
-
-    const whereClause = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
-    const limit = Math.max(50, Math.min(MAX_ACTIVITIES_PER_TABLE, 500));
-
-    const sql = `
-      SELECT ${selectParts.join(", ")}
-      FROM \`${table.table}\`
-      ${whereClause}
-      ORDER BY \`${orderColumn}\` DESC
-      LIMIT ${limit}
-    `;
-
-    let rows: RowDataPacket[];
-    try {
-      [rows] = await query<RowDataPacket[]>(sql, params);
-    } catch (error) {
-      console.warn(`Unable to query coordinator activities from ${table.table}`, error);
-      continue;
-    }
-
-    for (const row of rows) {
-      const activity = mapCoordinatorActivityRow(row, map, table, grade);
-      if (activity) {
-        results.push(activity);
-      }
-    }
+  if (coordinatorIds.length === 0) {
+    return [];
   }
 
-  results.sort((a, b) => {
-    const aDate = a.startDate ?? a.date ?? "";
-    const bDate = b.startDate ?? b.date ?? "";
-    return bDate.localeCompare(aDate);
-  });
+  const approvedColumns = await safeGetColumns(APPROVED_REMEDIAL_TABLE);
+  const idColumn = pickColumn(approvedColumns, ACTIVITY_ID_COLUMNS);
+  const requesterColumn =
+    pickColumn(approvedColumns, ACTIVITY_MT_ID_COLUMNS) ??
+    pickColumn(approvedColumns, ACTIVITY_REQUESTER_ID_COLUMNS);
+  const dateColumn = pickColumn(approvedColumns, ACTIVITY_DATE_COLUMNS);
+
+  if (!idColumn || !requesterColumn || !dateColumn) {
+    return [];
+  }
+
+  const titleColumn = pickColumn(approvedColumns, ACTIVITY_TITLE_COLUMNS);
+  const statusColumn = pickColumn(approvedColumns, ACTIVITY_STATUS_COLUMNS);
+  const subjectIdColumn = pickColumn(approvedColumns, ACTIVITY_SUBJECT_COLUMNS);
+  const gradeColumn = pickColumn(approvedColumns, ACTIVITY_GRADE_COLUMNS);
+  const dayColumn = pickColumn(approvedColumns, ACTIVITY_DAY_COLUMNS);
+  const requestedAtColumn = pickColumn(approvedColumns, ACTIVITY_REQUESTED_AT_COLUMNS);
+
+  const gradeId = parseGradeId(grade ?? null);
+  const params: Array<number | string> = [...coordinatorIds];
+  const requesterFilter = ` AND r.${requesterColumn} IN (${coordinatorIds.map(() => "?").join(", ")})`;
+  const gradeLabel = grade ? grade.trim() : null;
+  const gradeFilter = gradeId && gradeColumn
+    ? ` AND (r.${gradeColumn} = ? OR r.${gradeColumn} = ?)`
+    : "";
+  if (gradeId && gradeColumn) {
+    params.push(gradeId, gradeLabel ?? `Grade ${gradeId}`);
+  }
+
+  const selectParts = [
+    `r.${idColumn} AS request_id`,
+    titleColumn ? `r.${titleColumn} AS title` : "NULL AS title",
+    statusColumn ? `r.${statusColumn} AS status` : "NULL AS status",
+    requestedAtColumn ? `r.${requestedAtColumn} AS submitted_at` : "NULL AS submitted_at",
+    subjectIdColumn ? `r.${subjectIdColumn} AS subject_id` : "NULL AS subject_id",
+    gradeColumn ? `r.${gradeColumn} AS grade_id` : "NULL AS grade_id",
+    `r.${dateColumn} AS schedule_date`,
+    dayColumn ? `r.${dayColumn} AS day` : "NULL AS day",
+  ];
+
+  if (subjectIdColumn) {
+    selectParts.push("s.subject_name AS subject_name");
+  }
+
+  const subjectJoin = subjectIdColumn
+    ? `LEFT JOIN ${SUBJECT_TABLE} s ON s.subject_id = r.${subjectIdColumn}`
+    : "";
+
+  const sql = `
+    SELECT ${selectParts.join(", ")}
+    FROM ${APPROVED_REMEDIAL_TABLE} r
+    ${subjectJoin}
+    WHERE 1=1${requesterFilter}${gradeFilter}
+    ORDER BY r.${dateColumn} DESC, r.${idColumn} DESC
+    LIMIT ${MAX_ACTIVITIES_PER_TABLE}
+  `;
+
+  const [rows] = await query<RowDataPacket[]>(sql, params);
+  const results: CoordinatorActivity[] = [];
+  for (const row of rows) {
+    const dayName = row.day ? String(row.day) : null;
+    const dateValue = row.schedule_date instanceof Date
+      ? row.schedule_date
+      : row.schedule_date
+      ? new Date(String(row.schedule_date).includes("T") ? String(row.schedule_date) : `${row.schedule_date}T00:00:00`)
+      : null;
+    const startDate = dateValue && !Number.isNaN(dateValue.getTime()) ? dateValue : null;
+    const endDate = startDate ? new Date(startDate.getTime() + 60 * 60 * 1000) : null;
+    const rawGrade = row.grade_id;
+    const rawSubjectId = row.subject_id;
+    const gradeIdValue = rawGrade != null && Number.isFinite(Number(rawGrade)) ? Number(rawGrade) : null;
+    const subjectIdValue = rawSubjectId != null && Number.isFinite(Number(rawSubjectId)) ? Number(rawSubjectId) : null;
+    const gradeLabel = typeof rawGrade === "string"
+      ? rawGrade.trim()
+      : Number.isFinite(gradeIdValue)
+      ? `Grade ${gradeIdValue}`
+      : null;
+    const subjectLabel = row.subject_name
+      ? String(row.subject_name)
+      : Number.isFinite(subjectIdValue)
+      ? `Subject ${subjectIdValue}`
+      : null;
+
+    results.push({
+      id: String(row.request_id),
+      title: row.title ? String(row.title) : null,
+      subject: subjectLabel,
+      gradeLevel: gradeLabel,
+      status: row.status ? String(row.status) : "Approved",
+      startDate: startDate ? startDate.toISOString() : null,
+      endDate: endDate ? endDate.toISOString() : null,
+      date: startDate ? startDate.toISOString() : null,
+      day: dayName,
+      description: null,
+      requestedAt: row.submitted_at ? String(row.submitted_at) : null,
+      approvedAt: null,
+      approvedBy: null,
+      planBatchId: null,
+      weekRef: null,
+      requester: coordinatorName ?? null,
+      sourceTable: APPROVED_REMEDIAL_TABLE,
+      subjectFallback: subjectLabel,
+    } satisfies CoordinatorActivity);
+  }
 
   return results;
 };
@@ -1286,12 +1202,24 @@ export async function GET(request: NextRequest) {
     const allowedSubjectsRaw = deriveSubjectList(coordinatorSubject, subjects);
     const allowedSubjects = await mapSubjectTokensToNames(allowedSubjectsRaw);
     const normalizedCoordinatorSubject = allowedSubjects[0] ?? coordinatorSubject ?? null;
-    const coordinatorIdForActivities = Number.isFinite(row.user_id) ? Number(row.user_id) : null;
+    const coordinatorIdSet = new Set<string>();
+    const pushCoordinatorId = (value: unknown) => {
+      if (value === null || value === undefined) return;
+      const text = String(value).trim();
+      if (!text) return;
+      coordinatorIdSet.add(text);
+    };
+    pushCoordinatorId(row.user_id);
+    pushCoordinatorId(row.mt_master_teacher_id);
+    pushCoordinatorId(row.mt_masterteacher_id);
+    pushCoordinatorId(row.mt_teacher_id);
+    pushCoordinatorId(row.mc_master_teacher_id);
+    pushCoordinatorId(row.mc_coordinator_id);
+
     const coordinatorActivities = await loadCoordinatorActivities(
-      coordinatorIdForActivities,
+      Array.from(coordinatorIdSet),
       displayName,
       normalizedGrade,
-      allowedSubjects,
     );
 
     return NextResponse.json({
@@ -1318,7 +1246,7 @@ export async function GET(request: NextRequest) {
         ).map((candidate) => candidate.column),
         gradeNormalized: normalizedGrade,
         subjectFilters: allowedSubjects,
-        activitySources: SUBJECT_ACTIVITY_TABLES.map((entry) => entry.table),
+        activitySources: [APPROVED_REMEDIAL_TABLE, REMEDIAL_QUARTER_TABLE, WEEKLY_SUBJECT_TABLE],
       },
     });
   } catch (error) {
