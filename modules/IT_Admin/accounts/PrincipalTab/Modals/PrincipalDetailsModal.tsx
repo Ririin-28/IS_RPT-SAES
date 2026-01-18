@@ -34,13 +34,12 @@ export default function PrincipalDetailsModal({ show, onClose, principal }: Prin
             <ModalInfoItem label="Role" value={principal.role || "Principal"} />
           </div>
           
-          {/* 2nd Row: Full Name with helper text */}
-          <div className="space-y-1">
-            <ModalInfoItem 
-              label="Full Name" 
-              value={principal.fullName || principal.name} 
-            />
-            <p className="text-xs text-gray-500 pl-1">Format: Last, First, Middle, Suffix</p>
+          {/* 2nd Row: Name fields */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <ModalInfoItem label="First Name" value={principal.firstName ?? principal.first_name ?? ""} />
+            <ModalInfoItem label="Middle Name" value={principal.middleName ?? principal.middle_name ?? ""} />
+            <ModalInfoItem label="Last Name" value={principal.lastName ?? principal.last_name ?? ""} />
+            <ModalInfoItem label="Suffix" value={principal.suffix ?? principal.suffix_name ?? principal.suf ?? ""} />
           </div>
         </div>
       </ModalSection>

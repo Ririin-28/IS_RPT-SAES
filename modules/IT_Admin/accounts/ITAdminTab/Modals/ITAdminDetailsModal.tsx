@@ -34,13 +34,12 @@ export default function ITAdminDetailsModal({ show, onClose, itAdmin }: ITAdminD
             <ModalInfoItem label="Role" value={itAdmin.role || "IT Admin"} />
           </div>
           
-          {/* 2nd Row: Full Name with helper text */}
-          <div className="space-y-1">
-            <ModalInfoItem 
-              label="Full Name" 
-              value={itAdmin.fullName || itAdmin.name} 
-            />
-            <p className="text-xs text-gray-500 pl-1">Format: Last, First, Middle, Suffix</p>
+          {/* 2nd Row: Name fields */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <ModalInfoItem label="First Name" value={itAdmin.firstName ?? itAdmin.first_name ?? ""} />
+            <ModalInfoItem label="Middle Name" value={itAdmin.middleName ?? itAdmin.middle_name ?? ""} />
+            <ModalInfoItem label="Last Name" value={itAdmin.lastName ?? itAdmin.last_name ?? ""} />
+            <ModalInfoItem label="Suffix" value={itAdmin.suffix ?? itAdmin.suffix_name ?? itAdmin.suf ?? ""} />
           </div>
         </div>
       </ModalSection>

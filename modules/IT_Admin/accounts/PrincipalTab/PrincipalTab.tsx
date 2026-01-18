@@ -11,6 +11,7 @@ import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
+import AccountCreatedModal, { type AccountCreatedInfo } from "@/components/Common/Modals/AccountCreatedModal";
 import { exportAccountRows, PRINCIPAL_EXPORT_COLUMNS } from "../utils/export-columns";
 
 const NAME_COLLATOR = new Intl.Collator("en", { sensitivity: "base", numeric: true });
@@ -171,6 +172,8 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [createdAccount, setCreatedAccount] = useState<AccountCreatedInfo | null>(null);
+  const [archivedCount, setArchivedCount] = useState<number | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
@@ -180,6 +183,7 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [isArchiving, setIsArchiving] = useState(false);
   const [uploadedPasswords, setUploadedPasswords] = useState<Array<{name: string; email: string; password: string}>>([]);
+  const [uploadedAccounts, setUploadedAccounts] = useState<AccountCreatedInfo[] | null>(null);
 
   const addPrincipalForm = useForm<AddPrincipalFormValues>({
     mode: "onTouched",
@@ -315,9 +319,13 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
 
       setShowAddModal(false);
       if (temporaryPassword) {
-        setSuccessMessage(
-          `${normalizedRecord.name ?? "New Principal"} added successfully. Temporary password: ${temporaryPassword}`,
-        );
+        setSuccessMessage(null);
+        setCreatedAccount({
+          name: normalizedRecord.name ?? "New Principal",
+          email: normalizedRecord.email ?? payload.email,
+          temporaryPassword,
+          roleLabel: "Principal",
+        });
       } else {
         setSuccessMessage(`${normalizedRecord.name ?? "New Principal"} added successfully.`);
       }
@@ -358,10 +366,18 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
           const worksheet = workbook.Sheets[sheetName];
           const jsonData = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: "" });
 
+          const normalizeHeader = (value: string) => value.trim().replace(/\s+/g, " ").toUpperCase();
+
           const readField = (row: Record<string, any>, keys: string[]): string => {
+            const normalizedRow: Record<string, any> = {};
+            for (const [rawKey, rawValue] of Object.entries(row)) {
+              normalizedRow[normalizeHeader(String(rawKey))] = rawValue;
+            }
+
             for (const key of keys) {
-              if (row[key] !== undefined && row[key] !== null) {
-                const value = String(row[key]).trim();
+              const normalizedKey = normalizeHeader(key);
+              if (normalizedRow[normalizedKey] !== undefined && normalizedRow[normalizedKey] !== null) {
+                const value = String(normalizedRow[normalizedKey]).trim();
                 if (value.length > 0) {
                   return value;
                 }
@@ -402,6 +418,14 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
               ]);
               const email = readField(row, ["EMAIL", "Email", "email"]).toLowerCase();
               const contactRaw = readField(row, [
+                "PHONE NUMBER",
+                "PHHONE NUMBER",
+                "PHONE_NUMBER",
+                "PHHONE_NUMBER",
+                "PHONENUMBER",
+                "PHHONENUMBER",
+                "Phone Number",
+                "phoneNumber",
                 "CONTACT NUMBER",
                 "CONTACT_NUMBER",
                 "CONTACTNUMBER",
@@ -432,7 +456,7 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
             setSuccessMessage(null);
             setArchiveError(
               invalidRows > 0
-                ? "No valid rows found in the uploaded file. Check required columns (First Name, Last Name, Email, Contact Number)."
+                ? "No valid rows found in the uploaded file. Check required columns (First Name, Last Name, Email, Phone Number)."
                 : "The uploaded file does not contain any data.",
             );
             return;
@@ -462,8 +486,9 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
             });
           }
 
+          let passwordMap: Array<{ name: string; email: string; password: string }> = [];
           if (inserted.length > 0) {
-            const passwordMap = inserted
+            passwordMap = inserted
               .map((entry: any) => ({
                 name:
                   entry?.record?.name ??
@@ -480,6 +505,14 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
               .filter((item: any) => item.email && item.password);
             if (passwordMap.length > 0) {
               setUploadedPasswords(passwordMap);
+              setUploadedAccounts(
+                passwordMap.map((entry) => ({
+                  name: entry.name,
+                  email: entry.email,
+                  temporaryPassword: entry.password,
+                  roleLabel: "Principal",
+                })),
+              );
               console.info("Temporary passwords for imported Principal accounts:", passwordMap);
             }
           }
@@ -487,16 +520,8 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
           const successCount = normalizedRecords.length;
           const failureCount = failures.length + invalidRows;
 
-          if (successCount > 0) {
-            const parts: string[] = [];
-            parts.push(`Imported ${successCount} Principal${successCount === 1 ? "" : "s"} successfully.`);
-            if (failureCount > 0) {
-              parts.push(`${failureCount} row${failureCount === 1 ? "" : "s"} skipped.`);
-            }
-            if (inserted.length > 0) {
-              parts.push("Download the CSV file to view passwords.");
-            }
-            setSuccessMessage(parts.join(" "));
+          if (successCount > 0 && passwordMap.length === 0) {
+            setSuccessMessage(`Imported ${successCount} Principal${successCount === 1 ? "" : "s"} successfully.`);
           }
 
           if (!response.ok || (successCount === 0 && failureCount > 0)) {
@@ -629,7 +654,8 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
       });
 
       const archivedCount = effectiveIds.length;
-      setSuccessMessage(`Archived ${archivedCount} Principal${archivedCount === 1 ? "" : "s"} successfully.`);
+      setSuccessMessage(null);
+      setArchivedCount(archivedCount);
       setSelectedPrincipalKeys(new Set());
       setSelectMode(false);
       setShowArchiveModal(false);
@@ -744,6 +770,28 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
         form={addPrincipalForm}
         isSubmitting={isSubmitting}
         apiError={submitError}
+      />
+
+      <AccountCreatedModal
+        show={!!createdAccount}
+        onClose={() => setCreatedAccount(null)}
+        account={createdAccount}
+      />
+
+      <AccountCreatedModal
+        show={!!uploadedAccounts}
+        onClose={() => setUploadedAccounts(null)}
+        accounts={uploadedAccounts}
+        title="Import Successful"
+        message="Import completed successfully. You can download the CSV file for passwords."
+      />
+
+      <ConfirmationModal
+        isOpen={archivedCount !== null}
+        onClose={() => setArchivedCount(null)}
+        onConfirm={() => setArchivedCount(null)}
+        title="Archived Successfully"
+        message={`Archived ${archivedCount ?? 0} Principal${archivedCount === 1 ? "" : "s"} successfully.`}
       />
       
       <PrincipalDetailsModal

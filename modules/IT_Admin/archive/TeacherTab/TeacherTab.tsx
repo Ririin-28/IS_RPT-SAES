@@ -7,6 +7,7 @@ import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import KebabMenu from "@/components/Common/Menus/KebabMenu";
 import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
 import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
+import AccountRestoredModal, { type RestoredAccountInfo } from "@/components/Common/Modals/AccountRestoredModal";
 import { useArchiveRestoreDelete } from "../Common/useArchiveRestoreDelete";
 import { ensureArchiveRowKey } from "../Common/archiveRowKey";
 import { exportArchiveRows } from "../utils/export-columns";
@@ -78,6 +79,7 @@ export default function TeacherArchiveTab({
 }: TeacherArchiveTabProps) {
   const [selectedTeacher, setSelectedTeacher] = useState<any>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [restoredAccounts, setRestoredAccounts] = useState<RestoredAccountInfo[]>([]);
   const normalizedLabel = gradeLabel ?? (gradeFilter ? `Grade ${gradeFilter}` : "All Grades");
 
   const keySelector = useCallback((item: any) => {
@@ -169,17 +171,13 @@ export default function TeacherArchiveTab({
           onEntriesRemoved?.(restoredArchiveIds);
         }
 
-        if (restoredEntries.length > 0 && typeof window !== "undefined") {
-          const lines = restoredEntries.map((entry) => {
-            const label = entry.name || entry.email || `User ${entry.userId}`;
-            return entry.temporaryPassword
-              ? `${label} — temporary password: ${entry.temporaryPassword}`
-              : label;
-          });
-          window.alert(
-            `Restored ${restoredEntries.length} account${restoredEntries.length === 1 ? "" : "s"}.
-
-${lines.join("\n")}`,
+        if (restoredEntries.length > 0) {
+          setRestoredAccounts(
+            restoredEntries.map((entry) => ({
+              name: entry.name || entry.email || `User ${entry.userId}`,
+              email: entry.email ?? "",
+              temporaryPassword: entry.temporaryPassword ?? "",
+            })),
           );
         }
 
@@ -567,6 +565,13 @@ ${lines.join("\n")}`,
         show={showDetailsModal}
         onClose={handleCloseDetails}
         teacher={selectedTeacher}
+      />
+
+      <AccountRestoredModal
+        show={restoredAccounts.length > 0}
+        onClose={() => setRestoredAccounts([])}
+        accounts={restoredAccounts}
+        roleLabel="Teacher"
       />
     </div>
   );

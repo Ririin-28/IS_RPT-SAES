@@ -26,6 +26,10 @@ type RawStudentRow = RowDataPacket & {
 	guardian: string | null;
 	guardian_contact: string | null;
 	guardian_email: string | null;
+	parent_first_name: string | null;
+	parent_middle_name: string | null;
+	parent_last_name: string | null;
+	parent_suffix: string | null;
 	relationship: string | null;
 	address: string | null;
 	first_name: string | null;
@@ -63,6 +67,10 @@ const normalizeStudentRow = (row: RawStudentRow, subject: string) => {
 		guardian: sanitize(row.guardian),
 		guardianContact: sanitize(row.guardian_contact),
 		guardianEmail: sanitize(row.guardian_email),
+		parentFirstName: sanitize(row.parent_first_name),
+		parentMiddleName: sanitize(row.parent_middle_name),
+		parentLastName: sanitize(row.parent_last_name),
+		parentSuffix: sanitize(row.parent_suffix),
 		relationship: sanitize(row.relationship),
 		address: sanitize(row.address),
 		firstName,
@@ -145,11 +153,16 @@ export async function GET(request: NextRequest) {
 				gi.guardian AS guardian,
 				gi.guardian_contact AS guardian_contact,
 				gi.guardian_email AS guardian_email,
+				gi.parent_first_name AS parent_first_name,
+				gi.parent_middle_name AS parent_middle_name,
+				gi.parent_last_name AS parent_last_name,
+				gi.parent_suffix AS parent_suffix,
 				gi.relationship AS relationship,
 				gi.address AS address,
 				s.first_name,
 				s.middle_name,
 				s.last_name,
+				s.suffix,
 				ssa.phonemic_id AS subject_phonemic,
 				pl.level_name AS subject_phonemic_name
 			FROM student s
@@ -162,6 +175,10 @@ export async function GET(request: NextRequest) {
 					) AS guardian,
 					MIN(u.phone_number) AS guardian_contact,
 					MIN(u.email) AS guardian_email,
+					MIN(u.first_name) AS parent_first_name,
+					MIN(u.middle_name) AS parent_middle_name,
+					MIN(u.last_name) AS parent_last_name,
+					MIN(u.suffix) AS parent_suffix,
 					MIN(ps.relationship) AS relationship,
 					MIN(ps.address) AS address
 				FROM parent_student ps
