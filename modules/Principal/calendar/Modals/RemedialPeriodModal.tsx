@@ -5,7 +5,7 @@ import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 
 export const QUARTER_OPTIONS = ["1st Quarter", "2nd Quarter"] as const;
 export type QuarterOption = typeof QUARTER_OPTIONS[number];
-export type QuarterMonths = Record<QuarterOption, number[]>;
+export type QuarterRange = Record<QuarterOption, { startMonth: number | null; endMonth: number | null }>;
 
 const MONTH_OPTIONS = [
   { label: "January", value: 0 },
@@ -23,10 +23,8 @@ const MONTH_OPTIONS = [
 ] as const;
 
 export interface RemedialPeriodFormValues {
-  quarter: QuarterOption | "";
-  startDate: string;
-  endDate: string;
-  months: QuarterMonths;
+  schoolYear: string;
+  quarters: QuarterRange;
 }
 
 interface RemedialPeriodModalProps {
@@ -34,126 +32,65 @@ interface RemedialPeriodModalProps {
   onClose: () => void;
   onSave: (values: RemedialPeriodFormValues) => void;
   initialData?: RemedialPeriodFormValues | null;
-  availableQuarters?: readonly QuarterOption[];
 }
-
-const toIsoDate = (date: Date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+const resolveDefaultSchoolYear = () => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = today.getMonth();
+  return month >= 5 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
 };
 
-export default function RemedialPeriodModal({ show, onClose, onSave, initialData, availableQuarters }: RemedialPeriodModalProps) {
-  const allowedQuarters = useMemo<QuarterOption[]>(
-    () => (availableQuarters?.length ? [...availableQuarters] : [...QUARTER_OPTIONS]),
-    [availableQuarters],
-  );
-  const [quarter, setQuarter] = useState<QuarterOption | "">("");
-  const [quarterMonths, setQuarterMonths] = useState<QuarterMonths>(() => ({
-    "1st Quarter": [],
-    "2nd Quarter": [],
+export default function RemedialPeriodModal({ show, onClose, onSave, initialData }: RemedialPeriodModalProps) {
+  const [schoolYear, setSchoolYear] = useState<string>(resolveDefaultSchoolYear());
+  const [quarterRanges, setQuarterRanges] = useState<QuarterRange>(() => ({
+    "1st Quarter": { startMonth: null, endMonth: null },
+    "2nd Quarter": { startMonth: null, endMonth: null },
   }));
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!show) return;
-    const initialQuarter = initialData?.quarter ?? "";
-    const presetQuarter = allowedQuarters.includes(initialQuarter as QuarterOption)
-      ? initialQuarter
-      : allowedQuarters[0] ?? "";
-    setQuarter(presetQuarter ?? "");
-    const seeds = initialData?.months ?? {
-      "1st Quarter": [],
-      "2nd Quarter": [],
-    };
-    setQuarterMonths({
-      "1st Quarter": [...(seeds["1st Quarter"] ?? [])],
-      "2nd Quarter": [...(seeds["2nd Quarter"] ?? [])],
+    setSchoolYear(initialData?.schoolYear ?? resolveDefaultSchoolYear());
+    setQuarterRanges({
+      "1st Quarter": {
+        startMonth: initialData?.quarters?.["1st Quarter"]?.startMonth ?? null,
+        endMonth: initialData?.quarters?.["1st Quarter"]?.endMonth ?? null,
+      },
+      "2nd Quarter": {
+        startMonth: initialData?.quarters?.["2nd Quarter"]?.startMonth ?? null,
+        endMonth: initialData?.quarters?.["2nd Quarter"]?.endMonth ?? null,
+      },
     });
     setError(null);
-  }, [show, initialData, allowedQuarters]);
+  }, [show, initialData]);
 
-  const toggleMonth = (targetQuarter: QuarterOption, monthIndex: number) => {
+  const updateRange = (quarter: QuarterOption, field: "startMonth" | "endMonth", value: number | null) => {
     setError(null);
-    setQuarterMonths((prev) => {
-      const existing = prev[targetQuarter] ?? [];
-      const next = existing.includes(monthIndex)
-        ? existing.filter((value) => value !== monthIndex)
-        : [...existing, monthIndex].sort((a, b) => a - b);
-      return {
-        ...prev,
-        [targetQuarter]: next,
-      } satisfies QuarterMonths;
-    });
-  };
-
-  const renderMonthSelection = (targetQuarter: QuarterOption) => {
-    const selectedMonths = quarterMonths[targetQuarter] ?? [];
-    return (
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-        {MONTH_OPTIONS.map(({ label, value }) => {
-          const isSelected = selectedMonths.includes(value);
-          return (
-            <button
-              key={`${targetQuarter}-${label}`}
-              type="button"
-              onClick={() => toggleMonth(targetQuarter, value)}
-              aria-pressed={isSelected}
-              className={`rounded-md border px-3 py-2 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-[#013300]
-                ${isSelected ? "border-[#013300] bg-[#013300]/10 text-[#013300]" : "border-gray-300 bg-white text-gray-700 hover:border-[#013300]"}`}
-            >
-              {label}
-            </button>
-          );
-        })}
-      </div>
-    );
+    setQuarterRanges((prev) => ({
+      ...prev,
+      [quarter]: {
+        ...prev[quarter],
+        [field]: value,
+      },
+    }));
   };
 
   const handleSave = () => {
-    if (!quarter) {
-      setError("Select the quarter you want to activate.");
-      return;
-    }
-
-    const selectedMonths = quarterMonths[quarter];
-    if (!selectedMonths || selectedMonths.length === 0) {
-      setError(`Select at least one month for the ${quarter}.`);
-      return;
-    }
-
-    const sortedMonths = [...selectedMonths].sort((a, b) => a - b);
-    const referenceYear = (() => {
-      if (initialData?.quarter === quarter) {
-        const parsed = new Date(initialData.startDate);
-        if (!Number.isNaN(parsed.getTime())) {
-          return parsed.getFullYear();
-        }
+    for (const quarter of QUARTER_OPTIONS) {
+      const range = quarterRanges[quarter];
+      if (!range.startMonth || !range.endMonth) {
+        setError(`Select start and end months for the ${quarter}.`);
+        return;
       }
-      return new Date().getFullYear();
-    })();
-    const start = new Date(referenceYear, sortedMonths[0], 1);
-    const end = new Date(referenceYear, sortedMonths[sortedMonths.length - 1] + 1, 0);
-
-    const monthsPayload: QuarterMonths = {
-      "1st Quarter": [...(quarterMonths["1st Quarter"] ?? [])],
-      "2nd Quarter": [...(quarterMonths["2nd Quarter"] ?? [])],
-    };
-
-    if (allowedQuarters.length === 1 && allowedQuarters[0] === quarter) {
-      for (const option of QUARTER_OPTIONS) {
-        if (option !== quarter) {
-          monthsPayload[option] = [];
-        }
+      if (range.startMonth > range.endMonth) {
+        setError(`The ${quarter} start month must be before the end month.`);
+        return;
       }
     }
 
     onSave({
-      quarter,
-      startDate: toIsoDate(start),
-      endDate: toIsoDate(end),
-      months: monthsPayload,
+      schoolYear: schoolYear.trim(),
+      quarters: quarterRanges,
     });
   };
 
@@ -174,53 +111,66 @@ export default function RemedialPeriodModal({ show, onClose, onSave, initialData
         </>
       )}
     >
-      <ModalSection title="Activate Quarter">
+      <ModalSection title="School Year">
         <div className="space-y-2">
-          <ModalLabel required>Quarter</ModalLabel>
-          <select
-            value={quarter}
+          <ModalLabel required>School Year</ModalLabel>
+          <input
+            value={schoolYear}
             onChange={(event) => {
-              setQuarter(event.target.value as QuarterOption | "");
+              setSchoolYear(event.target.value);
               setError(null);
             }}
-            disabled={allowedQuarters.length <= 1}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-[#013300] disabled:bg-gray-100 disabled:text-gray-500"
-          >
-            {allowedQuarters.length > 1 && (
-              <option value="" disabled>
-                Select quarter to activate
-              </option>
-            )}
-            {allowedQuarters.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-          <p className="text-xs text-gray-500">
-            {allowedQuarters.length > 1
-              ? "Choose which quarter you want to open for remedial scheduling, then select the months covered by each quarter below."
-              : "The active quarter is locked. Update the selected months below or cancel the schedule to switch quarters once the period ends."}
-          </p>
+            placeholder="2025-2026"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-[#013300]"
+          />
+          <p className="text-xs text-gray-500">Format: YYYY-YYYY (ex. 2025-2026).</p>
         </div>
       </ModalSection>
 
-      <ModalSection title="Quarter Month Coverage">
-        {quarter ? (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
+      <ModalSection title="Quarter Month Ranges">
+        <div className="space-y-5">
+          {QUARTER_OPTIONS.map((quarter) => (
+            <div key={quarter} className="space-y-2">
               <ModalLabel>{quarter}</ModalLabel>
-              <span className="text-xs text-gray-500">
-                {quarterMonths[quarter]?.length || 0} month{(quarterMonths[quarter]?.length ?? 0) === 1 ? "" : "s"} selected
-              </span>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-600">Start Month</label>
+                  <select
+                    value={quarterRanges[quarter]?.startMonth ?? ""}
+                    onChange={(event) =>
+                      updateRange(quarter, "startMonth", event.target.value ? Number(event.target.value) : null)
+                    }
+                    className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-[#013300]"
+                  >
+                    <option value="">Select start month</option>
+                    {MONTH_OPTIONS.map(({ label, value }) => (
+                      <option key={`${quarter}-start-${label}`} value={value + 1}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-600">End Month</label>
+                  <select
+                    value={quarterRanges[quarter]?.endMonth ?? ""}
+                    onChange={(event) =>
+                      updateRange(quarter, "endMonth", event.target.value ? Number(event.target.value) : null)
+                    }
+                    className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-[#013300]"
+                  >
+                    <option value="">Select end month</option>
+                    {MONTH_OPTIONS.map(({ label, value }) => (
+                      <option key={`${quarter}-end-${label}`} value={value + 1}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
-            {renderMonthSelection(quarter)}
-          </div>
-        ) : (
-          <p className="text-sm text-gray-600">
-            Choose a quarter above to unlock the month selector.
-          </p>
-        )}
+          ))}
+        </div>
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </ModalSection>
     </BaseModal>

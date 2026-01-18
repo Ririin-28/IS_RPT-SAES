@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
-import { query } from "@/lib/db";
+import type { RowDataPacket, ResultSetHeader } from "mysql2/promise";
+import { getTableColumns, query } from "@/lib/db";
 import { getMasterTeacherSessionFromCookies } from "@/lib/server/master-teacher-session";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +9,8 @@ const WEEKLY_SUBJECT_TABLE = "weekly_subject_schedule";
 const MT_HANDLED_TABLE = "mt_coordinator_handled";
 const REMEDIAL_QUARTER_TABLE = "remedial_quarter";
 const REQUEST_REMEDIAL_TABLE = "request_remedial_schedule";
+
+const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"] as const;
 
 type IncomingActivity = {
   title?: string | null;
@@ -24,15 +26,15 @@ type QuarterRow = RowDataPacket & {
   end_month: number | null;
 };
 
+const toNumber = (value: unknown): number | null => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
 const toText = (value: unknown): string | null => {
   if (value === null || value === undefined) return null;
   const trimmed = String(value).trim();
   return trimmed.length ? trimmed : null;
-};
-
-const toNumber = (value: unknown): number | null => {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
 };
 
 const resolveSchoolYearFromDate = (date: Date): string => {
@@ -41,17 +43,48 @@ const resolveSchoolYearFromDate = (date: Date): string => {
   return month >= 5 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
 };
 
-const parseSchoolYear = (schoolYear: string): { startYear: number; endYear: number } | null => {
-  const [start, end] = schoolYear.split("-").map((part) => Number(part));
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
-  return { startYear: start, endYear: end };
-};
-
 const monthInRange = (month: number, start: number, end: number): boolean => {
   if (start <= end) return month >= start && month <= end;
   return month >= start || month <= end;
 };
 
+const parseGradeIdFromLabel = (label: string | null): number | null => {
+  if (!label) return null;
+  const match = label.match(/(\d+)/);
+  if (!match) return null;
+  return Number(match[1]);
+};
+
+const resolveGradeId = async (gradeId: number | null, gradeLabel: string | null): Promise<number | null> => {
+  if (gradeId && Number.isFinite(gradeId)) return gradeId;
+  const parsed = parseGradeIdFromLabel(gradeLabel);
+  if (parsed && Number.isFinite(parsed)) return parsed;
+
+  if (!gradeLabel) return null;
+
+  const columns = await getTableColumns("grade").catch(() => new Set<string>());
+  if (!columns.size || !columns.has("grade_id")) return null;
+
+  const labelColumn = columns.has("grade_level")
+    ? "grade_level"
+    : columns.has("label")
+      ? "label"
+      : columns.has("name")
+        ? "name"
+        : columns.has("grade")
+          ? "grade"
+          : null;
+
+  if (!labelColumn) return null;
+
+  const [rows] = await query<RowDataPacket[]>(
+    `SELECT grade_id FROM grade WHERE LOWER(${labelColumn}) = LOWER(?) LIMIT 1`,
+    [gradeLabel],
+  );
+
+  const row = rows[0];
+  return row?.grade_id ? Number(row.grade_id) : null;
+};
 
 const loadWeeklySubjectMap = async (): Promise<Map<string, number>> => {
   const [rows] = await query<RowDataPacket[]>(
@@ -88,7 +121,6 @@ const loadHandledAssignments = async (masterTeacherIds: Array<string | number>, 
     .filter((row) => Number.isFinite(row.subject_id));
 };
 
-
 const loadQuarterForDate = async (date: Date): Promise<QuarterRow | null> => {
   const schoolYear = resolveSchoolYearFromDate(date);
   const [rows] = await query<QuarterRow[]>(
@@ -107,6 +139,7 @@ const loadQuarterForDate = async (date: Date): Promise<QuarterRow | null> => {
   return null;
 };
 
+
 export async function POST(request: NextRequest) {
   try {
     const session = await getMasterTeacherSessionFromCookies();
@@ -115,26 +148,29 @@ export async function POST(request: NextRequest) {
     }
 
     const payload = (await request.json().catch(() => null)) as {
-      gradeLevel?: string | null;
+      gradeId?: number | null;
+      gradeLabel?: string | null;
       activities?: IncomingActivity[] | null;
     } | null;
 
     if (!payload?.activities || payload.activities.length === 0) {
-      return NextResponse.json(
-        { success: false, error: "No activities were provided for sending." },
-        { status: 400 },
-      );
+      return NextResponse.json({ success: false, error: "No activities were provided." }, { status: 400 });
     }
 
-    const gradeId = payload.gradeLevel ? Number(String(payload.gradeLevel).match(/(\d+)/)?.[1]) : null;
-    const handledIds = [String(session.masterTeacherId), String(session.userId)].filter(
-      (value): value is string => {
-        if (value === null || value === undefined) return false;
-        return String(value).trim().length > 0;
-      },
-    );
+    const gradeId = await resolveGradeId(toNumber(payload.gradeId), toText(payload.gradeLabel));
+    if (!gradeId) {
+      return NextResponse.json({ success: false, error: "Grade could not be resolved for this schedule." }, { status: 400 });
+    }
 
-    const assignments = await loadHandledAssignments(handledIds, gradeId ?? null);
+    const handledIds = [
+      session.masterTeacherId,
+      String(session.userId),
+    ].filter((value): value is string => {
+      if (value === null || value === undefined) return false;
+      return String(value).trim().length > 0;
+    });
+
+    const assignments = await loadHandledAssignments(handledIds, gradeId);
     if (!assignments.length) {
       return NextResponse.json({ success: false, error: "No subject assignment found for this master teacher." }, { status: 403 });
     }
@@ -146,41 +182,40 @@ export async function POST(request: NextRequest) {
       gradeBySubject.set(assignment.subject_id, assignment.grade_id);
     }
 
-    const resolvedGradeId = gradeId ?? assignments[0]?.grade_id ?? null;
-    if (!resolvedGradeId) {
-      return NextResponse.json({ success: false, error: "Grade could not be resolved for this schedule." }, { status: 400 });
-    }
-
     const weeklySubjectMap = await loadWeeklySubjectMap();
     if (!weeklySubjectMap.size) {
       return NextResponse.json({ success: false, error: "Weekly subject schedule is not configured yet." }, { status: 400 });
     }
 
     const submittedBy = String(session.masterTeacherId ?? session.userId ?? "");
-    const masterTeacherId = String(session.masterTeacherId ?? "").trim();
-    const skipped: Array<{ title: string | null; reason: string }> = [];
+    const skipped: Array<{ title: string; reason: string }> = [];
     let inserted = 0;
 
     for (const activity of payload.activities) {
       const title = toText(activity.title);
       if (!title) {
-        skipped.push({ title: null, reason: "Missing title." });
+        skipped.push({ title: "(untitled)", reason: "Missing activity title." });
         continue;
       }
 
       const dateText = toText(activity.date);
       if (!dateText) {
-        skipped.push({ title, reason: "Invalid or missing date." });
+        skipped.push({ title, reason: "Missing activity date." });
         continue;
       }
 
       const parsedDate = new Date(dateText);
       if (Number.isNaN(parsedDate.getTime())) {
-        skipped.push({ title, reason: "Invalid or missing date." });
+        skipped.push({ title, reason: "Invalid activity date." });
         continue;
       }
 
-      const weekday = parsedDate.toLocaleDateString("en-US", { weekday: "long" });
+      const weekday = WEEKDAYS[parsedDate.getDay() - 1] ?? null;
+      if (!weekday) {
+        skipped.push({ title, reason: "Invalid weekday." });
+        continue;
+      }
+
       const subjectId = weeklySubjectMap.get(weekday);
       if (!subjectId) {
         skipped.push({ title, reason: `No subject assigned for ${weekday}.` });
@@ -193,7 +228,7 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      const assignmentGradeId = gradeBySubject.get(subjectId) ?? resolvedGradeId;
+      const assignmentGradeId = gradeBySubject.get(subjectId) ?? gradeId;
 
       const quarter = await loadQuarterForDate(parsedDate);
       if (!quarter) {
@@ -204,7 +239,7 @@ export async function POST(request: NextRequest) {
       const scheduleDate = parsedDate.toISOString().slice(0, 10);
       const [existing] = await query<RowDataPacket[]>(
         `SELECT request_id FROM ${REQUEST_REMEDIAL_TABLE}
-         WHERE quarter_id = ? AND schedule_date = ? AND subject_id = ? AND grade_id = ? AND title = ? AND submitted_by = ? AND master_teacher_id = ?
+         WHERE quarter_id = ? AND schedule_date = ? AND subject_id = ? AND grade_id = ? AND title = ? AND submitted_by = ?
          LIMIT 1`,
         [
           Number(quarter.quarter_id),
@@ -213,19 +248,18 @@ export async function POST(request: NextRequest) {
           assignmentGradeId,
           title,
           submittedBy,
-          masterTeacherId,
         ],
       );
 
       if (existing.length > 0) {
-        skipped.push({ title, reason: "Activity already submitted for this week." });
+        skipped.push({ title, reason: "Request already submitted for this date." });
         continue;
       }
 
       await query<ResultSetHeader>(
         `INSERT INTO ${REQUEST_REMEDIAL_TABLE}
-          (quarter_id, schedule_date, day, subject_id, grade_id, title, description, submitted_by, master_teacher_id, status, submitted_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          (quarter_id, schedule_date, day, subject_id, grade_id, title, description, submitted_by, status, submitted_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
         [
           Number(quarter.quarter_id),
           scheduleDate,
@@ -235,7 +269,6 @@ export async function POST(request: NextRequest) {
           title,
           toText(activity.description),
           submittedBy,
-          masterTeacherId,
           "Pending",
         ],
       );
@@ -245,10 +278,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, inserted, skipped });
   } catch (error) {
-    console.error("Failed to send coordinator activities", error);
-    return NextResponse.json(
-      { success: false, error: "Unable to send activities at this time." },
-      { status: 500 },
-    );
+    console.error("Failed to save remedial weekly activities", error);
+    const message = error instanceof Error ? error.message : "Unable to save remedial activities.";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

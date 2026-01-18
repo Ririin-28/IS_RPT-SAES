@@ -279,6 +279,52 @@ const parseTimestamp = (value: string | null | undefined): Date | null => {
   return null;
 };
 
+const parseSchoolYear = (schoolYear: string | null | undefined): { startYear: number; endYear: number } | null => {
+  if (!schoolYear) return null;
+  const parts = schoolYear.split("-").map((value) => Number(value));
+  if (parts.length !== 2) return null;
+  const [startYear, endYear] = parts;
+  if (!Number.isFinite(startYear) || !Number.isFinite(endYear)) return null;
+  return { startYear, endYear };
+};
+
+const yearForMonth = (schoolYear: string, month: number): number | null => {
+  const parsed = parseSchoolYear(schoolYear);
+  if (!parsed) return null;
+  return month >= 6 ? parsed.startYear : parsed.endYear;
+};
+
+const buildQuarterRange = (
+  schoolYear: string,
+  startMonth: number | null | undefined,
+  endMonth: number | null | undefined,
+): { start: Date; end: Date } | null => {
+  if (!startMonth || !endMonth) return null;
+  const startYear = yearForMonth(schoolYear, startMonth);
+  const endYear = yearForMonth(schoolYear, endMonth);
+  if (!startYear || !endYear) return null;
+
+  const start = new Date(startYear, startMonth - 1, 1);
+  const end = new Date(endYear, endMonth, 0);
+  start.setHours(0, 0, 0, 0);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+};
+
+const formatDateOnly = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const resolveDefaultSchoolYear = (): string => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = today.getMonth();
+  return month >= 5 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
+};
+
 const formatApprovalMetadata = (
   approvedAt: string | null | undefined,
   approvedBy: string | null | undefined,
@@ -422,6 +468,9 @@ const buildStoredProfileName = (profile: StoredUserProfile | null, fallback: str
   return null;
 };
 
+const normalizeDateKey = (date: Date): string =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+
 export default function MasterTeacherCalendar() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -459,6 +508,7 @@ export default function MasterTeacherCalendar() {
   const [remedialWindowError, setRemedialWindowError] = useState<string | null>(null);
   const [remedialGuardMessage, setRemedialGuardMessage] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [templateDownloading, setTemplateDownloading] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [showSendModal, setShowSendModal] = useState(false);
   const [sending, setSending] = useState(false);
@@ -581,6 +631,34 @@ export default function MasterTeacherCalendar() {
     return "The configured remedial window is not active.";
   }, [hasActiveRemedialWindow, remedialWindowLoading, remedialWindow, remedialWindowStatus, scheduleWindowLabel]);
 
+  const hasApprovedConflict = useCallback(
+    (date: Date, subjectValue: string | null, gradeValue: string | null) => {
+      const targetDate = normalizeDateKey(date);
+      const targetSubject = (subjectValue ?? "").toLowerCase().trim();
+      const targetGrade = normalizeGradeLabel(gradeValue ?? null);
+
+      return activities.some((activity) => {
+        if (!activity.status || normalizeStatusLabel(activity.status) !== "Approved") {
+          return false;
+        }
+        const activityDate = normalizeDateKey(activity.date);
+        if (activityDate !== targetDate) {
+          return false;
+        }
+        const activitySubject = (activity.subject ?? "").toLowerCase().trim();
+        if (targetSubject && activitySubject && activitySubject !== targetSubject) {
+          return false;
+        }
+        const activityGrade = normalizeGradeLabel(activity.gradeLevel ?? null);
+        if (targetGrade && activityGrade && activityGrade !== targetGrade) {
+          return false;
+        }
+        return true;
+      });
+    },
+    [activities],
+  );
+
   const remedialStatusBanner = useMemo(() => {
     if (remedialWindowError) {
       return null;
@@ -651,22 +729,58 @@ export default function MasterTeacherCalendar() {
       }
       const payload = (await response.json()) as {
         success: boolean;
-        schedule: { quarter: string | null; startDate: string | null; endDate: string | null; active?: boolean | null } | null;
+        schedule:
+          | { quarter: string | null; startDate: string | null; endDate: string | null; active?: boolean | null }
+          | { schoolYear?: string | null; quarters?: Record<string, { startMonth: number | null; endMonth: number | null }> | null }
+          | null;
       };
       if (!payload.success) {
         throw new Error("Server indicated failure.");
       }
       const schedule = payload.schedule;
-      if (schedule?.startDate && schedule?.endDate) {
+      if (schedule && "startDate" in schedule && schedule.startDate && schedule.endDate) {
         setRemedialWindow({
           quarter: schedule.quarter ?? null,
           startDate: schedule.startDate,
           endDate: schedule.endDate,
           active: schedule.active !== false,
         });
-      } else {
-        setRemedialWindow(null);
+        return;
       }
+
+      if (schedule && "quarters" in schedule && schedule.quarters) {
+        const schoolYear = schedule.schoolYear ?? resolveDefaultSchoolYear();
+        const quarterEntries = Object.entries(schedule.quarters)
+          .map(([label, range]) => {
+            const window = buildQuarterRange(schoolYear, range?.startMonth ?? null, range?.endMonth ?? null);
+            if (!window) return null;
+            return { label, start: window.start, end: window.end };
+          })
+          .filter((entry): entry is { label: string; start: Date; end: Date } => Boolean(entry));
+
+        if (quarterEntries.length > 0) {
+          const today = new Date();
+          let selected = quarterEntries.find((entry) => today >= entry.start && today <= entry.end) ?? null;
+          if (!selected) {
+            const upcoming = quarterEntries
+              .filter((entry) => entry.start > today)
+              .sort((a, b) => a.start.getTime() - b.start.getTime());
+            selected = upcoming[0] ?? quarterEntries.sort((a, b) => b.end.getTime() - a.end.getTime())[0] ?? null;
+          }
+
+          if (selected) {
+            setRemedialWindow({
+              quarter: selected.label,
+              startDate: formatDateOnly(selected.start),
+              endDate: formatDateOnly(selected.end),
+              active: true,
+            });
+            return;
+          }
+        }
+      }
+
+      setRemedialWindow(null);
     } catch (error) {
       console.error("Failed to load remedial window", error);
       setRemedialWindowError("Unable to load the remedial window. Try refreshing the page.");
@@ -1162,6 +1276,11 @@ export default function MasterTeacherCalendar() {
     const normalizedTitle = data.title.trim().length > 0 ? data.title.trim() : `${sanitizedSubject} Remediation`;
     const descriptionSource = data.description.trim().length > 0 ? data.description : `${sanitizedSubject} remediation for ${gradeLabel}`;
 
+    if (hasApprovedConflict(startDate, sanitizedSubject, gradeLabel)) {
+      showToast("An approved activity already exists for this day, subject, and grade.", "info");
+      return;
+    }
+
     const newActivity: Activity = {
       id: activities.length > 0 ? Math.max(...activities.map((a) => a.id)) + 1 : 1,
       ...data,
@@ -1230,6 +1349,50 @@ export default function MasterTeacherCalendar() {
 
     return null;
   }, []);
+
+  const persistRemedialActivities = useCallback(
+    async (items: Activity[]) => {
+      if (!items.length) return;
+
+      try {
+        const response = await fetch("/api/master_teacher/coordinator/calendar/remedial-activities", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            gradeLabel: gradeLabel ?? null,
+            activities: items.map((activity) => ({
+              title: activity.title,
+              description: activity.description ?? null,
+              date: activity.date.toISOString(),
+            })),
+          }),
+        });
+
+        const payload = (await response.json().catch(() => null)) as {
+          success?: boolean;
+          inserted?: number;
+          skipped?: Array<{ title: string; reason: string }>;
+          error?: string | null;
+        } | null;
+
+        if (!response.ok || !payload?.success) {
+          throw new Error(payload?.error ?? "Unable to save remedial activities.");
+        }
+
+        const inserted = typeof payload.inserted === "number" ? payload.inserted : items.length;
+        const skippedCount = Array.isArray(payload.skipped) ? payload.skipped.length : 0;
+        const messageParts = [`Saved ${inserted} remedial activit${inserted === 1 ? "y" : "ies"}.`];
+        if (skippedCount > 0) {
+          messageParts.push(`${skippedCount} entr${skippedCount === 1 ? "y was" : "ies were"} skipped.`);
+        }
+        showToast(messageParts.join(" "), skippedCount > 0 ? "info" : "success");
+      } catch (error) {
+        console.error("Failed to persist remedial activities", error);
+        showToast(error instanceof Error ? error.message : "Unable to save remedial activities.", "error");
+      }
+    },
+    [gradeLabel],
+  );
 
   const processImportFile = useCallback(
     async (file: File) => {
@@ -1343,6 +1506,11 @@ export default function MasterTeacherCalendar() {
             continue;
           }
 
+          if (hasApprovedConflict(start, resolvedSubject, gradeLabel)) {
+            skipped += 1;
+            continue;
+          }
+
           existingSignatures.add(signature);
 
           const description = `${resolvedSubject} remediation for ${gradeLabel}`;
@@ -1364,6 +1532,7 @@ export default function MasterTeacherCalendar() {
         if (newActivities.length > 0) {
           setActivities((prev) => [...prev, ...newActivities].sort((a, b) => a.date.getTime() - b.date.getTime()));
           setSendFeedback(null);
+          await persistRemedialActivities(newActivities);
         }
 
         const totalRows = Math.max(rows.length - 1, 0);
@@ -1388,7 +1557,19 @@ export default function MasterTeacherCalendar() {
         setImporting(false);
       }
     },
-    [activities, allowedSubjects, canPlanActivities, deriveSessionTimes, gradeLabel, hasActiveRemedialWindow, isDateWithinRemedialWindow, scheduleBlockingReason],
+    [
+      activities,
+      allowedSubjects,
+      canPlanActivities,
+      deriveSessionTimes,
+      gradeLabel,
+      hasActiveRemedialWindow,
+      hasApprovedConflict,
+      isDateWithinRemedialWindow,
+      persistRemedialActivities,
+      scheduleBlockingReason,
+      showToast,
+    ],
   );
 
   const handleImportButtonClick = () => {
@@ -1402,6 +1583,50 @@ export default function MasterTeacherCalendar() {
     setImportError(null);
     setSendFeedback(null);
     fileInputRef.current?.click();
+  };
+
+  const handleDownloadTemplate = async () => {
+    if (templateDownloading) {
+      return;
+    }
+
+    setTemplateDownloading(true);
+    setImportError(null);
+
+    try {
+      const response = await fetch("/api/master_teacher/coordinator/calendar/remedial-template", { cache: "no-store" });
+      const payload = (await response.json().catch(() => null)) as {
+        success?: boolean;
+        rows?: Array<Record<string, string>>;
+        meta?: { schoolYear?: string } | null;
+        error?: string | null;
+      } | null;
+
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error ?? "Unable to download the template.");
+      }
+
+      const rows = Array.isArray(payload.rows) ? payload.rows : [];
+      if (!rows.length) {
+        throw new Error("No template rows were generated for your assignment.");
+      }
+
+      const headerOrder = ["Quarter", "Date", "Day", "Subject", "Grade", "Title", "Description"];
+      const worksheet = XLSX.utils.json_to_sheet(rows, { header: headerOrder });
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Remedial Template");
+
+      const schoolYear = payload.meta?.schoolYear ?? "remedial";
+      const filename = `Remedial_Template_${schoolYear.replace(/\s+/g, "_")}.xlsx`;
+      XLSX.writeFile(workbook, filename);
+
+      showToast("Template downloaded.", "success");
+    } catch (error) {
+      console.error("Failed to download template", error);
+      showToast(error instanceof Error ? error.message : "Unable to download the template.", "error");
+    } finally {
+      setTemplateDownloading(false);
+    }
   };
 
   const handleImportInputChange = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1494,7 +1719,7 @@ export default function MasterTeacherCalendar() {
       showToast(feedbackParts.join(" "), skippedCount > 0 ? "info" : "success");
       setShowSendModal(false);
 
-  const sendableIds = new Set(sendableActivities.map((activity) => activity.id));
+      const sendableIds = new Set(sendableActivities.map((activity) => activity.id));
       setActivities((prev) =>
         prev.map((activity) =>
           sendableIds.has(activity.id)
@@ -1531,7 +1756,7 @@ export default function MasterTeacherCalendar() {
     }
     setRemedialGuardMessage(null);
 
-    return WEEKDAY_ORDER.map((day, index) => {
+    const planned = WEEKDAY_ORDER.map((day, index) => {
       const activityDate = new Date(mondayDate);
       activityDate.setDate(activityDate.getDate() + index);
       const startDate = createDateWithTime(activityDate, schedule.startTime);
@@ -1541,6 +1766,10 @@ export default function MasterTeacherCalendar() {
       const description = subjectForDay
         ? `${subjectForDay} remediation for ${gradeLabel}`
         : `Remediation for ${gradeLabel}`;
+
+      if (hasApprovedConflict(startDate, subjectForDay ?? null, gradeLabel)) {
+        return null;
+      }
 
       return {
         id: baseId + index,
@@ -1556,6 +1785,13 @@ export default function MasterTeacherCalendar() {
         weekRef: weekKey,
       } satisfies Activity;
     });
+
+    if (planned.some((item) => item === null)) {
+      showToast("Some days already have approved activities. Remove or change those before scheduling.", "info");
+      return null;
+    }
+
+    return planned as Activity[];
   };
 
   const handleWeeklySave = (data: WeeklyScheduleFormData) => {
@@ -1587,8 +1823,9 @@ export default function MasterTeacherCalendar() {
       return [...filtered, ...weekActivities];
     });
 
-  setWeeklySchedule(normalizedSchedule);
+    setWeeklySchedule(normalizedSchedule);
     setShowWeeklyModal(false);
+    persistRemedialActivities(weekActivities).catch(() => undefined);
   };
 
   const clearWeeklyPlan = () => {
@@ -1720,18 +1957,14 @@ export default function MasterTeacherCalendar() {
               <div className="space-y-3">
                 {activities.map((activity) => {
                   const viewOnly = isActivityLocked(activity);
-                  const approvalMeta = viewOnly
-                    ? formatApprovalMetadata(activity.approvedAt ?? null, activity.approvedBy ?? null)
-                    : null;
                   const displayTitle = activity.title?.trim().length
                     ? activity.title
                     : activity.subject ?? "Scheduled Activity";
-                  const subjectLabel = activity.subject && activity.subject !== activity.title ? activity.subject : null;
                   const normalizedStatus = normalizeStatusLabel(activity.status);
+                  const isApproved = normalizedStatus === "Approved";
                   const toneOverride = resolveStatusToneOverride(activity.status);
                   const tone = toneOverride ?? resolveActivityTone(activity.subject ?? activity.type);
-                  const statusLabel = normalizedStatus ?? activity.status ?? null;
-                  const statusClass = statusLabel ? statusBadgeTone(statusLabel) : null;
+                  const statusClass = isApproved ? statusBadgeTone("Approved") : null;
                   return (
                     <div
                       key={activity.id}
@@ -1741,47 +1974,21 @@ export default function MasterTeacherCalendar() {
                     >
                       <div className="flex justify-between items-start gap-3">
                         <div className="flex-1 space-y-1.5">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className={`font-semibold ${tone.titleClass}`}>{displayTitle}</span>
-                            {subjectLabel && (
-                              <span className="inline-flex items-center rounded-full border border-gray-200 bg-white/80 px-2 py-0.5 text-xs font-medium tracking-wide text-gray-600">
-                                {subjectLabel}
-                              </span>
-                            )}
-                            {statusLabel && statusClass && (
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`font-semibold ${tone.titleClass} flex-1 truncate`}
+                            >
+                              {displayTitle}
+                            </span>
+
+                            {statusClass && (
                               <span
-                                className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${statusClass}`}
+                                className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold whitespace-nowrap ${statusClass}`}
                               >
-                                {statusLabel}
+                                Approved
                               </span>
                             )}
                           </div>
-                          <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
-                            <span>
-                              {activity.date.toLocaleDateString("en-US", {
-                                month: "long",
-                                day: "numeric",
-                                year: "numeric",
-                              })}
-                            </span>
-                            <span className="text-gray-300">•</span>
-                            <span>
-                              {activity.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                              {" – "}
-                              {activity.end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                            </span>
-                            <span className="text-gray-300">•</span>
-                            <span>{activity.gradeLevel ?? gradeLabel}</span>
-                          </div>
-                          {activity.description && (
-                            <div className="text-sm text-gray-500">{activity.description}</div>
-                          )}
-                          {viewOnly && (
-                            <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-gray-600">
-                              <span>Approved — View Only</span>
-                              {approvalMeta && <span className="text-gray-500">{approvalMeta}</span>}
-                            </div>
-                          )}
                         </div>
                         {!viewOnly && (
                           <button
@@ -1871,10 +2078,10 @@ export default function MasterTeacherCalendar() {
                     ? activity.title
                     : activity.subject ?? "Scheduled Activity";
                   const normalizedStatus = normalizeStatusLabel(activity.status);
+                  const isApproved = normalizedStatus === "Approved";
                   const toneOverride = resolveStatusToneOverride(activity.status);
                   const tone = toneOverride ?? resolveActivityTone(activity.subject ?? activity.type);
-                  const statusLabel = normalizedStatus ?? activity.status ?? null;
-                  const statusClass = statusLabel ? statusBadgeTone(statusLabel) : null;
+                  const statusClass = isApproved ? statusBadgeTone("Approved") : null;
 
                   return (
                     <div
@@ -1885,18 +2092,14 @@ export default function MasterTeacherCalendar() {
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
                           <span className={`block truncate font-semibold ${tone.titleClass}`}>{displayTitle}</span>
-                          <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[0.6rem] text-gray-600">
-                            <span className="truncate capitalize">
-                              {activity.subject && activity.subject !== activity.title ? activity.subject : activity.gradeLevel ?? gradeLabel}
-                            </span>
-                            {statusLabel && statusClass && (
+                          <div className="mt-0.5 flex items-center justify-between gap-2 text-[0.6rem] text-gray-600">
+                            {statusClass && (
                               <span
-                                className={`inline-flex items-center rounded-full px-1.5 py-0.5 font-semibold ${statusClass}`}
+                                className={`ml-auto inline-flex items-center rounded-full px-1.5 py-0.5 font-semibold ${statusClass}`}
                               >
-                                {statusLabel}
+                                Approved
                               </span>
                             )}
-                            {viewOnly && <span className="font-semibold text-gray-600">View Only</span>}
                           </div>
                         </div>
                         {!viewOnly && (
@@ -1911,12 +2114,6 @@ export default function MasterTeacherCalendar() {
                             ×
                           </button>
                         )}
-                      </div>
-                      <div className="mt-0.5 flex items-center justify-between text-[0.65rem] text-gray-600">
-                        <span className="truncate">{activity.gradeLevel ?? gradeLabel}</span>
-                        <span>
-                          {activity.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        </span>
                       </div>
                     </div>
                   );
@@ -1999,15 +2196,11 @@ export default function MasterTeacherCalendar() {
                 const displayTitle = activity.title?.trim().length
                   ? activity.title
                   : activity.subject ?? "Scheduled Activity";
-                const subjectLabel = activity.subject && activity.subject !== activity.title ? activity.subject : null;
                 const normalizedStatus = normalizeStatusLabel(activity.status);
+                const isApproved = normalizedStatus === "Approved";
                 const toneOverride = resolveStatusToneOverride(activity.status);
                 const tone = toneOverride ?? resolveActivityTone(activity.subject ?? activity.type);
-                const statusLabel = normalizedStatus ?? activity.status ?? null;
-                const statusClass = statusLabel ? statusBadgeTone(statusLabel) : null;
-                const approvalMeta = viewOnly
-                  ? formatApprovalMetadata(activity.approvedAt ?? null, activity.approvedBy ?? null)
-                  : null;
+                const statusClass = isApproved ? statusBadgeTone("Approved") : null;
 
                 return (
                   <div
@@ -2018,32 +2211,16 @@ export default function MasterTeacherCalendar() {
                   >
                     <div className="flex justify-between items-start gap-3">
                       <div className="flex-1 space-y-1">
-                        <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex items-center justify-between gap-2">
                           <span className={`font-semibold text-sm ${tone.titleClass}`}>{displayTitle}</span>
-                          {subjectLabel && (
-                            <span className="inline-flex items-center rounded-full border border-gray-200 bg-white/80 px-1.5 py-0.5 text-[0.6rem] font-medium uppercase tracking-wide text-gray-600">
-                              {subjectLabel}
-                            </span>
-                          )}
-                          {statusLabel && statusClass && (
+                          {statusClass && (
                             <span
-                              className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[0.6rem] font-semibold ${statusClass}`}
+                              className={`ml-auto inline-flex items-center rounded-full px-1.5 py-0.5 text-[0.6rem] font-semibold ${statusClass}`}
                             >
-                              {statusLabel}
+                              Approved
                             </span>
                           )}
-                          {viewOnly && <span className="text-[0.6rem] font-semibold text-gray-600 uppercase">View Only</span>}
                         </div>
-                        <div className="text-xs text-gray-600">
-                          {activity.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} –{" "}
-                          {activity.end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {activity.gradeLevel ?? gradeLabel}
-                        </div>
-                        {approvalMeta && (
-                          <div className="text-[0.6rem] font-medium text-gray-500">{approvalMeta}</div>
-                        )}
                       </div>
                       {!viewOnly && (
                         <button
@@ -2209,23 +2386,6 @@ export default function MasterTeacherCalendar() {
                       </button>
                     </div>
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:space-x-2">
-                      <PrimaryButton
-                        type="button"
-                        small
-                        className="px-4"
-                        disabled={!canPlanActivities}
-                        onClick={() => {
-                          if (!canPlanActivities) {
-                            if (!hasActiveRemedialWindow && scheduleBlockingReason) {
-                              setRemedialGuardMessage(scheduleBlockingReason);
-                            }
-                            return;
-                          }
-                          setShowWeeklyModal(true);
-                        }}
-                      >
-                        {weeklySchedule ? "Update Weekly Schedule" : "Set Schedule"}
-                      </PrimaryButton>
                       <SecondaryButton
                         type="button"
                         small
@@ -2235,6 +2395,15 @@ export default function MasterTeacherCalendar() {
                         title={!canPlanActivities ? scheduleBlockingReason ?? "Scheduling is currently disabled." : undefined}
                       >
                         {importing ? "Importing..." : "Import Activities"}
+                      </SecondaryButton>
+                      <SecondaryButton
+                        type="button"
+                        small
+                        disabled={templateDownloading}
+                        onClick={handleDownloadTemplate}
+                        className={`px-4 ${templateDownloading ? "cursor-not-allowed opacity-60" : ""}`}
+                      >
+                        {templateDownloading ? "Preparing..." : "Download Template"}
                       </SecondaryButton>
                       <PrimaryButton
                         type="button"
