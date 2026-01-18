@@ -7,6 +7,7 @@ import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
 import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
+import AccountRestoredModal, { type RestoredAccountInfo } from "@/components/Common/Modals/AccountRestoredModal";
 import { useArchiveRestoreDelete } from "../Common/useArchiveRestoreDelete";
 import { ensureArchiveRowKey } from "../Common/archiveRowKey";
 import { exportArchiveRows } from "../utils/export-columns";
@@ -30,6 +31,7 @@ interface PrincipalTabProps {
 export default function PrincipalTab({ principals, setPrincipals, searchTerm, onEntriesRemoved }: PrincipalTabProps) {
   const [selectedPrincipal, setSelectedPrincipal] = useState<any>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [restoredAccounts, setRestoredAccounts] = useState<RestoredAccountInfo[]>([]);
   const principalsList = Array.isArray(principals) ? principals : [];
 
   const keySelector = useCallback((item: any) => {
@@ -121,17 +123,13 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm, on
           onEntriesRemoved?.(restoredArchiveIds);
         }
 
-        if (restoredEntries.length > 0 && typeof window !== "undefined") {
-          const lines = restoredEntries.map((entry) => {
-            const label = entry.name || entry.email || `User ${entry.userId}`;
-            return entry.temporaryPassword
-              ? `${label} — temporary password: ${entry.temporaryPassword}`
-              : label;
-          });
-          window.alert(
-            `Restored ${restoredEntries.length} account${restoredEntries.length === 1 ? "" : "s"}.
-
-${lines.join("\n")}`,
+        if (restoredEntries.length > 0) {
+          setRestoredAccounts(
+            restoredEntries.map((entry) => ({
+              name: entry.name || entry.email || `User ${entry.userId}`,
+              email: entry.email ?? "",
+              temporaryPassword: entry.temporaryPassword ?? "",
+            })),
           );
         }
 
@@ -455,6 +453,13 @@ ${lines.join("\n")}`,
         show={showDetailsModal}
         onClose={handleCloseDetails}
         principal={selectedPrincipal}
+      />
+
+      <AccountRestoredModal
+        show={restoredAccounts.length > 0}
+        onClose={() => setRestoredAccounts([])}
+        accounts={restoredAccounts}
+        roleLabel="Principal"
       />
     </div>
   );

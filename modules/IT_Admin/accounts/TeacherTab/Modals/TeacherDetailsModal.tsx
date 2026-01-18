@@ -34,13 +34,12 @@ export default function TeacherDetailsModal({ show, onClose, teacher }: TeacherD
             <ModalInfoItem label="Role" value={teacher.roleLabel || teacher.role || "Teacher"} />
           </div>
           
-          {/* 2nd Row: Full Name with helper text */}
-          <div className="space-y-1">
-            <ModalInfoItem 
-              label="Full Name" 
-              value={teacher.fullName || teacher.name} 
-            />
-            <p className="text-xs text-gray-500 pl-1">Format: Last, First, Middle, Suffix</p>
+          {/* 2nd Row: Name fields */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <ModalInfoItem label="First Name" value={teacher.firstName ?? teacher.first_name ?? ""} />
+            <ModalInfoItem label="Middle Name" value={teacher.middleName ?? teacher.middle_name ?? ""} />
+            <ModalInfoItem label="Last Name" value={teacher.lastName ?? teacher.last_name ?? ""} />
+            <ModalInfoItem label="Suffix" value={teacher.suffix ?? teacher.suffix_name ?? teacher.suf ?? ""} />
           </div>
         </div>
       </ModalSection>

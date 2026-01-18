@@ -86,6 +86,14 @@ type RemedialStudent = {
   filipino: string | null;
   math: string | null;
   guardian: string | null;
+  guardianFirstName?: string | null;
+  guardianMiddleName?: string | null;
+  guardianLastName?: string | null;
+  guardianSuffix?: string | null;
+  parentFirstName?: string | null;
+  parentMiddleName?: string | null;
+  parentLastName?: string | null;
+  parentSuffix?: string | null;
   guardianContact: string | null;
   guardianEmail?: string | null;
   relationship?: string | null;
@@ -159,6 +167,10 @@ const toDisplayStudent = (student: RemedialStudent, index: number) => {
     grade: student.grade ?? "",
     section: student.section ?? "",
     guardian: student.guardian ?? "",
+    guardianFirstName: student.guardianFirstName ?? student.parentFirstName ?? null,
+    guardianMiddleName: student.guardianMiddleName ?? student.parentMiddleName ?? null,
+    guardianLastName: student.guardianLastName ?? student.parentLastName ?? null,
+    guardianSuffix: student.guardianSuffix ?? student.parentSuffix ?? null,
     guardianContact: student.guardianContact ?? "",
     guardianEmail: student.guardianEmail ?? "",
     relationship: student.relationship ?? "",
