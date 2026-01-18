@@ -5,6 +5,8 @@ import { HttpError } from "../validation/validation";
 
 export const dynamic = "force-dynamic";
 
+const ARCHIVE_TABLE = "archived_users";
+
 const TEACHER_TABLE_CANDIDATES = [
   "teacher",
   "teachers",
@@ -122,6 +124,25 @@ function normalizeContact(userRow: RowDataPacket): string | null {
   return null;
 }
 
+function getColumnValue(row: RowDataPacket | null, column: string): any {
+  if (!row) {
+    return undefined;
+  }
+
+  if (column in row) {
+    return row[column as keyof typeof row];
+  }
+
+  const normalized = column.toLowerCase();
+  for (const key of Object.keys(row)) {
+    if (key.toLowerCase() === normalized) {
+      return row[key as keyof typeof row];
+    }
+  }
+
+  return undefined;
+}
+
 export async function POST(request: NextRequest) {
   let payload: any;
   try {
@@ -148,12 +169,15 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await runWithConnection(async (connection) => {
-      const archiveColumns = await tryFetchTableColumns(connection, "archive_users");
+      const archiveColumns = await tryFetchTableColumns(connection, ARCHIVE_TABLE);
       if (!archiveColumns || archiveColumns.size === 0) {
         throw new HttpError(500, "Archive table is not available.");
       }
 
       const { table: teacherTable, columns: teacherColumns } = await resolveTeacherTable(connection);
+      const teacherHandledColumns = await tryFetchTableColumns(connection, "teacher_handled");
+      const archivedTeacherHandledColumns = await tryFetchTableColumns(connection, "archived_teacher_handled");
+      const mtCoordinatorHandledColumns = await tryFetchTableColumns(connection, "mt_coordinator_handled");
       const accountLogsColumns = await tryFetchTableColumns(connection, "account_logs");
       const canDeleteAccountLogs = !!accountLogsColumns && accountLogsColumns.has("user_id");
       const userReferencingMap = await fetchReferencingMap(connection, "users");
@@ -175,10 +199,25 @@ export async function POST(request: NextRequest) {
           }
 
           const userRow = userRows[0];
+          const rawUserId = getColumnValue(userRow, "user_id");
+          const parsedUserId = rawUserId !== null && rawUserId !== undefined ? Number(rawUserId) : NaN;
+          const resolvedUserId = Number.isInteger(parsedUserId) && parsedUserId > 0
+            ? parsedUserId
+            : userId;
           const name = computeFullName(userRow);
           const email = typeof userRow.email === "string" ? userRow.email : null;
           const contactNumber = normalizeContact(userRow);
           const role = typeof userRow.role === "string" && userRow.role.trim().length > 0 ? userRow.role : "teacher";
+          const userCode = typeof userRow.user_code === "string" ? userRow.user_code : null;
+          const username = typeof userRow.username === "string" ? userRow.username : null;
+          const firstName = typeof userRow.first_name === "string" ? userRow.first_name : null;
+          const middleName = typeof userRow.middle_name === "string" ? userRow.middle_name : null;
+          const lastName = typeof userRow.last_name === "string" ? userRow.last_name : null;
+          const suffix = typeof userRow.suffix === "string" ? userRow.suffix : null;
+          const password = typeof userRow.password === "string" ? userRow.password : null;
+          const roleId = Number.isInteger(userRow.role_id) ? (userRow.role_id as number) : null;
+          const createdAt = getColumnValue(userRow, "created_at");
+          const updatedAt = getColumnValue(userRow, "updated_at");
 
           let teacherRow: RowDataPacket | null = null;
           if (teacherTable) {
@@ -189,10 +228,20 @@ export async function POST(request: NextRequest) {
             teacherRow = rows.length > 0 ? rows[0] : null;
           }
 
+          const resolvedTeacherId =
+            getColumnValue(teacherRow, "teacher_id") ??
+            getColumnValue(teacherRow, "employee_id") ??
+            getColumnValue(teacherRow, "faculty_id") ??
+            getColumnValue(teacherRow, "teacher_code") ??
+            getColumnValue(teacherRow, "user_id") ??
+            userId;
+
           const [existingArchive] = await connection.query<RowDataPacket[]>(
-            "SELECT archive_id FROM archive_users WHERE user_id = ? LIMIT 1",
-            [userId],
+            `SELECT archived_id FROM ${ARCHIVE_TABLE} WHERE user_id = ? LIMIT 1`,
+            [resolvedUserId],
           );
+
+          let archivedIdForRelations: number | null = null;
 
           if (existingArchive.length === 0) {
             const columns: string[] = [];
@@ -203,9 +252,30 @@ export async function POST(request: NextRequest) {
               values.push(value);
             };
 
-            pushValue("user_id", userId);
+            pushValue("user_id", resolvedUserId);
             if (archiveColumns.has("role")) {
               pushValue("role", role);
+            }
+            if (archiveColumns.has("role_id") && roleId !== null) {
+              pushValue("role_id", roleId);
+            }
+            if (archiveColumns.has("user_code") && userCode) {
+              pushValue("user_code", userCode);
+            }
+            if (archiveColumns.has("username") && username) {
+              pushValue("username", username);
+            }
+            if (archiveColumns.has("first_name") && firstName) {
+              pushValue("first_name", firstName);
+            }
+            if (archiveColumns.has("middle_name") && middleName) {
+              pushValue("middle_name", middleName);
+            }
+            if (archiveColumns.has("last_name") && lastName) {
+              pushValue("last_name", lastName);
+            }
+            if (archiveColumns.has("suffix") && suffix) {
+              pushValue("suffix", suffix);
             }
             if (archiveColumns.has("name") && name) {
               pushValue("name", name);
@@ -216,20 +286,95 @@ export async function POST(request: NextRequest) {
             if (archiveColumns.has("contact_number") && contactNumber) {
               pushValue("contact_number", contactNumber);
             }
+            if (archiveColumns.has("phone_number") && contactNumber) {
+              pushValue("phone_number", contactNumber);
+            }
+            if (archiveColumns.has("password") && password) {
+              pushValue("password", password);
+            }
             if (archiveColumns.has("reason")) {
               pushValue("reason", archiveReason);
             }
+            if (archiveColumns.has("archived_at")) {
+              pushValue("archived_at", new Date());
+            }
             if (archiveColumns.has("timestamp")) {
               pushValue("timestamp", new Date());
+            }
+            if (archiveColumns.has("created_at") && createdAt) {
+              pushValue("created_at", createdAt);
+            }
+            if (archiveColumns.has("updated_at") && updatedAt) {
+              pushValue("updated_at", updatedAt);
+            }
+            if (archiveColumns.has("snapshot_json")) {
+              const snapshot = {
+                user: userRow,
+                teacher: teacherRow,
+              };
+              pushValue("snapshot_json", JSON.stringify(snapshot));
             }
 
             const placeholders = columns.map(() => "?").join(", ");
             const columnsSql = columns.join(", ");
 
-            await connection.query<ResultSetHeader>(
-              `INSERT INTO archive_users (${columnsSql}) VALUES (${placeholders})`,
+            const [insertResult] = await connection.query<ResultSetHeader>(
+              `INSERT INTO ${ARCHIVE_TABLE} (${columnsSql}) VALUES (${placeholders})`,
               values,
             );
+            const insertedId = Number(insertResult.insertId);
+            archivedIdForRelations = Number.isInteger(insertedId) && insertedId > 0 ? insertedId : null;
+          } else if (archiveColumns.has("user_id")) {
+            await connection.query<ResultSetHeader>(
+              `UPDATE \`${ARCHIVE_TABLE}\` SET user_id = ? WHERE archived_id = ? AND (user_id IS NULL OR user_id = 0)`,
+              [resolvedUserId, existingArchive[0]?.archived_id],
+            );
+            const existingId = Number(existingArchive[0]?.archived_id);
+            archivedIdForRelations = Number.isInteger(existingId) && existingId > 0 ? existingId : null;
+          }
+
+          if (
+            archivedIdForRelations !== null &&
+            archivedTeacherHandledColumns &&
+            archivedTeacherHandledColumns.size > 0 &&
+            teacherHandledColumns &&
+            teacherHandledColumns.has("teacher_id")
+          ) {
+            const [handledRows] = await connection.query<RowDataPacket[]>(
+              "SELECT teacher_id, grade_id FROM teacher_handled WHERE teacher_id = ?",
+              [resolvedTeacherId],
+            );
+
+            for (const row of handledRows) {
+              const columns: string[] = [];
+              const values: any[] = [];
+              const pushValue = (column: string, value: any) => {
+                columns.push(`\`${column}\``);
+                values.push(value);
+              };
+
+              if (archivedTeacherHandledColumns.has("archived_id")) {
+                pushValue("archived_id", archivedIdForRelations);
+              }
+              if (archivedTeacherHandledColumns.has("teacher_id")) {
+                pushValue("teacher_id", row.teacher_id ?? resolvedTeacherId);
+              }
+              if (archivedTeacherHandledColumns.has("grade_id") && row.grade_id != null) {
+                pushValue("grade_id", row.grade_id);
+              }
+              if (archivedTeacherHandledColumns.has("archived_at")) {
+                pushValue("archived_at", new Date());
+              }
+
+              if (columns.length > 0) {
+                const placeholders = columns.map(() => "?").join(", ");
+                const columnsSql = columns.join(", ");
+                await connection.query<ResultSetHeader>(
+                  `INSERT INTO archived_teacher_handled (${columnsSql}) VALUES (${placeholders})`,
+                  values,
+                );
+              }
+            }
           }
 
           if (teacherRow) {
@@ -277,12 +422,40 @@ export async function POST(request: NextRequest) {
             }
           }
 
+          if (teacherHandledColumns && teacherHandledColumns.size > 0) {
+            if (teacherHandledColumns.has("teacher_id")) {
+              await connection.query<ResultSetHeader>(
+                "DELETE FROM `teacher_handled` WHERE teacher_id = ?",
+                [resolvedTeacherId],
+              );
+            } else if (teacherHandledColumns.has("user_id")) {
+              await connection.query<ResultSetHeader>(
+                "DELETE FROM `teacher_handled` WHERE user_id = ?",
+                [userId],
+              );
+            }
+          }
+
+          if (mtCoordinatorHandledColumns && mtCoordinatorHandledColumns.size > 0) {
+            if (mtCoordinatorHandledColumns.has("master_teacher_id")) {
+              await connection.query<ResultSetHeader>(
+                "DELETE FROM `mt_coordinator_handled` WHERE master_teacher_id = ?",
+                [resolvedTeacherId],
+              );
+            } else if (mtCoordinatorHandledColumns.has("teacher_id")) {
+              await connection.query<ResultSetHeader>(
+                "DELETE FROM `mt_coordinator_handled` WHERE teacher_id = ?",
+                [resolvedTeacherId],
+              );
+            }
+          }
+
           for (const [tableName, entries] of userReferencingMap) {
             const normalizedTableName = tableName.toLowerCase();
             if (normalizedTableName === "users") {
               continue;
             }
-            if (normalizedTableName === "archive_users") {
+            if (normalizedTableName === ARCHIVE_TABLE.toLowerCase()) {
               continue;
             }
             if (normalizedTableName === "account_logs") {

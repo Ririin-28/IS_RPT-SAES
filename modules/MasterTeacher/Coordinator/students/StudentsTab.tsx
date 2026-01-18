@@ -57,16 +57,103 @@ const resolveStudentPhonemic = (
   }
 };
 
+const formatStudentDisplayName = (student: any): string => {
+  const first = (student.firstName ?? "").trim();
+  const middle = (student.middleName ?? "").trim();
+  const last = (student.lastName ?? "").trim();
+
+  const buildFormatted = (lastName: string, firstName: string, middleName: string) => {
+    if (!lastName && !firstName && !middleName) return "";
+    const middleInitials = middleName
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((value) => value.charAt(0).toUpperCase() + ".")
+      .join(" ");
+
+    if (lastName && firstName) {
+      return middleInitials
+        ? `${lastName}, ${firstName} ${middleInitials}`
+        : `${lastName}, ${firstName}`;
+    }
+
+    const base = [lastName, firstName].filter(Boolean).join(" ") || middleName;
+    return middleInitials ? `${base} ${middleInitials}`.trim() : base.trim();
+  };
+
+  if (first || last || middle) {
+    return buildFormatted(last, first, middle);
+  }
+
+  const raw = (student.name ?? "").trim();
+  if (!raw) return "";
+
+  const commaParts = raw.split(",").map((part: string) => part.trim()).filter(Boolean);
+  if (commaParts.length >= 2) {
+    const lastName = commaParts[0];
+    const firstAndMiddle = commaParts[1] ?? "";
+    const firstParts = firstAndMiddle.split(/\s+/).filter(Boolean);
+    const firstName = firstParts[0] ?? "";
+    const middleFromFirst = firstParts.slice(1).join(" ");
+    const middleFromComma = commaParts.slice(2).join(" ");
+    const middleName = [middleFromFirst, middleFromComma].filter(Boolean).join(" ");
+    return buildFormatted(lastName, firstName, middleName);
+  }
+
+  const parts = raw.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) return parts[0];
+  const firstName = parts[0];
+  const lastName = parts[parts.length - 1];
+  const middleName = parts.slice(1, -1).join(" ");
+  return buildFormatted(lastName, firstName, middleName);
+};
+
+const parseNameParts = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return { firstName: "", middleName: "", lastName: "" };
+  }
+
+  const commaParts = trimmed.split(",").map((part: string) => part.trim()).filter(Boolean);
+  if (commaParts.length >= 2) {
+    const lastName = commaParts[0];
+    const firstAndMiddle = commaParts[1] ?? "";
+    const firstParts = firstAndMiddle.split(/\s+/).filter(Boolean);
+    const firstName = firstParts[0] ?? "";
+    const middleFromFirst = firstParts.slice(1).join(" ");
+    const middleFromComma = commaParts.slice(2).join(" ");
+    const middleName = [middleFromFirst, middleFromComma]
+      .filter(Boolean)
+      .join(" ")
+      .replace(/\.+$/g, "")
+      .trim();
+    return { firstName, middleName, lastName };
+  }
+
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) {
+    return { firstName: parts[0], middleName: "", lastName: "" };
+  }
+  return {
+    firstName: parts[0] ?? "",
+    middleName: parts.slice(1, -1).join(" "),
+    lastName: parts[parts.length - 1] ?? "",
+  };
+};
+
 export type CoordinatorStudent = {
   id: string;
   studentId: string;
   lrn?: string;
   name: string;
+  firstName?: string | null;
+  middleName?: string | null;
+  lastName?: string | null;
   grade: string;
   section: string;
   age: string;
   guardian: string;
   guardianContact: string;
+  guardianEmail?: string | null;
   address: string;
   relationship: string;
   englishPhonemic: string;
@@ -104,22 +191,34 @@ type CoordinatorAssignment = {
   gradeLevel: string | null;
 };
 
-const transformApiRecord = (record: any): CoordinatorStudent => ({
-  id: record.id ? String(record.id) : "",
-  studentId: record.studentIdentifier ?? record.id ?? "",
-  lrn: record.lrn ?? null,
-  name: record.fullName ?? record.name ?? "Unnamed Student",
-  grade: record.gradeLevel ?? record.grade ?? "",
-  section: record.section ?? "",
-  age: record.age ?? "",
-  guardian: record.guardianName ?? record.guardian ?? "",
-  guardianContact: record.guardianContact ?? "",
-  address: record.address ?? "",
-  relationship: record.relationship ?? "",
-  englishPhonemic: record.englishPhonemic ?? "",
-  filipinoPhonemic: record.filipinoPhonemic ?? "",
-  mathProficiency: record.mathProficiency ?? "",
-});
+const transformApiRecord = (record: any): CoordinatorStudent => {
+  const rawName = (record.fullName ?? record.name ?? "").toString();
+  const parsed = parseNameParts(rawName);
+  return {
+    id: record.id ? String(record.id) : "",
+    studentId: record.studentIdentifier ?? record.id ?? "",
+    lrn: record.lrn ?? null,
+    name: record.fullName ?? record.name ?? "Unnamed Student",
+    firstName: record.firstName ?? record.first_name ?? parsed.firstName ?? null,
+    middleName: record.middleName ?? record.middle_name ?? parsed.middleName ?? null,
+    lastName: record.lastName ?? record.last_name ?? parsed.lastName ?? null,
+    grade: record.gradeLevel ?? record.grade ?? "",
+    section: record.section ?? "",
+    age: record.age ?? "",
+    guardian: record.guardianName ?? record.guardian ?? "",
+    guardianFirstName: record.guardianFirstName ?? record.parentFirstName ?? record.parent_first_name ?? null,
+    guardianMiddleName: record.guardianMiddleName ?? record.parentMiddleName ?? record.parent_middle_name ?? null,
+    guardianLastName: record.guardianLastName ?? record.parentLastName ?? record.parent_last_name ?? null,
+    guardianSuffix: record.guardianSuffix ?? record.parentSuffix ?? record.parent_suffix ?? null,
+    guardianContact: record.guardianContact ?? "",
+    guardianEmail: record.guardianEmail ?? record.parentEmail ?? null,
+    address: record.address ?? "",
+    relationship: record.relationship ?? "",
+    englishPhonemic: record.englishPhonemic ?? "",
+    filipinoPhonemic: record.filipinoPhonemic ?? "",
+    mathProficiency: record.mathProficiency ?? "",
+  };
+};
 
 const ExportIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -421,6 +520,7 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
               guardianLastName: student.guardianLastName ?? null,
               guardianSuffix: student.guardianSuffix ?? null,
             guardianContact: student.guardianContact ?? null,
+            guardianEmail: student.guardianEmail ?? null,
             relationship: student.relationship ?? null,
             address: student.address ?? null,
             englishPhonemic: student.englishPhonemic ?? null,
@@ -497,6 +597,7 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
     guardianSuffix: "",
     relationship: "",
     guardianContact: "",
+    guardianEmail: "",
     address: "",
     englishPhonemic: "",
     filipinoPhonemic: "",
@@ -596,6 +697,7 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
     filteredStudents.map((student, idx) => ({
       ...student,
       no: idx + 1,
+      name: formatStudentDisplayName(student),
       hashedLrn: hashLrnForDisplay(student.lrn),
       phonemic: resolveStudentPhonemic(student, subject),
     }))
@@ -677,15 +779,15 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
     setShowDetailModal(false);
     setEditingStudent(student);
     
-    const nameParts = (student.name || "").split(" ");
-    const firstName = nameParts[0] || "";
-    const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : "";
-    const middleName = nameParts.length > 2 ? nameParts.slice(1, -1).join(" ") : "";
-    
-    const guardianParts = (student.guardian || "").split(" ");
-    const guardianFirstName = guardianParts[0] || "";
-    const guardianLastName = guardianParts.length > 1 ? guardianParts[guardianParts.length - 1] : "";
-    const guardianMiddleName = guardianParts.length > 2 ? guardianParts.slice(1, -1).join(" ") : "";
+    const parsedStudentName = parseNameParts(student.name || "");
+    const firstName = student.firstName ?? parsedStudentName.firstName ?? "";
+    const middleName = student.middleName ?? parsedStudentName.middleName ?? "";
+    const lastName = student.lastName ?? parsedStudentName.lastName ?? "";
+
+    const parsedGuardianName = parseNameParts(student.guardian || "");
+    const guardianFirstName = student.guardianFirstName ?? parsedGuardianName.firstName ?? "";
+    const guardianMiddleName = student.guardianMiddleName ?? parsedGuardianName.middleName ?? "";
+    const guardianLastName = student.guardianLastName ?? parsedGuardianName.lastName ?? "";
     
     reset({
       studentId: student.studentId || "",
@@ -703,6 +805,7 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
       guardianSuffix: "",
       relationship: student.relationship || "",
       guardianContact: student.guardianContact || "",
+      guardianEmail: student.guardianEmail || "",
       address: student.address || "",
       englishPhonemic: student.englishPhonemic || "",
       filipinoPhonemic: student.filipinoPhonemic || "",

@@ -4,6 +4,7 @@ import TeacherHeader from "@/components/Teacher/Header";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import { FaTimes } from "react-icons/fa";
+import { getStoredUserProfile } from "@/lib/utils/user-profile";
 import {
   useCallback,
   useEffect,
@@ -87,6 +88,9 @@ export default function TeacherStudents({ subjectSlug }: TeacherStudentsProps = 
     math: [],
   });
 
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const [activeTab, setActiveTab] = useState<string>(TAB_OPTIONS[0]);
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -123,6 +127,59 @@ export default function TeacherStudents({ subjectSlug }: TeacherStudentsProps = 
     },
     [router, subject]
   );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadStudents() {
+      setIsLoading(true);
+      setLoadError(null);
+      try {
+        const profile = getStoredUserProfile();
+        const userId = profile?.userId;
+
+        if (!userId) {
+          throw new Error("Missing user information. Please log in again.");
+        }
+
+        const response = await fetch(
+          `/api/teacher/students?userId=${encodeURIComponent(String(userId))}&subject=${subject}`,
+          { cache: "no-store" },
+        );
+
+        const payload: { success?: boolean; students?: any[]; error?: string } | null = await response
+          .json()
+          .catch(() => null);
+
+        if (cancelled) return;
+
+        if (!response.ok || !payload?.success || !Array.isArray(payload.students)) {
+          const message = payload?.error ?? "Unable to load students.";
+          throw new Error(message);
+        }
+
+        setSubjectStudents((prev) => ({
+          ...prev,
+          [subject]: payload.students ?? [],
+        }));
+      } catch (error) {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : "Failed to load students.";
+        setLoadError(message);
+        setSubjectStudents((prev) => ({ ...prev, [subject]: [] }));
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    loadStudents();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [subject]);
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
@@ -192,6 +249,13 @@ export default function TeacherStudents({ subjectSlug }: TeacherStudentsProps = 
                   </div>
                 </div>
               </div>
+
+              {isLoading && (
+                <div className="mt-3 text-sm text-gray-600">Loading students…</div>
+              )}
+              {loadError && (
+                <div className="mt-3 text-sm text-red-600">{loadError}</div>
+              )}
 
               <div
                 className="

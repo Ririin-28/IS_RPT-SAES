@@ -261,6 +261,10 @@ export function studentRowToDto(row: StudentRecordRow): StudentRecordDto {
       fullName: null,
       ...(row.parent_suffix ? { suffix: row.parent_suffix } as any : {}),
     }, row.guardian_name ?? null),
+    guardianFirstName: row.parent_first_name ?? null,
+    guardianMiddleName: row.parent_middle_name ?? null,
+    guardianLastName: row.parent_last_name ?? null,
+    guardianSuffix: row.parent_suffix ?? null,
     guardianContact: row.parent_phone_number ?? row.guardian_contact ?? null,
     guardianEmail: row.parent_email ?? null,
     relationship: row.relationship ?? null,
@@ -379,9 +383,25 @@ export async function insertStudents(
   const assessmentColumns = await safeGetColumns("student_subject_assessment");
   const subjectColumns = await safeGetColumns("subject");
   const parentColumns = await safeGetColumns("parent");
+  const parentStudentColumns = await safeGetColumns("parent_student");
   const userColumns = await safeGetColumns("users");
   const roleColumns = await safeGetColumns("role");
-  const parentStudentColumns = await safeGetColumns("parent_student");
+
+  const effectiveUserColumns = userColumns.size
+    ? userColumns
+    : new Set([
+        "user_code",
+        "email",
+        "phone_number",
+        "username",
+        "first_name",
+        "middle_name",
+        "last_name",
+        "password",
+        "role_id",
+        "created_at",
+        "updated_at",
+      ]);
 
   const availableStudentCols = [
     studentColumns.has("student_id") && "student_id",
@@ -420,7 +440,7 @@ export async function insertStudents(
     await connection.beginTransaction();
     try {
       const resolveParentRoleId = async (): Promise<number | null> => {
-        if (!userColumns.has("role_id")) {
+        if (!effectiveUserColumns.has("role_id")) {
           return null;
         }
 
@@ -480,14 +500,59 @@ export async function insertStudents(
 
         if (hasParentData && parentColumns.size) {
           const parentIdentifier = parentColumns.has("parent_id") ? await generateParentId(connection, requestTime) : null;
+          const normalizedParentIdentifier = normalizeParentIdentifier(parentIdentifier);
           const parentUsername = parentEmail?.trim()
             || parentPhone?.trim()
-            || parentIdentifier
+            || normalizedParentIdentifier
             || (student.lrn ?? "").trim()
             || null;
           const parentPassword = (student.lrn ?? "").trim() || null;
 
-          if (userColumns.size) {
+          // Insert parent first so we own the authoritative identifier.
+          if (parentColumns.has("parent_id")) {
+            if (normalizedParentIdentifier) {
+              const [existingParent] = await connection.query<RowDataPacket[]>(
+                "SELECT parent_id, user_id FROM parent WHERE parent_id = ? LIMIT 1",
+                [normalizedParentIdentifier],
+              );
+              if (existingParent.length > 0) {
+                parentId = normalizedParentIdentifier;
+                if (Number.isFinite(Number(existingParent[0].user_id))) {
+                  parentUserId = Number(existingParent[0].user_id);
+                }
+              }
+            }
+
+            if (!parentId) {
+              const parentCols: string[] = [];
+              const parentVals: Array<string | number | null> = [];
+              const pushParent = (column: string, value: any) => {
+                parentCols.push(column);
+                parentVals.push(value);
+              };
+
+              if (normalizedParentIdentifier) pushParent("parent_id", normalizedParentIdentifier);
+              if (parentColumns.has("first_name")) pushParent("first_name", parentFirstName ?? null);
+              if (parentColumns.has("middle_name")) pushParent("middle_name", parentMiddleName ?? null);
+              if (parentColumns.has("last_name")) pushParent("last_name", parentLastName ?? null);
+              if (parentColumns.has("suffix")) pushParent("suffix", parentSuffix ?? null);
+              if (parentColumns.has("phone_number")) pushParent("phone_number", parentPhone ?? null);
+              if (parentColumns.has("email")) pushParent("email", parentEmail ?? null);
+              if (parentColumns.has("address")) pushParent("address", parentAddress ?? null);
+              if (parentColumns.has("relationship")) pushParent("relationship", parentRelationship ?? null);
+              if (parentColumns.has("created_at")) pushParent("created_at", requestTime as any);
+              if (parentColumns.has("updated_at")) pushParent("updated_at", requestTime as any);
+
+              if (parentCols.length) {
+                const parentSql = `INSERT INTO parent (${parentCols.map((c) => `\`${c}\``).join(", ")}) VALUES (${parentCols.map(() => "?").join(", ")})`;
+                const [parentResult] = await connection.query<ResultSetHeader>(parentSql, parentVals);
+                const insertIdCandidate = normalizeParentIdentifier((parentResult as any)?.insertId ?? null);
+                parentId = normalizedParentIdentifier ?? insertIdCandidate;
+              }
+            }
+          }
+
+          if (effectiveUserColumns.size) {
             const userInsertColumns: string[] = [];
             const userInsertValues: Array<string | number | null> = [];
             const pushUser = (column: string, value: any) => {
@@ -495,24 +560,70 @@ export async function insertStudents(
               userInsertValues.push(value);
             };
 
-            if (userColumns.has("first_name")) pushUser("first_name", parentFirstName ?? null);
-            if (userColumns.has("middle_name")) pushUser("middle_name", parentMiddleName ?? null);
-            if (userColumns.has("last_name")) pushUser("last_name", parentLastName ?? null);
-            if (userColumns.has("suffix")) pushUser("suffix", parentSuffix ?? null);
-            if (userColumns.has("name")) pushUser("name", parentName || [parentFirstName, parentMiddleName, parentLastName].filter(Boolean).join(" "));
-            if (userColumns.has("email")) pushUser("email", parentEmail ?? null);
-            if (userColumns.has("username")) pushUser("username", parentUsername);
-            if (userColumns.has("contact_number")) pushUser("contact_number", parentPhone ?? null);
-            if (userColumns.has("phone_number")) pushUser("phone_number", parentPhone ?? null);
-            if (userColumns.has("role")) pushUser("role", "parent");
-            if (userColumns.has("role_id") && parentRoleId !== null) pushUser("role_id", parentRoleId);
-            if (userColumns.has("user_code") && parentIdentifier) pushUser("user_code", parentIdentifier);
-            if (userColumns.has("password")) pushUser("password", parentPassword);
-            if (userColumns.has("status")) pushUser("status", "Active");
-            if (userColumns.has("created_at")) pushUser("created_at", requestTime as any);
-            if (userColumns.has("updated_at")) pushUser("updated_at", requestTime as any);
+            if (!parentUserId && normalizedParentIdentifier && effectiveUserColumns.has("user_code")) {
+              const [existingUserRows] = await connection.query<RowDataPacket[]>(
+                "SELECT user_id FROM users WHERE user_code = ? LIMIT 1",
+                [normalizedParentIdentifier],
+              );
+              const existingUserId = Number(existingUserRows?.[0]?.user_id);
+              if (Number.isFinite(existingUserId)) {
+                parentUserId = existingUserId;
+              }
+            }
 
-            if (userInsertColumns.length) {
+            if (!parentUserId && parentEmail && effectiveUserColumns.has("email")) {
+              const [existingUserRows] = await connection.query<RowDataPacket[]>(
+                "SELECT user_id FROM users WHERE email = ? LIMIT 1",
+                [parentEmail],
+              );
+              const existingUserId = Number(existingUserRows?.[0]?.user_id);
+              if (Number.isFinite(existingUserId)) {
+                parentUserId = existingUserId;
+              }
+            }
+
+            if (!parentUserId && parentPhone && effectiveUserColumns.has("phone_number")) {
+              const [existingUserRows] = await connection.query<RowDataPacket[]>(
+                "SELECT user_id FROM users WHERE phone_number = ? LIMIT 1",
+                [parentPhone],
+              );
+              const existingUserId = Number(existingUserRows?.[0]?.user_id);
+              if (Number.isFinite(existingUserId)) {
+                parentUserId = existingUserId;
+              }
+            }
+
+            if (!parentUserId && parentUsername && effectiveUserColumns.has("username")) {
+              const [existingUserRows] = await connection.query<RowDataPacket[]>(
+                "SELECT user_id FROM users WHERE username = ? LIMIT 1",
+                [parentUsername],
+              );
+              const existingUserId = Number(existingUserRows?.[0]?.user_id);
+              if (Number.isFinite(existingUserId)) {
+                parentUserId = existingUserId;
+              }
+            }
+
+            if (effectiveUserColumns.has("first_name")) pushUser("first_name", parentFirstName ?? null);
+            if (effectiveUserColumns.has("middle_name")) pushUser("middle_name", parentMiddleName ?? null);
+            if (effectiveUserColumns.has("last_name")) pushUser("last_name", parentLastName ?? null);
+            if (effectiveUserColumns.has("suffix")) pushUser("suffix", parentSuffix ?? null);
+            if (effectiveUserColumns.has("name")) pushUser("name", parentName || [parentFirstName, parentMiddleName, parentLastName].filter(Boolean).join(" "));
+            if (effectiveUserColumns.has("email")) pushUser("email", parentEmail ?? null);
+            if (effectiveUserColumns.has("username")) pushUser("username", parentUsername);
+            if (effectiveUserColumns.has("contact_number")) pushUser("contact_number", parentPhone ?? null);
+            if (effectiveUserColumns.has("phone_number")) pushUser("phone_number", parentPhone ?? null);
+            if (effectiveUserColumns.has("role")) pushUser("role", "parent");
+            if (effectiveUserColumns.has("role_id") && parentRoleId !== null) pushUser("role_id", parentRoleId);
+            if (effectiveUserColumns.has("user_code") && (parentId || normalizedParentIdentifier)) {
+              pushUser("user_code", parentId ?? normalizedParentIdentifier);
+            }
+            if (effectiveUserColumns.has("password")) pushUser("password", parentPassword);
+            if (effectiveUserColumns.has("status")) pushUser("status", "Active");
+            if (effectiveUserColumns.has("created_at")) pushUser("created_at", requestTime as any);
+            if (effectiveUserColumns.has("updated_at")) pushUser("updated_at", requestTime as any);
+
+            if (parentUserId === null && userInsertColumns.length) {
               const columnsSql = userInsertColumns.map((c) => `\`${c}\``).join(", ");
               const placeholders = userInsertColumns.map(() => "?").join(", ");
               const [userResult] = await connection.query<ResultSetHeader>(
@@ -524,44 +635,20 @@ export async function insertStudents(
                 throw new Error("Failed to create parent user record");
               }
               parentUserId = newUserId;
+              // Backfill parent.user_id after user is created
+              if (parentId && parentColumns.has("user_id")) {
+                await connection.query("UPDATE parent SET user_id = ? WHERE parent_id = ? LIMIT 1", [parentUserId, parentId]);
+              }
             }
           }
-
-          const parentCols: string[] = [];
-          const parentVals: Array<string | number | null> = [];
-          const pushParent = (column: string, value: any) => {
-            parentCols.push(column);
-            parentVals.push(value);
-          };
-
-          const numericParentIdentifier = parentIdentifier && /^\d+$/.test(parentIdentifier) ? parentIdentifier : null;
-          if (parentColumns.has("parent_id") && numericParentIdentifier) {
-            pushParent("parent_id", numericParentIdentifier);
+          // If parent.user_id still empty after reuse/insert, update once userId is known.
+          if (parentId && parentUserId !== null && parentColumns.has("user_id")) {
+            await connection.query("UPDATE parent SET user_id = ? WHERE parent_id = ? LIMIT 1", [parentUserId, parentId]);
           }
-          if (parentColumns.has("user_id") && parentUserId !== null) pushParent("user_id", parentUserId);
-          if (parentColumns.has("first_name")) pushParent("first_name", parentFirstName ?? null);
-          if (parentColumns.has("middle_name")) pushParent("middle_name", parentMiddleName ?? null);
-          if (parentColumns.has("last_name")) pushParent("last_name", parentLastName ?? null);
-          if (parentColumns.has("suffix")) pushParent("suffix", parentSuffix ?? null);
-          if (parentColumns.has("phone_number")) pushParent("phone_number", parentPhone ?? null);
-          if (parentColumns.has("email")) pushParent("email", parentEmail ?? null);
-          if (parentColumns.has("address")) pushParent("address", parentAddress ?? null);
-          if (parentColumns.has("relationship")) pushParent("relationship", parentRelationship ?? null);
-          if (parentColumns.has("created_at")) pushParent("created_at", requestTime as any);
-          if (parentColumns.has("updated_at")) pushParent("updated_at", requestTime as any);
 
-          if (parentCols.length) {
-            const parentSql = `INSERT INTO parent (${parentCols.map((c) => `\`${c}\``).join(", ")}) VALUES (${parentCols.map(() => "?").join(", ")})`;
-            const [parentResult] = await connection.query<ResultSetHeader>(parentSql, parentVals);
-
-            const insertIdCandidate = normalizeParentIdentifier((parentResult as any)?.insertId ?? null);
-            const formattedCandidate = normalizeParentIdentifier(parentIdentifier);
-
-            if (insertIdCandidate) {
-              parentId = insertIdCandidate;
-            } else {
-              parentId = formattedCandidate ?? null;
-            }
+          // Ensure parentId is populated for downstream relations.
+          if (!parentId) {
+            parentId = normalizedParentIdentifier ?? null;
           }
         }
 
@@ -668,6 +755,7 @@ export async function insertStudents(
             if (parentStudentColumns.has("parent_id")) pushRel("parent_id", linkedParentId);
             if (parentStudentColumns.has("student_id")) pushRel("student_id", studentId);
             if (parentStudentColumns.has("relationship")) pushRel("relationship", parentRelationship ?? null);
+            if (parentStudentColumns.has("address")) pushRel("address", parentAddress ?? null);
 
             if (relationCols.length) {
               const relSql = `INSERT INTO parent_student (${relationCols.map((c) => `\`${c}\``).join(", ")}) VALUES (${relationCols.map(() => "?").join(", ")})`;
@@ -735,51 +823,60 @@ export async function deleteStudents(userId: number, subject: StudentSubject, id
   }
 
   await ensureStudentSchema();
+  const studentColumns = await safeGetColumns(STUDENT_TABLE);
   const parentStudentColumns = await safeGetColumns("parent_student");
+  const parentColumns = await safeGetColumns("parent");
+
   const studentIds = ids;
   const placeholders = studentIds.map(() => "?").join(", ");
 
-  const [parentRows] = await query<RowDataPacket[]>(
-    `SELECT parent_id FROM \`${STUDENT_TABLE}\` WHERE student_id IN (${placeholders}) AND parent_id IS NOT NULL`,
-    studentIds,
-  );
-  const parentIds = Array.isArray(parentRows)
-    ? Array.from(
-        new Set(
-          parentRows
-            .map((row) => normalizeParentIdentifier(row.parent_id))
-            .filter((value): value is string => typeof value === "string" && value.length > 0),
-        ),
-      )
-    : [];
+  let parentIds: string[] = [];
+
+  if (studentColumns.has("parent_id")) {
+    const [parentRows] = await query<RowDataPacket[]>(
+      `SELECT parent_id FROM \`${STUDENT_TABLE}\` WHERE student_id IN (${placeholders}) AND parent_id IS NOT NULL`,
+      studentIds,
+    );
+    parentIds = Array.isArray(parentRows)
+      ? Array.from(
+          new Set(
+            parentRows
+              .map((row) => normalizeParentIdentifier(row.parent_id))
+              .filter((value): value is string => typeof value === "string" && value.length > 0),
+          ),
+        )
+      : [];
+  } else if (parentStudentColumns.has("parent_id")) {
+    const [parentRows] = await query<RowDataPacket[]>(
+      `SELECT parent_id FROM parent_student WHERE student_id IN (${placeholders}) AND parent_id IS NOT NULL`,
+      studentIds,
+    );
+    parentIds = Array.isArray(parentRows)
+      ? Array.from(
+          new Set(
+            parentRows
+              .map((row) => normalizeParentIdentifier(row.parent_id))
+              .filter((value): value is string => typeof value === "string" && value.length > 0),
+          ),
+        )
+      : [];
+  }
 
   await query(`DELETE FROM student_subject_assessment WHERE student_id IN (${placeholders})`, studentIds);
-  if (parentStudentColumns.size) {
+  if (parentStudentColumns.has("student_id")) {
     await query(`DELETE FROM parent_student WHERE student_id IN (${placeholders})`, studentIds);
   }
 
-  const [result] = await query(`DELETE FROM \`${STUDENT_TABLE}\` WHERE student_id IN (${placeholders})`, studentIds);
-  const affected = "affectedRows" in result ? Number((result as any).affectedRows) : 0;
+  const [deleteResult] = await query<ResultSetHeader>(`DELETE FROM \`${STUDENT_TABLE}\` WHERE student_id IN (${placeholders})`, studentIds);
+  const deletedCount = deleteResult.affectedRows ?? 0;
 
-  if (parentIds.length > 0) {
+  if (parentIds.length && parentColumns.has("parent_id")) {
     const parentPlaceholders = parentIds.map(() => "?").join(", ");
-    await query(
-      `DELETE FROM parent WHERE parent_id IN (${parentPlaceholders}) AND parent_id NOT IN (SELECT parent_id FROM \`${STUDENT_TABLE}\` WHERE parent_id IS NOT NULL)`,
-      parentIds,
-    );
+    await query(`DELETE FROM parent WHERE parent_id IN (${parentPlaceholders})`, parentIds);
   }
 
-  return affected;
+  return deletedCount;
 }
-
-export type StudentQueryOptions = {
-  subject: StudentSubject;
-  search?: string | null;
-  gradeLevel?: string | null;
-  section?: string | null;
-  page?: number;
-  pageSize?: number;
-};
 
 export async function fetchStudents({
   subject,
@@ -793,9 +890,16 @@ export async function fetchStudents({
   const studentColumns = await safeGetColumns(STUDENT_TABLE);
   const gradeColumns = await safeGetColumns("grade");
   const parentColumns = await safeGetColumns("parent");
+  const parentStudentColumns = await safeGetColumns("parent_student");
+  const userColumns = await safeGetColumns("users");
   const assessmentColumns = await safeGetColumns("student_subject_assessment");
   const subjectColumns = await safeGetColumns("subject");
   const phonemicLevelColumns = await safeGetColumns("phonemic_level");
+
+  const hasParentJoin = parentColumns.size > 0 && studentColumns.has("parent_id");
+  const canJoinParentStudent = parentStudentColumns.size > 0;
+  const canJoinParentUser = hasParentJoin && parentColumns.has("user_id") && userColumns.size > 0;
+  const canJoinGuardianUserViaCode = userColumns.has("user_code") && (hasParentJoin || canJoinParentStudent);
 
   const englishSubjectId = await resolveSubjectIdByName("English", subjectColumns);
   const filipinoSubjectId = await resolveSubjectIdByName("Filipino", subjectColumns);
@@ -823,29 +927,60 @@ export async function fetchStudents({
     selectParts.push("NULL AS grade_level");
   }
 
-  if (parentColumns.size) {
-    selectParts.push(
-      parentColumns.has("relationship") ? "p.relationship AS relationship" : "NULL AS relationship",
-      parentColumns.has("address") ? "p.address AS parent_address" : "NULL AS parent_address",
-      parentColumns.has("first_name") ? "p.first_name AS parent_first_name" : "NULL AS parent_first_name",
-      parentColumns.has("middle_name") ? "p.middle_name AS parent_middle_name" : "NULL AS parent_middle_name",
-      parentColumns.has("last_name") ? "p.last_name AS parent_last_name" : "NULL AS parent_last_name",
-      parentColumns.has("suffix") ? "p.suffix AS parent_suffix" : "NULL AS parent_suffix",
-      parentColumns.has("phone_number") ? "p.phone_number AS parent_phone_number" : "NULL AS parent_phone_number",
-      parentColumns.has("email") ? "p.email AS parent_email" : "NULL AS parent_email",
-    );
-  } else {
-    selectParts.push(
-      "NULL AS relationship",
-      "NULL AS parent_address",
-      "NULL AS parent_first_name",
-      "NULL AS parent_middle_name",
-      "NULL AS parent_last_name",
-      "NULL AS parent_suffix",
-      "NULL AS parent_phone_number",
-      "NULL AS parent_email",
-    );
-  }
+  selectParts.push(
+    canJoinParentStudent && parentStudentColumns.has("relationship")
+      ? "ps.relationship AS relationship"
+      : hasParentJoin && parentColumns.has("relationship")
+        ? "p.relationship AS relationship"
+        : "NULL AS relationship",
+    canJoinParentStudent && parentStudentColumns.has("address")
+      ? "ps.address AS parent_address"
+      : hasParentJoin && parentColumns.has("address")
+        ? "p.address AS parent_address"
+        : "NULL AS parent_address",
+    (() => {
+      const sources: string[] = [];
+      if (canJoinParentUser && userColumns.has("first_name")) sources.push("pu.first_name");
+      if (canJoinGuardianUserViaCode && userColumns.has("first_name")) sources.push("gu.first_name");
+      if (hasParentJoin && parentColumns.has("first_name")) sources.push("p.first_name");
+      return sources.length ? `COALESCE(${sources.join(", ")}) AS parent_first_name` : "NULL AS parent_first_name";
+    })(),
+    (() => {
+      const sources: string[] = [];
+      if (canJoinParentUser && userColumns.has("middle_name")) sources.push("pu.middle_name");
+      if (canJoinGuardianUserViaCode && userColumns.has("middle_name")) sources.push("gu.middle_name");
+      if (hasParentJoin && parentColumns.has("middle_name")) sources.push("p.middle_name");
+      return sources.length ? `COALESCE(${sources.join(", ")}) AS parent_middle_name` : "NULL AS parent_middle_name";
+    })(),
+    (() => {
+      const sources: string[] = [];
+      if (canJoinParentUser && userColumns.has("last_name")) sources.push("pu.last_name");
+      if (canJoinGuardianUserViaCode && userColumns.has("last_name")) sources.push("gu.last_name");
+      if (hasParentJoin && parentColumns.has("last_name")) sources.push("p.last_name");
+      return sources.length ? `COALESCE(${sources.join(", ")}) AS parent_last_name` : "NULL AS parent_last_name";
+    })(),
+    (() => {
+      const sources: string[] = [];
+      if (canJoinParentUser && userColumns.has("suffix")) sources.push("pu.suffix");
+      if (canJoinGuardianUserViaCode && userColumns.has("suffix")) sources.push("gu.suffix");
+      if (hasParentJoin && parentColumns.has("suffix")) sources.push("p.suffix");
+      return sources.length ? `COALESCE(${sources.join(", ")}) AS parent_suffix` : "NULL AS parent_suffix";
+    })(),
+    (() => {
+      const sources: string[] = [];
+      if (canJoinParentUser && userColumns.has("phone_number")) sources.push("pu.phone_number");
+      if (canJoinGuardianUserViaCode && userColumns.has("phone_number")) sources.push("gu.phone_number");
+      if (hasParentJoin && parentColumns.has("phone_number")) sources.push("p.phone_number");
+      return sources.length ? `COALESCE(${sources.join(", ")}) AS parent_phone_number` : "NULL AS parent_phone_number";
+    })(),
+    (() => {
+      const sources: string[] = [];
+      if (canJoinParentUser && userColumns.has("email")) sources.push("pu.email");
+      if (canJoinGuardianUserViaCode && userColumns.has("email")) sources.push("gu.email");
+      if (hasParentJoin && parentColumns.has("email")) sources.push("p.email");
+      return sources.length ? `COALESCE(${sources.join(", ")}) AS parent_email` : "NULL AS parent_email";
+    })(),
+  );
 
   const canUseAssessments = assessmentColumns.has("student_id")
     && assessmentColumns.has("subject_id")
@@ -891,8 +1026,18 @@ export async function fetchStudents({
   if (gradeColumns.size && studentColumns.has("grade_id")) {
     joins.push("LEFT JOIN grade g ON g.grade_id = s.grade_id");
   }
-  if (parentColumns.size && studentColumns.has("parent_id")) {
+  if (hasParentJoin) {
     joins.push("LEFT JOIN parent p ON p.parent_id = s.parent_id");
+  }
+  if (canJoinParentStudent) {
+    joins.push("LEFT JOIN parent_student ps ON ps.student_id = s.student_id");
+  }
+  if (canJoinGuardianUserViaCode) {
+    const guardianMatch = hasParentJoin ? "s.parent_id" : "ps.parent_id";
+    joins.push(`LEFT JOIN users gu ON gu.user_code = ${guardianMatch}`);
+  }
+  if (canJoinParentUser) {
+    joins.push("LEFT JOIN users pu ON pu.user_id = p.user_id");
   }
   if (canUseAssessments) {
     joins.push("LEFT JOIN student_subject_assessment ssa ON ssa.student_id = s.student_id");
@@ -922,7 +1067,7 @@ export async function fetchStudents({
     const wildcard = `%${search.trim()}%`;
     const searchFields: string[] = ["s.student_id", "s.lrn", "s.first_name", "s.last_name", "s.middle_name"];
 
-    if (parentColumns.size && studentColumns.has("parent_id")) {
+    if (hasParentJoin) {
       if (parentColumns.has("address")) searchFields.push("p.address");
       if (parentColumns.has("first_name")) searchFields.push("p.first_name");
       if (parentColumns.has("last_name")) searchFields.push("p.last_name");
@@ -1110,6 +1255,8 @@ export async function updateStudent(
   const phonemicLevelColumns = await safeGetColumns("phonemic_level");
   const subjectColumns = await safeGetColumns("subject");
   const parentColumns = await safeGetColumns("parent");
+  const parentStudentColumns = await safeGetColumns("parent_student");
+  const userColumns = await safeGetColumns("users");
 
   const englishSubjectId = await resolveSubjectIdByName("English", subjectColumns);
   const filipinoSubjectId = await resolveSubjectIdByName("Filipino", subjectColumns);
@@ -1158,7 +1305,7 @@ export async function updateStudent(
     await query(sql, [...params, id]);
   }
 
-  if (parentColumns.size) {
+  if (parentColumns.size && studentColumns.has("parent_id")) {
     const [existing] = await query<RowDataPacket[]>(`SELECT parent_id FROM \`${STUDENT_TABLE}\` WHERE student_id = ? LIMIT 1`, [id]);
     const parentId = existing.length > 0 ? normalizeParentIdentifier(existing[0].parent_id) : null;
     const hasParentData = [input.guardianName, input.guardianContact, input.guardianEmail, input.address, (input as any).guardianFirstName, (input as any).guardianLastName]
@@ -1196,11 +1343,88 @@ export async function updateStudent(
             const insertSql = `INSERT INTO parent (${parentCols.map((c) => `\`${c}\``).join(", ")}) VALUES (${parentCols.map(() => "?").join(", ")})`;
             const [result] = await query<ResultSetHeader>(insertSql, parentVals);
             const newParentId = normalizeParentIdentifier(parentIdentifier ?? (result as any)?.insertId);
-            if (studentColumns.has("parent_id") && newParentId) {
+            if (newParentId) {
               await query(`UPDATE \`${STUDENT_TABLE}\` SET parent_id = ? WHERE student_id = ? LIMIT 1`, [newParentId, id]);
             }
           }
         }
+    }
+  } else if (parentStudentColumns.size && parentStudentColumns.has("student_id")) {
+    const hasParentData = [
+      input.guardianName,
+      input.guardianContact,
+      input.guardianEmail,
+      input.address,
+      (input as any).guardianFirstName,
+      (input as any).guardianLastName,
+      input.relationship,
+    ].some((v) => typeof v === "string" && v.trim().length > 0);
+
+    if (hasParentData && parentStudentColumns.has("parent_id")) {
+      const [linkRows] = await query<RowDataPacket[]>(
+        "SELECT parent_id FROM parent_student WHERE student_id = ? LIMIT 1",
+        [id],
+      );
+      const linkedParentId = linkRows.length > 0 ? normalizeParentIdentifier(linkRows[0].parent_id) : null;
+
+      if (linkedParentId) {
+        const relationCols: string[] = [];
+        const relationVals: Array<string | number | null> = [];
+        if (parentStudentColumns.has("relationship") && Object.prototype.hasOwnProperty.call(input, "relationship")) {
+          relationCols.push("relationship = ?");
+          relationVals.push(input.relationship ?? null);
+        }
+        if (parentStudentColumns.has("address") && Object.prototype.hasOwnProperty.call(input, "address")) {
+          relationCols.push("address = ?");
+          relationVals.push(input.address ?? null);
+        }
+        if (relationCols.length) {
+          await query(
+            `UPDATE parent_student SET ${relationCols.join(", ")} WHERE parent_id = ? AND student_id = ? LIMIT 1`,
+            [...relationVals, linkedParentId, id],
+          );
+        }
+
+        if (parentColumns.has("user_id") && userColumns.size) {
+          const [[parentRow]] = await query<RowDataPacket[]>(
+            "SELECT user_id FROM parent WHERE parent_id = ? LIMIT 1",
+            [linkedParentId],
+          );
+          const parentUserId = Number(parentRow?.user_id);
+          if (Number.isFinite(parentUserId)) {
+            const parentName = (input.guardianName ?? "").trim();
+            const firstName = (input as any).guardianFirstName ?? parentName.split(" ")[0] ?? null;
+            const lastName = (input as any).guardianLastName ?? (parentName.split(" ").length > 1 ? parentName.split(" ").slice(-1).join(" ") : null);
+            const middleName = (input as any).guardianMiddleName ?? null;
+
+            const userCols: string[] = [];
+            const userVals: Array<string | number | null> = [];
+            const pushUser = (col: string, value: any) => { userCols.push(`${col} = ?`); userVals.push(value); };
+            if (userColumns.has("first_name") && Object.prototype.hasOwnProperty.call(input, "guardianFirstName")) {
+              pushUser("first_name", firstName ?? null);
+            }
+            if (userColumns.has("middle_name") && Object.prototype.hasOwnProperty.call(input, "guardianMiddleName")) {
+              pushUser("middle_name", middleName ?? null);
+            }
+            if (userColumns.has("last_name") && Object.prototype.hasOwnProperty.call(input, "guardianLastName")) {
+              pushUser("last_name", lastName ?? null);
+            }
+            if (userColumns.has("phone_number") && Object.prototype.hasOwnProperty.call(input, "guardianContact")) {
+              pushUser("phone_number", input.guardianContact ?? null);
+            }
+            if (userColumns.has("email") && Object.prototype.hasOwnProperty.call(input, "guardianEmail")) {
+              pushUser("email", input.guardianEmail ?? null);
+            }
+
+            if (userCols.length) {
+              await query(`UPDATE users SET ${userCols.join(", ")} WHERE user_id = ? LIMIT 1`, [
+                ...userVals,
+                parentUserId,
+              ]);
+            }
+          }
+        }
+      }
     }
   }
 
@@ -1229,13 +1453,23 @@ export async function updateStudent(
       subjectId = await resolveSubjectIdByName(subject, subjectColumns);
     }
     if (subjectId) {
-      await query("DELETE FROM student_subject_assessment WHERE student_id = ?", [id]);
-      await query(
-        `INSERT INTO student_subject_assessment (student_id, subject_id, phonemic_id, assessed_at)
-         VALUES (?, ?, NULL, ?)
-         ON DUPLICATE KEY UPDATE assessed_at = VALUES(assessed_at)`,
-        [id, subjectId, new Date()]
-      );
+      const subjectPhonemic = subject === "English"
+        ? input.englishPhonemic
+        : subject === "Filipino"
+          ? input.filipinoPhonemic
+          : subject === "Math"
+            ? input.mathProficiency
+            : null;
+
+      const resolvedPhonemicId = resolvePhonemicLevelId(subjectPhonemic, subjectId, phonemicLookup);
+      if (resolvedPhonemicId) {
+        await query(
+          `INSERT INTO student_subject_assessment (student_id, subject_id, phonemic_id, assessed_at)
+           VALUES (?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE phonemic_id = VALUES(phonemic_id), assessed_at = VALUES(assessed_at)`,
+          [id, subjectId, resolvedPhonemicId, new Date()]
+        );
+      }
     }
   }
 

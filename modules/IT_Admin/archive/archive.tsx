@@ -133,16 +133,17 @@ function formatTimestamp(value: string | null | undefined): string {
 }
 
 function buildFullName(record: any): string | null {
+  const first = toStringOrNull(record.firstName ?? record.first_name);
+  const middle = toStringOrNull(record.middleName ?? record.middle_name);
+  const last = toStringOrNull(record.lastName ?? record.last_name);
+  const combined = `${first ?? ""} ${middle ?? ""} ${last ?? ""}`.replace(/\s+/g, " ").trim();
+  if (combined.length > 0) {
+    return combined;
+  }
+
   const nameCandidate = toStringOrNull(record.name ?? record.fullName ?? record.full_name);
   if (nameCandidate) {
     return nameCandidate;
-  }
-
-  const first = toStringOrNull(record.firstName ?? record.first_name);
-  const last = toStringOrNull(record.lastName ?? record.last_name);
-  const combined = `${first ?? ""} ${last ?? ""}`.trim();
-  if (combined.length > 0) {
-    return combined;
   }
 
   const username = toStringOrNull(record.username);
@@ -172,7 +173,13 @@ function normalizeArchiveRecord(record: any): ArchiveEntry {
   const archivedDisplay = formatTimestamp(archivedIso);
   const email = toStringOrNull(record.email ?? record.user_email ?? record.contactEmail);
   const contactNumber = toStringOrNull(
-    record.contactNumber ?? record.contact_number ?? record.contactNo ?? record.phone ?? record.mobile
+    record.contactNumber ??
+      record.contact_number ??
+      record.contactNo ??
+      record.phoneNumber ??
+      record.phone_number ??
+      record.phone ??
+      record.mobile
   );
   const grade = record.grade != null ? toStringOrNull(record.grade) : null;
   const section = record.section != null ? toStringOrNull(record.section) : null;
@@ -181,16 +188,25 @@ function normalizeArchiveRecord(record: any): ArchiveEntry {
     ...record,
     archiveId,
     userId,
+    principalId: toStringOrNull(record.principalId ?? record.user_code ?? record.userCode) ?? undefined,
+    masterTeacherId: toStringOrNull(record.masterTeacherId ?? record.master_teacher_id ?? record.user_code ?? record.userCode) ?? undefined,
+    teacherId: toStringOrNull(record.teacherId ?? record.teacher_id ?? record.user_code ?? record.userCode) ?? undefined,
     roleKey,
     roleLabel,
     name: buildFullName(record),
+    middleName: toStringOrNull(record.middleName ?? record.middle_name) ?? undefined,
     email: email ?? undefined,
     reason: toStringOrNull(record.reason) ?? undefined,
     archivedDate: archivedIso,
     archivedDateDisplay: archivedDisplay,
+    coordinatorHandledGrades: Array.isArray(record.coordinatorHandledGrades) ? record.coordinatorHandledGrades : undefined,
+    coordinatorHandledSubjects: Array.isArray(record.coordinatorHandledSubjects) ? record.coordinatorHandledSubjects : undefined,
+    remedialHandledSubjects: Array.isArray(record.remedialHandledSubjects) ? record.remedialHandledSubjects : undefined,
+    handledGrades: Array.isArray(record.handledGrades) ? record.handledGrades : undefined,
     grade,
     section,
     contactNumber: contactNumber ?? null,
+    phoneNumber: toStringOrNull(record.phoneNumber ?? record.phone_number ?? record.contact_number) ?? undefined,
   };
 }
 
@@ -345,7 +361,12 @@ export default function ITAdminArchive() {
                 )}
 
                 {accountType === "Principal" && (
-                  <PrincipalTab principals={accounts} setPrincipals={setAccounts} searchTerm={searchTerm} />
+                  <PrincipalTab
+                    principals={accounts}
+                    setPrincipals={setAccounts}
+                    searchTerm={searchTerm}
+                    onEntriesRemoved={handleArchiveRemoval}
+                  />
                 )}
 
                 {accountType === "Master Teachers" && (
@@ -355,6 +376,7 @@ export default function ITAdminArchive() {
                     searchTerm={searchTerm}
                     gradeFilter={parseGradeFilter(activeTab)}
                     gradeLabel={activeTab}
+                    onEntriesRemoved={handleArchiveRemoval}
                   />
                 )}
                 
@@ -365,6 +387,7 @@ export default function ITAdminArchive() {
                     searchTerm={searchTerm}
                     gradeFilter={parseGradeFilter(activeTab)}
                     gradeLabel={activeTab}
+                    onEntriesRemoved={handleArchiveRemoval}
                   />
                 )}
 

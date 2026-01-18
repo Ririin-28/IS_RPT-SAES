@@ -30,7 +30,10 @@ export default function PrincipalDetailsModal({ show, onClose, principal }: Prin
         <div className="space-y-4">
           {/* 1st Row: Principal ID and Role */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <ModalInfoItem label="Principal ID" value={principal.userId || principal.user_id || principal.principalId || "—"} />
+            <ModalInfoItem
+              label="Principal ID"
+              value={principal.principalId || principal.user_code || principal.adminId || principal.userId || principal.user_id || "—"}
+            />
             <ModalInfoItem label="Role" value={principal.roleLabel || principal.role || "Principal"} />
           </div>
           
@@ -58,7 +61,6 @@ export default function PrincipalDetailsModal({ show, onClose, principal }: Prin
       <ModalSection title="Archive Information">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <ModalInfoItem label="Archived Date" value={principal.archivedDateDisplay || "—"} />
-          <ModalInfoItem label="Reason" value={principal.reason || "—"} />
         </div>
       </ModalSection>
     </BaseModal>
