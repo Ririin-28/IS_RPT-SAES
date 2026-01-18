@@ -7,6 +7,7 @@ import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
 import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
+import AccountRestoredModal, { type RestoredAccountInfo } from "@/components/Common/Modals/AccountRestoredModal";
 import { useArchiveRestoreDelete } from "../Common/useArchiveRestoreDelete";
 import { ensureArchiveRowKey } from "../Common/archiveRowKey";
 import { exportArchiveRows } from "../utils/export-columns";
@@ -24,13 +25,214 @@ interface PrincipalTabProps {
   principals: any[];
   setPrincipals: Dispatch<SetStateAction<any[]>>;
   searchTerm: string;
+  onEntriesRemoved?: (archiveIds: number[]) => void;
 }
 
-export default function PrincipalTab({ principals, setPrincipals, searchTerm }: PrincipalTabProps) {
+export default function PrincipalTab({ principals, setPrincipals, searchTerm, onEntriesRemoved }: PrincipalTabProps) {
   const [selectedPrincipal, setSelectedPrincipal] = useState<any>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [restoredAccounts, setRestoredAccounts] = useState<RestoredAccountInfo[]>([]);
+  const principalsList = Array.isArray(principals) ? principals : [];
 
-  const keySelector = (item: any) => ensureArchiveRowKey(item);
+  const keySelector = useCallback((item: any) => {
+    if (!item) {
+      return undefined;
+    }
+    if (item.archiveId != null) {
+      return String(item.archiveId);
+    }
+    if (item.archive_id != null) {
+      return String(item.archive_id);
+    }
+    return ensureArchiveRowKey(item);
+  }, []);
+
+  const resolveRecordsByKeys = useCallback(
+    (keys: string[]) => {
+      if (!keys.length) {
+        return [];
+      }
+      const keySet = new Set(keys.map(String));
+      return principalsList.filter((item) => {
+        const key = keySelector(item);
+        return key ? keySet.has(String(key)) : false;
+      });
+    },
+    [principalsList, keySelector],
+  );
+
+  const handleRestoreAction = useCallback(
+    async (selectedKeys: string[], resetSelection: () => void) => {
+      const selectedRecords = resolveRecordsByKeys(selectedKeys);
+      const archiveIds = Array.from(
+        new Set(
+          selectedRecords
+            .map((record) => {
+              const value = record?.archiveId ?? record?.archive_id;
+              const numeric = Number(value);
+              return Number.isInteger(numeric) && numeric > 0 ? numeric : null;
+            })
+            .filter((value: number | null): value is number => value !== null),
+        ),
+      );
+
+      if (archiveIds.length === 0) {
+        if (selectedRecords.length > 0 && typeof window !== "undefined") {
+          window.alert("Selected archive entries are missing identifiers. Please refresh and try again.");
+        }
+        resetSelection();
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/it_admin/archive/restore", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ archiveIds }),
+        });
+
+        const data: any = await response.json();
+
+        if (!response.ok) {
+          const message = typeof data?.error === "string" && data.error.trim().length > 0
+            ? data.error
+            : "Failed to restore archived accounts.";
+          throw new Error(message);
+        }
+
+        const restoredEntries: Array<{
+          archiveId: number;
+          userId: number;
+          name?: string;
+          email?: string;
+          temporaryPassword?: string;
+        }> = Array.isArray(data?.restored) ? data.restored : [];
+
+        const restoredArchiveIds = restoredEntries
+          .map((entry) => Number(entry.archiveId))
+          .filter((value) => Number.isInteger(value) && value > 0);
+
+        if (restoredArchiveIds.length > 0) {
+          const removedSet = new Set(restoredArchiveIds);
+          setPrincipals((prev) =>
+            prev.filter((entry: any) => {
+              const value = entry?.archiveId ?? entry?.archive_id;
+              return !(typeof value === "number" && removedSet.has(value));
+            }),
+          );
+          onEntriesRemoved?.(restoredArchiveIds);
+        }
+
+        if (restoredEntries.length > 0) {
+          setRestoredAccounts(
+            restoredEntries.map((entry) => ({
+              name: entry.name || entry.email || `User ${entry.userId}`,
+              email: entry.email ?? "",
+              temporaryPassword: entry.temporaryPassword ?? "",
+            })),
+          );
+        }
+
+        if (Array.isArray(data?.errors) && data.errors.length > 0) {
+          console.warn("Some archive entries failed to restore:", data.errors);
+          if (restoredEntries.length === 0 && typeof window !== "undefined") {
+            const errorLines = data.errors
+              .map((err: any) => `#${err?.archiveId ?? "?"}: ${err?.message ?? "Unable to restore."}`)
+              .join("\n");
+            window.alert(`Unable to restore the selected accounts.\n\n${errorLines}`);
+          }
+        }
+
+        if (restoredEntries.length > 0) {
+          resetSelection();
+        }
+      } catch (error) {
+        console.error("Failed to restore archived Principal accounts", error);
+        if (typeof window !== "undefined") {
+          const message = error instanceof Error ? error.message : "Failed to restore archived accounts.";
+          window.alert(message);
+        }
+      }
+    },
+    [resolveRecordsByKeys, setPrincipals, onEntriesRemoved],
+  );
+
+  const handleDeleteAction = useCallback(
+    async (selectedKeys: string[], resetSelection: () => void) => {
+      const selectedRecords = resolveRecordsByKeys(selectedKeys);
+      const archiveIds = Array.from(
+        new Set(
+          selectedRecords
+            .map((record) => {
+              const value = record?.archiveId ?? record?.archive_id;
+              const numeric = Number(value);
+              return Number.isInteger(numeric) && numeric > 0 ? numeric : null;
+            })
+            .filter((value: number | null): value is number => value !== null),
+        ),
+      );
+
+      if (archiveIds.length === 0) {
+        if (selectedRecords.length > 0 && typeof window !== "undefined") {
+          window.alert("Selected archive entries are missing identifiers. Please refresh and try again.");
+        }
+        resetSelection();
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/it_admin/archive/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ archiveIds }),
+        });
+
+        const data: any = await response.json();
+
+        if (!response.ok) {
+          const message = typeof data?.error === "string" && data.error.trim().length > 0
+            ? data.error
+            : "Failed to delete archived accounts.";
+          throw new Error(message);
+        }
+
+        const deletedArchiveIds: number[] = Array.isArray(data?.deletedArchiveIds)
+          ? data.deletedArchiveIds
+              .map((value: unknown) => {
+                const numeric = Number(value);
+                return Number.isInteger(numeric) && numeric > 0 ? numeric : null;
+              })
+              .filter((value: number | null): value is number => value !== null)
+          : [];
+
+        if (deletedArchiveIds.length > 0) {
+          const removedSet = new Set(deletedArchiveIds);
+          setPrincipals((prev) =>
+            prev.filter((entry: any) => {
+              const value = entry?.archiveId ?? entry?.archive_id;
+              return !(typeof value === "number" && removedSet.has(value));
+            }),
+          );
+          onEntriesRemoved?.(deletedArchiveIds);
+        }
+
+        if (deletedArchiveIds.length > 0 && typeof window !== "undefined") {
+          window.alert(
+            `Deleted ${deletedArchiveIds.length} archived account${deletedArchiveIds.length === 1 ? "" : "s"}.`,
+          );
+        }
+
+        resetSelection();
+      } catch (error) {
+        console.error("Failed to delete archived Principal accounts", error);
+        if (typeof window !== "undefined") {
+          const message = error instanceof Error ? error.message : "Failed to delete archived accounts.";
+          window.alert(message);
+        }
+      }
+    },
+    [resolveRecordsByKeys, setPrincipals, onEntriesRemoved],
+  );
 
   const {
     action,
@@ -48,12 +250,23 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
     setDeleteModalOpen,
     confirmRestore,
     confirmDelete,
-  } = useArchiveRestoreDelete(setPrincipals, { keySelector });
+  } = useArchiveRestoreDelete(setPrincipals, {
+    keySelector,
+    onRestore: handleRestoreAction,
+    onDelete: handleDeleteAction,
+  });
 
-  const filteredPrincipals = principals.filter((principal) => {
+  const filteredPrincipals = principalsList.filter((principal) => {
     const term = searchTerm.trim().toLowerCase();
     if (term === "") return true;
-    const principalId = String(principal?.userId ?? principal?.user_id ?? principal?.principalId ?? "");
+    const principalId = String(
+      principal?.principalId ??
+      principal?.user_code ??
+      principal?.adminId ??
+      principal?.userId ??
+      principal?.user_id ??
+      "",
+    );
     return (
       principal?.name?.toLowerCase().includes(term) ||
       principalId.toLowerCase().includes(term)
@@ -72,7 +285,7 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
 
   const tableData = filteredPrincipals.map((principal, idx) => ({
     ...principal,
-    id: ensureArchiveRowKey(principal),
+    id: keySelector(principal) ?? ensureArchiveRowKey(principal),
     no: idx + 1,
   }));
 
@@ -200,7 +413,7 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
       <TableList
         columns={[
           { key: "no", title: "No#" },
-          { key: "principalId", title: "Principal ID", render: (row: any) => row.userId ?? row.user_id ?? row.principalId ?? "—" },
+          { key: "principalId", title: "Principal ID", render: (row: any) => row.principalId ?? row.user_code ?? row.adminId ?? row.userId ?? row.user_id ?? "—" },
           { key: "name", title: "Full Name" },
           {
             key: "archivedDate",
@@ -240,6 +453,13 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
         show={showDetailsModal}
         onClose={handleCloseDetails}
         principal={selectedPrincipal}
+      />
+
+      <AccountRestoredModal
+        show={restoredAccounts.length > 0}
+        onClose={() => setRestoredAccounts([])}
+        accounts={restoredAccounts}
+        roleLabel="Principal"
       />
     </div>
   );

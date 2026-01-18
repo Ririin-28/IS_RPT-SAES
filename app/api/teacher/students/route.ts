@@ -9,13 +9,9 @@ const SUBJECT_LABELS: Record<string, string> = {
   filipino: "Filipino",
   math: "Math",
   mathematics: "Math",
-};
+} as const;
 
-const sanitize = (value: unknown): string | null => {
-  if (value === null || value === undefined) return null;
-  const text = String(value).trim();
-  return text.length ? text : null;
-};
+type SupportedSubject = "English" | "Filipino" | "Math";
 
 type RawStudentRow = RowDataPacket & {
   student_id: string | null;
@@ -26,6 +22,10 @@ type RawStudentRow = RowDataPacket & {
   guardian: string | null;
   guardian_contact: string | null;
   guardian_email: string | null;
+  parent_first_name: string | null;
+  parent_middle_name: string | null;
+  parent_last_name: string | null;
+  parent_suffix: string | null;
   relationship: string | null;
   address: string | null;
   first_name: string | null;
@@ -36,7 +36,13 @@ type RawStudentRow = RowDataPacket & {
   subject_phonemic_name: string | null;
 };
 
-const normalizeStudentRow = (row: RawStudentRow, subject: string) => {
+const sanitize = (value: unknown): string | null => {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return text.length ? text : null;
+};
+
+const normalizeStudentRow = (row: RawStudentRow, subject: SupportedSubject) => {
   const firstName = sanitize(row.first_name);
   const middleName = sanitize(row.middle_name);
   const lastName = sanitize(row.last_name);
@@ -60,9 +66,16 @@ const normalizeStudentRow = (row: RawStudentRow, subject: string) => {
     english: subject === "English" ? valueText : null,
     filipino: subject === "Filipino" ? valueText : null,
     math: subject === "Math" ? valueText : null,
+    englishPhonemic: subject === "English" ? valueText : null,
+    filipinoPhonemic: subject === "Filipino" ? valueText : null,
+    mathProficiency: subject === "Math" ? valueText : null,
     guardian: sanitize(row.guardian),
     guardianContact: sanitize(row.guardian_contact),
     guardianEmail: sanitize(row.guardian_email),
+    parentFirstName: sanitize(row.parent_first_name),
+    parentMiddleName: sanitize(row.parent_middle_name),
+    parentLastName: sanitize(row.parent_last_name),
+    parentSuffix: sanitize(row.parent_suffix),
     relationship: sanitize(row.relationship),
     address: sanitize(row.address),
     firstName,
@@ -100,15 +113,16 @@ export async function GET(request: NextRequest) {
     );
 
     let gradeIds: number[] = [];
-    let scopeLabel: "teacher" | "master teacher" = "teacher";
+    let allowedSubjectIds: Set<number> = new Set();
 
     if (teacherRow?.teacher_id) {
       const [gradeRows] = await query<RowDataPacket[]>(
         "SELECT grade_id FROM teacher_handled WHERE teacher_id = ?",
         [teacherRow.teacher_id],
       );
-      gradeIds = gradeRows.map((row) => row.grade_id as number).filter((id) => Number.isFinite(id));
+      gradeIds = gradeRows.map((row) => Number(row.grade_id)).filter((id) => Number.isFinite(id));
     } else {
+      // Fallback: allow master teachers to access if present.
       const [[masterRow]] = await query<RowDataPacket[]>(
         "SELECT master_teacher_id FROM master_teacher WHERE user_id = ? LIMIT 1",
         [userId],
@@ -119,17 +133,34 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ success: false, error: "Teacher record not found." }, { status: 404 });
       }
 
-      scopeLabel = "master teacher";
       const [gradeRows] = await query<RowDataPacket[]>(
-        "SELECT grade_id FROM mt_remedialteacher_handled WHERE master_teacher_id = ?",
+        "SELECT grade_id, subject_id FROM mt_coordinator_handled WHERE master_teacher_id = ?",
         [masterTeacherId],
       );
-      gradeIds = gradeRows.map((row) => row.grade_id as number).filter((id) => Number.isFinite(id));
+
+      gradeRows.forEach((row) => {
+        const gid = Number(row.grade_id);
+        const sid = Number(row.subject_id);
+        if (Number.isFinite(gid)) {
+          gradeIds.push(gid);
+        }
+        if (Number.isFinite(sid)) {
+          allowedSubjectIds.add(sid);
+        }
+      });
+
+      if (!gradeIds.length) {
+        const [remedialRows] = await query<RowDataPacket[]>(
+          "SELECT grade_id FROM mt_remedialteacher_handled WHERE master_teacher_id = ?",
+          [masterTeacherId],
+        );
+        gradeIds = remedialRows.map((row) => Number(row.grade_id)).filter((id) => Number.isFinite(id));
+      }
     }
 
     if (!gradeIds.length) {
       return NextResponse.json(
-        { success: false, error: `No handled grades found for this ${scopeLabel}.` },
+        { success: false, error: "No handled grades found for this teacher." },
         { status: 404 },
       );
     }
@@ -139,15 +170,24 @@ export async function GET(request: NextRequest) {
       [subjectLabel],
     );
 
-    const subjectId = subjectRow?.subject_id as number | undefined;
-    if (!subjectId) {
+    const subjectId = Number(subjectRow?.subject_id);
+    if (!Number.isFinite(subjectId)) {
       return NextResponse.json(
         { success: false, error: `Subject '${subjectLabel}' not found in subject table.` },
         { status: 404 },
       );
     }
 
+    if (allowedSubjectIds.size && !allowedSubjectIds.has(subjectId)) {
+      return NextResponse.json(
+        { success: false, error: "Subject is not assigned to this master teacher." },
+        { status: 403 },
+      );
+    }
+
     const gradePlaceholders = gradeIds.map(() => "?").join(",");
+    // Parameter order must follow placeholder order in the SQL: ssa.subject_id, subquery subject_id,
+    // phonemic_level subject_id, all grade placeholders, then ssa2.subject_id.
     const params: Array<string | number> = [subjectId, subjectId, subjectId, ...gradeIds, subjectId];
 
     const sql = `
@@ -160,6 +200,10 @@ export async function GET(request: NextRequest) {
         gi.guardian AS guardian,
         gi.guardian_contact AS guardian_contact,
         gi.guardian_email AS guardian_email,
+        gi.parent_first_name AS parent_first_name,
+        gi.parent_middle_name AS parent_middle_name,
+        gi.parent_last_name AS parent_last_name,
+        gi.parent_suffix AS parent_suffix,
         gi.relationship AS relationship,
         gi.address AS address,
         s.first_name,
@@ -178,6 +222,10 @@ export async function GET(request: NextRequest) {
           ) AS guardian,
           MIN(u.phone_number) AS guardian_contact,
           MIN(u.email) AS guardian_email,
+          MIN(u.first_name) AS parent_first_name,
+          MIN(u.middle_name) AS parent_middle_name,
+          MIN(u.last_name) AS parent_last_name,
+          MIN(u.suffix) AS parent_suffix,
           MIN(ps.relationship) AS relationship,
           MIN(ps.address) AS address
         FROM parent_student ps
@@ -195,12 +243,16 @@ export async function GET(request: NextRequest) {
         )
       LEFT JOIN phonemic_level pl ON pl.phonemic_id = ssa.phonemic_id AND pl.subject_id = ?
       WHERE s.grade_id IN (${gradePlaceholders})
+        AND EXISTS (
+          SELECT 1 FROM student_subject_assessment ssa2
+          WHERE ssa2.student_id = s.student_id AND ssa2.subject_id = ?
+        )
       GROUP BY s.student_id, g.grade_level, s.section, gi.guardian, gi.guardian_contact, s.first_name, s.middle_name, s.last_name, s.suffix, ssa.phonemic_id, pl.level_name
       ORDER BY g.grade_level, s.section, s.last_name, s.first_name, s.student_id
     `;
 
     const [rows] = await query<RawStudentRow[]>(sql, params);
-    const students = rows.map((row) => normalizeStudentRow(row, subjectLabel));
+    const students = rows.map((row) => normalizeStudentRow(row, subjectLabel as SupportedSubject));
 
     const filteredStudents = (() => {
       const term = sanitize(searchParam)?.toLowerCase();
@@ -219,9 +271,9 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ success: true, subject: subjectLabel, students: filteredStudents });
   } catch (error) {
-    console.error(`Failed to load teacher remedial students for ${subjectLabel}`, error);
+    console.error(`Failed to load teacher students for ${subjectLabel}`, error);
     return NextResponse.json(
-      { success: false, error: `Failed to load remedial students for ${subjectLabel}.` },
+      { success: false, error: `Failed to load students for ${subjectLabel}.` },
       { status: 500 },
     );
   }

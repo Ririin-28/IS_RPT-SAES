@@ -63,8 +63,17 @@ export async function tableExists(tableName: string): Promise<boolean> {
 
 export async function getTableColumns(tableName: string): Promise<Set<string>> {
   const db = ensurePool();
-  const [rows] = await db.query<mysql.RowDataPacket[]>(`SHOW COLUMNS FROM \`${tableName}\``);
-  return new Set(rows.map((row) => row.Field as string));
+  try {
+    const [rows] = await db.query<mysql.RowDataPacket[]>(`SHOW COLUMNS FROM \`${tableName}\``);
+    return new Set(rows.map((row) => row.Field as string));
+  } catch (error) {
+    // Gracefully handle missing tables so callers can skip optional sources.
+    const code = (error as { code?: string } | null)?.code;
+    if (code === "ER_NO_SUCH_TABLE" || code === "ER_BAD_TABLE_ERROR") {
+      return new Set<string>();
+    }
+    throw error;
+  }
 }
 
 export async function runWithConnection<T>(

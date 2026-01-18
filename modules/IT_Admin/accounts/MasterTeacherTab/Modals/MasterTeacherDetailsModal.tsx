@@ -31,16 +31,15 @@ export default function MasterTeacherDetailsModal({ show, onClose, masterTeacher
           {/* 1st Row: Teacher ID and Role */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <ModalInfoItem label="Teacher ID" value={masterTeacher.teacherId} />
-            <ModalInfoItem label="Role" value={masterTeacher.role || "Master Teacher"} />
+            <ModalInfoItem label="Role" value={masterTeacher.roleLabel || masterTeacher.role || "Master Teacher"} />
           </div>
           
-          {/* 2nd Row: Full Name with helper text */}
-          <div className="space-y-1">
-            <ModalInfoItem 
-              label="Full Name" 
-              value={masterTeacher.fullName || masterTeacher.name} 
-            />
-            <p className="text-xs text-gray-500 pl-1">Format: Last, First, Middle, Suffix</p>
+          {/* 2nd Row: Name fields */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <ModalInfoItem label="First Name" value={masterTeacher.firstName ?? masterTeacher.first_name ?? ""} />
+            <ModalInfoItem label="Middle Name" value={masterTeacher.middleName ?? masterTeacher.middle_name ?? ""} />
+            <ModalInfoItem label="Last Name" value={masterTeacher.lastName ?? masterTeacher.last_name ?? ""} />
+            <ModalInfoItem label="Suffix" value={masterTeacher.suffix ?? masterTeacher.suffix_name ?? masterTeacher.suf ?? ""} />
           </div>
         </div>
       </ModalSection>

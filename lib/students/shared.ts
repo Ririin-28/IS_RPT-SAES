@@ -17,6 +17,10 @@ export type StudentRecordDto = {
   age: string | null;
   subject: StudentSubject;
   guardianName: string | null;
+  guardianFirstName: string | null;
+  guardianMiddleName: string | null;
+  guardianLastName: string | null;
+  guardianSuffix: string | null;
   guardianContact: string | null;
   guardianEmail: string | null;
   address: string | null;

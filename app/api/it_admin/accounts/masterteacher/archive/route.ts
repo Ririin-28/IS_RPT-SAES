@@ -205,6 +205,10 @@ export async function POST(request: NextRequest) {
       }
 
       const masterTeacherTables = await resolveMasterTeacherTables(connection);
+      const mtCoordinatorHandledColumns = await tryFetchTableColumns(connection, "mt_coordinator_handled");
+      const mtRemedialHandledColumns = await tryFetchTableColumns(connection, "mt_remedialteacher_handled");
+      const archivedMtCoordinatorColumns = await tryFetchTableColumns(connection, "archived_mt_coordinator_handled");
+      const archivedMtRemedialColumns = await tryFetchTableColumns(connection, "archived_mt_remedialteacher_handled");
       const accountLogsColumns = await tryFetchTableColumns(connection, "account_logs");
       const canDeleteAccountLogs = !!accountLogsColumns && accountLogsColumns.has("user_id");
       const userReferencingMap = await fetchReferencingMap(connection, "users");
@@ -232,9 +236,22 @@ export async function POST(request: NextRequest) {
           }
 
           const userRow = userRows[0];
+          const rawUserId = getColumnValue(userRow, "user_id");
+          const parsedUserId = rawUserId !== null && rawUserId !== undefined ? Number(rawUserId) : NaN;
+          const resolvedUserId = Number.isInteger(parsedUserId) && parsedUserId > 0
+            ? parsedUserId
+            : userId;
           const name = computeFullName(userRow);
           const email = typeof userRow.email === "string" ? userRow.email : null;
           const contactNumber = normalizeContact(userRow);
+          const username = typeof userRow.username === "string" ? userRow.username : null;
+          const firstName = typeof userRow.first_name === "string" ? userRow.first_name : null;
+          const middleName = typeof userRow.middle_name === "string" ? userRow.middle_name : null;
+          const lastName = typeof userRow.last_name === "string" ? userRow.last_name : null;
+          const suffix = typeof userRow.suffix === "string" ? userRow.suffix : null;
+          const password = typeof userRow.password === "string" ? userRow.password : null;
+          const createdAt = getColumnValue(userRow, "created_at");
+          const updatedAt = getColumnValue(userRow, "updated_at");
           const roleId = Number.isInteger(userRow.role_id) ? (userRow.role_id as number) : null;
           const userCode = typeof userRow.user_code === "string" ? userRow.user_code : null;
 
@@ -261,11 +278,24 @@ export async function POST(request: NextRequest) {
             }
           }
 
+          let resolvedMasterTeacherId: string | number | null = null;
+          for (const row of masterTeacherRows.values()) {
+            const candidate =
+              getColumnValue(row, "master_teacher_id") ??
+              getColumnValue(row, "masterteacher_id") ??
+              getColumnValue(row, "teacher_id");
+            if (candidate !== null && candidate !== undefined) {
+              resolvedMasterTeacherId = candidate as string | number;
+              break;
+            }
+          }
+
           const [existingArchive] = await connection.query<RowDataPacket[]>(
             `SELECT archived_id FROM ${ARCHIVE_TABLE} WHERE user_id = ? LIMIT 1`,
-            [userId],
+            [resolvedUserId],
           );
 
+          let archivedIdForRelations: number | null = null;
           if (existingArchive.length === 0) {
             const columns: string[] = [];
             const values: any[] = [];
@@ -275,7 +305,7 @@ export async function POST(request: NextRequest) {
               values.push(value);
             };
 
-            pushValue("user_id", userId);
+            pushValue("user_id", resolvedUserId);
             if (archiveColumns.has("user_code") && userCode) {
               pushValue("user_code", userCode);
             }
@@ -288,11 +318,38 @@ export async function POST(request: NextRequest) {
             if (archiveColumns.has("email") && email) {
               pushValue("email", email);
             }
+            if (archiveColumns.has("username") && username) {
+              pushValue("username", username);
+            }
+            if (archiveColumns.has("first_name") && firstName) {
+              pushValue("first_name", firstName);
+            }
+            if (archiveColumns.has("middle_name") && middleName) {
+              pushValue("middle_name", middleName);
+            }
+            if (archiveColumns.has("last_name") && lastName) {
+              pushValue("last_name", lastName);
+            }
+            if (archiveColumns.has("suffix") && suffix) {
+              pushValue("suffix", suffix);
+            }
             if (archiveColumns.has("contact_number") && contactNumber) {
               pushValue("contact_number", contactNumber);
             }
+            if (archiveColumns.has("phone_number") && contactNumber) {
+              pushValue("phone_number", contactNumber);
+            }
+            if (archiveColumns.has("password") && password) {
+              pushValue("password", password);
+            }
             if (archiveColumns.has("reason")) {
               pushValue("reason", archiveReason);
+            }
+            if (archiveColumns.has("created_at") && createdAt) {
+              pushValue("created_at", createdAt);
+            }
+            if (archiveColumns.has("updated_at") && updatedAt) {
+              pushValue("updated_at", updatedAt);
             }
             if (archiveColumns.has("archived_at")) {
               pushValue("archived_at", new Date());
@@ -315,10 +372,112 @@ export async function POST(request: NextRequest) {
             const placeholders = columns.map(() => "?").join(", ");
             const columnsSql = columns.join(", ");
 
-            await connection.query<ResultSetHeader>(
+            const [archiveInsert] = await connection.query<ResultSetHeader>(
               `INSERT INTO ${ARCHIVE_TABLE} (${columnsSql}) VALUES (${placeholders})`,
               values,
             );
+            const insertedId = Number(archiveInsert.insertId);
+            archivedIdForRelations = Number.isInteger(insertedId) && insertedId > 0 ? insertedId : null;
+          } else if (archiveColumns.has("user_id")) {
+            await connection.query<ResultSetHeader>(
+              `UPDATE ${ARCHIVE_TABLE} SET user_id = ? WHERE archived_id = ? AND (user_id IS NULL OR user_id = 0)` ,
+              [resolvedUserId, existingArchive[0]?.archived_id],
+            );
+            const existingId = Number(existingArchive[0]?.archived_id);
+            archivedIdForRelations = Number.isInteger(existingId) && existingId > 0 ? existingId : null;
+          }
+
+          if (
+            archivedIdForRelations !== null &&
+            resolvedMasterTeacherId !== null &&
+            archivedMtCoordinatorColumns &&
+            archivedMtCoordinatorColumns.size > 0 &&
+            mtCoordinatorHandledColumns &&
+            mtCoordinatorHandledColumns.has("master_teacher_id")
+          ) {
+            const [coordinatorRows] = await connection.query<RowDataPacket[]>(
+              "SELECT master_teacher_id, grade_id, subject_id FROM `mt_coordinator_handled` WHERE master_teacher_id = ?",
+              [resolvedMasterTeacherId],
+            );
+
+            for (const row of coordinatorRows) {
+              const columns: string[] = [];
+              const values: any[] = [];
+              const pushValue = (column: string, value: any) => {
+                columns.push(`\`${column}\``);
+                values.push(value);
+              };
+
+              if (archivedMtCoordinatorColumns.has("archived_id")) {
+                pushValue("archived_id", archivedIdForRelations);
+              }
+              if (archivedMtCoordinatorColumns.has("master_teacher_id")) {
+                pushValue("master_teacher_id", row.master_teacher_id ?? resolvedMasterTeacherId);
+              }
+              if (archivedMtCoordinatorColumns.has("grade_id") && row.grade_id != null) {
+                pushValue("grade_id", row.grade_id);
+              }
+              if (archivedMtCoordinatorColumns.has("subject_id") && row.subject_id != null) {
+                pushValue("subject_id", row.subject_id);
+              }
+              if (archivedMtCoordinatorColumns.has("archived_at")) {
+                pushValue("archived_at", new Date());
+              }
+
+              if (columns.length > 0) {
+                const placeholders = columns.map(() => "?").join(", ");
+                const columnsSql = columns.join(", ");
+                await connection.query<ResultSetHeader>(
+                  `INSERT INTO archived_mt_coordinator_handled (${columnsSql}) VALUES (${placeholders})`,
+                  values,
+                );
+              }
+            }
+          }
+
+          if (
+            archivedIdForRelations !== null &&
+            resolvedMasterTeacherId !== null &&
+            archivedMtRemedialColumns &&
+            archivedMtRemedialColumns.size > 0 &&
+            mtRemedialHandledColumns &&
+            mtRemedialHandledColumns.has("master_teacher_id")
+          ) {
+            const [remedialRows] = await connection.query<RowDataPacket[]>(
+              "SELECT master_teacher_id, grade_id FROM `mt_remedialteacher_handled` WHERE master_teacher_id = ?",
+              [resolvedMasterTeacherId],
+            );
+
+            for (const row of remedialRows) {
+              const columns: string[] = [];
+              const values: any[] = [];
+              const pushValue = (column: string, value: any) => {
+                columns.push(`\`${column}\``);
+                values.push(value);
+              };
+
+              if (archivedMtRemedialColumns.has("archived_id")) {
+                pushValue("archived_id", archivedIdForRelations);
+              }
+              if (archivedMtRemedialColumns.has("master_teacher_id")) {
+                pushValue("master_teacher_id", row.master_teacher_id ?? resolvedMasterTeacherId);
+              }
+              if (archivedMtRemedialColumns.has("grade_id") && row.grade_id != null) {
+                pushValue("grade_id", row.grade_id);
+              }
+              if (archivedMtRemedialColumns.has("archived_at")) {
+                pushValue("archived_at", new Date());
+              }
+
+              if (columns.length > 0) {
+                const placeholders = columns.map(() => "?").join(", ");
+                const columnsSql = columns.join(", ");
+                await connection.query<ResultSetHeader>(
+                  `INSERT INTO archived_mt_remedialteacher_handled (${columnsSql}) VALUES (${placeholders})`,
+                  values,
+                );
+              }
+            }
           }
 
           for (const { table, columns } of masterTeacherTables) {
@@ -393,6 +552,21 @@ export async function POST(request: NextRequest) {
                   [idValue],
                 );
               }
+            }
+          }
+
+          if (resolvedMasterTeacherId !== null) {
+            if (mtCoordinatorHandledColumns && mtCoordinatorHandledColumns.has("master_teacher_id")) {
+              await connection.query<ResultSetHeader>(
+                "DELETE FROM `mt_coordinator_handled` WHERE master_teacher_id = ?",
+                [resolvedMasterTeacherId],
+              );
+            }
+            if (mtRemedialHandledColumns && mtRemedialHandledColumns.has("master_teacher_id")) {
+              await connection.query<ResultSetHeader>(
+                "DELETE FROM `mt_remedialteacher_handled` WHERE master_teacher_id = ?",
+                [resolvedMasterTeacherId],
+              );
             }
           }
 

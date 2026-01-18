@@ -299,6 +299,16 @@ export async function createTeacher(input: CreateTeacherInput): Promise<CreateTe
         }
       }
     }
+    try {
+      const archivedColumns = await getColumnsForTable(connection, "archived_users");
+      if (archivedColumns.has("teacher_id")) {
+        teacherIdSources.push({ table: "archived_users", column: "teacher_id" });
+      } else if (archivedColumns.has("user_code")) {
+        teacherIdSources.push({ table: "archived_users", column: "user_code" });
+      }
+    } catch {
+      // ignore archived_users absence
+    }
 
     await connection.beginTransaction();
     try {

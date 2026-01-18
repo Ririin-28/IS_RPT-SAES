@@ -51,16 +51,31 @@ const extractNameParts = (student: any): NameParts => {
   if (!raw) {
     return { firstName: "", lastName: "", middleNames: [] };
   }
-  
+
+  const commaParts = raw.split(",").map((part) => part.trim()).filter(Boolean);
+  if (commaParts.length >= 2) {
+    const lastName = commaParts[0];
+    const firstAndMiddle = commaParts[1] ?? "";
+    const firstParts = firstAndMiddle.split(/\s+/).filter(Boolean);
+    const firstName = firstParts[0] ?? "";
+    const middleFromFirst = firstParts.slice(1);
+    const middleFromComma = commaParts.slice(2).join(" ").split(/\s+/).filter(Boolean);
+    return {
+      firstName,
+      lastName,
+      middleNames: [...middleFromFirst, ...middleFromComma],
+    };
+  }
+
   const parts = raw.split(/\s+/).filter(Boolean);
   if (!parts.length) {
     return { firstName: "", lastName: "", middleNames: [] };
   }
-  
+
   if (parts.length === 1) {
     return { firstName: parts[0], lastName: "", middleNames: [] };
   }
-  
+
   // Assume format: FirstName MiddleName LastName
   return {
     firstName: parts[0],
@@ -481,13 +496,15 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
         columns={[
           { key: "no", title: "No#" },
           { key: "studentId", title: "Student ID" },
+          { key: "lrn", title: "LRN" },
           { key: "name", title: "Full Name" },
-          { key: "grade", title: "Grade" },
-          { key: "section", title: "Section" },
+          { key: "phonemic", title: "Phonemic" },
         ]}
         data={sortedStudents.map((student, idx) => ({
           ...student,
           name: formatStudentDisplayName(student), // Display as "Surname, FirstName M.I."
+          lrn: student.lrn ?? "",
+          phonemic: student.mathProficiency ?? "",
           no: idx + 1,
         }))}
         actions={(row: any) => (

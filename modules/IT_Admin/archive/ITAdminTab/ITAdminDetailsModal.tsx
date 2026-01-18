@@ -40,7 +40,7 @@ export default function ITAdminDetailsModal({ show, onClose, itAdmin }: ITAdminD
               label="Full Name" 
               value={itAdmin.name || itAdmin.fullName} 
             />
-            <p className="text-xs text-gray-500 pl-1">Format: Last, First, Middle, Suffix</p>
+            <p className="text-xs text-gray-500 pl-1">Format: First/Middle/Last/Suffix</p>
           </div>
         </div>
       </ModalSection>
@@ -58,7 +58,6 @@ export default function ITAdminDetailsModal({ show, onClose, itAdmin }: ITAdminD
       <ModalSection title="Archive Information">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <ModalInfoItem label="Archived Date" value={itAdmin.archivedDateDisplay || "—"} />
-          <ModalInfoItem label="Reason" value={itAdmin.reason || "—"} />
         </div>
       </ModalSection>
     </BaseModal>
