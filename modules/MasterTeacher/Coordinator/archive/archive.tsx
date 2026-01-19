@@ -118,8 +118,8 @@ export default function MasterTeacherArchive() {
             "
             >
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-2">
-                  <div className="flex items-center gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
+                  <div className="flex items-center gap-0">
                     <HeaderDropdown
                       options={[...SUBJECT_OPTIONS]}
                       value={subject}

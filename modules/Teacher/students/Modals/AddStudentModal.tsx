@@ -179,7 +179,7 @@ export default function AddStudentModal({ show, onClose, form, onSubmit }: AddSt
               {errors.guardian && <span className="text-red-500 text-xs">{errors.guardian.message as string}</span>}
             </div>
             <div className="space-y-1">
-              <ModalLabel required>Contact Number</ModalLabel>
+              <ModalLabel required>Phone Number</ModalLabel>
               <input
                 className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm"
                 placeholder="0912-345-6789"
