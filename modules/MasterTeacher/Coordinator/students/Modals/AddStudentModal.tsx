@@ -50,14 +50,22 @@ const LRN_REGEX = /^\d{6}-\d{6}$/;
 const GRADE_OPTIONS = ["1", "2", "3", "4", "5", "6"];
 const SECTION_OPTIONS = ["A", "B", "C", "D", "E", "F"];
 const RELATIONSHIP_OPTIONS = ["Mother", "Father", "Grandmother", "Grandfather", "Aunt", "Uncle", "Guardian", "Other"];
-const ASSESSMENT_LEVELS = [
+const READING_LEVELS = [
   "Exempt",
   "Non-Reader",
-  "Syllable", 
+  "Syllable",
   "Word",
   "Sentence",
   "Paragraph",
-  "Finished"
+  "Finished",
+];
+
+const MATH_PROFICIENCY_LEVELS = [
+  "Not Proficient",
+  "Low Proficient",
+  "Nearly Proficient",
+  "Proficient",
+  "Highly Proficient",
 ];
 
 export default function AddStudentModal({
@@ -76,19 +84,42 @@ export default function AddStudentModal({
     handleSubmit,
     watch,
     setValue,
+    unregister,
     reset,
     formState: { errors, isSubmitting: formSubmitting },
   } = form;
 
+  const activePhonemicField = useMemo<keyof AddStudentFormValues>(() => {
+    const normalized = String(subjectLabel || "").toLowerCase().trim();
+    if (normalized === "filipino") return "filipinoPhonemic";
+    if (normalized === "math") return "mathPhonemic";
+    return "englishPhonemic";
+  }, [subjectLabel]);
+
+  const assessmentLevels = useMemo(() => {
+    const normalized = String(subjectLabel || "").toLowerCase().trim();
+    return normalized === "math" ? MATH_PROFICIENCY_LEVELS : READING_LEVELS;
+  }, [subjectLabel]);
+
+  useEffect(() => {
+    const allPhonemicFields = ["englishPhonemic", "filipinoPhonemic", "mathPhonemic"] as const;
+    const fieldsToClear = allPhonemicFields.filter((field) => field !== activePhonemicField);
+
+    for (const field of fieldsToClear) {
+      setValue(field, "", { shouldDirty: false, shouldTouch: false, shouldValidate: false });
+      unregister(field);
+    }
+  }, [activePhonemicField, setValue]);
+
   // Register validation for phone number with local format
   const phoneRegistration = register("guardianContact", {
-    required: "Contact number is required",
+    required: "Phone Number is required",
     validate: (value) => {
-      if (!value) return "Contact number is required";
+      if (!value) return "Phone Number is required";
       const trimmed = value.trim();
       return PHONE_FORMAT_REGEX.test(trimmed)
       ? true
-      : "Contact number must follow the format 09XX-XXX-XXXX";
+      : "Phone Number must follow the format 09XX-XXX-XXXX";
     },
   });
 
@@ -128,7 +159,9 @@ export default function AddStudentModal({
   };
 
   const phoneWatch = watch("guardianContact") || "";
+  const lrnWatch = watch("lrn") || "";
   const [displayPhone, setDisplayPhone] = useState("");
+  const [lrnLookupLoading, setLrnLookupLoading] = useState(false);
 
   const formatLrnValue = (input: string) => {
     const digits = input.replace(/\D/g, "").slice(0, 12);
@@ -149,6 +182,63 @@ export default function AddStudentModal({
   useEffect(() => {
     setDisplayPhone(formatPhoneValue(phoneWatch));
   }, [phoneWatch]);
+
+  useEffect(() => {
+    if (!show || isEditing) return;
+    const trimmedLrn = lrnWatch.trim();
+    if (!LRN_REGEX.test(trimmedLrn)) return;
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setLrnLookupLoading(true);
+      try {
+        const response = await fetch(
+          `/api/master_teacher/coordinator/students?lrn=${encodeURIComponent(trimmedLrn)}`,
+          { cache: "no-store", signal: controller.signal },
+        );
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.success || !payload?.data) {
+          return;
+        }
+
+        const student = payload.data as Record<string, unknown>;
+        setValue("studentId", (student.studentIdentifier as string) ?? (student.id as string) ?? "", {
+          shouldDirty: false,
+          shouldTouch: false,
+          shouldValidate: false,
+        });
+        setValue("firstName", (student.firstName as string) ?? "", { shouldDirty: true, shouldTouch: false });
+        setValue("middleName", (student.middleName as string) ?? "", { shouldDirty: true, shouldTouch: false });
+        setValue("lastName", (student.lastName as string) ?? "", { shouldDirty: true, shouldTouch: false });
+        setValue("suffix", (student.suffix as string) ?? "", { shouldDirty: true, shouldTouch: false });
+
+        if (!gradeLabel || !gradeLabel.trim()) {
+          setValue("grade", (student.gradeLevel as string) ?? "", { shouldDirty: true, shouldTouch: false });
+        }
+        setValue("section", (student.section as string) ?? "", { shouldDirty: true, shouldTouch: false });
+
+        setValue("guardianFirstName", (student.guardianFirstName as string) ?? "", { shouldDirty: true, shouldTouch: false });
+        setValue("guardianMiddleName", (student.guardianMiddleName as string) ?? "", { shouldDirty: true, shouldTouch: false });
+        setValue("guardianLastName", (student.guardianLastName as string) ?? "", { shouldDirty: true, shouldTouch: false });
+        setValue("guardianSuffix", (student.guardianSuffix as string) ?? "", { shouldDirty: true, shouldTouch: false });
+        setValue("guardianContact", (student.guardianContact as string) ?? "", { shouldDirty: true, shouldTouch: false });
+        setValue("guardianEmail", (student.guardianEmail as string) ?? "", { shouldDirty: true, shouldTouch: false });
+        setValue("relationship", (student.relationship as string) ?? "", { shouldDirty: true, shouldTouch: false });
+        setValue("address", (student.address as string) ?? "", { shouldDirty: true, shouldTouch: false });
+      } catch (error) {
+        if ((error as any)?.name !== "AbortError") {
+          console.error("Failed to lookup student by LRN", error);
+        }
+      } finally {
+        setLrnLookupLoading(false);
+      }
+    }, 350);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [gradeLabel, isEditing, lrnWatch, setValue, show]);
 
   useEffect(() => {
     if (gradeLabel && gradeLabel.trim().length > 0) {
@@ -176,7 +266,7 @@ export default function AddStudentModal({
       <DangerButton type="button" onClick={handleClose} disabled={isBusy}>
         Cancel
       </DangerButton>
-      <PrimaryButton type="submit" form="add-student-form" disabled={isBusy}>
+      <PrimaryButton type="button" onClick={handleSubmit(onSubmit)} disabled={isBusy}>
         {isBusy ? (isEditing ? "Updating…" : "Adding…") : (isEditing ? "Update Student" : "Add Student")}
       </PrimaryButton>
     </>
@@ -243,6 +333,9 @@ export default function AddStudentModal({
               />
               {errors.lrn && (
                 <span className="text-xs text-red-500">{errors.lrn.message as string}</span>
+              )}
+              {lrnLookupLoading && !errors.lrn && (
+                <span className="text-xs text-emerald-700">Checking LRN...</span>
               )}
             </div>
           </div>
@@ -417,7 +510,7 @@ export default function AddStudentModal({
             </div>
           </div>
 
-          {/* 2nd Row: Relationship, Contact Number, and Email */}
+          {/* 2nd Row: Relationship, Phone Number, and Email */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <div className="space-y-1">
               <ModalLabel required>Relationship</ModalLabel>
@@ -439,7 +532,7 @@ export default function AddStudentModal({
               )}
             </div>
             <div className="space-y-1">
-              <ModalLabel required>Contact Number</ModalLabel>
+              <ModalLabel required>Phone Number</ModalLabel>
               <input
                 {...phoneRegistration}
                 onChange={(e) => {
@@ -508,22 +601,22 @@ export default function AddStudentModal({
               />
             </div>
             <div className="space-y-1">
-              <ModalLabel required>Phonemic</ModalLabel>
+              <ModalLabel required>{String(subjectLabel || "").toLowerCase().trim() === "math" ? "Proficiency" : "Phonemic"}</ModalLabel>
               <select
                 className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
-                {...register("englishPhonemic", { required: "Phonemic level is required" })}
+                {...register(activePhonemicField, { required: "Phonemic level is required" })}
               >
                 <option value="" disabled>
                   Select level
                 </option>
-                {ASSESSMENT_LEVELS.map((level) => (
+                {assessmentLevels.map((level) => (
                   <option key={level} value={level}>
                     {level}
                   </option>
                 ))}
               </select>
-              {errors.englishPhonemic && (
-                <span className="text-xs text-red-500">{errors.englishPhonemic.message as string}</span>
+              {errors[activePhonemicField] && (
+                <span className="text-xs text-red-500">{errors[activePhonemicField]?.message as string}</span>
               )}
             </div>
           </div>

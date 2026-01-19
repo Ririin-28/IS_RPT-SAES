@@ -2,8 +2,6 @@
 import { useState, useRef, useEffect, useMemo, useCallback, type CSSProperties } from "react";
 import { FiArrowLeft, FiArrowRight } from "react-icons/fi";
 import { useSearchParams, useRouter } from "next/navigation";
-import UtilityButton from "@/components/Common/Buttons/UtilityButton";
-import TableList from "@/components/Common/Tables/TableList";
 
 /* ---------- Icons ---------- */
 const Volume2Icon = () => (
@@ -103,35 +101,9 @@ function comparePhonemeArrays(expectedArr: string[], actualArr: string[]) {
   return (matches / expectedArr.length) * 100;
 }
 
-/* ---------- Student roster & performance storage ---------- */
+/* ---------- Flashcard storage ---------- */
 
-const STUDENT_ROSTER_KEY = "MASTER_TEACHER_ENGLISH_STUDENTS";
-const PERFORMANCE_HISTORY_KEY = "MASTER_TEACHER_ENGLISH_PERFORMANCE";
 const FLASHCARD_CONTENT_KEY = "MASTER_TEACHER_ENGLISH_FLASHCARDS";
-
-type StudentRecord = {
-  id: string;
-  studentId: string;
-  name: string;
-  grade?: string;
-  section?: string;
-};
-
-type StudentPerformanceEntry = {
-  id: string;
-  studentId: string;
-  timestamp: string;
-  pronScore: number;
-  fluencyScore: number;
-  phonemeAccuracy: number;
-  wpm: number;
-  cardIndex: number;
-  sentence: string;
-};
-
-type EnrichedStudent = StudentRecord & {
-  lastPerformance: StudentPerformanceEntry | null;
-};
 
 function isValidFlashcardContent(value: unknown): value is FlashcardContent[] {
   if (!Array.isArray(value)) return false;
@@ -144,14 +116,6 @@ function isValidFlashcardContent(value: unknown): value is FlashcardContent[] {
     return candidate.highlights.every((word) => typeof word === "string");
   });
 }
-
-const DEFAULT_ENGLISH_STUDENTS: StudentRecord[] = [
-  { id: "eng-001", studentId: "EN-2025-001", name: "Ava Martinez", grade: "4", section: "A" },
-  { id: "eng-002", studentId: "EN-2025-002", name: "Liam Santos", grade: "4", section: "B" },
-  { id: "eng-003", studentId: "EN-2025-003", name: "Mia del Rosario", grade: "4", section: "A" },
-  { id: "eng-004", studentId: "EN-2025-004", name: "Noah Cruz", grade: "4", section: "B" },
-  { id: "eng-005", studentId: "EN-2025-005", name: "Sofia Reyes", grade: "4", section: "C" },
-];
 
 /* ---------- English Remedial Flashcards data ---------- */
 type FlashcardContent = {
@@ -186,13 +150,6 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
     return Math.min(Math.max(parsed, 0), maxIndex);
   }, [flashcardsData.length, startParam]);
 
-  const [view, setView] = useState<"select" | "session">("select");
-  const [students, setStudents] = useState<StudentRecord[]>(DEFAULT_ENGLISH_STUDENTS);
-  const [performances, setPerformances] = useState<StudentPerformanceEntry[]>([]);
-  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
-  const [studentSearch, setStudentSearch] = useState("");
-  const [lastSavedStudentId, setLastSavedStudentId] = useState<string | null>(null);
-
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -212,96 +169,6 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
       console.warn("Failed to load English flashcard content", error);
       setFlashcardsData(INITIAL_FLASHCARDS);
     }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    try {
-      const storedStudents = window.localStorage.getItem(STUDENT_ROSTER_KEY);
-      if (storedStudents) {
-        const parsed = JSON.parse(storedStudents) as StudentRecord[];
-        if (Array.isArray(parsed)) {
-          setStudents(parsed);
-        }
-      } else {
-        window.localStorage.setItem(STUDENT_ROSTER_KEY, JSON.stringify(DEFAULT_ENGLISH_STUDENTS));
-      }
-    } catch (error) {
-      console.warn("Failed to load English remedial roster", error);
-    }
-
-    try {
-      const storedPerformances = window.localStorage.getItem(PERFORMANCE_HISTORY_KEY);
-      if (storedPerformances) {
-        const parsed = JSON.parse(storedPerformances) as StudentPerformanceEntry[];
-        if (Array.isArray(parsed)) {
-          setPerformances(parsed);
-        }
-      }
-    } catch (error) {
-      console.warn("Failed to load English remedial performance history", error);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (lastSavedStudentId) {
-      const timer = window.setTimeout(() => setLastSavedStudentId(null), 4000);
-      return () => window.clearTimeout(timer);
-    }
-    return undefined;
-  }, [lastSavedStudentId]);
-
-  const enrichedStudents = useMemo<EnrichedStudent[]>(() => {
-    const latestByStudent = new Map<string, StudentPerformanceEntry>();
-    for (const entry of performances) {
-      const current = latestByStudent.get(entry.studentId);
-      if (!current || current.timestamp < entry.timestamp) {
-        latestByStudent.set(entry.studentId, entry);
-      }
-    }
-
-    return students.map((student) => ({
-      ...student,
-      lastPerformance: latestByStudent.get(student.id) ?? null,
-    }));
-  }, [students, performances]);
-
-  const filteredStudents = useMemo(() => {
-    const term = studentSearch.trim().toLowerCase();
-    if (!term) return enrichedStudents;
-    return enrichedStudents.filter((student) => {
-      const haystack = [student.studentId, student.name, student.section, student.grade]
-        .map((value) => value?.toLowerCase?.() ?? "")
-        .join(" ");
-      return haystack.includes(term);
-    });
-  }, [enrichedStudents, studentSearch]);
-
-  const selectedStudent = useMemo(() => {
-    if (!selectedStudentId) return null;
-    return enrichedStudents.find((student) => student.id === selectedStudentId) ?? null;
-  }, [enrichedStudents, selectedStudentId]);
-
-  const lastSavedStudent = useMemo(() => {
-    if (!lastSavedStudentId) return null;
-    return enrichedStudents.find((student) => student.id === lastSavedStudentId) ?? null;
-  }, [enrichedStudents, lastSavedStudentId]);
-
-  useEffect(() => {
-    if (view === "session" && !selectedStudent) {
-      setView("select");
-    }
-  }, [selectedStudent, view]);
-
-  const addPerformanceEntry = useCallback((entry: StudentPerformanceEntry) => {
-    setPerformances((prev) => {
-      const next = [...prev, entry];
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(PERFORMANCE_HISTORY_KEY, JSON.stringify(next));
-      }
-      return next;
-    });
   }, []);
 
   const [current, setCurrent] = useState(startIndex);
@@ -345,38 +212,14 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
       flashcardsData.length > 0 ? Math.min(prev + 1, flashcardsData.length - 1) : 0,
     );
 
-  const handleStartSession = (studentId: string) => {
-    setSelectedStudentId(studentId);
-    setCurrent(startIndex);
-    resetSessionTracking();
-    setView("session");
-  };
-
   const handleStopSession = () => {
-    const activeSentence = flashcardsData[current]?.sentence ?? "";
-    if (selectedStudentId && metrics) {
-      addPerformanceEntry({
-        id: `perf-${Date.now()}`,
-        studentId: selectedStudentId,
-        timestamp: new Date().toISOString(),
-        pronScore: metrics.pronScore,
-        fluencyScore: metrics.fluencyScore,
-        phonemeAccuracy: metrics.phonemeAccuracy,
-        wpm: metrics.wpm,
-        cardIndex: current,
-        sentence: activeSentence,
-      });
-      setLastSavedStudentId(selectedStudentId);
-    }
-
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
 
     resetSessionTracking();
     setCurrent(startIndex);
-    setSelectedStudentId(null);
-    setView("select");
+    router.push("/MasterTeacher/Coordinator/remedial");
   };
 
   const handleBackToDashboard = () => {
@@ -641,89 +484,6 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
     }
   };
 
-  // Calculate average for student table
-  const calculateStudentAverage = (student: EnrichedStudent) => {
-    if (!student.lastPerformance) return "—";
-    const { pronScore, fluencyScore, wpm } = student.lastPerformance;
-    const readingSpeedPercent = Math.min(100, Math.max(0, Math.round(wpm)));
-    const average = Math.min(100, Math.max(0, Math.round((pronScore + fluencyScore + readingSpeedPercent) / 3)));
-    return `${average}%`;
-  };
-
-  const selectionRows = filteredStudents.map((student, index) => ({
-    ...student,
-    no: index + 1,
-    average: calculateStudentAverage(student),
-  }));
-
-  if (view === "select") {
-    return (
-      <div className="min-h-dvh bg-gradient-to-br from-[#f2f8f4] via-white to-[#e6f2ec]">
-        <div className="w-full max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex min-h-dvh flex-col">
-          <header className="rounded-3xl border border-gray-300 bg-white/70 backdrop-blur px-3 py-3 sm:py-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between shadow-md shadow-gray-200">
-            <div className="space-y-3 text-center sm:text-left">
-              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">English</p>
-              <h1 className="text-3xl sm:text-4xl font-bold text-[#0d1b16]">Remedial Flashcards</h1>
-            </div>
-            <button
-              onClick={handleBackToDashboard}
-              className="inline-flex items-center gap-2 rounded-full border border-[#013300] px-6 py-3 text-sm font-semibold text-[#013300] transition hover:bg-emerald-50"
-            >
-              <FiArrowLeft /> Back
-            </button>
-          </header>
-
-          {lastSavedStudent && (
-            <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 shadow-sm shadow-emerald-100">
-              Latest performance for <span className="font-semibold">{lastSavedStudent.name}</span> has been saved.
-            </div>
-          )}
-
-          <div className="mt-5 rounded-3xl border border-gray-300 bg-white shadow-md shadow-gray-200 p-6 space-y-6 flex flex-1 flex-col min-h-0">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm font-medium text-gray-600">
-                Showing {selectionRows.length} student{selectionRows.length === 1 ? "" : "s"}
-              </p>
-              <div>
-                <input
-                  type="text"
-                  placeholder="Search Students..."
-                  className="w-full border border-gray-300 rounded-lg px-4 py-2 pr-10 text-black"
-                  value={studentSearch}
-                  onChange={(event) => setStudentSearch(event.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="flex-1 min-h-0">
-              <TableList
-                columns={[
-                  { key: "no", title: "No#" },
-                  { key: "studentId", title: "Student ID" },
-                  { key: "name", title: "Full Name" },
-                  { key: "grade", title: "Grade" },
-                  { key: "section", title: "Section" },
-                  { key: "average", title: "Average" },
-                ]}
-                data={selectionRows}
-                actions={(row: any) => (
-                  <UtilityButton small onClick={() => handleStartSession(row.id)}>
-                    Start
-                  </UtilityButton>
-                )}
-                pageSize={8}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!selectedStudent) {
-    return null;
-  }
-
   const progressPercent = flashcardsData.length
     ? ((current + 1) / flashcardsData.length) * 100
     : 0;
@@ -738,16 +498,6 @@ export default function MasterTeacherEnglishRemedialFlashcards() {
           <div className="space-y-2 text-center lg:text-left">
             <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">English</p>
             <h1 className="text-3xl sm:text-4xl font-bold text-[#0d1b16]">Non-Reader Level</h1>
-            <p className="text-md font-semibold text-[#013300]">
-              Student: {selectedStudent.studentId} - {selectedStudent.name}
-            </p>
-            {(selectedStudent.grade || selectedStudent.section) && (
-              <p className="text-sm text-slate-500">
-                {selectedStudent.grade ? `Grade ${selectedStudent.grade}` : ""}
-                {selectedStudent.grade && selectedStudent.section ? " • " : ""}
-                {selectedStudent.section ? `Section ${selectedStudent.section}` : ""}
-              </p>
-            )}
           </div>
           <div className="flex flex-col items-center gap-5 sm:flex-row sm:justify-center lg:justify-end">
             <div className="relative grid place-items-center">

@@ -31,7 +31,11 @@ const capitalizeWord = (value: string) => {
   if (!value) {
     return "";
   }
-  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
 };
 
 // Extract name parts from student object

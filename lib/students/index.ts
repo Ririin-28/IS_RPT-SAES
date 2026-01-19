@@ -7,6 +7,7 @@ import {
   type StudentSubject,
   type CreateStudentRecordInput,
   type UpdateStudentRecordInput,
+  STUDENT_SUBJECTS,
   resolveStudentSubject,
 } from "./shared";
 import { normalizeMaterialSubject } from "@/lib/materials/shared";
@@ -740,8 +741,8 @@ export async function insertStudents(
         const linkedParentId = normalizeParentIdentifier(parentId);
         if (parentStudentColumns.size && linkedParentId && studentId) {
           const [existingLink] = await connection.query<RowDataPacket[]>(
-            "SELECT parent_student_id FROM parent_student WHERE parent_id = ? AND student_id = ? LIMIT 1",
-            [linkedParentId, studentId],
+            "SELECT parent_student_id, parent_id FROM parent_student WHERE student_id = ? LIMIT 1",
+            [studentId],
           );
 
           const relationCols: string[] = [];
@@ -761,11 +762,27 @@ export async function insertStudents(
               const relSql = `INSERT INTO parent_student (${relationCols.map((c) => `\`${c}\``).join(", ")}) VALUES (${relationCols.map(() => "?").join(", ")})`;
               await connection.query<ResultSetHeader>(relSql, relationVals);
             }
-          } else if (parentRelationship && parentStudentColumns.has("relationship")) {
-            await connection.query(
-              "UPDATE parent_student SET relationship = ? WHERE parent_id = ? AND student_id = ? LIMIT 1",
-              [parentRelationship, linkedParentId, studentId],
-            );
+          } else {
+            const updateCols: string[] = [];
+            const updateVals: Array<string | null> = [];
+            if (parentStudentColumns.has("parent_id")) {
+              updateCols.push("parent_id = ?");
+              updateVals.push(linkedParentId);
+            }
+            if (parentStudentColumns.has("relationship") && parentRelationship) {
+              updateCols.push("relationship = ?");
+              updateVals.push(parentRelationship);
+            }
+            if (parentStudentColumns.has("address") && parentAddress) {
+              updateCols.push("address = ?");
+              updateVals.push(parentAddress);
+            }
+            if (updateCols.length) {
+              await connection.query(
+                `UPDATE parent_student SET ${updateCols.join(", ")} WHERE student_id = ? LIMIT 1`,
+                [...updateVals, studentId],
+              );
+            }
           }
         }
 
@@ -1120,6 +1137,27 @@ export async function fetchStudents({
     page: Math.max(page, 1),
     pageSize: Math.max(pageSize, 1),
   };
+}
+
+export async function fetchStudentByLrnAcrossSubjects(lrn: string): Promise<StudentRecordDto | null> {
+  const trimmed = lrn.trim();
+  if (!trimmed) return null;
+
+  for (const subject of STUDENT_SUBJECTS) {
+    const result = await fetchStudents({
+      subject,
+      search: trimmed,
+      page: 1,
+      pageSize: 5,
+    });
+
+    const match = result.data.find((student) => (student.lrn ?? "").trim() === trimmed);
+    if (match) {
+      return match;
+    }
+  }
+
+  return null;
 }
 
 export async function fetchStudentById(id: string): Promise<StudentRecordDto | null> {
