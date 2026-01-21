@@ -453,8 +453,13 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
     }
   };
 
-  const handlePlayClick = () => {
-    router.push("/MasterTeacher/RemedialTeacher/remedial/MathFlashcards?start=0");
+  const handlePlayClick = (student: any) => {
+    const studentId = student?.studentId ?? student?.id ?? "";
+    const params = new URLSearchParams({ start: "0" });
+    if (studentId) {
+      params.set("studentId", String(studentId));
+    }
+    router.push(`/MasterTeacher/RemedialTeacher/remedial/MathFlashcards?${params.toString()}`);
   };
 
   return (
@@ -516,7 +521,7 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
             <UtilityButton small onClick={() => handleViewDetails(row)} title="View student details">
               View
             </UtilityButton>
-            <UtilityButton small type="button" onClick={handlePlayClick} title="Click to play remedial session">
+            <UtilityButton small type="button" onClick={() => handlePlayClick(row)} title="Click to play remedial session">
               Play
             </UtilityButton>
           </div>
