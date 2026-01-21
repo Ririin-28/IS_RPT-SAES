@@ -6,6 +6,8 @@ import { getPrincipalSessionFromCookies } from "@/lib/server/principal-session";
 export const dynamic = "force-dynamic";
 
 const REMEDIAL_QUARTER_TABLE = "remedial_quarter";
+const APPROVED_REMEDIAL_TABLE = "approved_remedial_schedule";
+const REQUEST_REMEDIAL_TABLE = "request_remedial_schedule";
 const QUARTER_VALUES = ["1st Quarter", "2nd Quarter"] as const;
 type QuarterValue = (typeof QUARTER_VALUES)[number];
 
@@ -221,6 +223,16 @@ export async function DELETE(request: NextRequest) {
     const url = new URL(request.url);
     const schoolYear = resolveSchoolYear(url.searchParams.get("school_year"));
     await query(`DELETE FROM \`${REMEDIAL_QUARTER_TABLE}\` WHERE school_year = ?`, [schoolYear]);
+    try {
+      await query(`DELETE FROM \`${APPROVED_REMEDIAL_TABLE}\``);
+    } catch (activityError) {
+      console.warn("Unable to clear approved remedial activities", activityError);
+    }
+    try {
+      await query(`DELETE FROM \`${REQUEST_REMEDIAL_TABLE}\``);
+    } catch (requestError) {
+      console.warn("Unable to clear pending remedial requests", requestError);
+    }
     return NextResponse.json({ success: true, schedule: null });
   } catch (error) {
     console.error("Failed to delete remedial quarter schedule", error);

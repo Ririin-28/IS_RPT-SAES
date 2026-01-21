@@ -4,7 +4,9 @@ import Header from "@/components/Principal/Header";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
+import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
+import BaseModal, { ModalInfoItem } from "@/components/Common/Modals/BaseModal";
 import RemedialPeriodModal, {
   type QuarterOption,
   type QuarterRange,
@@ -19,7 +21,7 @@ import { getStoredUserProfile } from "@/lib/utils/user-profile";
 interface Activity {
   id: number;
   title: string;
-  description?: string;
+  submittedBy?: string | null;
   date: Date;
   end: Date;
   type: string;
@@ -43,7 +45,8 @@ interface ScheduleResponse {
 const API_ENDPOINT = "/api/master_teacher/coordinator/calendar/remedial-schedule";
 const SUBJECT_SCHEDULE_ENDPOINT = "/api/principal/weekly-subject-schedule";
 const ACTIVITIES_ENDPOINT = "/api/principal/calendar";
-const PRINCIPAL_GRADE_ID = 1; // TODO: make grade selectable
+const ACTIVITIES_DELETE_ENDPOINT = "/api/principal/calendar-activities";
+const GRADE_OPTIONS = [1, 2, 3, 4, 5, 6] as const;
 
 const MONTH_LABELS = [
   "January",
@@ -89,7 +92,7 @@ const buildEmptySubjectSchedule = (): SubjectScheduleFormValues =>
   SUBJECT_WEEKDAYS.reduce<SubjectScheduleFormValues>((acc, day) => {
     acc[day] = "";
     return acc;
-  }, {} as SubjectScheduleFormValues);
+  }, { startTime: "", endTime: "" } as SubjectScheduleFormValues);
 
 const normalizeSubjectSchedule = (
   input: Partial<SubjectScheduleFormValues> | null | undefined,
@@ -102,6 +105,8 @@ const normalizeSubjectSchedule = (
     const raw = input[day];
     baseline[day] = typeof raw === "string" ? raw.trim() : "";
   }
+  baseline.startTime = typeof input.startTime === "string" ? input.startTime.trim() : "";
+  baseline.endTime = typeof input.endTime === "string" ? input.endTime.trim() : "";
   return baseline;
 };
 
@@ -117,7 +122,9 @@ const dedupeSubjects = (subjects: readonly string[]): string[] => {
 };
 
 const subjectScheduleHasAssignments = (schedule: SubjectScheduleFormValues): boolean =>
-  SUBJECT_WEEKDAYS.some((day) => Boolean(schedule[day]?.trim().length));
+  SUBJECT_WEEKDAYS.some((day) => Boolean(schedule[day]?.trim().length)) &&
+  Boolean(schedule.startTime?.trim()) &&
+  Boolean(schedule.endTime?.trim());
 
 const getPrincipalUserId = (): number | null => {
   const profile = getStoredUserProfile();
@@ -137,9 +144,39 @@ const resolveDefaultSchoolYear = () => {
   return month >= 5 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
 };
 
+const parseSchoolYear = (value: string | null | undefined): { startYear: number; endYear: number } | null => {
+  if (!value) return null;
+  const [start, end] = value.split("-").map((part) => Number(part));
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  return { startYear: start, endYear: end };
+};
+
+const resolveSchoolYearFromDate = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  return month >= 5 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
+};
+
+const monthInRange = (month: number, start: number, end: number): boolean => {
+  if (start <= end) return month >= start && month <= end;
+  return month >= start || month <= end;
+};
+
+const formatTime12Hour = (value: string | null | undefined): string => {
+  if (!value) return "--";
+  const [hoursRaw, minutesRaw] = value.split(":");
+  const hours = Number(hoursRaw);
+  const minutes = Number(minutesRaw);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return "--";
+  const period = hours >= 12 ? "PM" : "AM";
+  const normalizedHours = ((hours + 11) % 12) + 1;
+  return `${normalizedHours}:${String(minutes).padStart(2, "0")} ${period}`;
+};
+
 export default function PrincipalCalendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [selectedGrade, setSelectedGrade] = useState<(typeof GRADE_OPTIONS)[number]>(1);
   const [remedialPeriod, setRemedialPeriod] = useState<RemedialPeriod | null>(null);
   const [selectedSchoolYear, setSelectedSchoolYear] = useState<string>(resolveDefaultSchoolYear());
   const [showPeriodModal, setShowPeriodModal] = useState(false);
@@ -155,13 +192,17 @@ export default function PrincipalCalendar() {
   const [showSubjectModal, setShowSubjectModal] = useState(false);
   const [subjectMutating, setSubjectMutating] = useState(false);
   const [subjectMutationError, setSubjectMutationError] = useState<string | null>(null);
+  const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
+  const [showActivityModal, setShowActivityModal] = useState(false);
+  const [activityRemoving, setActivityRemoving] = useState(false);
+  const [activityRemoveError, setActivityRemoveError] = useState<string | null>(null);
 
   const loadSubjectSchedule = useCallback(async () => {
     setSubjectScheduleLoading(true);
     setSubjectScheduleError(null);
     setSubjectScheduleEmpty(false);
     try {
-      const response = await fetch(`${SUBJECT_SCHEDULE_ENDPOINT}?grade_id=${PRINCIPAL_GRADE_ID}`, { cache: "no-store" });
+      const response = await fetch(`${SUBJECT_SCHEDULE_ENDPOINT}?grade_id=${selectedGrade}`, { cache: "no-store" });
       if (!response.ok) {
         if (response.status === 404) {
           setSubjectScheduleEmpty(true);
@@ -194,7 +235,7 @@ export default function PrincipalCalendar() {
     } finally {
       setSubjectScheduleLoading(false);
     }
-  }, []);
+  }, [selectedGrade]);
 
   const loadRemedialSchedule = useCallback(async () => {
     setScheduleLoading(true);
@@ -235,13 +276,14 @@ export default function PrincipalCalendar() {
 
   const loadApprovedActivities = useCallback(async () => {
     try {
-      const response = await fetch(ACTIVITIES_ENDPOINT, { cache: "no-store" });
+      const gradeLabel = `Grade ${selectedGrade}`;
+      const response = await fetch(`${ACTIVITIES_ENDPOINT}?grade=${encodeURIComponent(gradeLabel)}`, { cache: "no-store" });
       const payload = (await response.json().catch(() => null)) as {
         success?: boolean;
         activities?: Array<{
           id: string;
           title: string | null;
-          description?: string | null;
+          submittedBy?: string | null;
           date: string | null;
           end?: string | null;
           type?: string | null;
@@ -262,7 +304,7 @@ export default function PrincipalCalendar() {
           const activity: Activity = {
             id: Number(item.id),
             title: item.title ?? "Remedial Activity",
-            description: item.description ?? undefined,
+            submittedBy: item.submittedBy ?? null,
             date,
             end,
             type: item.type ?? "remedial",
@@ -276,7 +318,7 @@ export default function PrincipalCalendar() {
       console.warn("Failed to load approved activities", error);
       setActivities([]);
     }
-  }, []);
+  }, [selectedGrade]);
 
   useEffect(() => {
     loadApprovedActivities();
@@ -332,7 +374,19 @@ export default function PrincipalCalendar() {
     setCurrentDate(new Date());
   };
 
-  const isWithinPeriod = (_date: Date) => false;
+  const isWithinPeriod = (date: Date) => {
+    if (!remedialPeriod?.quarters) return false;
+    const schoolYear = remedialPeriod.schoolYear ?? selectedSchoolYear;
+    const parsed = parseSchoolYear(schoolYear);
+    const dateSchoolYear = resolveSchoolYearFromDate(date);
+    if (!parsed || dateSchoolYear !== schoolYear) return false;
+    const month = date.getMonth() + 1;
+    const ranges = Object.values(remedialPeriod.quarters);
+    return ranges.some((range) => {
+      if (!range?.startMonth || !range?.endMonth) return false;
+      return monthInRange(month, range.startMonth, range.endMonth);
+    });
+  };
 
   const renderDayCell = (cellDate: Date | null) => {
     if (!cellDate) {
@@ -382,6 +436,11 @@ export default function PrincipalCalendar() {
             <div
               key={activity.id}
               className={`text-xs p-1 rounded truncate cursor-pointer border ${getActivityColor(activity.type)}`}
+              onClick={() => {
+                setActivityRemoveError(null);
+                setSelectedActivity(activity);
+                setShowActivityModal(true);
+              }}
             >
               <div className="flex justify-between items-center gap-2">
                 <span className="truncate font-semibold text-[#013300]">
@@ -413,52 +472,103 @@ export default function PrincipalCalendar() {
     setSubjectMutationError(null);
   };
 
-const handleSaveSubjectSchedule = async (values: SubjectScheduleFormValues) => {
-  if (subjectMutating) return;
+  const handleSaveSubjectSchedule = async (values: SubjectScheduleFormValues) => {
+    if (subjectMutating) return;
 
-  const normalized = normalizeSubjectSchedule(values);
-  setSubjectMutationError(null);
-  setSubjectMutating(true);
+    const existing = normalizeSubjectSchedule(subjectSchedule);
+    const draft = normalizeSubjectSchedule(values);
+    const hasExistingTime = Boolean(existing.startTime || existing.endTime);
 
-  const createdByUserId = getPrincipalUserId();
+    let resolvedStartTime = draft.startTime || existing.startTime;
+    let resolvedEndTime = draft.endTime || existing.endTime;
 
-  if (!createdByUserId) {
-    setSubjectMutationError("Your session has expired. Please sign in again.");
-    setSubjectMutating(false);
-    return;
-  }
+    if (!hasExistingTime) {
+      if (!draft.startTime || !draft.endTime) {
+        setSubjectMutationError("Start and end time are required for new schedules.");
+        return;
+      }
+      resolvedStartTime = draft.startTime;
+      resolvedEndTime = draft.endTime;
+    }
 
-  try {
-    const response = await fetch(SUBJECT_SCHEDULE_ENDPOINT, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        schedule: normalized,
-        grade_id: PRINCIPAL_GRADE_ID,
-        created_by_user_id: createdByUserId,
-      }),
-    });
+    if (!resolvedStartTime || !resolvedEndTime) {
+      setSubjectMutationError("Start and end time are required.");
+      return;
+    }
+
+    // Validate time order
+    const parseTimeToMinutes = (timeStr: string): number | null => {
+      const [hours, minutes] = timeStr.split(":").map(Number);
+      if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+      return hours * 60 + minutes;
+    };
+
+    const startMinutes = parseTimeToMinutes(resolvedStartTime);
+    const endMinutes = parseTimeToMinutes(resolvedEndTime);
     
+    if (startMinutes === null || endMinutes === null) {
+      setSubjectMutationError("Invalid time format.");
+      return;
+    }
+    
+    if (endMinutes <= startMinutes) {
+      setSubjectMutationError("End time must be later than start time.");
+      return;
+    }
+
+    setSubjectMutationError(null);
+    setSubjectMutating(true);
+
+    const createdByUserId = getPrincipalUserId();
+
+    if (!createdByUserId) {
+      setSubjectMutationError("Your session has expired. Please sign in again.");
+      setSubjectMutating(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(SUBJECT_SCHEDULE_ENDPOINT, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          schedule: {
+            ...draft,
+            startTime: resolvedStartTime,
+            endTime: resolvedEndTime,
+          },
+          grade_id: selectedGrade,
+          created_by_user_id: createdByUserId,
+        }),
+      });
+      
       const payload = (await response.json().catch(() => null)) as {
         success: boolean;
         schedule: Partial<SubjectScheduleFormValues> | null;
         options?: { subjects?: string[] } | null;
         error?: string | null;
       } | null;
+      
       if (!response.ok) {
         const message = payload && typeof payload.error === "string"
           ? payload.error
           : `Request failed with status ${response.status}`;
         throw new Error(message);
       }
+      
       if (!payload || !payload.success) {
         throw new Error(payload?.error ?? "Failed to update subject schedule.");
       }
-      const schedule = normalizeSubjectSchedule(payload.schedule ?? normalized);
+      
+      const schedule = normalizeSubjectSchedule(payload.schedule ?? {
+        ...draft,
+        startTime: resolvedStartTime,
+        endTime: resolvedEndTime,
+      });
       setSubjectSchedule(schedule);
       const optionSeeds = Array.isArray(payload.options?.subjects) ? payload.options?.subjects : [];
       setSubjectOptions(dedupeSubjects([...DEFAULT_SUBJECT_OPTIONS, ...optionSeeds]));
-  setSubjectMutationError(null);
+      setSubjectMutationError(null);
       setShowSubjectModal(false);
     } catch (error) {
       console.error("Failed to update subject schedule", error);
@@ -473,7 +583,7 @@ const handleSaveSubjectSchedule = async (values: SubjectScheduleFormValues) => {
     setSubjectMutationError(null);
     setSubjectMutating(true);
     try {
-      const response = await fetch(`${SUBJECT_SCHEDULE_ENDPOINT}?grade_id=${PRINCIPAL_GRADE_ID}`, {
+      const response = await fetch(`${SUBJECT_SCHEDULE_ENDPOINT}?grade_id=${selectedGrade}`, {
         method: "DELETE",
       });
       const payload = (await response.json().catch(() => null)) as {
@@ -590,6 +700,41 @@ const handleSaveSubjectSchedule = async (values: SubjectScheduleFormValues) => {
     setShowCancelModal(false);
   };
 
+  const handleConfirmActivityDelete = async () => {
+    if (!selectedActivity || activityRemoving) return;
+    setActivityRemoving(true);
+    setActivityRemoveError(null);
+    try {
+      const response = await fetch(ACTIVITIES_DELETE_ENDPOINT, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          activityId: selectedActivity.id,
+          sourceTable: "approved_remedial_schedule",
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as { success?: boolean; error?: string | null } | null;
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error ?? `Request failed with status ${response.status}`);
+      }
+      setShowActivityModal(false);
+      setSelectedActivity(null);
+      loadApprovedActivities();
+    } catch (error) {
+      console.error("Failed to remove activity", error);
+      setActivityRemoveError("Unable to remove the activity. Please try again.");
+    } finally {
+      setActivityRemoving(false);
+    }
+  };
+
+  const handleCloseActivityModal = () => {
+    if (activityRemoving) return;
+    setShowActivityModal(false);
+    setSelectedActivity(null);
+    setActivityRemoveError(null);
+  };
+
   const modalInitialData = useMemo<RemedialPeriodFormValues>(() => ({
     schoolYear: remedialPeriod?.schoolYear ?? selectedSchoolYear,
     quarters: remedialPeriod?.quarters ?? {
@@ -651,6 +796,28 @@ const handleSaveSubjectSchedule = async (values: SubjectScheduleFormValues) => {
                   </div>
                 </div>
 
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold text-gray-700">Grade Calendar</span>
+                    <div className="flex flex-wrap gap-2">
+                      {GRADE_OPTIONS.map((grade) => (
+                        <button
+                          key={grade}
+                          type="button"
+                          onClick={() => setSelectedGrade(grade)}
+                          className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${
+                            selectedGrade === grade
+                              ? "bg-[#013300] text-white border-[#013300]"
+                              : "bg-white text-gray-700 border-gray-200 hover:bg-gray-100"
+                          }`}
+                        >
+                          Grade {grade}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
                 {/* Subject Schedule Card */}
                 <div className="rounded-lg border border-gray-200 bg-white p-4">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -669,6 +836,14 @@ const handleSaveSubjectSchedule = async (values: SubjectScheduleFormValues) => {
                         <p className="text-sm text-gray-600 mt-1">
                           Configure the weekday subjects so teachers know the focus for each day.
                         </p>
+                      )}
+                      {!subjectScheduleLoading && subjectScheduleConfigured && (
+                        <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-800">
+                          <span className="uppercase tracking-wide text-[0.65rem] text-emerald-700">Time</span>
+                          <span>
+                            {formatTime12Hour(subjectSchedule.startTime)} – {formatTime12Hour(subjectSchedule.endTime)}
+                          </span>
+                        </div>
                       )}
                     </div>
                     <div className="flex items-center gap-2">
@@ -745,6 +920,9 @@ const handleSaveSubjectSchedule = async (values: SubjectScheduleFormValues) => {
 
               {/* Calendar View */}
               <div className="border rounded-lg overflow-hidden bg-white">
+                <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+                  <h3 className="text-base font-semibold text-gray-800">Grade {selectedGrade} Calendar</h3>
+                </div>
                 <div className="grid grid-cols-7 bg-gray-50 text-sm font-medium text-gray-700">
                   {["S", "M", "T", "W", "T", "F", "S"].map((day, index) => (
                     <div key={`${day}-${index}`} className="p-2 text-center">
@@ -791,6 +969,41 @@ const handleSaveSubjectSchedule = async (values: SubjectScheduleFormValues) => {
         title="Cancel Remedial Schedule"
         message="Are you sure you want to cancel the current remedial schedule? This will remove the configured period for all principals."
       />
+      <BaseModal
+        show={showActivityModal}
+        onClose={handleCloseActivityModal}
+        title="Activity Details"
+        maxWidth="md"
+        footer={(
+          <>
+            <SecondaryButton type="button" onClick={handleCloseActivityModal} disabled={activityRemoving}>
+              Close
+            </SecondaryButton>
+            <DangerButton type="button" onClick={handleConfirmActivityDelete} disabled={activityRemoving || !selectedActivity}>
+              {activityRemoving ? "Deleting..." : "Delete"}
+            </DangerButton>
+          </>
+        )}
+      >
+        {activityRemoveError && (
+          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {activityRemoveError}
+          </div>
+        )}
+        <div className="space-y-4">
+          <ModalInfoItem label="Title" value={selectedActivity?.title ?? "-"} />
+          <ModalInfoItem
+            label="Date"
+            value={selectedActivity ? selectedActivity.date.toLocaleDateString("en-US", {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+            }) : "-"}
+          />
+          <ModalInfoItem label="Submitted by" value={selectedActivity?.submittedBy ?? "-"} />
+        </div>
+      </BaseModal>
     </div>
   );
 }
