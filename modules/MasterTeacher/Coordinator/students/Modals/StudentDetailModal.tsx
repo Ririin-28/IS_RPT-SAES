@@ -99,7 +99,7 @@ export default function StudentDetailModal({ show, onClose, student, onEdit }: S
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
           <ModalInfoItem label="Relationship" value={student.relationship} />
-          <ModalInfoItem label="Contact Number" value={student.guardianContact} />
+          <ModalInfoItem label="Phone Number" value={student.guardianContact} />
           <ModalInfoItem label="Email" value={student.guardianEmail} />
         </div>
         <div className="grid grid-cols-1">

@@ -195,6 +195,10 @@ export async function GET(request: NextRequest) {
         )
       LEFT JOIN phonemic_level pl ON pl.phonemic_id = ssa.phonemic_id AND pl.subject_id = ?
       WHERE s.grade_id IN (${gradePlaceholders})
+      AND EXISTS (
+        SELECT 1 FROM student_subject_assessment ssa2
+        WHERE ssa2.student_id = s.student_id AND ssa2.subject_id = ?
+      )
       GROUP BY s.student_id, g.grade_level, s.section, gi.guardian, gi.guardian_contact, s.first_name, s.middle_name, s.last_name, s.suffix, ssa.phonemic_id, pl.level_name
       ORDER BY g.grade_level, s.section, s.last_name, s.first_name, s.student_id
     `;
