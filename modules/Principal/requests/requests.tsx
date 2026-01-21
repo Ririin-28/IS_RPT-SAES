@@ -41,6 +41,7 @@ interface CalendarRequestRow {
   sourceTable: string;
   relatedRowIds?: string[];
   planBatchId?: string | null;
+  rejectionReason?: string | null;
 }
 
 type ActionType = "approve" | "reject";
@@ -203,6 +204,7 @@ export default function PrincipalRequests() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
+  const [viewMode, setViewMode] = useState<"pending" | "history">("pending");
   const [actionState, setActionState] = useState<{ id: string | null; action: ActionType | null }>({
     id: null,
     action: null,
@@ -217,7 +219,10 @@ export default function PrincipalRequests() {
     setError(null);
 
     try {
-      const response = await fetch("/api/principal/calendar-requests", { cache: "no-store" });
+      const endpoint = viewMode === "history"
+        ? "/api/principal/calendar-history"
+        : "/api/principal/calendar-requests";
+      const response = await fetch(endpoint, { cache: "no-store" });
       const payload = (await response.json().catch(() => null)) as { success?: boolean; requests?: CalendarRequestRow[]; error?: string } | null;
 
       if (!response.ok) {
@@ -233,7 +238,7 @@ export default function PrincipalRequests() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [viewMode]);
 
   useEffect(() => {
     fetchRequests();
@@ -316,6 +321,7 @@ export default function PrincipalRequests() {
     setRejectReason("");
   }, []);
 
+
   const confirmReject = useCallback(async () => {
     if (!rejectTarget) {
       return;
@@ -331,16 +337,18 @@ export default function PrincipalRequests() {
 
   const emptyMessage = useMemo(() => {
     if (loading) {
-      return "Loading requests...";
+      return viewMode === "history" ? "Loading history..." : "Loading requests...";
     }
     if (error) {
       return error;
     }
     if (requests.length === 0) {
-      return "No pending calendar activity requests.";
+      return viewMode === "history"
+        ? "No history available yet."
+        : "No pending calendar activity requests.";
     }
     return null;
-  }, [error, loading, requests.length]);
+  }, [error, loading, requests.length, viewMode]);
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
@@ -356,8 +364,21 @@ export default function PrincipalRequests() {
                   <p className="text-sm text-gray-600">Review master teacher submissions and manage approvals.</p>
                 </div>
                 <div className="flex gap-2">
-                  <SecondaryButton small onClick={fetchRequests} disabled={loading}>
-                    Refresh
+                  <SecondaryButton
+                    small
+                    onClick={() => setViewMode("pending")}
+                    className={viewMode === "pending" ? "bg-gray-200" : ""}
+                    disabled={loading}
+                  >
+                    Pending
+                  </SecondaryButton>
+                  <SecondaryButton
+                    small
+                    onClick={() => setViewMode("history")}
+                    className={viewMode === "history" ? "bg-gray-200" : ""}
+                    disabled={loading}
+                  >
+                    History
                   </SecondaryButton>
                 </div>
               </div>
@@ -383,6 +404,7 @@ export default function PrincipalRequests() {
                     const requestedDateLabel = formatDate(request.requestedDate);
                     const actionDisabled =
                       actionState.id === requestKey || statusLabel.toLowerCase().includes("decline") || statusLabel.toLowerCase().includes("approve");
+                    const isHistory = viewMode === "history";
 
                     return (
                       <div
@@ -431,6 +453,22 @@ export default function PrincipalRequests() {
                                 Requested on: <span className="font-medium text-gray-800">{requestedDateLabel}</span>
                               </p>
                             )}
+                            {isHistory && (request.approvedBy || request.approvedAt || request.updatedAt) && (
+                              <p>
+                                Actioned by:{" "}
+                                <span className="font-medium text-gray-800">
+                                  {request.approvedBy ?? "Principal"}
+                                </span>
+                                {request.updatedAt && (
+                                  <span className="text-gray-500"> · {formatDate(request.updatedAt.slice(0, 10))}</span>
+                                )}
+                              </p>
+                            )}
+                            {isHistory && request.description && statusLabel.toLowerCase().includes("reject") && (
+                              <p>
+                                Rejection reason: <span className="font-medium text-gray-800">{request.description}</span>
+                              </p>
+                            )}
                           </div>
 
                           <button
@@ -467,24 +505,26 @@ export default function PrincipalRequests() {
                             </div>
                           )}
 
-                          <div className="mt-4 flex flex-wrap gap-3">
-                            <PrimaryButton
-                              type="button"
-                              small
-                              disabled={actionDisabled || (actionState.id === requestKey && actionState.action === "approve")}
-                              onClick={() => handleAction(request, "approve")}
-                            >
-                              {actionState.id === requestKey && actionState.action === "approve" ? "Approving..." : "Approve"}
-                            </PrimaryButton>
-                            <DangerButton
-                              type="button"
-                              small
-                              disabled={actionDisabled || (actionState.id === requestKey && actionState.action === "reject")}
-                              onClick={() => openRejectModal(request)}
-                            >
-                              {actionState.id === requestKey && actionState.action === "reject" ? "Rejecting..." : "Reject"}
-                            </DangerButton>
-                          </div>
+                          {!isHistory && (
+                            <div className="mt-4 flex flex-wrap gap-3">
+                              <PrimaryButton
+                                type="button"
+                                small
+                                disabled={actionDisabled || (actionState.id === requestKey && actionState.action === "approve")}
+                                onClick={() => handleAction(request, "approve")}
+                              >
+                                {actionState.id === requestKey && actionState.action === "approve" ? "Approving..." : "Approve"}
+                              </PrimaryButton>
+                              <DangerButton
+                                type="button"
+                                small
+                                disabled={actionDisabled || (actionState.id === requestKey && actionState.action === "reject")}
+                                onClick={() => openRejectModal(request)}
+                              >
+                                {actionState.id === requestKey && actionState.action === "reject" ? "Rejecting..." : "Reject"}
+                              </DangerButton>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -523,6 +563,7 @@ export default function PrincipalRequests() {
           />
         </div>
       </BaseModal>
+
     </div>
   );
 }

@@ -254,22 +254,37 @@ export async function PATCH(request: NextRequest) {
       "status",
       "submitted_at",
     ];
+    const requestCols = await getTableColumns(REQUEST_REMEDIAL_TABLE).catch(() => new Set<string>());
 
     if (normalizedAction === "approve") {
       const approvedCols = await getTableColumns(APPROVED_REMEDIAL_TABLE).catch(() => new Set<string>());
-      const insertCols = baseColumns.filter((col) => approvedCols.has(col));
+      const insertCols = baseColumns.filter((col) => approvedCols.has(col) && requestCols.has(col));
       const selectCols = insertCols.map((col) => (col === "status" ? `"Approved"` : `r.${col}`));
+      const dedupeChecks: string[] = [];
+      if (approvedCols.has("schedule_date") && requestCols.has("schedule_date")) {
+        dedupeChecks.push("a.schedule_date = r.schedule_date");
+      }
+      if (approvedCols.has("subject_id") && requestCols.has("subject_id")) {
+        dedupeChecks.push("a.subject_id = r.subject_id");
+      }
+      if (approvedCols.has("grade_id") && requestCols.has("grade_id")) {
+        dedupeChecks.push("a.grade_id = r.grade_id");
+      }
+      const dedupeClause = dedupeChecks.length
+        ? `AND NOT EXISTS (SELECT 1 FROM ${APPROVED_REMEDIAL_TABLE} a WHERE ${dedupeChecks.join(" AND ")})`
+        : "";
       const insertSql = `
         INSERT INTO ${APPROVED_REMEDIAL_TABLE} (${insertCols.join(", ")})
         SELECT ${selectCols.join(", ")}
         FROM ${REQUEST_REMEDIAL_TABLE} r
         WHERE r.request_id IN (${requestIds.map(() => "?").join(", ")})
+        ${dedupeClause}
       `;
       await query<ResultSetHeader>(insertSql, requestIds);
     } else {
       const rejectedCols = await getTableColumns(REJECTED_REMEDIAL_TABLE).catch(() => new Set<string>());
       const rejectionReason = payload?.rejectionReason ? String(payload.rejectionReason).trim() : "Rejected by principal";
-      const insertCols = baseColumns.filter((col) => rejectedCols.has(col));
+      const insertCols = baseColumns.filter((col) => rejectedCols.has(col) && requestCols.has(col));
       const extraCols: string[] = [];
       const selectExtras: string[] = [];
       if (rejectedCols.has("rejection_reason")) {

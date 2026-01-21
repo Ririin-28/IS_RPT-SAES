@@ -152,6 +152,10 @@ export type CoordinatorStudent = {
   section: string;
   age: string;
   guardian: string;
+  guardianFirstName?: string | null;
+  guardianMiddleName?: string | null;
+  guardianLastName?: string | null;
+  guardianSuffix?: string | null;
   guardianContact: string;
   guardianEmail?: string | null;
   address: string;
@@ -295,7 +299,7 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
 
 interface StudentTabProps {
   searchTerm: string;
-  onMetaChange?: (meta: { subject: MaterialSubject; gradeLevel: string | null }) => void;
+  onMetaChange?: (meta: { subject: MaterialSubject; gradeLevel: string | null; students: CoordinatorStudent[] }) => void;
 }
 
 type CoordinatorStudentFormInput = CreateStudentPayload;
@@ -418,9 +422,17 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
     })();
   }, [fetchSubject, fetchStudents]);
 
+  const meta = useMemo(() => ({
+    subject,
+    gradeLevel,
+    students,
+  }), [subject, gradeLevel, students]);
+
   useEffect(() => {
-    onMetaChange?.({ subject, gradeLevel });
-  }, [subject, gradeLevel, onMetaChange]);
+    if (meta) {
+      onMetaChange?.(meta);
+    }
+  }, [meta, onMetaChange]);
 
   const persistStudents = useCallback(
     async (studentsPayload: CreateStudentPayload[]) => {
