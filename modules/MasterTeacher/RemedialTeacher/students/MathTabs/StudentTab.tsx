@@ -31,7 +31,11 @@ const capitalizeWord = (value: string) => {
   if (!value) {
     return "";
   }
-  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
 };
 
 // Extract name parts from student object
@@ -449,8 +453,13 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
     }
   };
 
-  const handlePlayClick = () => {
-    router.push("/MasterTeacher/RemedialTeacher/remedial/MathFlashcards?start=0");
+  const handlePlayClick = (student: any) => {
+    const studentId = student?.studentId ?? student?.id ?? "";
+    const params = new URLSearchParams({ start: "0" });
+    if (studentId) {
+      params.set("studentId", String(studentId));
+    }
+    router.push(`/MasterTeacher/RemedialTeacher/remedial/MathFlashcards?${params.toString()}`);
   };
 
   return (
@@ -512,7 +521,7 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
             <UtilityButton small onClick={() => handleViewDetails(row)} title="View student details">
               View
             </UtilityButton>
-            <UtilityButton small type="button" onClick={handlePlayClick} title="Click to play remedial session">
+            <UtilityButton small type="button" onClick={() => handlePlayClick(row)} title="Click to play remedial session">
               Play
             </UtilityButton>
           </div>

@@ -862,10 +862,18 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
         const worksheet = workbook.Sheets[sheetName];
         const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
 
+        const normalizeHeader = (value: string) => value.trim().replace(/\s+/g, " ").toUpperCase();
+
         const readField = (row: any, keys: string[]): string => {
+          const normalizedRow: Record<string, any> = {};
+          for (const [rawKey, rawValue] of Object.entries(row ?? {})) {
+            normalizedRow[normalizeHeader(String(rawKey))] = rawValue;
+          }
+
           for (const key of keys) {
-            if (row[key] !== undefined && row[key] !== null) {
-              const value = String(row[key]).trim();
+            const normalizedKey = normalizeHeader(key);
+            if (normalizedRow[normalizedKey] !== undefined && normalizedRow[normalizedKey] !== null) {
+              const value = String(normalizedRow[normalizedKey]).trim();
               if (value.length > 0) return value;
             }
           }
@@ -876,14 +884,54 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
           const firstName = readField(row, ['FIRSTNAME', 'FIRST_NAME', 'FIRST NAME', 'First Name', 'firstName']);
           const middleName = readField(row, ['MIDDLENAME', 'MIDDLE_NAME', 'MIDDLE NAME', 'Middle Name', 'middleName']);
           const lastName = readField(row, ['SURNAME', 'LASTNAME', 'LAST_NAME', 'LAST NAME', 'Last Name', 'lastName']);
-          const studentName = `${firstName} ${middleName} ${lastName}`.trim();
+          const suffix = readField(row, ['SUFFIX', 'Suffix', 'suffix']);
+          const studentName = `${firstName} ${middleName} ${lastName} ${suffix}`.trim();
 
           const lrn = readField(row, ['LRN', 'Lrn', 'lrn']);
 
-          const guardianFirst = readField(row, ["GUARDIAN'S FIRSTNAME", "GUARDIAN FIRSTNAME", "Guardian First Name", 'guardianFirstName']);
-          const guardianMiddle = readField(row, ["GUARDIAN'S MIDDLENAME", "GUARDIAN MIDDLENAME", "Guardian Middle Name", 'guardianMiddleName']);
-          const guardianLast = readField(row, ["GUARDIAN'S SURNAME", "GUARDIAN SURNAME", "Guardian Last Name", 'guardianLastName']);
-          const guardianName = `${guardianFirst} ${guardianMiddle} ${guardianLast}`.trim();
+          const guardianFirst = readField(row, [
+            "GUARDIAN'S FIRSTNAME",
+            "GUARDIAN FIRSTNAME",
+            "Guardian First Name",
+            'guardianFirstName',
+            "PARENT FIRST NAME",
+            "PARENT_FIRST_NAME",
+            "PARENT FIRSTNAME",
+            "Parent First Name",
+            "parentFirstName",
+          ]);
+          const guardianMiddle = readField(row, [
+            "GUARDIAN'S MIDDLENAME",
+            "GUARDIAN MIDDLENAME",
+            "Guardian Middle Name",
+            'guardianMiddleName',
+            "PARENT MIDDLE NAME",
+            "PARENT_MIDDLE_NAME",
+            "PARENT MIDDLENAME",
+            "Parent Middle Name",
+            "parentMiddleName",
+          ]);
+          const guardianLast = readField(row, [
+            "GUARDIAN'S SURNAME",
+            "GUARDIAN SURNAME",
+            "Guardian Last Name",
+            'guardianLastName',
+            "PARENT LAST NAME",
+            "PARENT_LAST_NAME",
+            "PARENT SURNAME",
+            "Parent Last Name",
+            "parentLastName",
+          ]);
+          const guardianSuffix = readField(row, [
+            "GUARDIAN SUFFIX",
+            "GUARDIAN'S SUFFIX",
+            "guardianSuffix",
+            "PARENT SUFFIX",
+            "PARENT_SUFFIX",
+            "Parent Suffix",
+            "parentSuffix",
+          ]);
+          const guardianName = `${guardianFirst} ${guardianMiddle} ${guardianLast} ${guardianSuffix}`.trim();
 
           const subjectPhonemic = readField(row, ['SUBJECT PHONEMIC', 'Subject Phonemic', 'subjectPhonemic', 'PHONEMIC', 'Phonemic']);
           const gradeFromSheet = readField(row, ['GRADE', 'Grade', 'grade']);
@@ -895,6 +943,7 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
             firstName: firstName || '',
             middleName: middleName || '',
             lastName: lastName || '',
+            suffix: suffix || '',
             name: studentName || 'Unnamed Student',
             grade: resolvedGrade,
             section: readField(row, ['SECTION', 'Section', 'section']),
@@ -904,7 +953,24 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
             guardianFirstName: guardianFirst || '',
             guardianMiddleName: guardianMiddle || '',
             guardianLastName: guardianLast || '',
-            guardianContact: readField(row, ["GUARDIAN'S CONTACT", "GUARDIAN'S CONTACT NUMBER", 'CONTACT NUMBER', 'CONTACT_NUMBER', 'Contact Number', 'contactNumber', 'GUARDIAN CONTACT', 'Guardian Contact', 'GUARDIAN_CONTACT', 'guardianContact']),
+            guardianSuffix: guardianSuffix || '',
+            guardianContact: readField(row, [
+              "GUARDIAN'S CONTACT",
+              "GUARDIAN'S CONTACT NUMBER",
+              'CONTACT NUMBER',
+              'CONTACT_NUMBER',
+              'Contact Number',
+              'contactNumber',
+              'GUARDIAN CONTACT',
+              'Guardian Contact',
+              'GUARDIAN_CONTACT',
+              'guardianContact',
+              'PHONE NUMBER',
+              'PHONE_NUMBER',
+              'Phone Number',
+              'phoneNumber',
+            ]),
+            guardianEmail: readField(row, ['EMAIL', 'Email', 'email']),
             relationship: readField(row, ['RELATIONSHIP', 'Relationship', 'relationship']),
             englishPhonemic: subject?.toLowerCase() === 'english' ? subjectPhonemic : '',
             filipinoPhonemic: subject?.toLowerCase() === 'filipino' ? subjectPhonemic : '',

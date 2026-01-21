@@ -32,8 +32,9 @@ type RawStudentRow = RowDataPacket & {
   middle_name: string | null;
   last_name: string | null;
   suffix: string | null;
-  subject_phonemic: number | null;
-  subject_phonemic_name: string | null;
+  english_phonemic: string | null;
+  filipino_phonemic: string | null;
+  math_phonemic: string | null;
 };
 
 const sanitize = (value: unknown): string | null => {
@@ -42,7 +43,7 @@ const sanitize = (value: unknown): string | null => {
   return text.length ? text : null;
 };
 
-const normalizeStudentRow = (row: RawStudentRow, subject: SupportedSubject) => {
+const normalizeStudentRow = (row: RawStudentRow) => {
   const firstName = sanitize(row.first_name);
   const middleName = sanitize(row.middle_name);
   const lastName = sanitize(row.last_name);
@@ -50,10 +51,6 @@ const normalizeStudentRow = (row: RawStudentRow, subject: SupportedSubject) => {
   const parts = [firstName, middleName, lastName].filter((part) => typeof part === "string" && part.length > 0);
   const fullName = parts.length ? parts.join(" ") : null;
   const fullNameWithSuffix = suffix ? [fullName ?? "", suffix].filter(Boolean).join(" ") : fullName;
-
-  const phonemic = row.subject_phonemic;
-  const phonemicName = sanitize(row.subject_phonemic_name);
-  const valueText = phonemicName ?? (Number.isFinite(phonemic) ? String(phonemic) : null);
 
   return {
     studentId: sanitize(row.student_id),
@@ -63,12 +60,12 @@ const normalizeStudentRow = (row: RawStudentRow, subject: SupportedSubject) => {
     studentIdentifier: sanitize(row.student_identifier),
     grade: sanitize(row.student_grade_level),
     section: sanitize(row.student_section),
-    english: subject === "English" ? valueText : null,
-    filipino: subject === "Filipino" ? valueText : null,
-    math: subject === "Math" ? valueText : null,
-    englishPhonemic: subject === "English" ? valueText : null,
-    filipinoPhonemic: subject === "Filipino" ? valueText : null,
-    mathProficiency: subject === "Math" ? valueText : null,
+    english: sanitize(row.english_phonemic),
+    filipino: sanitize(row.filipino_phonemic),
+    math: sanitize(row.math_phonemic),
+    englishPhonemic: sanitize(row.english_phonemic),
+    filipinoPhonemic: sanitize(row.filipino_phonemic),
+    mathProficiency: sanitize(row.math_phonemic),
     guardian: sanitize(row.guardian),
     guardianContact: sanitize(row.guardian_contact),
     guardianEmail: sanitize(row.guardian_email),
@@ -165,12 +162,27 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const [[subjectRow]] = await query<RowDataPacket[]>(
-      "SELECT subject_id FROM subject WHERE LOWER(TRIM(subject_name)) = LOWER(TRIM(?)) LIMIT 1",
-      [subjectLabel],
+    const [[englishRow]] = await query<RowDataPacket[]>(
+      "SELECT subject_id FROM subject WHERE LOWER(TRIM(subject_name)) = 'english' LIMIT 1",
+    );
+    const [[filipinoRow]] = await query<RowDataPacket[]>(
+      "SELECT subject_id FROM subject WHERE LOWER(TRIM(subject_name)) = 'filipino' LIMIT 1",
+    );
+    const [[mathRow]] = await query<RowDataPacket[]>(
+      "SELECT subject_id FROM subject WHERE LOWER(TRIM(subject_name)) = 'math' LIMIT 1",
     );
 
-    const subjectId = Number(subjectRow?.subject_id);
+    const englishId = Number(englishRow?.subject_id);
+    const filipinoId = Number(filipinoRow?.subject_id);
+    const mathId = Number(mathRow?.subject_id);
+
+    const subjectIdMap: Record<string, number> = {
+      English: englishId,
+      Filipino: filipinoId,
+      Math: mathId,
+    };
+
+    const subjectId = subjectIdMap[subjectLabel];
     if (!Number.isFinite(subjectId)) {
       return NextResponse.json(
         { success: false, error: `Subject '${subjectLabel}' not found in subject table.` },
@@ -188,7 +200,13 @@ export async function GET(request: NextRequest) {
     const gradePlaceholders = gradeIds.map(() => "?").join(",");
     // Parameter order must follow placeholder order in the SQL: ssa.subject_id, subquery subject_id,
     // phonemic_level subject_id, all grade placeholders, then ssa2.subject_id.
-    const params: Array<string | number> = [subjectId, subjectId, subjectId, ...gradeIds, subjectId];
+    const params: Array<string | number> = [
+      Number.isFinite(englishId) ? englishId : null,
+      Number.isFinite(filipinoId) ? filipinoId : null,
+      Number.isFinite(mathId) ? mathId : null,
+      ...gradeIds,
+      subjectId,
+    ];
 
     const sql = `
       SELECT
@@ -210,8 +228,9 @@ export async function GET(request: NextRequest) {
         s.middle_name,
         s.last_name,
         s.suffix,
-        ssa.phonemic_id AS subject_phonemic,
-        pl.level_name AS subject_phonemic_name
+        MAX(CASE WHEN ssa.subject_id = ? THEN pl.level_name END) AS english_phonemic,
+        MAX(CASE WHEN ssa.subject_id = ? THEN pl.level_name END) AS filipino_phonemic,
+        MAX(CASE WHEN ssa.subject_id = ? THEN pl.level_name END) AS math_phonemic
       FROM student s
       JOIN grade g ON g.grade_id = s.grade_id
       LEFT JOIN (
@@ -233,26 +252,19 @@ export async function GET(request: NextRequest) {
         JOIN users u ON u.user_id = p.user_id
         GROUP BY ps.student_id
       ) gi ON gi.student_id = s.student_id
-      LEFT JOIN student_subject_assessment ssa ON 
-        ssa.student_id = s.student_id 
-        AND ssa.subject_id = ?
-        AND ssa.assessed_at = (
-          SELECT MAX(assessed_at) 
-          FROM student_subject_assessment 
-          WHERE student_id = s.student_id AND subject_id = ?
-        )
-      LEFT JOIN phonemic_level pl ON pl.phonemic_id = ssa.phonemic_id AND pl.subject_id = ?
+      LEFT JOIN student_subject_assessment ssa ON ssa.student_id = s.student_id
+      LEFT JOIN phonemic_level pl ON pl.phonemic_id = ssa.phonemic_id
       WHERE s.grade_id IN (${gradePlaceholders})
         AND EXISTS (
           SELECT 1 FROM student_subject_assessment ssa2
           WHERE ssa2.student_id = s.student_id AND ssa2.subject_id = ?
         )
-      GROUP BY s.student_id, g.grade_level, s.section, gi.guardian, gi.guardian_contact, s.first_name, s.middle_name, s.last_name, s.suffix, ssa.phonemic_id, pl.level_name
+      GROUP BY s.student_id, g.grade_level, s.section, gi.guardian, gi.guardian_contact, s.first_name, s.middle_name, s.last_name, s.suffix
       ORDER BY g.grade_level, s.section, s.last_name, s.first_name, s.student_id
     `;
 
     const [rows] = await query<RawStudentRow[]>(sql, params);
-    const students = rows.map((row) => normalizeStudentRow(row, subjectLabel as SupportedSubject));
+    const students = rows.map((row) => normalizeStudentRow(row));
 
     const filteredStudents = (() => {
       const term = sanitize(searchParam)?.toLowerCase();

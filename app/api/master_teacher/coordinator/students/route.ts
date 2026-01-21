@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   fetchStudents as fetchStudentRecords,
+  fetchStudentByLrnAcrossSubjects,
   insertStudents,
 } from "@/lib/students";
 import type { CreateStudentRecordInput } from "@/lib/students/shared";
@@ -74,6 +75,25 @@ const respondWithError = (message: string, status = 400) =>
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const subjectParam = url.searchParams.get("subject");
+  const lrnParam = url.searchParams.get("lrn");
+
+  if (lrnParam) {
+    const normalizedLrn = normalizeLrn(lrnParam);
+    if (!normalizedLrn) {
+      return respondWithError("LRN query parameter is required.");
+    }
+
+    try {
+      const student = await fetchStudentByLrnAcrossSubjects(normalizedLrn);
+      return NextResponse.json({ success: true, data: student });
+    } catch (error) {
+      console.error("Failed to lookup student by LRN", error);
+      return NextResponse.json(
+        { success: false, error: "Unable to lookup student record." },
+        { status: 500 },
+      );
+    }
+  }
 
   if (!subjectParam) {
     return respondWithError("Subject query parameter is required.");
