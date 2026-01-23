@@ -13,6 +13,7 @@ interface DeleteConfirmationModalProps {
   confirmDisabled?: boolean;
   isProcessing?: boolean;
   errorMessage?: string | null;
+  showCancel?: boolean;
 }
 
 export default function DeleteConfirmationModal({
@@ -26,6 +27,7 @@ export default function DeleteConfirmationModal({
   confirmDisabled = false,
   isProcessing = false,
   errorMessage = null,
+  showCancel = true,
 }: DeleteConfirmationModalProps) {
   if (!isOpen) return null;
 
@@ -39,7 +41,7 @@ export default function DeleteConfirmationModal({
         )}
         {itemName && <p className="text-sm text-gray-700 mb-4">Item: <strong>{itemName}</strong></p>}
         <div className="flex gap-3 justify-end">
-          <SecondaryButton onClick={onClose}>Cancel</SecondaryButton>
+          {showCancel && <SecondaryButton onClick={onClose}>Cancel</SecondaryButton>}
           <DangerButton onClick={onConfirm} disabled={confirmDisabled || isProcessing}>
             {isProcessing ? "Processing..." : confirmLabel}
           </DangerButton>
