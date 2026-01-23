@@ -6,7 +6,6 @@ interface Activity {
   id: number;
   title: string;
   roomNo: string;
-  description?: string;
   date: Date;
   end: Date;
   type: string;

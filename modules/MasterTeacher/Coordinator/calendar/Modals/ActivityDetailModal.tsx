@@ -38,7 +38,6 @@ const formatDateLabel = (value: Date | null): string | null => {
 interface Activity {
   id: number;
   title: string;
-  description?: string;
   date: Date;
   end: Date;
   type: string;
@@ -129,14 +128,6 @@ export default function ActivityDetailModal({ activity, onClose, onDelete }: Act
           <ModalInfoItem label="Time Slot" value={timeRange} />
         </div>
       </ModalSection>
-
-      {activity.description && (
-        <ModalSection title="Description">
-          <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 whitespace-pre-line">
-            {activity.description}
-          </div>
-        </ModalSection>
-      )}
 
       {requestApprovalItems.length > 0 && (
         <ModalSection title="Request & Approval">

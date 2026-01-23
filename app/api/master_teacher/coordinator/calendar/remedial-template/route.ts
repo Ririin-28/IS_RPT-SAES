@@ -224,7 +224,6 @@ export async function GET() {
                   Subject: subjectLabel,
                   Grade: gradeLabel,
                   Title: "",
-                  Description: "",
                 });
               }
             }

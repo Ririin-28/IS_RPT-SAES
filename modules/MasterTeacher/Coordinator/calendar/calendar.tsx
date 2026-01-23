@@ -20,7 +20,6 @@ interface Activity {
   id: number;
   title: string;
   day: string;
-  description?: string;
   date: Date;
   end: Date;
   type: string;
@@ -47,7 +46,6 @@ type ActivityTone = {
 type CalendarFormValues = {
   title: string;
   date: string;
-  description: string;
   teachers: string[];
   subject: string;
 };
@@ -488,7 +486,6 @@ export default function MasterTeacherCalendar() {
     defaultValues: {
       title: "",
       date: "",
-      description: "",
       teachers: [],
       subject: "",
     },
@@ -1021,10 +1018,6 @@ export default function MasterTeacherCalendar() {
                     ? item.title.trim()
                     : sanitizedSubject ?? "Remediation Session",
                 day: start.toLocaleDateString("en-US", { weekday: "long" }),
-                description:
-                  typeof item.description === "string" && item.description.trim().length > 0
-                    ? item.description.trim()
-                    : undefined,
                 date: start,
                 end,
                 type:
@@ -1274,7 +1267,6 @@ export default function MasterTeacherCalendar() {
     }
     const { start: startDate, end: endDate } = deriveSessionTimes(baseDate);
     const normalizedTitle = data.title.trim().length > 0 ? data.title.trim() : `${sanitizedSubject} Remediation`;
-    const descriptionSource = data.description.trim().length > 0 ? data.description : `${sanitizedSubject} remediation for ${gradeLabel}`;
 
     if (hasApprovedConflict(startDate, sanitizedSubject, gradeLabel)) {
       showToast("An approved activity already exists for this day, subject, and grade.", "info");
@@ -1290,7 +1282,6 @@ export default function MasterTeacherCalendar() {
       type: "class",
       gradeLevel: gradeLabel,
       title: normalizedTitle,
-      description: descriptionSource,
       subject: sanitizedSubject,
     };
 
@@ -1300,7 +1291,6 @@ export default function MasterTeacherCalendar() {
     reset({
       title: "",
       date: "",
-      description: "",
       teachers: [],
     });
     clearErrors();
@@ -1362,7 +1352,6 @@ export default function MasterTeacherCalendar() {
             gradeLabel: gradeLabel ?? null,
             activities: items.map((activity) => ({
               title: activity.title,
-              description: activity.description ?? null,
               date: activity.date.toISOString(),
             })),
           }),
@@ -1513,12 +1502,10 @@ export default function MasterTeacherCalendar() {
 
           existingSignatures.add(signature);
 
-          const description = `${resolvedSubject} remediation for ${gradeLabel}`;
           newActivities.push({
             id: nextId,
             title,
             day: start.toLocaleDateString("en-US", { weekday: "long" }),
-            description,
             date: start,
             end,
             type: "class",
@@ -1532,7 +1519,6 @@ export default function MasterTeacherCalendar() {
         if (newActivities.length > 0) {
           setActivities((prev) => [...prev, ...newActivities].sort((a, b) => a.date.getTime() - b.date.getTime()));
           setSendFeedback(null);
-          await persistRemedialActivities(newActivities);
         }
 
         const totalRows = Math.max(rows.length - 1, 0);
@@ -1573,6 +1559,11 @@ export default function MasterTeacherCalendar() {
   );
 
   const handleImportButtonClick = () => {
+    if (!hasConfiguredRemedialWindow) {
+      setRemedialGuardMessage("The principal has not set a remedial period yet.");
+      showToast("The principal has not set a remedial period yet.", "info");
+      return;
+    }
     if (!canPlanActivities) {
       if (!hasActiveRemedialWindow && scheduleBlockingReason) {
         setRemedialGuardMessage(scheduleBlockingReason);
@@ -1586,6 +1577,11 @@ export default function MasterTeacherCalendar() {
   };
 
   const handleDownloadTemplate = async () => {
+    if (!hasConfiguredRemedialWindow) {
+      setRemedialGuardMessage("The principal has not set a remedial period yet.");
+      showToast("The principal has not set a remedial period yet.", "info");
+      return;
+    }
     if (templateDownloading) {
       return;
     }
@@ -1611,7 +1607,7 @@ export default function MasterTeacherCalendar() {
         throw new Error("No template rows were generated for your assignment.");
       }
 
-      const headerOrder = ["Quarter", "Date", "Day", "Subject", "Grade", "Title", "Description"];
+      const headerOrder = ["Quarter", "Date", "Day", "Subject", "Grade", "Title"];
       const worksheet = XLSX.utils.json_to_sheet(rows, { header: headerOrder });
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Remedial Template");
@@ -1688,7 +1684,6 @@ export default function MasterTeacherCalendar() {
           title: activity.title,
           subject: activity.subject ?? fallbackSubject,
           gradeLevel: activity.gradeLevel ?? gradeLabel,
-          description: activity.description ?? null,
           date: activity.date.toISOString(),
           end: activity.end.toISOString(),
           day: activity.date.toLocaleDateString("en-US", { weekday: "long" }),
@@ -1763,9 +1758,6 @@ export default function MasterTeacherCalendar() {
       const endDate = createDateWithTime(activityDate, schedule.endTime);
       const subjectForDay = sanitizeSubjectSelection(schedule.subjects[day], allowedSubjects) ?? schedule.subjects[day];
       const title = subjectForDay ? `${subjectForDay} Remediation Session` : "Remediation Session";
-      const description = subjectForDay
-        ? `${subjectForDay} remediation for ${gradeLabel}`
-        : `Remediation for ${gradeLabel}`;
 
       if (hasApprovedConflict(startDate, subjectForDay ?? null, gradeLabel)) {
         return null;
@@ -1775,7 +1767,6 @@ export default function MasterTeacherCalendar() {
         id: baseId + index,
         title,
         day,
-        description,
         date: startDate,
         end: endDate,
         type: "class",
@@ -1825,7 +1816,7 @@ export default function MasterTeacherCalendar() {
 
     setWeeklySchedule(normalizedSchedule);
     setShowWeeklyModal(false);
-    persistRemedialActivities(weekActivities).catch(() => undefined);
+    // Only persist when sending to principal.
   };
 
   const clearWeeklyPlan = () => {
@@ -2279,6 +2270,8 @@ export default function MasterTeacherCalendar() {
   const subjectSummary = allowedSubjects.length > 0 ? allowedSubjects.join(", ") : null;
   const sendButtonDisabled = sortedActivitiesForSend.length === 0 || sending;
   const importButtonDisabled = !canPlanActivities || importing;
+  const hasConfiguredRemedialWindow = Boolean(remedialWindow?.startDate && remedialWindow?.endDate);
+  const templateButtonDisabled = templateDownloading || !hasConfiguredRemedialWindow;
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
@@ -2392,16 +2385,17 @@ export default function MasterTeacherCalendar() {
                         disabled={importButtonDisabled}
                         onClick={handleImportButtonClick}
                         className={`px-4 ${importButtonDisabled ? "cursor-not-allowed opacity-60" : ""}`}
-                        title={!canPlanActivities ? scheduleBlockingReason ?? "Scheduling is currently disabled." : undefined}
+                        title={!hasConfiguredRemedialWindow ? "Principal has not set a remedial period yet." : !canPlanActivities ? scheduleBlockingReason ?? "Scheduling is currently disabled." : undefined}
                       >
                         {importing ? "Importing..." : "Import Activities"}
                       </SecondaryButton>
                       <SecondaryButton
                         type="button"
                         small
-                        disabled={templateDownloading}
+                        disabled={templateButtonDisabled}
                         onClick={handleDownloadTemplate}
-                        className={`px-4 ${templateDownloading ? "cursor-not-allowed opacity-60" : ""}`}
+                        className={`px-4 ${templateButtonDisabled ? "cursor-not-allowed opacity-60" : ""}`}
+                        title={!hasConfiguredRemedialWindow ? "Principal has not set a remedial period yet." : undefined}
                       >
                         {templateDownloading ? "Preparing..." : "Download Template"}
                       </SecondaryButton>
@@ -2495,7 +2489,6 @@ export default function MasterTeacherCalendar() {
                   reset({
                     title: "",
                     date: "",
-                    description: "",
                     teachers: [],
                     subject: allowedSubjects[0] ?? "",
                   });

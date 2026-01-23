@@ -14,7 +14,6 @@ const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"] as con
 
 type IncomingActivity = {
   title?: string | null;
-  description?: string | null;
   date?: string | null;
 };
 
@@ -258,8 +257,8 @@ export async function POST(request: NextRequest) {
 
       await query<ResultSetHeader>(
         `INSERT INTO ${REQUEST_REMEDIAL_TABLE}
-          (quarter_id, schedule_date, day, subject_id, grade_id, title, description, submitted_by, status, submitted_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          (quarter_id, schedule_date, day, subject_id, grade_id, title, submitted_by, status, submitted_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
         [
           Number(quarter.quarter_id),
           scheduleDate,
@@ -267,7 +266,6 @@ export async function POST(request: NextRequest) {
           subjectId,
           assignmentGradeId,
           title,
-          toText(activity.description),
           submittedBy,
           "Pending",
         ],

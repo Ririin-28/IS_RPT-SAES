@@ -3,15 +3,12 @@ import Sidebar from "@/components/MasterTeacher/Coordinator/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
 import { useState } from "react";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
-import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import { FaTimes } from "react-icons/fa";
 // Tabs
 import TeacherTab from "./Tabs/TeacherTab";
-import AttendanceTab from "./Tabs/AttendanceTab";
 import { useCoordinatorTeachers } from "./useCoordinatorTeachers";
 
 export default function MasterTeacherTeachers() {
-  const [activeTab, setActiveTab] = useState("Information List");
   const [searchTerm, setSearchTerm] = useState("");
   const { teachers, gradeLabel, loading, error } = useCoordinatorTeachers();
 
@@ -60,13 +57,7 @@ export default function MasterTeacherTeachers() {
             >
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
                 <div className="flex items-center gap-0 flex-wrap">
-                  <SecondaryHeader title="Teachers" />
-                  <HeaderDropdown
-                    options={["Information List", "Attendance List"]}
-                    value={activeTab}
-                    onChange={setActiveTab}
-                    className="pl-2"
-                  />
+                  <SecondaryHeader title="Teachers Information List" />
                 </div>
                 <div className="flex gap-3 w-full sm:w-auto mt-4 sm:mt-0">
                   <div className="relative flex-1 sm:flex-initial">
@@ -108,8 +99,7 @@ export default function MasterTeacherTeachers() {
                   </div>
                 ) : (
                   <>
-                    {activeTab === "Information List" && <TeacherTab teachers={teachers} searchTerm={searchTerm} />}
-                    {activeTab === "Attendance List" && <AttendanceTab teachers={teachers} searchTerm={searchTerm} />}
+                    <TeacherTab teachers={teachers} searchTerm={searchTerm} />
                   </>
                 )}
               </div>

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
-import { query } from "@/lib/db";
+import { getTableColumns, query } from "@/lib/db";
 import { getMasterTeacherSessionFromCookies } from "@/lib/server/master-teacher-session";
 
 export const dynamic = "force-dynamic";
@@ -9,10 +9,20 @@ const WEEKLY_SUBJECT_TABLE = "weekly_subject_schedule";
 const MT_HANDLED_TABLE = "mt_coordinator_handled";
 const REMEDIAL_QUARTER_TABLE = "remedial_quarter";
 const REQUEST_REMEDIAL_TABLE = "request_remedial_schedule";
+const PRINCIPAL_NOTIFICATION_TABLE = "principal_notifications";
+
+const PRINCIPAL_TABLE_CANDIDATES = [
+  "principal",
+  "principals",
+  "principal_info",
+  "principal_profile",
+  "principal_profiles",
+] as const;
+
+const PRINCIPAL_ID_COLUMNS = ["principal_id", "user_code", "user_id"] as const;
 
 type IncomingActivity = {
   title?: string | null;
-  description?: string | null;
   date?: string | null;
 };
 
@@ -105,6 +115,65 @@ const loadQuarterForDate = async (date: Date): Promise<QuarterRow | null> => {
     }
   }
   return null;
+};
+
+const ensurePrincipalNotificationsTable = async () => {
+  await query(
+    `CREATE TABLE IF NOT EXISTS ${PRINCIPAL_NOTIFICATION_TABLE} (
+      id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+      principal_id VARCHAR(64) NULL,
+      message TEXT NOT NULL,
+      status ENUM('unread', 'read') NOT NULL DEFAULT 'unread',
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_principal_notifications_principal (principal_id),
+      KEY idx_principal_notifications_status (status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`
+  );
+};
+
+const resolvePrincipalIds = async (): Promise<string[]> => {
+  for (const table of PRINCIPAL_TABLE_CANDIDATES) {
+    const columns = await getTableColumns(table).catch(() => new Set<string>());
+    if (!columns.size) continue;
+    const idColumn = PRINCIPAL_ID_COLUMNS.find((candidate) => columns.has(candidate));
+    if (!idColumn) continue;
+
+    const [rows] = await query<RowDataPacket[]>(
+      `SELECT DISTINCT ${idColumn} AS principal_id FROM ${table} WHERE ${idColumn} IS NOT NULL`,
+    );
+    const ids = rows
+      .map((row) => String(row.principal_id ?? "").trim())
+      .filter((value) => value.length > 0);
+    if (ids.length) {
+      return ids;
+    }
+  }
+
+  return [];
+};
+
+const insertPrincipalNotification = async (message: string) => {
+  await ensurePrincipalNotificationsTable();
+  const principalIds = await resolvePrincipalIds();
+
+  if (!principalIds.length) {
+    await query(
+      `INSERT INTO ${PRINCIPAL_NOTIFICATION_TABLE} (principal_id, message, status)
+       VALUES (?, ?, 'unread')`,
+      [null, message],
+    );
+    return;
+  }
+
+  const placeholders = principalIds.map(() => "(?, ?, 'unread')").join(", ");
+  const values = principalIds.flatMap((id) => [id, message]);
+  await query(
+    `INSERT INTO ${PRINCIPAL_NOTIFICATION_TABLE} (principal_id, message, status)
+     VALUES ${placeholders}`,
+    values,
+  );
 };
 
 export async function POST(request: NextRequest) {
@@ -224,8 +293,8 @@ export async function POST(request: NextRequest) {
 
       await query<ResultSetHeader>(
         `INSERT INTO ${REQUEST_REMEDIAL_TABLE}
-          (quarter_id, schedule_date, day, subject_id, grade_id, title, description, submitted_by, master_teacher_id, status, submitted_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          (quarter_id, schedule_date, day, subject_id, grade_id, title, submitted_by, master_teacher_id, status, submitted_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
         [
           Number(quarter.quarter_id),
           scheduleDate,
@@ -233,7 +302,6 @@ export async function POST(request: NextRequest) {
           subjectId,
           assignmentGradeId,
           title,
-          toText(activity.description),
           submittedBy,
           masterTeacherId,
           "Pending",
@@ -241,6 +309,12 @@ export async function POST(request: NextRequest) {
       );
 
       inserted += 1;
+    }
+
+    if (inserted > 0) {
+      await insertPrincipalNotification(
+        "An MT Coordinator requested a remedial activities. See full details in Requests",
+      );
     }
 
     return NextResponse.json({ success: true, inserted, skipped });

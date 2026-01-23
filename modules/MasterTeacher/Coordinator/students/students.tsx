@@ -2,15 +2,177 @@
 import Sidebar from "@/components/MasterTeacher/Coordinator/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
+import BaseModal from "@/components/Common/Modals/BaseModal";
+import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
+import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
+import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import { FaTimes } from "react-icons/fa";
-import { useMemo, useState } from "react";
-import StudentTab from "./StudentsTab";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import StudentTab, { type CoordinatorStudent } from "./StudentsTab";
 import { type MaterialSubject } from "@/lib/materials/shared";
+import { useCoordinatorTeachers, type CoordinatorTeacher } from "../teachers/useCoordinatorTeachers";
+
+type StudentMeta = {
+  subject: MaterialSubject;
+  gradeLevel: string | null;
+  students: CoordinatorStudent[];
+};
+
+type AssignmentGroup = {
+  teacher: CoordinatorTeacher;
+  students: CoordinatorStudent[];
+};
+
+const normalizeGradeKey = (value?: string | null): string | null => {
+  if (!value) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(/\d+/);
+  if (match) return match[0];
+  return trimmed.toLowerCase();
+};
+
+const shuffleStudents = (list: CoordinatorStudent[]): CoordinatorStudent[] => {
+  const copy = [...list];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+};
 
 export default function MasterTeacherStudents() {
   const [searchTerm, setSearchTerm] = useState("");
   const [subject, setSubject] = useState<MaterialSubject>("English");
   const headerTitle = useMemo(() => `${subject} Students Information List`, [subject]);
+  const [studentMeta, setStudentMeta] = useState<StudentMeta>({
+    subject: "English",
+    gradeLevel: null,
+    students: [],
+  });
+  const [showAssignmentModal, setShowAssignmentModal] = useState(false);
+  const [showAssignConfirm, setShowAssignConfirm] = useState(false);
+  const [assignmentPreview, setAssignmentPreview] = useState<AssignmentGroup[]>([]);
+  const [remedialTeachers, setRemedialTeachers] = useState<CoordinatorTeacher[]>([]);
+
+  const { teachers, loading: teachersLoading } = useCoordinatorTeachers();
+
+  useEffect(() => {
+    const gradeKey = normalizeGradeKey(studentMeta.gradeLevel);
+    if (!gradeKey) {
+      setRemedialTeachers([]);
+      return;
+    }
+
+    let cancelled = false;
+    const loadRemedialTeachers = async () => {
+      try {
+        const response = await fetch("/api/it_admin/accounts/masterteacher", { cache: "no-store" });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !Array.isArray(payload?.records)) {
+          setRemedialTeachers([]);
+          return;
+        }
+
+        const filtered = payload.records.filter((record: any) => {
+          const recordGradeKey = normalizeGradeKey(record?.grade ?? null);
+          const handledGrades: string[] = Array.isArray(record?.remedialHandledGrades) ? record.remedialHandledGrades : [];
+          const handledKeys = handledGrades
+            .map((grade) => normalizeGradeKey(grade))
+            .filter((key): key is string => Boolean(key));
+
+          return recordGradeKey === gradeKey || handledKeys.includes(gradeKey);
+        }).slice(0, 3);
+
+        const mapped: CoordinatorTeacher[] = filtered.map((record: any, index: number) => {
+          const userId = typeof record?.userId === "number" ? record.userId : Number(record?.userId ?? NaN);
+          const teacherId = record?.teacherId ?? record?.masterTeacherId ?? record?.userId ?? `MT-${index + 1}`;
+          return {
+            id: Number.isFinite(userId) ? userId : index + 1,
+            userId: Number.isFinite(userId) ? userId : null,
+            teacherId: String(teacherId),
+            name: record?.name ?? "Master Teacher",
+            email: record?.email ?? "",
+            contactNumber: record?.contactNumber ?? "",
+            grade: record?.grade ?? studentMeta.gradeLevel ?? null,
+            sections: record?.section ?? null,
+            subjects: Array.isArray(record?.remedialHandledSubjects)
+              ? record.remedialHandledSubjects.join(", ")
+              : record?.remedialHandledSubjects ?? "Remedial",
+          };
+        });
+
+        if (!cancelled) {
+          setRemedialTeachers(mapped);
+        }
+      } catch {
+        if (!cancelled) {
+          setRemedialTeachers([]);
+        }
+      }
+    };
+
+    void loadRemedialTeachers();
+    return () => {
+      cancelled = true;
+    };
+  }, [studentMeta.gradeLevel]);
+
+  const assignmentTeachers = useMemo(() => {
+    const map = new Map<string, CoordinatorTeacher>();
+    const addTeacher = (teacher: CoordinatorTeacher) => {
+      const key = teacher.userId ? `u:${teacher.userId}` : `t:${teacher.teacherId}`;
+      if (!map.has(key)) {
+        map.set(key, teacher);
+      }
+    };
+    teachers.forEach(addTeacher);
+    remedialTeachers.forEach(addTeacher);
+    return Array.from(map.values());
+  }, [teachers, remedialTeachers]);
+
+  const remedialTeacherKeys = useMemo(() => {
+    const keys = new Set<string>();
+    remedialTeachers.forEach((teacher) => {
+      const key = teacher.userId ? `u:${teacher.userId}` : `t:${teacher.teacherId}`;
+      keys.add(key);
+    });
+    return keys;
+  }, [remedialTeachers]);
+
+  const totalTeachers = assignmentTeachers.length;
+  const totalStudents = studentMeta.students.length;
+
+  const buildAssignmentPreview = useCallback((): AssignmentGroup[] => {
+    if (!assignmentTeachers.length || !studentMeta.students.length) {
+      return [];
+    }
+    const shuffled = shuffleStudents(studentMeta.students);
+    const groups = assignmentTeachers.map((teacher) => ({ teacher, students: [] as CoordinatorStudent[] }));
+    shuffled.forEach((student, index) => {
+      groups[index % groups.length].students.push(student);
+    });
+    return groups;
+  }, [studentMeta.students, assignmentTeachers]);
+
+  const handleMetaChange = useCallback((meta: StudentMeta) => {
+    setSubject(meta.subject);
+    setStudentMeta(meta);
+  }, []);
+
+  const handleOpenAssignmentModal = () => {
+    setAssignmentPreview(buildAssignmentPreview());
+    setShowAssignmentModal(true);
+  };
+
+  const handleCloseAssignmentModal = () => {
+    setShowAssignmentModal(false);
+  };
+
+  const handleConfirmAssign = () => {
+    setShowAssignConfirm(false);
+    setShowAssignmentModal(false);
+  };
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
@@ -54,7 +216,15 @@ export default function MasterTeacherStudents() {
             >
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
                 <SecondaryHeader title={headerTitle} />
-                <div className="flex gap-3 w-full sm:w-auto mt-4 sm:mt-0">
+                <div className="flex flex-col gap-3 w-full sm:w-auto mt-4 sm:mt-0 sm:flex-row sm:items-center">
+                  <PrimaryButton
+                    type="button"
+                    small
+                    onClick={handleOpenAssignmentModal}
+                    disabled={teachersLoading || totalTeachers === 0 || totalStudents === 0}
+                  >
+                    Auto-Assign Students
+                  </PrimaryButton>
                   <div className="relative flex-1 sm:flex-initial">
                     <input
                       type="text"
@@ -79,13 +249,96 @@ export default function MasterTeacherStudents() {
               <div className="mt-4 sm:mt-6">
                 <StudentTab
                   searchTerm={searchTerm}
-                  onMetaChange={(meta) => setSubject(meta.subject)}
+                  onMetaChange={handleMetaChange}
                 />
               </div>
             </div>
           </div>
         </main>
       </div>
+
+      <BaseModal
+        show={showAssignmentModal}
+        onClose={handleCloseAssignmentModal}
+        title="Auto-Assign Students"
+        maxWidth="3xl"
+        footer={(
+          <>
+            <SecondaryButton type="button" onClick={handleCloseAssignmentModal}>
+              Cancel
+            </SecondaryButton>
+            <PrimaryButton
+              type="button"
+              onClick={() => setShowAssignConfirm(true)}
+              disabled={totalTeachers === 0 || totalStudents === 0}
+            >
+              Assign
+            </PrimaryButton>
+          </>
+        )}
+      >
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="rounded-md border border-gray-200 bg-gray-50 p-4">
+            <p className="text-xs uppercase tracking-wide text-gray-500">Total Teachers</p>
+            <p className="text-2xl font-semibold text-gray-900">{totalTeachers}</p>
+          </div>
+          <div className="rounded-md border border-gray-200 bg-gray-50 p-4">
+            <p className="text-xs uppercase tracking-wide text-gray-500">Total Students</p>
+            <p className="text-2xl font-semibold text-gray-900">{totalStudents}</p>
+          </div>
+          <div className="rounded-md border border-gray-200 bg-gray-50 p-4">
+            <p className="text-xs uppercase tracking-wide text-gray-500">Assignment Scope</p>
+            <p className="text-sm font-semibold text-gray-900">
+              Grade {studentMeta.gradeLevel ?? "-"} · {studentMeta.subject}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              Students are shuffled and divided as evenly as possible.
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <p className="text-sm font-semibold text-gray-700">Division of Students</p>
+          {totalTeachers === 0 || totalStudents === 0 ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+              Add teachers and students before running the assignment.
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-[45vh] overflow-y-auto pr-2">
+              {assignmentPreview.map((group) => (
+                <div key={group.teacher.id} className="rounded-md border border-gray-200 p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-gray-800">{group.teacher.name}</p>
+                      {remedialTeacherKeys.has(group.teacher.userId ? `u:${group.teacher.userId}` : `t:${group.teacher.teacherId}`) && (
+                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-emerald-800">
+                          Remedial MT
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs font-medium text-gray-500">
+                      {group.students.length} student{group.students.length <= 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-xs text-gray-600">
+                    {group.students.length
+                      ? group.students.map((student) => student.name).join(", ")
+                      : "No students assigned."}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </BaseModal>
+
+      <ConfirmationModal
+        isOpen={showAssignConfirm}
+        onClose={() => setShowAssignConfirm(false)}
+        onConfirm={handleConfirmAssign}
+        title="Confirm Assignment"
+        message={`Assign ${totalStudents} students to ${totalTeachers} teachers for Grade ${studentMeta.gradeLevel ?? "-"} (${studentMeta.subject})?`}
+      />
     </div>
   );
 }

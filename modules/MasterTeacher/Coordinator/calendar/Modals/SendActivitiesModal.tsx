@@ -9,7 +9,6 @@ type ActivityPreview = {
   date: Date;
   end?: Date | null;
   subject?: string | null;
-  description?: string | null;
 };
 
 interface SendActivitiesModalProps {
@@ -35,14 +34,6 @@ const buildDateKey = (date: Date) => {
   return `${year}-${month}-${day}`;
 };
 
-const formatTimeRange = (start: Date, end?: Date | null) => {
-  const startLabel = start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  if (!end) {
-    return startLabel;
-  }
-  const endLabel = end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  return `${startLabel} - ${endLabel}`;
-};
 
 export default function SendActivitiesModal({
   show,
@@ -132,12 +123,10 @@ export default function SendActivitiesModal({
                     {entries.map((activity) => (
                       <li key={activity.id} className="px-4 py-3 text-sm text-gray-700">
                         <div className="font-medium text-gray-900">{activity.title}</div>
-                        <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                          <span>{formatTimeRange(activity.date, activity.end ?? null)}</span>
-                          {activity.subject && <span>• {activity.subject}</span>}
-                        </div>
-                        {activity.description && (
-                          <div className="mt-0.5 text-xs text-gray-400">{activity.description}</div>
+                        {activity.subject && (
+                          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                            <span>• {activity.subject}</span>
+                          </div>
                         )}
                       </li>
                     ))}
