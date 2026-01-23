@@ -14,6 +14,8 @@ type Weekday = typeof VALID_WEEKDAYS[number];
 type WeeklyRow = RowDataPacket & {
   day_of_week: Weekday;
   subject_id: number | null;
+  start_time?: string | null;
+  end_time?: string | null;
 };
 
 type SubjectRow = RowDataPacket & {
@@ -22,7 +24,7 @@ type SubjectRow = RowDataPacket & {
   subject_name?: string | null;
 };
 
-type SubjectSchedulePayload = Record<Weekday, string>;
+type SubjectSchedulePayload = Record<Weekday, string> & { startTime: string; endTime: string };
 
 /* ------------------------------- Utilities ------------------------------- */
 
@@ -41,12 +43,20 @@ const dedupeStrings = (values: readonly string[]): string[] =>
 
 async function ensureWeeklyTable(): Promise<void> {
   const columns = await getTableColumns(WEEKLY_TABLE);
-  for (const col of ["day_of_week", "subject_id", "created_by"]) {
+  for (const col of ["day_of_week", "subject_id", "created_by", "start_time", "end_time"]) {
     if (!columns.has(col)) {
       throw new Error(`Missing column ${col} in ${WEEKLY_TABLE}`);
     }
   }
 }
+
+const normalizeTimeValue = (value: unknown): string => {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const match = /^([01]\d|2[0-3]):[0-5]\d$/.exec(trimmed);
+  return match ? trimmed : "";
+};
 
 /* ------------------------------ Subjects ------------------------------ */
 
@@ -99,16 +109,24 @@ export async function GET(request: NextRequest) {
     const map = new Map(subjects.map((s) => [s.id, s.name]));
 
     const [rows] = await query<WeeklyRow[]>(
-      `SELECT day_of_week, subject_id FROM \`${WEEKLY_TABLE}\``,
+      `SELECT day_of_week, subject_id, start_time, end_time FROM \`${WEEKLY_TABLE}\``,
     );
 
     const schedule = VALID_WEEKDAYS.reduce(
       (acc, d) => ({ ...acc, [d]: "" }),
       {} as SubjectSchedulePayload,
     );
+    schedule.startTime = "";
+    schedule.endTime = "";
 
     for (const r of rows) {
       if (map.has(r.subject_id!)) schedule[r.day_of_week] = map.get(r.subject_id!)!;
+      if (!schedule.startTime && r.start_time) {
+        schedule.startTime = String(r.start_time);
+      }
+      if (!schedule.endTime && r.end_time) {
+        schedule.endTime = String(r.end_time);
+      }
     }
 
     return NextResponse.json({
@@ -136,6 +154,12 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
 
     const entries: { day: Weekday; subjectId: number }[] = [];
+    const startTime = normalizeTimeValue(body?.schedule?.startTime);
+    const endTime = normalizeTimeValue(body?.schedule?.endTime);
+
+    if (!startTime || !endTime) {
+      return NextResponse.json({ success: false, error: "Start and end time are required." }, { status: 400 });
+    }
 
     for (const day of VALID_WEEKDAYS) {
       const id = await getSubjectIdByName(body?.schedule?.[day]);
@@ -153,9 +177,9 @@ export async function PUT(request: NextRequest) {
     for (const e of entries) {
       await query<ResultSetHeader>(
         `INSERT INTO \`${WEEKLY_TABLE}\`
-         (day_of_week, subject_id, created_by, created_at)
-         VALUES (?, ?, ?, NOW())`,
-        [e.day, e.subjectId, session.principalId],
+         (day_of_week, subject_id, start_time, end_time, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, NOW())`,
+        [e.day, e.subjectId, startTime, endTime, session.principalId],
       );
     }
 
@@ -175,10 +199,15 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      schedule: VALID_WEEKDAYS.reduce(
-        (a, d) => ({ ...a, [d]: "" }),
-        {} as SubjectSchedulePayload,
-      ),
+      schedule: (() => {
+        const blank = VALID_WEEKDAYS.reduce(
+          (a, d) => ({ ...a, [d]: "" }),
+          {} as SubjectSchedulePayload,
+        );
+        blank.startTime = "";
+        blank.endTime = "";
+        return blank;
+      })(),
       options: { subjects: dedupeStrings(DEFAULT_SUBJECTS) },
     });
   } catch (e) {

@@ -9,7 +9,6 @@ interface Activity {
   title: string;
   day: string;
   roomNo: string;
-  description: string;
   date: Date;
   end: Date;
   type: string;
@@ -34,7 +33,6 @@ export default function MasterTeacherCalendar() {
           activityDate?: string | null;
           date?: string | null;
           day?: string | null;
-          description?: string | null;
         }>;
         error?: string | null;
       } | null;
@@ -54,7 +52,6 @@ export default function MasterTeacherCalendar() {
             title: item.title ?? "Remedial Activity",
             day: item.day ?? dateValue.toLocaleDateString("en-US", { weekday: "long" }),
             roomNo: "",
-            description: item.description ?? "",
             date: dateValue,
             end: new Date(dateValue.getTime() + 60 * 60 * 1000),
             type: "class",

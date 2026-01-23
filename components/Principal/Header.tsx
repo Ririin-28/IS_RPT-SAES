@@ -13,6 +13,14 @@ export default function PrincipalHeader({ title }: PrincipalHeaderProps) {
   const router = useRouter();
   const [showDropdown, setShowDropdown] = React.useState(false);
   const [showNotifications, setShowNotifications] = React.useState(false);
+  const [notifications, setNotifications] = React.useState<Array<{
+    id: number;
+    message: string;
+    status: "unread" | "read";
+    createdAt: string;
+  }>>([]);
+  const [notificationsLoading, setNotificationsLoading] = React.useState(false);
+  const [notificationsError, setNotificationsError] = React.useState<string | null>(null);
   const profileBtnRef = React.useRef<HTMLButtonElement>(null);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const notificationBtnRef = React.useRef<HTMLButtonElement>(null);
@@ -33,6 +41,86 @@ export default function PrincipalHeader({ title }: PrincipalHeaderProps) {
     }
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showDropdown, showNotifications]);
+
+  React.useEffect(() => {
+    if (!showNotifications) {
+      return;
+    }
+
+    const controller = new AbortController();
+    let isCancelled = false;
+
+    const loadNotifications = async () => {
+      setNotificationsLoading(true);
+      setNotificationsError(null);
+      try {
+        const response = await fetch("/api/principal/notifications", {
+          method: "GET",
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const payload = (await response.json().catch(() => null)) as {
+          success?: boolean;
+          notifications?: Array<{
+            id?: number | string;
+            message?: string | null;
+            status?: "unread" | "read" | null;
+            createdAt?: string | null;
+            created_at?: string | null;
+          }>;
+          error?: string | null;
+        } | null;
+
+        if (!response.ok || !payload?.success) {
+          throw new Error(payload?.error ?? "Failed to load notifications.");
+        }
+
+        if (isCancelled) {
+          return;
+        }
+
+        setNotifications(
+          Array.isArray(payload.notifications)
+            ? payload.notifications.map((note) => ({
+                id: Number(note.id ?? 0),
+                message: note.message ?? "",
+                status: note.status === "read" ? "read" : "unread",
+                createdAt: note.createdAt ?? note.created_at ?? new Date().toISOString(),
+              }))
+            : [],
+        );
+
+        await fetch("/api/principal/notifications", { method: "PATCH", cache: "no-store" });
+        if (!isCancelled) {
+          setNotifications((prev) => prev.map((note) => ({ ...note, status: "read" })));
+        }
+      } catch (error) {
+        if (isCancelled || (error instanceof DOMException && error.name === "AbortError")) {
+          return;
+        }
+        setNotificationsError(error instanceof Error ? error.message : "Failed to load notifications.");
+        setNotifications([]);
+      } finally {
+        if (!isCancelled) {
+          setNotificationsLoading(false);
+        }
+      }
+    };
+
+    loadNotifications();
+
+    return () => {
+      isCancelled = true;
+      controller.abort();
+    };
+  }, [showNotifications]);
+
+  const unreadCount = notifications.filter((note) => note.status === "unread").length;
+
+  const handleNotificationClick = () => {
+    setShowNotifications(false);
+    router.push("/Principal/requests");
+  };
 
   return (
     <>
@@ -74,7 +162,11 @@ export default function PrincipalHeader({ title }: PrincipalHeaderProps) {
                   <path d="M10.268 21a2 2 0 0 0 3.464 0" />
                   <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" />
                 </svg>
-                {/* Notification badge - removed since there are no notifications */}
+                {unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold text-white">
+                    {unreadCount}
+                  </span>
+                )}
               </button>
               
               {showNotifications && (
@@ -98,26 +190,59 @@ export default function PrincipalHeader({ title }: PrincipalHeaderProps) {
                     </button>
                   </div>
                   
-                  {/* Empty state */}
-                  <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="48"
-                      height="48"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="#9CA3AF"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="mb-4"
-                    >
-                      <path d="M10.268 21a2 2 0 0 0 3.464 0" />
-                      <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" />
-                    </svg>
-                    <p className="text-gray-500">No notifications at this time</p>
-                    <p className="text-sm text-gray-400 mt-1">You'll see notifications here when you get them</p>
-                  </div>
+                  {notificationsLoading && (
+                    <div className="px-4 py-6 text-center text-sm text-gray-500">Loading notifications...</div>
+                  )}
+
+                  {!notificationsLoading && notificationsError && (
+                    <div className="px-4 py-6 text-center text-sm text-red-600">{notificationsError}</div>
+                  )}
+
+                  {!notificationsLoading && !notificationsError && notifications.length === 0 && (
+                    <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="48"
+                        height="48"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="#9CA3AF"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="mb-4"
+                      >
+                        <path d="M10.268 21a2 2 0 0 0 3.464 0" />
+                        <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" />
+                      </svg>
+                      <p className="text-gray-500">No notifications at this time</p>
+                      <p className="text-sm text-gray-400 mt-1">You'll see notifications here when you get them</p>
+                    </div>
+                  )}
+
+                  {!notificationsLoading && !notificationsError && notifications.length > 0 && (
+                    <div className="divide-y divide-gray-100">
+                      {notifications.map((note) => (
+                        <button
+                          type="button"
+                          key={note.id}
+                          className="w-full px-4 py-3 text-left hover:bg-gray-50"
+                          onClick={handleNotificationClick}
+                        >
+                          <p className="text-sm text-gray-700">{note.message}</p>
+                          <p className="mt-1 text-xs text-gray-400">
+                            {new Date(note.createdAt).toLocaleString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   
                   {/* Footer removed since there are no notifications to mark as read */}
                 </div>

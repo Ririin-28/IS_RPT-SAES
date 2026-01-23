@@ -12,7 +12,6 @@ interface Activity {
   id: string;
   title: string;
   day: string | null;
-  description: string | null;
   date: Date;
   end: Date;
   type: string;
@@ -231,7 +230,6 @@ export default function TeacherCalendar() {
           activityDate: string | null;
           startTime: string | null;
           endTime: string | null;
-          description: string | null;
           day: string | null;
         }> | null;
         error?: string;
@@ -259,7 +257,6 @@ export default function TeacherCalendar() {
             id: item.id,
             title,
             day: item.day ?? null,
-            description: item.description ?? null,
             date: startDate,
             end: endDate,
             type: (item.subject ?? "class").toLowerCase(),
@@ -500,9 +497,6 @@ export default function TeacherCalendar() {
                         <div className="text-xs text-gray-500">
                           {[activity.subject, activity.grade].filter(Boolean).join(" • ") || "Scheduled activity"}
                         </div>
-                        {activity.description && (
-                          <div className="text-xs text-gray-500">{activity.description}</div>
-                        )}
                       </div>
                     </div>
                   );
@@ -783,9 +777,6 @@ export default function TeacherCalendar() {
                       <div className="text-xs text-gray-500">
                         {[activity.subject, activity.grade].filter(Boolean).join(" • ") || "Scheduled activity"}
                       </div>
-                      {activity.description && (
-                        <div className="text-xs text-gray-400">{activity.description}</div>
-                      )}
                     </div>
                   </div>
                 );
