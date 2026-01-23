@@ -1,210 +1,188 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
-import { query, runWithConnection } from "@/lib/db";
+import { NextRequest, NextResponse } from "next/server";
+import type { RowDataPacket } from "mysql2/promise";
+import { getTableColumns, query, runWithConnection } from "@/lib/db";
+import { getMasterTeacherSessionFromCookies } from "@/lib/server/master-teacher-session";
 
 export const dynamic = "force-dynamic";
 
-const MONTH_TABLE_MAP: Record<number, string> = {
-  2: "feb_attendance",
-  3: "march_attendance",
-  9: "sept_attendance",
-  10: "oct_attendance",
-  12: "dec_attendance",
-};
-
-const SUBJECT_LABELS: Record<string, string> = {
-  english: "English",
-  filipino: "Filipino",
-  math: "Mathematics",
-};
-
-const PRESENT_VALUES = new Set(["Yes", "No"] as const);
-
-const ensuredAttendanceTables = new Set<string>();
-let notificationsTableEnsured = false;
+const REMEDIAL_QUARTER_TABLE = "remedial_quarter";
+const WEEKLY_SUBJECT_TABLE = "weekly_subject_schedule";
+const ATTENDANCE_SESSION_TABLE = "attendance_session";
+const ATTENDANCE_RECORD_TABLE = "attendance_record";
+const SUBJECT_TABLE_CANDIDATES = ["subject", "subjects"] as const;
 
 const ISO_DATE_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/;
+const WEEKDAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-const buildKey = (studentId: number, date: string) => `${studentId}|${date}`;
+type NormalizedEntry = { studentId: number; date: string; present: "Yes" | "No" | null };
 
-const sanitizeSubject = (subject: unknown): string | null => {
-  if (typeof subject !== "string") {
-    return null;
-  }
-  const trimmed = subject.trim().toLowerCase();
-  if (!(trimmed in SUBJECT_LABELS)) {
-    return null;
-  }
-  return trimmed;
+const resolveSchoolYear = (): string => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = today.getMonth();
+  return month >= 5 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
 };
 
 const parseIsoDate = (value: unknown): { year: number; month: number; day: number; iso: string } | null => {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const match = ISO_DATE_REGEX.exec(value.trim());
-  if (!match) {
-    return null;
-  }
+  if (!value) return null;
+  const text = String(value).trim();
+  if (!ISO_DATE_REGEX.test(text)) return null;
+  const match = ISO_DATE_REGEX.exec(text);
+  if (!match) return null;
   const year = Number(match[1]);
   const month = Number(match[2]);
   const day = Number(match[3]);
-  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
-    return null;
-  }
-  if (month < 1 || month > 12 || day < 1 || day > 31) {
-    return null;
-  }
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
   return { year, month, day, iso: `${match[1]}-${match[2]}-${match[3]}` };
 };
 
-const toDate = ({ year, month, day }: { year: number; month: number; day: number }) => {
-  return new Date(Date.UTC(year, month - 1, day));
+const sanitizeSubjectKey = (value: unknown): string | null => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim().toLowerCase();
+  if (!trimmed) return null;
+  if (trimmed === "math" || trimmed === "mathematics") return "Math";
+  if (trimmed === "english") return "English";
+  if (trimmed === "filipino") return "Filipino";
+  return null;
 };
 
-const ensureAttendanceTable = async (tableName: string) => {
-  if (ensuredAttendanceTables.has(tableName)) {
-    return;
-  }
-
-  await query(
-    `CREATE TABLE IF NOT EXISTS \`${tableName}\` (
-      id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-      student_id INT NOT NULL,
-      subject VARCHAR(100) NOT NULL,
-      date DATE NOT NULL,
-      present ENUM('Yes', 'No') NOT NULL DEFAULT 'Yes',
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      PRIMARY KEY (id),
-      UNIQUE KEY uniq_${tableName}_attendance (student_id, subject, date),
-      KEY idx_${tableName}_date (date),
-      KEY idx_${tableName}_student (student_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`
-  );
-
-  ensuredAttendanceTables.add(tableName);
-};
-
-const ensureNotificationsTable = async () => {
-  if (notificationsTableEnsured) {
-    return;
-  }
-
-  await query(
-    `CREATE TABLE IF NOT EXISTS parent_notifications (
-      id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-      student_id INT NOT NULL,
-      subject VARCHAR(100) NOT NULL,
-      date DATE NOT NULL,
-      message TEXT NOT NULL,
-      status ENUM('unread', 'read') NOT NULL DEFAULT 'unread',
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      PRIMARY KEY (id),
-      UNIQUE KEY uniq_parent_notification (student_id, subject, date),
-      KEY idx_parent_notification_student (student_id),
-      KEY idx_parent_notification_status (status)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`
-  );
-
-  notificationsTableEnsured = true;
-};
-
-const resolveAttendanceTable = (month: number): string | null => {
-  return MONTH_TABLE_MAP[month] ?? null;
-};
-
-const formatForMessage = (isoDate: string) => {
-  const parsed = parseIsoDate(isoDate);
-  if (!parsed) {
-    return isoDate;
-  }
-  const date = toDate(parsed);
-  return date.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-};
-
-type AttendanceRow = RowDataPacket & {
-  student_id: number;
-  subject: string;
-  date: Date | string;
-  present: "Yes" | "No";
-};
-
-const normalizeRowDate = (value: Date | string): string => {
-  if (value instanceof Date) {
-    return value.toISOString().slice(0, 10);
-  }
-  if (typeof value === "string" && ISO_DATE_REGEX.test(value)) {
-    return value.slice(0, 10);
-  }
-  return new Date(value).toISOString().slice(0, 10);
-};
-
-const addMonths = (date: Date, months: number) => {
-  const next = new Date(date.getTime());
-  next.setUTCMonth(next.getUTCMonth() + months);
-  return next;
-};
-
-const startOfMonth = (date: Date) => {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
-};
-
-const endOfMonth = (date: Date) => {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0));
-};
-
-const clampDate = (value: Date, min: Date, max: Date) => {
-  if (value < min) return new Date(min.getTime());
-  if (value > max) return new Date(max.getTime());
-  return value;
-};
-
-const collectMonthRanges = (start: Date, end: Date): Array<{ table: string; start: Date; end: Date }> => {
-  const ranges: Array<{ table: string; start: Date; end: Date }> = [];
-  let cursor = startOfMonth(start);
-
-  while (cursor <= end) {
-    const table = resolveAttendanceTable(cursor.getUTCMonth() + 1);
-    if (table) {
-      const monthStart = startOfMonth(cursor);
-      const monthEnd = endOfMonth(cursor);
-      const rangeStart = clampDate(monthStart, start, end);
-      const rangeEnd = clampDate(monthEnd, start, end);
-      ranges.push({ table, start: rangeStart, end: rangeEnd });
+const resolveSubjectLookup = async () => {
+  for (const table of SUBJECT_TABLE_CANDIDATES) {
+    const columns = await getTableColumns(table).catch(() => new Set<string>());
+    if (!columns.size) continue;
+    const idCol = columns.has("subject_id") ? "subject_id" : columns.has("id") ? "id" : null;
+    const nameCol = columns.has("subject_name") ? "subject_name" : columns.has("name") ? "name" : null;
+    if (idCol && nameCol) {
+      return { table, idCol, nameCol };
     }
-    cursor = addMonths(cursor, 1);
   }
+  return null;
+};
 
-  return ranges;
+const resolveSubjectId = async (subjectLabel: string): Promise<number | null> => {
+  const lookup = await resolveSubjectLookup();
+  if (!lookup) return null;
+  const [rows] = await query<RowDataPacket[]>(
+    `SELECT ${lookup.idCol} AS subject_id FROM ${lookup.table} WHERE LOWER(TRIM(${lookup.nameCol})) = LOWER(TRIM(?)) LIMIT 1`,
+    [subjectLabel],
+  );
+  if (!rows.length) return null;
+  const id = Number(rows[0]?.subject_id);
+  return Number.isFinite(id) ? id : null;
+};
+
+const loadRemedialMonths = async (): Promise<Set<number>> => {
+  const schoolYear = resolveSchoolYear();
+  const [rows] = await query<RowDataPacket[]>(
+    `SELECT start_month, end_month FROM ${REMEDIAL_QUARTER_TABLE} WHERE school_year = ?`,
+    [schoolYear],
+  );
+  const months = new Set<number>();
+  for (const row of rows) {
+    const start = Number(row.start_month);
+    const end = Number(row.end_month);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
+    if (start < 1 || end < 1) continue;
+    if (start > end) continue;
+    for (let m = start; m <= end; m += 1) {
+      if (m >= 1 && m <= 12) months.add(m);
+    }
+  }
+  return months;
+};
+
+const loadAllowedWeekdays = async (subjectId: number): Promise<Set<string>> => {
+  const [rows] = await query<RowDataPacket[]>(
+    `SELECT day_of_week FROM ${WEEKLY_SUBJECT_TABLE} WHERE subject_id = ?`,
+    [subjectId],
+  );
+  const days = new Set<string>();
+  for (const row of rows) {
+    const value = row.day_of_week ? String(row.day_of_week).trim() : "";
+    if (value) days.add(value);
+  }
+  return days;
+};
+
+const isAllowedDate = (iso: string, months: Set<number>, weekdays: Set<string>): boolean => {
+  const parsed = parseIsoDate(iso);
+  if (!parsed) return false;
+  if (!months.has(parsed.month)) return false;
+  const date = new Date(parsed.iso + "T00:00:00");
+  const weekday = WEEKDAY_LABELS[date.getDay()];
+  return weekdays.size === 0 ? false : weekdays.has(weekday);
+};
+
+const normalizeEntries = (entries: unknown): NormalizedEntry[] => {
+  if (!Array.isArray(entries)) return [];
+  const normalized: NormalizedEntry[] = [];
+  for (const entry of entries) {
+    if (!entry || typeof entry !== "object") continue;
+    const studentId = Number((entry as { studentId?: unknown }).studentId);
+    if (!Number.isFinite(studentId) || studentId <= 0) continue;
+    const parsedDate = parseIsoDate((entry as { date?: unknown }).date);
+    if (!parsedDate) continue;
+    const presentRaw = (entry as { present?: unknown }).present;
+    let present: "Yes" | "No" | null = null;
+    if (presentRaw === "Yes" || presentRaw === "No") {
+      present = presentRaw;
+    }
+    normalized.push({ studentId, date: parsedDate.iso, present });
+  }
+  return normalized;
 };
 
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
-  const subject = sanitizeSubject(url.searchParams.get("subject"));
-  const startParam = parseIsoDate(url.searchParams.get("start"));
-  const endParam = parseIsoDate(url.searchParams.get("end"));
+  const subjectLabel = sanitizeSubjectKey(url.searchParams.get("subject"));
+  const startRaw = url.searchParams.get("start");
+  const endRaw = url.searchParams.get("end");
   const studentIdsParam = url.searchParams.get("studentIds");
 
-  if (!subject) {
+  if (!subjectLabel) {
     return NextResponse.json({ success: false, error: "Invalid subject." }, { status: 400 });
   }
 
-  if (!startParam || !endParam) {
-    return NextResponse.json({ success: false, error: "Invalid start or end date." }, { status: 400 });
+  const startDate = startRaw ? new Date(startRaw) : null;
+  const endDate = endRaw ? new Date(endRaw) : null;
+  if (!startDate || Number.isNaN(startDate.getTime())) {
+    return NextResponse.json({ success: false, error: "Invalid start date." }, { status: 400 });
+  }
+  if (!endDate || Number.isNaN(endDate.getTime())) {
+    return NextResponse.json({ success: false, error: "Invalid end date." }, { status: 400 });
   }
 
-  const startDate = toDate(startParam);
-  const endDate = toDate(endParam);
-
-  if (startDate > endDate) {
-    return NextResponse.json({ success: false, error: "Start date must be before end date." }, { status: 400 });
+  const subjectId = await resolveSubjectId(subjectLabel);
+  if (!subjectId) {
+    return NextResponse.json({ success: true, records: [] });
   }
+
+  const [allowedMonths, allowedWeekdays] = await Promise.all([
+    loadRemedialMonths(),
+    loadAllowedWeekdays(subjectId),
+  ]);
+
+  if (!allowedMonths.size || !allowedWeekdays.size) {
+    return NextResponse.json({ success: true, records: [] });
+  }
+
+  const params: Array<string | number> = [subjectId, startDate.toISOString().slice(0, 10), endDate.toISOString().slice(0, 10)];
+  const monthPlaceholders = Array.from(allowedMonths).map(() => "?").join(",");
+  const weekdayPlaceholders = Array.from(allowedWeekdays).map(() => "?").join(",");
+  params.push(...Array.from(allowedMonths));
+  params.push(...Array.from(allowedWeekdays));
+
+  let sql = `
+    SELECT r.student_id, s.session_date, r.status
+    FROM ${ATTENDANCE_RECORD_TABLE} r
+    JOIN ${ATTENDANCE_SESSION_TABLE} s ON s.session_id = r.session_id
+    WHERE s.subject_id = ?
+      AND s.session_date BETWEEN ? AND ?
+      AND MONTH(s.session_date) IN (${monthPlaceholders})
+      AND DAYNAME(s.session_date) IN (${weekdayPlaceholders})
+  `;
 
   const studentIds: number[] = [];
   if (studentIdsParam) {
@@ -215,113 +193,27 @@ export async function GET(request: NextRequest) {
       }
     }
   }
-
-  const monthRanges = collectMonthRanges(startDate, endDate);
-
-  if (!monthRanges.length) {
-    return NextResponse.json({ success: true, records: [] });
+  if (studentIds.length) {
+    sql += ` AND r.student_id IN (${studentIds.map(() => "?").join(",")})`;
+    params.push(...studentIds);
   }
 
-  const records: Array<{ studentId: number; subject: string; date: string; present: "Yes" | "No" }> = [];
+  const [rows] = await query<RowDataPacket[]>(sql, params);
+  const records = rows.map((row) => {
+    const status = row.status ? String(row.status).toLowerCase() : "";
+    const present = status === "absent" ? "No" : "Yes";
+    const date = row.session_date instanceof Date
+      ? row.session_date.toISOString().slice(0, 10)
+      : String(row.session_date).slice(0, 10);
+    return {
+      studentId: Number(row.student_id),
+      date,
+      present,
+    };
+  });
 
-  for (const range of monthRanges) {
-    await ensureAttendanceTable(range.table);
-    const params: Array<string | number> = [subject, range.start.toISOString().slice(0, 10), range.end.toISOString().slice(0, 10)];
-    let sql = `SELECT student_id, subject, date, present FROM \`${range.table}\` WHERE subject = ? AND date BETWEEN ? AND ?`;
-    if (studentIds.length) {
-      const placeholders = studentIds.map(() => "?").join(",");
-      sql += ` AND student_id IN (${placeholders})`;
-      params.push(...studentIds);
-    }
-
-    const [rows] = await query<AttendanceRow[]>(sql, params);
-    for (const row of rows) {
-      records.push({
-        studentId: Number(row.student_id),
-        subject: row.subject,
-        date: normalizeRowDate(row.date),
-        present: row.present,
-      });
-    }
-  }
-
-  // Deduplicate records by student/date, preferring latest month iteration
-  const deduped = new Map<string, { studentId: number; subject: string; date: string; present: "Yes" | "No" }>();
-  for (const record of records) {
-    deduped.set(buildKey(record.studentId, record.date), record);
-  }
-
-  return NextResponse.json({ success: true, records: Array.from(deduped.values()) });
+  return NextResponse.json({ success: true, records });
 }
-
-type IncomingAttendanceEntry = {
-  studentId?: unknown;
-  date?: unknown;
-  present?: unknown;
-};
-
-type NormalizedEntry = {
-  studentId: number;
-  date: string;
-  present: "Yes" | "No" | null;
-};
-
-const normalizeEntries = (entries: unknown): NormalizedEntry[] => {
-  if (!Array.isArray(entries)) {
-    return [];
-  }
-
-  const normalized: NormalizedEntry[] = [];
-
-  for (const entry of entries) {
-    if (typeof entry !== "object" || entry === null) {
-      continue;
-    }
-    const { studentId, date, present } = entry as IncomingAttendanceEntry;
-    const idNumber = typeof studentId === "number" ? studentId : Number(studentId);
-    if (!Number.isFinite(idNumber) || idNumber <= 0) {
-      continue;
-    }
-    const parsedDate = parseIsoDate(date);
-    if (!parsedDate) {
-      continue;
-    }
-    let normalizedPresent: "Yes" | "No" | null = null;
-    if (typeof present === "string") {
-      const trimmed = present.trim();
-      if (PRESENT_VALUES.has(trimmed as "Yes" | "No")) {
-        normalizedPresent = trimmed as "Yes" | "No";
-      }
-    } else if (typeof present === "boolean") {
-      normalizedPresent = present ? "Yes" : "No";
-    } else if (present === null) {
-      normalizedPresent = null;
-    }
-
-    normalized.push({ studentId: idNumber, date: parsedDate.iso, present: normalizedPresent });
-  }
-
-  return normalized;
-};
-
-const groupEntriesByTable = (entries: NormalizedEntry[]): Map<string, NormalizedEntry[]> => {
-  const groups = new Map<string, NormalizedEntry[]>();
-  for (const entry of entries) {
-    const parsed = parseIsoDate(entry.date);
-    if (!parsed) {
-      continue;
-    }
-    const table = resolveAttendanceTable(parsed.month);
-    if (!table) {
-      continue;
-    }
-    if (!groups.has(table)) {
-      groups.set(table, []);
-    }
-    groups.get(table)!.push(entry);
-  }
-  return groups;
-};
 
 export async function PUT(request: NextRequest) {
   const body = await request.json().catch(() => null);
@@ -329,8 +221,8 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Invalid payload." }, { status: 400 });
   }
 
-  const subject = sanitizeSubject((body as { subject?: unknown }).subject);
-  if (!subject) {
+  const subjectLabel = sanitizeSubjectKey((body as { subject?: unknown }).subject);
+  if (!subjectLabel) {
     return NextResponse.json({ success: false, error: "Invalid subject." }, { status: 400 });
   }
 
@@ -339,26 +231,117 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ success: true, updated: 0 });
   }
 
-  const grouped = groupEntriesByTable(entries);
-
-  if (!grouped.size) {
+  const subjectId = await resolveSubjectId(subjectLabel);
+  if (!subjectId) {
     return NextResponse.json({ success: true, updated: 0 });
   }
 
-  for (const tableName of grouped.keys()) {
-    await ensureAttendanceTable(tableName);
-  }
-  await ensureNotificationsTable();
+  const [allowedMonths, allowedWeekdays, session] = await Promise.all([
+    loadRemedialMonths(),
+    loadAllowedWeekdays(subjectId),
+    getMasterTeacherSessionFromCookies(),
+  ]);
 
-  const subjectLabel = SUBJECT_LABELS[subject] ?? subject;
-  let updatedCount = 0;
+  if (!allowedMonths.size || !allowedWeekdays.size) {
+    return NextResponse.json({ success: true, updated: 0 });
+  }
+
+  const createdBy = session?.masterTeacherId ?? session?.userId ?? null;
+  const sessionColumns = await getTableColumns(ATTENDANCE_SESSION_TABLE).catch(() => new Set<string>());
+
+  const sessionIdByDate = new Map<string, number>();
+  let updated = 0;
 
   await runWithConnection(async (connection) => {
     await connection.beginTransaction();
     try {
-      for (const [tableName, tableEntries] of grouped.entries()) {
-        for (const entry of tableEntries) {
-          if (entry.present === null) {
+      for (const entry of entries) {
+        if (!isAllowedDate(entry.date, allowedMonths, allowedWeekdays)) {
+          continue;
+        }
+
+        let sessionId = sessionIdByDate.get(entry.date);
+        if (!sessionId) {
+          const [existingRows] = await connection.query<RowDataPacket[]>(
+            `SELECT session_id FROM ${ATTENDANCE_SESSION_TABLE} WHERE session_date = ? AND subject_id = ? LIMIT 1`,
+            [entry.date, subjectId],
+          );
+          const existingId = Number(existingRows?.[0]?.session_id);
+          if (Number.isFinite(existingId) && existingId > 0) {
+            sessionId = existingId;
+          } else {
+            const insertColumns: string[] = [];
+            const insertValues: Array<string | number | null> = [];
+
+            insertColumns.push("session_date");
+            insertValues.push(entry.date);
+
+            if (sessionColumns.has("subject_id")) {
+              insertColumns.push("subject_id");
+              insertValues.push(subjectId);
+            }
+            if (sessionColumns.has("grade_id")) {
+              insertColumns.push("grade_id");
+              insertValues.push(null);
+            }
+            if (sessionColumns.has("week_id")) {
+              insertColumns.push("week_id");
+              insertValues.push(null);
+            }
+            if (sessionColumns.has("activity_id")) {
+              insertColumns.push("activity_id");
+              insertValues.push(null);
+            }
+            if (sessionColumns.has("created_by_user_id")) {
+              insertColumns.push("created_by_user_id");
+              insertValues.push(createdBy ? String(createdBy) : null);
+            }
+
+            const placeholders = insertColumns.map(() => "?").join(", ");
+            const [result] = await connection.query<RowDataPacket[]>(
+              `INSERT INTO ${ATTENDANCE_SESSION_TABLE} (${insertColumns.join(", ")}) VALUES (${placeholders})`,
+              insertValues,
+            );
+            const insertId = Number((result as unknown as { insertId?: number }).insertId);
+            sessionId = Number.isFinite(insertId) ? insertId : null;
+          }
+
+          if (sessionId) {
+            sessionIdByDate.set(entry.date, sessionId);
+          }
+        }
+
+        if (!sessionId) {
+          continue;
+        }
+
+        if (entry.present === null) {
+          await connection.query(
+            `DELETE FROM ${ATTENDANCE_RECORD_TABLE} WHERE session_id = ? AND student_id = ?`,
+            [sessionId, entry.studentId],
+          );
+        } else {
+          const status = entry.present === "Yes" ? "Present" : "Absent";
+          await connection.query(
+            `INSERT INTO ${ATTENDANCE_RECORD_TABLE} (session_id, student_id, status, remarks, recorded_at)
+             VALUES (?, ?, ?, ?, NOW())
+             ON DUPLICATE KEY UPDATE status = VALUES(status), remarks = VALUES(remarks), recorded_at = NOW()`,
+            [sessionId, entry.studentId, status, null],
+          );
+        }
+
+        updated += 1;
+      }
+
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    }
+  });
+
+  return NextResponse.json({ success: true, updated });
+}
             await connection.execute(
               `DELETE FROM \`${tableName}\` WHERE student_id = ? AND subject = ? AND date = ?`,
               [entry.studentId, subject, entry.date]

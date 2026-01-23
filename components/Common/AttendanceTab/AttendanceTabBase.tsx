@@ -9,13 +9,14 @@ import KebabMenu from "@/components/Common/Menus/KebabMenu";
 import { exportRowsToExcel } from "@/lib/utils/export-to-excel";
 import type { SubjectKey } from "@/modules/MasterTeacher/RemedialTeacher/report/types";
 
-const SUPPORTED_MONTHS = new Set([2, 3, 9, 10, 12]);
+const DEFAULT_SUPPORTED_MONTHS = new Set([2, 3, 9, 10, 12]);
 
 type AttendanceStatus = "present" | "absent";
 
 type DayInfo = {
   day: number;
   dayName: string;
+  weekday: string;
   key: string;
   iso: string;
   month: number;
@@ -222,7 +223,7 @@ const isFutureDate = (date: Date): boolean => {
   return date > today;
 };
 
-const buildMonthDays = (anchor: Date): DayInfo[] => {
+const buildMonthDays = (anchor: Date, supportedMonths: Set<number>, allowedWeekdays: Set<string> | null): DayInfo[] => {
   const year = anchor.getFullYear();
   const month = anchor.getMonth();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -236,6 +237,7 @@ const buildMonthDays = (anchor: Date): DayInfo[] => {
       continue;
     }
     const dayName = date.toLocaleDateString("en-US", { weekday: "short" });
+    const weekday = date.toLocaleDateString("en-US", { weekday: "long" });
     const isoDate = new Date(year, month, day);
     isoDate.setHours(0, 0, 0, 0);
     
@@ -245,14 +247,15 @@ const buildMonthDays = (anchor: Date): DayInfo[] => {
       key: `${dayName} ${day}`,
       iso: toIso(year, month, day),
       month: month + 1,
-      isSupported: SUPPORTED_MONTHS.has(month + 1),
+      weekday,
+      isSupported: supportedMonths.has(month + 1) && (allowedWeekdays === null || allowedWeekdays.has(weekday)),
       isFuture: isoDate > today,
     });
   }
   return list;
 };
 
-const buildWeekDays = (anchor: Date): DayInfo[] => {
+const buildWeekDays = (anchor: Date, supportedMonths: Set<number>, allowedWeekdays: Set<string> | null): DayInfo[] => {
   const year = anchor.getFullYear();
   const month = anchor.getMonth();
   const day = anchor.getDate();
@@ -271,6 +274,7 @@ const buildWeekDays = (anchor: Date): DayInfo[] => {
     const currentMonth = current.getMonth();
     const currentDay = current.getDate();
     const dayName = current.toLocaleDateString("en-US", { weekday: "short" });
+    const weekday = current.toLocaleDateString("en-US", { weekday: "long" });
     const isoDate = new Date(currentYear, currentMonth, currentDay);
     isoDate.setHours(0, 0, 0, 0);
     
@@ -280,19 +284,21 @@ const buildWeekDays = (anchor: Date): DayInfo[] => {
       key: `${dayName} ${currentDay}`,
       iso: toIso(currentYear, currentMonth, currentDay),
       month: currentMonth + 1,
-      isSupported: SUPPORTED_MONTHS.has(currentMonth + 1),
+      weekday,
+      isSupported: supportedMonths.has(currentMonth + 1) && (allowedWeekdays === null || allowedWeekdays.has(weekday)),
       isFuture: isoDate > today,
     });
   }
   return days;
 };
 
-const buildDayDays = (anchor: Date): DayInfo[] => {
+const buildDayDays = (anchor: Date, supportedMonths: Set<number>, allowedWeekdays: Set<string> | null): DayInfo[] => {
   const normalized = adjustToWeekday(anchor);
   const year = normalized.getFullYear();
   const month = normalized.getMonth();
   const day = normalized.getDate();
   const dayName = normalized.toLocaleDateString("en-US", { weekday: "short" });
+  const weekday = normalized.toLocaleDateString("en-US", { weekday: "long" });
   const isoDate = new Date(year, month, day);
   isoDate.setHours(0, 0, 0, 0);
   const today = new Date();
@@ -305,10 +311,46 @@ const buildDayDays = (anchor: Date): DayInfo[] => {
       key: `${dayName} ${day}`,
       iso: toIso(year, month, day),
       month: month + 1,
-      isSupported: SUPPORTED_MONTHS.has(month + 1),
+      weekday,
+      isSupported: supportedMonths.has(month + 1) && (allowedWeekdays === null || allowedWeekdays.has(weekday)),
       isFuture: isoDate > today,
     },
   ];
+};
+
+const resolveDefaultSchoolYear = () => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = today.getMonth();
+  return month >= 5 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
+};
+
+const MONTH_LABELS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+const formatMonthList = (months: Set<number>) => {
+  const names = Array.from(months)
+    .filter((month) => month >= 1 && month <= 12)
+    .sort((a, b) => a - b)
+    .map((month) => MONTH_LABELS[month - 1])
+    .filter(Boolean);
+
+  if (names.length === 0) return "";
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
 };
 
 const formatMonthAbbrev = (month: number): string => {
@@ -330,6 +372,9 @@ export default function AttendanceTabBase({ subjectKey, subjectLabel, students, 
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [supportedMonths, setSupportedMonths] = useState<Set<number>>(DEFAULT_SUPPORTED_MONTHS);
+  const [supportedMonthsLabel, setSupportedMonthsLabel] = useState<string>(() => formatMonthList(DEFAULT_SUPPORTED_MONTHS));
+  const [allowedWeekdays, setAllowedWeekdays] = useState<Set<string> | null>(null);
 
   const studentIds = useMemo(() => {
     const ids: number[] = [];
@@ -345,9 +390,18 @@ export default function AttendanceTabBase({ subjectKey, subjectLabel, students, 
 
   const studentsKey = useMemo(() => studentIds.join(","), [studentIds]);
 
-  const monthDays = useMemo(() => buildMonthDays(currentDate), [currentDate]);
-  const weekDays = useMemo(() => buildWeekDays(currentDate), [currentDate]);
-  const dayDays = useMemo(() => buildDayDays(currentDate), [currentDate]);
+  const monthDays = useMemo(
+    () => buildMonthDays(currentDate, supportedMonths, allowedWeekdays),
+    [allowedWeekdays, currentDate, supportedMonths],
+  );
+  const weekDays = useMemo(
+    () => buildWeekDays(currentDate, supportedMonths, allowedWeekdays),
+    [allowedWeekdays, currentDate, supportedMonths],
+  );
+  const dayDays = useMemo(
+    () => buildDayDays(currentDate, supportedMonths, allowedWeekdays),
+    [allowedWeekdays, currentDate, supportedMonths],
+  );
   const daysToDisplay = useMemo(() => {
     if (view === "Month") {
       return monthDays;
@@ -408,6 +462,124 @@ export default function AttendanceTabBase({ subjectKey, subjectLabel, students, 
 
   const startIso = daysToDisplay[0]?.iso ?? null;
   const endIso = daysToDisplay[daysToDisplay.length - 1]?.iso ?? null;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let isCancelled = false;
+
+    const loadRemedialSchedule = async () => {
+      try {
+        const schoolYear = resolveDefaultSchoolYear();
+        const response = await fetch(
+          `/api/master_teacher/coordinator/calendar/remedial-schedule?school_year=${encodeURIComponent(schoolYear)}`,
+          { cache: "no-store", signal: controller.signal },
+        );
+
+        const payload = (await response.json().catch(() => null)) as {
+          success?: boolean;
+          schedule?: {
+            schoolYear?: string | null;
+            quarters?: Record<string, { startMonth: number | null; endMonth: number | null }> | null;
+          } | null;
+          error?: string | null;
+        } | null;
+
+        if (!response.ok || !payload?.success) {
+          throw new Error(payload?.error ?? "Failed to load remedial schedule.");
+        }
+
+        const quarters = payload?.schedule?.quarters ?? null;
+        if (!quarters) {
+          return;
+        }
+
+        const next = new Set<number>();
+        for (const range of Object.values(quarters)) {
+          const start = range?.startMonth ?? null;
+          const end = range?.endMonth ?? null;
+          if (!start || !end) continue;
+          if (start > end) continue;
+          for (let month = start; month <= end; month += 1) {
+            if (month >= 1 && month <= 12) {
+              next.add(month);
+            }
+          }
+        }
+
+        const filtered = new Set(Array.from(next).filter((month) => DEFAULT_SUPPORTED_MONTHS.has(month)));
+        if (filtered.size === 0) {
+          return;
+        }
+
+        if (!isCancelled) {
+          setSupportedMonths(filtered);
+          setSupportedMonthsLabel(formatMonthList(filtered));
+        }
+      } catch (error) {
+        if (isCancelled || (error instanceof DOMException && error.name === "AbortError")) {
+          return;
+        }
+      }
+    };
+
+    loadRemedialSchedule();
+
+    return () => {
+      isCancelled = true;
+      controller.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let isCancelled = false;
+
+    const loadWeeklySchedule = async () => {
+      try {
+        const response = await fetch("/api/principal/weekly-subject-schedule", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+
+        const payload = (await response.json().catch(() => null)) as {
+          success?: boolean;
+          schedule?: Record<string, string> | null;
+        } | null;
+
+        if (!response.ok || !payload?.success || !payload.schedule) {
+          throw new Error("Failed to load weekly schedule.");
+        }
+
+        const next = new Set<string>();
+        const subjectMatch = subjectLabel.trim().toLowerCase();
+
+        for (const [weekday, subject] of Object.entries(payload.schedule)) {
+          if (weekday === "startTime" || weekday === "endTime") {
+            continue;
+          }
+          if (subject && subject.trim().toLowerCase() === subjectMatch) {
+            next.add(weekday);
+          }
+        }
+
+        if (!isCancelled) {
+          setAllowedWeekdays(next);
+        }
+      } catch (error) {
+        if (isCancelled || (error instanceof DOMException && error.name === "AbortError")) {
+          return;
+        }
+        setAllowedWeekdays(new Set());
+      }
+    };
+
+    loadWeeklySchedule();
+
+    return () => {
+      isCancelled = true;
+      controller.abort();
+    };
+  }, [subjectLabel]);
 
   useEffect(() => {
     if (isEditing) {
@@ -1225,7 +1397,7 @@ export default function AttendanceTabBase({ subjectKey, subjectLabel, students, 
 
       {!hasSupportedDays && (
         <p className="mb-3 rounded-md bg-yellow-50 border border-yellow-200 px-3 py-2 text-sm text-yellow-800">
-          Attendance tracking is currently available for September, October, December, February, and March.
+          Attendance tracking is currently available for {supportedMonthsLabel || "the configured remedial period"}.
         </p>
       )}
 
