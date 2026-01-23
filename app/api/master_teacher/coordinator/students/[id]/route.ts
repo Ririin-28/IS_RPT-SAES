@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { deleteStudents, fetchStudentById, updateStudent } from "@/lib/students";
 import type { UpdateStudentRecordInput } from "@/lib/students/shared";
+import { resolveStudentSubject } from "@/lib/students/shared";
 
 const normalizeOptionalString = (value: unknown): string | null | undefined => {
   if (value === undefined) {
@@ -112,6 +113,7 @@ export async function DELETE(
 
   const url = new URL(request.url);
   const userIdParam = url.searchParams.get("userId");
+  const subjectParam = url.searchParams.get("subject");
   const userId = Number(userIdParam);
   if (!Number.isFinite(userId) || userId <= 0) {
     return respondWithError("userId query parameter is required for deletions.");
@@ -123,7 +125,9 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: "Student not found." }, { status: 404 });
     }
 
-    await deleteStudents(userId, existing.subject, [id]);
+    const subject = resolveStudentSubject(subjectParam ?? existing.subject ?? "English", "English");
+
+    await deleteStudents(userId, subject, [id]);
     return NextResponse.json({ success: true, deleted: true });
   } catch (error) {
     console.error("Failed to delete student record", error);

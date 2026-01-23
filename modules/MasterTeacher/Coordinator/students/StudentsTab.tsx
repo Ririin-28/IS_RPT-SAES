@@ -40,6 +40,13 @@ const hashLrnForDisplay = (lrn?: string | null): string => {
   return `#${hash.toString(16).toUpperCase().padStart(8, "0")}`;
 };
 
+const normalizeLrn = (lrn?: string | null): string | null => {
+  if (!lrn) return null;
+  const digits = lrn.replace(/\D/g, "").slice(0, 12);
+  if (digits.length !== 12) return null;
+  return `${digits.slice(0, 6)}-${digits.slice(6)}`;
+};
+
 const resolveStudentPhonemic = (
   student: CoordinatorStudent,
   subjectLabel?: MaterialSubject | null,
@@ -322,6 +329,12 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
   const [selectedStudents, setSelectedStudents] = useState<Set<string>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
   const [filter, setFilter] = useState({ section: "All Sections" });
+  const [duplicateLrn, setDuplicateLrn] = useState<string | null>(null);
+  const [duplicateStudent, setDuplicateStudent] = useState<CoordinatorStudent | null>(null);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [crossGradeLrn, setCrossGradeLrn] = useState<string | null>(null);
+  const [crossGradeStudentName, setCrossGradeStudentName] = useState<string | null>(null);
+  const [showCrossGradeModal, setShowCrossGradeModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const userProfile = useMemo(() => getStoredUserProfile(), []);
@@ -563,7 +576,7 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
         await Promise.all(
           ids.map(async (id) => {
             const response = await fetch(
-              `/api/master_teacher/coordinator/students/${id}?userId=${encodeURIComponent(String(userId))}`,
+              `/api/master_teacher/coordinator/students/${id}?userId=${encodeURIComponent(String(userId))}&subject=${encodeURIComponent(subject)}`,
               {
                 method: "DELETE",
               },
@@ -631,6 +644,53 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
       alert("Grade level is required.");
       return;
     }
+
+    const normalizedNewLrn = normalizeLrn(data.lrn?.trim());
+    const existingWithSameLrn = normalizedNewLrn
+      ? students.find(
+          (student) =>
+            normalizeLrn(student.lrn) === normalizedNewLrn &&
+            (!editingStudent || String(student.id) !== String(editingStudent.id)),
+        )
+      : null;
+
+    if (existingWithSameLrn) {
+      setDuplicateLrn(normalizedNewLrn);
+      setDuplicateStudent(existingWithSameLrn);
+      setShowDuplicateModal(true);
+      return;
+    }
+
+    // Cross-grade validation: LRN must not exist in a different grade
+    if (normalizedNewLrn) {
+      try {
+        const response = await fetch(`/api/master_teacher/coordinator/students?lrn=${encodeURIComponent(normalizedNewLrn)}`, {
+          cache: "no-store",
+        });
+        const payload = await response.json().catch(() => null);
+        if (response.ok && payload?.data) {
+          const record = payload.data as any;
+          const existingGrade = normalizeGradeLabel(record.gradeLevel ?? record.grade ?? null);
+          const intendedGrade = normalizeGradeLabel(effectiveGrade);
+          const existingId = record.studentIdentifier ?? record.id ?? record.student_id ?? null;
+          const editingId = editingStudent ? editingStudent.id : null;
+
+          if (
+            intendedGrade && existingGrade && intendedGrade !== existingGrade &&
+            (!editingId || String(editingId) !== String(existingId ?? ""))
+          ) {
+            const name = formatStudentDisplayName(transformApiRecord(record));
+            setCrossGradeLrn(normalizedNewLrn);
+            setCrossGradeStudentName(name || "Existing student");
+            setShowCrossGradeModal(true);
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("LRN cross-grade validation failed", err);
+      }
+    }
+
     try {
       const payload: CoordinatorStudentFormInput = {
         studentId: data.studentId || undefined,
@@ -1194,6 +1254,34 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
         onConfirm={confirmDelete}
         title="Confirm Delete"
         message={`Are you sure you want to delete ${selectedStudents.size} selected student${selectedStudents.size > 1 ? 's' : ''}? This action cannot be undone.`}
+      />
+      <DeleteConfirmationModal
+        isOpen={showDuplicateModal}
+        onClose={() => setShowDuplicateModal(false)}
+        onConfirm={() => setShowDuplicateModal(false)}
+        title="Duplicate LRN Detected"
+        message={
+          duplicateLrn
+            ? `LRN ${duplicateLrn} already exists for the ${subject} list. Please verify the LRN and try again.`
+            : "This LRN already exists for this subject."
+        }
+        itemName={duplicateStudent ? formatStudentDisplayName(duplicateStudent) : undefined}
+        confirmLabel="Close"
+        showCancel={false}
+      />
+      <DeleteConfirmationModal
+        isOpen={showCrossGradeModal}
+        onClose={() => setShowCrossGradeModal(false)}
+        onConfirm={() => setShowCrossGradeModal(false)}
+        title="Duplicate LRN Detected"
+        message={
+          crossGradeLrn
+            ? `LRN ${crossGradeLrn} already exists in a different grade level. Please verify the LRN and try again.`
+            : "This LRN already exists in another grade and cannot be added here."
+        }
+        itemName={crossGradeStudentName ?? undefined}
+        confirmLabel="Close"
+        showCancel={false}
       />
     </div>
   );

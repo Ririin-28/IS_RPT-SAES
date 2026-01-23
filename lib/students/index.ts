@@ -484,6 +484,49 @@ export async function insertStudents(
 
         let parentId: string | null = null;
         let parentUserId: number | null = null;
+        let studentId: string | null = null;
+
+        const lrn = (student.lrn ?? "").trim() || null;
+
+        // Reuse existing student (and parent) when the LRN already exists, regardless of subject
+        if (lrn) {
+          const parentIdSelectable = studentColumns.has("parent_id");
+          const selectCols = parentIdSelectable ? "student_id, parent_id" : "student_id";
+          const [existingRows] = await connection.query<RowDataPacket[]>(
+            `SELECT ${selectCols} FROM \`${STUDENT_TABLE}\` WHERE lrn = ? LIMIT 1`,
+            [lrn],
+          );
+
+          if (Array.isArray(existingRows) && existingRows.length > 0) {
+            const existing = existingRows[0];
+            const existingId = typeof existing.student_id === "string" ? existing.student_id.trim() : null;
+            const existingParentId = parentIdSelectable ? normalizeParentIdentifier((existing as any).parent_id) : null;
+            studentId = existingId && existingId.length > 0 ? existingId : null;
+            parentId = existingParentId;
+
+            // If parent_id is not stored on student, attempt to resolve via parent_student link
+            if (!parentId && parentStudentColumns.has("parent_id") && parentStudentColumns.has("student_id") && studentId) {
+              const [linkRows] = await connection.query<RowDataPacket[]>(
+                "SELECT parent_id FROM parent_student WHERE student_id = ? LIMIT 1",
+                [studentId],
+              );
+              if (Array.isArray(linkRows) && linkRows.length > 0) {
+                parentId = normalizeParentIdentifier(linkRows[0].parent_id);
+              }
+            }
+
+            if (parentId && parentColumns.has("user_id")) {
+              const [parentRows] = await connection.query<RowDataPacket[]>(
+                "SELECT user_id FROM parent WHERE parent_id = ? LIMIT 1",
+                [parentId],
+              );
+              const existingUser = Number(parentRows?.[0]?.user_id);
+              if (Number.isFinite(existingUser)) {
+                parentUserId = existingUser;
+              }
+            }
+          }
+        }
 
         const parentName = (student.guardianName ?? "").trim();
         const parentFirstName = student.guardianFirstName ?? parentName.split(" ")[0] ?? null;
@@ -499,7 +542,91 @@ export async function insertStudents(
         const hasParentData = [parentName, parentFirstName, parentLastName, parentEmail, parentPhone, parentAddress]
           .some((v) => typeof v === "string" && v.trim().length > 0);
 
-        if (hasParentData && parentColumns.size) {
+        // Try to reuse existing parent (and user) before creating new ones
+        if (hasParentData && !parentId) {
+          // Reuse existing user by email/phone/username/user_code when possible
+          if (!parentUserId && effectiveUserColumns.size) {
+            if (effectiveUserColumns.has("email") && parentEmail) {
+              const [existingUserRows] = await connection.query<RowDataPacket[]>(
+                "SELECT user_id FROM users WHERE email = ? LIMIT 1",
+                [parentEmail],
+              );
+              const existingUserId = Number(existingUserRows?.[0]?.user_id);
+              if (Number.isFinite(existingUserId)) parentUserId = existingUserId;
+            }
+
+            if (!parentUserId && effectiveUserColumns.has("phone_number") && parentPhone) {
+              const [existingUserRows] = await connection.query<RowDataPacket[]>(
+                "SELECT user_id FROM users WHERE phone_number = ? LIMIT 1",
+                [parentPhone],
+              );
+              const existingUserId = Number(existingUserRows?.[0]?.user_id);
+              if (Number.isFinite(existingUserId)) parentUserId = existingUserId;
+            }
+
+            if (!parentUserId && effectiveUserColumns.has("username")) {
+              const candidateUsername = parentEmail?.trim() || parentPhone?.trim() || (student.lrn ?? "").trim() || null;
+              if (candidateUsername) {
+                const [existingUserRows] = await connection.query<RowDataPacket[]>(
+                  "SELECT user_id FROM users WHERE username = ? LIMIT 1",
+                  [candidateUsername],
+                );
+                const existingUserId = Number(existingUserRows?.[0]?.user_id);
+                if (Number.isFinite(existingUserId)) parentUserId = existingUserId;
+              }
+            }
+
+            if (!parentUserId && effectiveUserColumns.has("user_code")) {
+              const candidateCode = (student.lrn ?? "").trim() || null;
+              if (candidateCode) {
+                const [existingUserRows] = await connection.query<RowDataPacket[]>(
+                  "SELECT user_id FROM users WHERE user_code = ? LIMIT 1",
+                  [candidateCode],
+                );
+                const existingUserId = Number(existingUserRows?.[0]?.user_id);
+                if (Number.isFinite(existingUserId)) parentUserId = existingUserId;
+              }
+            }
+          }
+
+          // If we resolved a user, reuse the existing parent linked to that user
+          if (!parentId && parentUserId !== null && parentColumns.has("parent_id") && parentColumns.has("user_id")) {
+            const [existingParent] = await connection.query<RowDataPacket[]>(
+              "SELECT parent_id, user_id FROM parent WHERE user_id = ? LIMIT 1",
+              [parentUserId],
+            );
+            if (Array.isArray(existingParent) && existingParent.length > 0) {
+              parentId = normalizeParentIdentifier(existingParent[0].parent_id);
+            }
+          }
+
+          // Reuse parent by email/phone when parent table stores those fields
+          if (!parentId && parentColumns.has("email") && parentEmail) {
+            const [existingParent] = await connection.query<RowDataPacket[]>(
+              "SELECT parent_id, user_id FROM parent WHERE email = ? LIMIT 1",
+              [parentEmail],
+            );
+            if (Array.isArray(existingParent) && existingParent.length > 0) {
+              parentId = normalizeParentIdentifier(existingParent[0].parent_id);
+              const existingUser = Number(existingParent[0].user_id);
+              if (Number.isFinite(existingUser)) parentUserId = existingUser;
+            }
+          }
+
+          if (!parentId && parentColumns.has("phone_number") && parentPhone) {
+            const [existingParent] = await connection.query<RowDataPacket[]>(
+              "SELECT parent_id, user_id FROM parent WHERE phone_number = ? LIMIT 1",
+              [parentPhone],
+            );
+            if (Array.isArray(existingParent) && existingParent.length > 0) {
+              parentId = normalizeParentIdentifier(existingParent[0].parent_id);
+              const existingUser = Number(existingParent[0].user_id);
+              if (Number.isFinite(existingUser)) parentUserId = existingUser;
+            }
+          }
+        }
+
+        if (hasParentData && parentColumns.size && !parentId) {
           const parentIdentifier = parentColumns.has("parent_id") ? await generateParentId(connection, requestTime) : null;
           const normalizedParentIdentifier = normalizeParentIdentifier(parentIdentifier);
           const parentUsername = parentEmail?.trim()
@@ -650,22 +777,6 @@ export async function insertStudents(
           // Ensure parentId is populated for downstream relations.
           if (!parentId) {
             parentId = normalizedParentIdentifier ?? null;
-          }
-        }
-
-        const lrn = (student.lrn ?? "").trim() || null;
-        let studentId: string | null = null;
-
-        if (lrn) {
-          const [existingRows] = await connection.query<RowDataPacket[]>(
-            `SELECT student_id FROM \`${STUDENT_TABLE}\` WHERE lrn = ? LIMIT 1`,
-            [lrn],
-          );
-          if (Array.isArray(existingRows) && existingRows.length > 0) {
-            const existingId = existingRows[0].student_id;
-            if (typeof existingId === "string" && existingId.trim().length > 0) {
-              studentId = existingId.trim();
-            }
           }
         }
 
@@ -843,8 +954,55 @@ export async function deleteStudents(userId: number, subject: StudentSubject, id
   const studentColumns = await safeGetColumns(STUDENT_TABLE);
   const parentStudentColumns = await safeGetColumns("parent_student");
   const parentColumns = await safeGetColumns("parent");
+  const parentSessionColumns = await safeGetColumns("parent_sessions");
+  const accountLogColumns = await safeGetColumns("account_logs");
+  const trustedDeviceColumns = await safeGetColumns("trusted_devices");
+  const userColumns = await safeGetColumns("users");
+  const assessmentColumns = await safeGetColumns("student_subject_assessment");
+  const subjectColumns = await safeGetColumns("subject");
 
-  const studentIds = ids;
+  // Resolve subject_id for subject-scoped deletions
+  const subjectId = assessmentColumns.has("subject_id")
+    ? await resolveSubjectIdByName(subject, subjectColumns)
+    : null;
+
+  const canScopedDelete = subjectId !== null && assessmentColumns.has("student_id") && assessmentColumns.has("subject_id");
+
+  const fullDeleteIds: string[] = [];
+  const scopedDeleteIds: string[] = [];
+
+  if (canScopedDelete) {
+    for (const studentId of ids) {
+      const [counts] = await query<RowDataPacket[]>(
+        "SELECT COUNT(DISTINCT subject_id) AS cnt FROM student_subject_assessment WHERE student_id = ?",
+        [studentId],
+      );
+      const subjectCount = Number(counts?.[0]?.cnt ?? 0);
+
+      if (subjectCount > 1) {
+        scopedDeleteIds.push(studentId);
+      } else {
+        fullDeleteIds.push(studentId);
+      }
+    }
+
+    if (scopedDeleteIds.length > 0) {
+      const placeholders = scopedDeleteIds.map(() => "?").join(", ");
+      await query(
+        `DELETE FROM student_subject_assessment WHERE student_id IN (${placeholders}) AND subject_id = ?`,
+        [...scopedDeleteIds, subjectId],
+      );
+    }
+  } else {
+    fullDeleteIds.push(...ids);
+  }
+
+  // If nothing left for full delete, we are done
+  if (fullDeleteIds.length === 0) {
+    return scopedDeleteIds.length;
+  }
+
+  const studentIds = fullDeleteIds;
   const placeholders = studentIds.map(() => "?").join(", ");
 
   let parentIds: string[] = [];
@@ -879,17 +1037,52 @@ export async function deleteStudents(userId: number, subject: StudentSubject, id
       : [];
   }
 
+  let parentUserIds: number[] = [];
+  if (parentIds.length && parentColumns.has("parent_id") && parentColumns.has("user_id")) {
+    const parentPlaceholders = parentIds.map(() => "?").join(", ");
+    const [parentUserRows] = await query<RowDataPacket[]>(
+      `SELECT user_id FROM parent WHERE parent_id IN (${parentPlaceholders}) AND user_id IS NOT NULL`,
+      parentIds,
+    );
+    parentUserIds = Array.isArray(parentUserRows)
+      ? Array.from(
+          new Set(
+            parentUserRows
+              .map((row) => Number(row.user_id))
+              .filter((value) => Number.isFinite(value) && value > 0),
+          ),
+        )
+      : [];
+  }
+
   await query(`DELETE FROM student_subject_assessment WHERE student_id IN (${placeholders})`, studentIds);
   if (parentStudentColumns.has("student_id")) {
     await query(`DELETE FROM parent_student WHERE student_id IN (${placeholders})`, studentIds);
   }
 
-  const [deleteResult] = await query<ResultSetHeader>(`DELETE FROM \`${STUDENT_TABLE}\` WHERE student_id IN (${placeholders})`, studentIds);
+  const fullPlaceholders = fullDeleteIds.map(() => "?").join(", ");
+  const [deleteResult] = await query<ResultSetHeader>(`DELETE FROM \`${STUDENT_TABLE}\` WHERE student_id IN (${fullPlaceholders})`, fullDeleteIds);
   const deletedCount = deleteResult.affectedRows ?? 0;
 
   if (parentIds.length && parentColumns.has("parent_id")) {
     const parentPlaceholders = parentIds.map(() => "?").join(", ");
     await query(`DELETE FROM parent WHERE parent_id IN (${parentPlaceholders})`, parentIds);
+  }
+
+  if (parentUserIds.length) {
+    const userPlaceholders = parentUserIds.map(() => "?").join(", ");
+    if (parentSessionColumns.has("user_id")) {
+      await query(`DELETE FROM parent_sessions WHERE user_id IN (${userPlaceholders})`, parentUserIds);
+    }
+    if (accountLogColumns.has("user_id")) {
+      await query(`DELETE FROM account_logs WHERE user_id IN (${userPlaceholders})`, parentUserIds);
+    }
+    if (trustedDeviceColumns.has("user_id")) {
+      await query(`DELETE FROM trusted_devices WHERE user_id IN (${userPlaceholders})`, parentUserIds);
+    }
+    if (userColumns.has("user_id")) {
+      await query(`DELETE FROM users WHERE user_id IN (${userPlaceholders})`, parentUserIds);
+    }
   }
 
   return deletedCount;
