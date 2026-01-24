@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { getTableColumns, query } from "@/lib/db";
 import { normalizeMaterialSubject } from "@/lib/materials/shared";
+import { getMasterTeacherSessionFromCookies } from "@/lib/server/master-teacher-session";
 
 export const dynamic = "force-dynamic";
 
@@ -160,7 +161,10 @@ const toNullableString = (value: unknown): string | null => {
   return text.length > 0 ? text : null;
 };
 
-async function loadCoordinatorHandled(masterTeacherIds: Array<string | number>): Promise<{ gradeLevel: string | null; subject: string | null }> {
+async function loadCoordinatorHandled(
+  masterTeacherIds: Array<string | number>,
+  roleFilter?: { column: string; ids: string[] },
+): Promise<{ gradeLevel: string | null; subject: string | null }> {
   const ids = masterTeacherIds
     .map((id) => {
       if (id === null || id === undefined) return null;
@@ -174,14 +178,20 @@ async function loadCoordinatorHandled(masterTeacherIds: Array<string | number>):
   }
 
   try {
+    const handledColumns = await getTableColumns(COORDINATOR_HANDLED_TABLE).catch(() => new Set<string>());
+    const canUseRoleId =
+      roleFilter && roleFilter.ids.length > 0 && handledColumns.has(roleFilter.column);
+    const filterColumn = canUseRoleId ? roleFilter.column : "master_teacher_id";
+    const filterIds = canUseRoleId ? roleFilter.ids : ids;
+
     const [rows] = await query<RowDataPacket[]>(
       `SELECT g.grade_level, s.subject_name
        FROM ${COORDINATOR_HANDLED_TABLE} mch
        LEFT JOIN grade g ON g.grade_id = mch.grade_id
        LEFT JOIN subject s ON s.subject_id = mch.subject_id
-       WHERE mch.master_teacher_id IN (${ids.map(() => "?").join(", ")})
+       WHERE mch.${filterColumn} IN (${filterIds.map(() => "?").join(", ")})
        LIMIT 1`,
-      ids,
+      filterIds,
     );
 
     if (!Array.isArray(rows) || rows.length === 0) {
@@ -1140,7 +1150,12 @@ export async function GET(request: NextRequest) {
     if (row.mt_masterteacher_id) handledIds.push(row.mt_masterteacher_id);
     if (row.mt_teacher_id) handledIds.push(row.mt_teacher_id);
 
-    const handled = await loadCoordinatorHandled(handledIds);
+    const session = await getMasterTeacherSessionFromCookies().catch(() => null);
+    const roleFilter = session?.coordinatorRoleId
+      ? { column: "coordinator_role_id", ids: [String(session.coordinatorRoleId)] }
+      : undefined;
+
+    const handled = await loadCoordinatorHandled(handledIds, roleFilter);
 
     const grade = pickFirst(
       handled.gradeLevel,

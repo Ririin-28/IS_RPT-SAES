@@ -224,27 +224,24 @@ async function resolveSubjectIds(names: readonly string[]): Promise<Map<string, 
 async function countAssignedStudentsBySubject(
   teacherId: string | null,
   subjectMap: Map<string, number>,
-): Promise<SubjectCounts | null> {
+): Promise<SubjectCounts> {
+  const empty: SubjectCounts = { ...DEFAULT_COUNTS };
   if (!teacherId) {
-    return null;
+    return empty;
   }
 
   const assignmentColumns = await safeGetColumns(ASSIGNMENT_TABLE);
   if (!assignmentColumns.size || !assignmentColumns.has("teacher_id") || !assignmentColumns.has("subject_id")) {
-    return null;
+    return empty;
   }
 
   const [rows] = await query<RowDataPacket[]>(
     `SELECT subject_id, COUNT(DISTINCT student_id) AS total
      FROM \`${ASSIGNMENT_TABLE}\`
-     WHERE is_active = 1 AND teacher_type = 'regular_teacher' AND teacher_id = ?
+     WHERE is_active = 1 AND teacher_id = ?
      GROUP BY subject_id`,
     [teacherId],
   );
-
-  if (!rows.length) {
-    return null;
-  }
 
   const inverted = new Map<number, SubjectName>();
   subjectMap.forEach((id, name) => {
@@ -398,42 +395,20 @@ export async function GET(request: NextRequest) {
     }
 
     const gradeIds = await loadHandledGradeIds(teacherIds, teacherHandledColumns);
-    const [subjectMap, countSource, teacherId] = await Promise.all([
+    const [subjectMap, teacherId] = await Promise.all([
       resolveSubjectIds(SUBJECT_NAMES),
-      resolveSubjectCountSource(),
       resolveTeacherId(userId, teacherColumns),
     ]);
 
     const assignedCounts = await countAssignedStudentsBySubject(teacherId, subjectMap);
-    if (assignedCounts) {
-      return NextResponse.json({
-        success: true,
-        counts: assignedCounts,
-        metadata: {
-          teacherIds,
-          gradeIds,
-          hasHandledGrades: gradeIds.length > 0,
-          source: "assignments",
-        },
-      });
-    }
-
-    if (!countSource) {
-      return NextResponse.json(
-        { success: false, error: "Subject relationship tables are unavailable." },
-        { status: 500 },
-      );
-    }
-
-    const counts = await countStudentsBySubject(gradeIds, subjectMap, countSource, studentColumns);
-
     return NextResponse.json({
       success: true,
-      counts,
+      counts: assignedCounts,
       metadata: {
         teacherIds,
         gradeIds,
         hasHandledGrades: gradeIds.length > 0,
+        source: "assignments",
       },
     });
   } catch (error) {

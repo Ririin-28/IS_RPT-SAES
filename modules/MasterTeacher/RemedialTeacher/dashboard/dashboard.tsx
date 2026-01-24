@@ -219,11 +219,7 @@ export default function TeacherDashboard() {
           Math: Number(payload.counts.Math) || 0,
         });
 
-        if (payload.metadata?.hasGradeContext === false) {
-          setCountsError("Grade assignment is missing; showing zero handled students.");
-        } else {
-          setCountsError(null);
-        }
+        setCountsError(null);
       } catch (error) {
         if (!cancelled) {
           const message = error instanceof Error ? error.message : "Failed to load handled student counts.";

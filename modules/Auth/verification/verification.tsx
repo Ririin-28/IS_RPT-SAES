@@ -56,6 +56,7 @@ function VerificationContent() {
 	}, []);
 
 	const handleVerified = useCallback((device_token: string, apiRedirectPath?: string | null) => {
+		localStorage.setItem("deviceToken", device_token);
 		localStorage.setItem("device_token", device_token);
 		try {
 			sessionStorage.setItem("wasLoggedOut", "false");

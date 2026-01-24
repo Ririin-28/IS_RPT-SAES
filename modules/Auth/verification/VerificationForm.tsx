@@ -53,6 +53,7 @@ export default function VerificationForm({ email, user_id, role, redirectPath, o
     setError("");
     const res = await fetch("/api/auth/verify-otp", {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, otp, deviceName: navigator.userAgent }),
     });
@@ -60,6 +61,7 @@ export default function VerificationForm({ email, user_id, role, redirectPath, o
     setLoading(false);
     if (data.success) {
       localStorage.setItem("deviceToken", data.deviceToken);
+      localStorage.setItem("device_token", data.deviceToken);
       onVerified(data.deviceToken, data.redirectPath ?? redirectPath ?? null);
     } else {
       setError(data.error || "Invalid OTP or expired. Please try again.");

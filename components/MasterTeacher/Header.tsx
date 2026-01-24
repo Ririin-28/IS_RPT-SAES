@@ -21,14 +21,28 @@ export default function MasterTeacherHeader({ title, onSearch }: HeaderProps) {
   const pathname = usePathname();
   const router = useRouter();
 
+  const syncRoleContext = React.useCallback(async (roleContext: "coordinator" | "remedial") => {
+    try {
+      await fetch("/api/master_teacher/session/role", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roleContext }),
+      });
+    } catch {
+      // ignore sync failures
+    }
+  }, []);
+
   const handleRoleSwitch = React.useCallback(
     (targetPath: string) => {
       setShowDropdown(false);
       if (pathname !== targetPath) {
+        const nextRole = targetPath.startsWith("/MasterTeacher/Coordinator") ? "coordinator" : "remedial";
+        void syncRoleContext(nextRole);
         router.push(targetPath);
       }
     },
-    [pathname, router]
+    [pathname, router, syncRoleContext]
   );
 
   const roleOptions = React.useMemo(() => {
@@ -53,6 +67,15 @@ export default function MasterTeacherHeader({ title, onSearch }: HeaderProps) {
       },
     ];
   }, [handleRoleSwitch, pathname]);
+
+  React.useEffect(() => {
+    if (!pathname) return;
+    if (pathname.startsWith("/MasterTeacher/Coordinator")) {
+      void syncRoleContext("coordinator");
+    } else if (pathname.startsWith("/MasterTeacher/RemedialTeacher")) {
+      void syncRoleContext("remedial");
+    }
+  }, [pathname, syncRoleContext]);
 
   // Hide dropdowns when clicking outside
   React.useEffect(() => {

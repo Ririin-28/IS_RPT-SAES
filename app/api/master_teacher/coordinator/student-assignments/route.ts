@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 
 const ASSIGNMENT_TABLE = "student_teacher_assignment";
 const MASTER_TEACHER_TABLE = "master_teacher";
+const MT_REMEDIAL_HANDLED_TABLE = "mt_remedialteacher_handled";
 const SUBJECT_TABLE_CANDIDATES = ["subject", "subjects"] as const;
 
 const ensureAssignmentTable = async () => {
@@ -14,19 +15,18 @@ const ensureAssignmentTable = async () => {
     `CREATE TABLE IF NOT EXISTS ${ASSIGNMENT_TABLE} (
       assignment_id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
       student_id VARCHAR(20) NOT NULL,
-      master_teacher_id VARCHAR(20) NULL,
       teacher_id VARCHAR(20) NULL,
+      remedial_role_id VARCHAR(20) NULL,
       grade_id INT NOT NULL,
       subject_id INT NOT NULL,
-      teacher_type ENUM('master_coordinator','master_remedial','regular_teacher') NOT NULL,
-      assignment_reason VARCHAR(100) NULL,
+      assigned_by_mt_id VARCHAR(20) NULL,
       assigned_date DATE NULL,
       is_active TINYINT(1) NOT NULL DEFAULT 1,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      KEY idx_student_assignment_student (student_id),
       KEY idx_student_assignment_teacher (teacher_id),
-      KEY idx_student_assignment_master (master_teacher_id),
+      KEY idx_student_assignment_remedial (remedial_role_id),
+      KEY idx_student_assignment_student (student_id),
       KEY idx_student_assignment_grade_subject (grade_id, subject_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`
   );
@@ -77,6 +77,36 @@ const resolveMasterTeacherId = async (userId: number | null, fallback?: string |
   return value ? String(value).trim() : null;
 };
 
+const resolveRemedialRoleId = async (masterTeacherId: string, gradeId: number): Promise<string | null> => {
+  if (!masterTeacherId) return null;
+  const [rows] = await query<RowDataPacket[]>(
+    `SELECT remedial_role_id
+     FROM ${MT_REMEDIAL_HANDLED_TABLE}
+     WHERE master_teacher_id = ? AND grade_id = ? AND remedial_role_id IS NOT NULL
+     LIMIT 1`,
+    [masterTeacherId, gradeId],
+  );
+
+  const value = rows[0]?.remedial_role_id;
+  if (value !== null && value !== undefined && String(value).trim().length > 0) {
+    return String(value).trim();
+  }
+
+  const [fallbackRows] = await query<RowDataPacket[]>(
+    `SELECT remedial_role_id
+     FROM ${MT_REMEDIAL_HANDLED_TABLE}
+     WHERE master_teacher_id = ? AND remedial_role_id IS NOT NULL
+     LIMIT 1`,
+    [masterTeacherId],
+  );
+  const fallbackValue = fallbackRows[0]?.remedial_role_id;
+  if (fallbackValue !== null && fallbackValue !== undefined && String(fallbackValue).trim().length > 0) {
+    return String(fallbackValue).trim();
+  }
+
+  return null;
+};
+
 type AssignmentPayload = {
   teacherType: "master_coordinator" | "master_remedial" | "regular_teacher";
   teacherId?: string | null;
@@ -121,6 +151,10 @@ export async function POST(request: NextRequest) {
 
     await ensureAssignmentTable();
 
+    const assignmentColumns = await getTableColumns(ASSIGNMENT_TABLE).catch(() => new Set<string>());
+    const hasRemedialRoleId = assignmentColumns.has("remedial_role_id");
+    const hasAssignedByMt = assignmentColumns.has("assigned_by_mt_id");
+
     const subjectId = await resolveSubjectId(subjectLabel);
     if (!subjectId) {
       return NextResponse.json({ success: false, error: "Subject not found." }, { status: 404 });
@@ -156,23 +190,35 @@ export async function POST(request: NextRequest) {
             masterTeacherId ?? teacherId,
           );
 
+      const remedialRoleId = resolvedMasterId
+        ? await resolveRemedialRoleId(resolvedMasterId, gradeId)
+        : null;
+
       for (const studentIdRaw of students) {
         const studentId = typeof studentIdRaw === "string" ? studentIdRaw.trim() : "";
         if (!studentId) {
           continue;
         }
 
-        rowsToInsert.push([
+        const row: Array<string | number | null> = [
           studentId,
-          teacherType === "regular_teacher" ? null : resolvedMasterId,
           teacherType === "regular_teacher" ? teacherId : null,
+          teacherType === "regular_teacher" ? null : remedialRoleId,
           gradeId,
           subjectId,
-          teacherType,
-          "auto-assign",
-          new Date().toISOString(),
+          hasAssignedByMt ? session.masterTeacherId ?? null : null,
+          new Date().toISOString().slice(0, 10),
           1,
-        ]);
+        ];
+
+        if (!hasAssignedByMt) {
+          row.splice(5, 1);
+        }
+        if (!hasRemedialRoleId) {
+          row.splice(2, 1);
+        }
+
+        rowsToInsert.push(row);
       }
     }
 
@@ -180,11 +226,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "No valid assignments were provided." }, { status: 400 });
     }
 
-    const valuesSql = rowsToInsert.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
+    const baseColumns = [
+      "student_id",
+      "teacher_id",
+      "remedial_role_id",
+      "grade_id",
+      "subject_id",
+      "assigned_by_mt_id",
+      "assigned_date",
+      "is_active",
+    ];
+
+    if (!hasRemedialRoleId) {
+      baseColumns.splice(baseColumns.indexOf("remedial_role_id"), 1);
+    }
+    if (!hasAssignedByMt) {
+      baseColumns.splice(baseColumns.indexOf("assigned_by_mt_id"), 1);
+    }
+
+    const valuesSql = rowsToInsert.map(() => `(${baseColumns.map(() => "?").join(", ")})`).join(", ");
 
     await query<ResultSetHeader>(
       `INSERT INTO ${ASSIGNMENT_TABLE}
-        (student_id, master_teacher_id, teacher_id, grade_id, subject_id, teacher_type, assignment_reason, assigned_date, is_active)
+        (${baseColumns.join(", ")})
        VALUES ${valuesSql}`,
       rowsToInsert.flat(),
     );

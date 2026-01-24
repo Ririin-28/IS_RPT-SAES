@@ -136,11 +136,19 @@ const loadWeeklySubjectMap = async (gradeId: number): Promise<Map<string, number
   return map;
 };
 
-const loadAssignments = async (teacherIds: Array<string | number>): Promise<Array<{ subjectId: number; gradeId: number }>> => {
-  if (!teacherIds.length) return [];
+const loadAssignments = async (
+  teacherIds: Array<string | number>,
+  coordinatorRoleId: string | null,
+): Promise<Array<{ subjectId: number; gradeId: number }>> => {
+  const columns = await getTableColumns(MT_HANDLED_TABLE).catch(() => new Set<string>());
+  const canUseRoleId = Boolean(coordinatorRoleId) && columns.has("coordinator_role_id");
+  const filterIds = canUseRoleId ? [coordinatorRoleId as string] : teacherIds;
+  if (!filterIds.length) return [];
+
+  const filterColumn = canUseRoleId ? "coordinator_role_id" : "master_teacher_id";
   const [rows] = await query<RowDataPacket[]>(
-    `SELECT subject_id, grade_id FROM ${MT_HANDLED_TABLE} WHERE master_teacher_id IN (${teacherIds.map(() => "?").join(", ")})`,
-    teacherIds,
+    `SELECT subject_id, grade_id FROM ${MT_HANDLED_TABLE} WHERE ${filterColumn} IN (${filterIds.map(() => "?").join(", ")})`,
+    filterIds,
   );
 
   return rows
@@ -158,15 +166,16 @@ export async function GET() {
       return NextResponse.json({ success: false, error: "Master teacher session not found." }, { status: 401 });
     }
 
-    const teacherIds = [
-      session.masterTeacherId,
-      String(session.userId),
-    ].filter((value): value is string => {
+    const coordinatorRoleId = session.coordinatorRoleId ? String(session.coordinatorRoleId) : null;
+    const teacherIds = (coordinatorRoleId
+      ? [coordinatorRoleId]
+      : [session.masterTeacherId, String(session.userId)]
+    ).filter((value): value is string => {
       if (value === null || value === undefined) return false;
       return String(value).trim().length > 0;
     });
 
-    const assignments = await loadAssignments(teacherIds);
+    const assignments = await loadAssignments(teacherIds, coordinatorRoleId);
     if (!assignments.length) {
       return NextResponse.json({ success: false, error: "No subject assignments found for this master teacher." }, { status: 404 });
     }

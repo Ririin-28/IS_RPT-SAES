@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
-import { query } from "@/lib/db";
+import { getTableColumns, query } from "@/lib/db";
+import { getMasterTeacherSessionFromCookies } from "@/lib/server/master-teacher-session";
 const ASSIGNMENT_TABLE = "student_teacher_assignment";
+const REMEDIAL_HANDLED_TABLE = "mt_remedialteacher_handled";
 
 export const dynamic = "force-dynamic";
 
@@ -84,21 +86,40 @@ const ensureAssignmentTable = async () => {
 		`CREATE TABLE IF NOT EXISTS ${ASSIGNMENT_TABLE} (
 			assignment_id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
 			student_id VARCHAR(20) NOT NULL,
-			master_teacher_id VARCHAR(20) NULL,
 			teacher_id VARCHAR(20) NULL,
+			remedial_role_id VARCHAR(20) NULL,
 			grade_id INT NOT NULL,
 			subject_id INT NOT NULL,
-			teacher_type ENUM('master_coordinator','master_remedial','regular_teacher') NOT NULL,
-			assignment_reason VARCHAR(100) NULL,
+			assigned_by_mt_id VARCHAR(20) NULL,
 			assigned_date DATE NULL,
 			is_active TINYINT(1) NOT NULL DEFAULT 1,
 			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			KEY idx_student_assignment_teacher (teacher_id),
+			KEY idx_student_assignment_remedial (remedial_role_id),
 			KEY idx_student_assignment_student (student_id),
-			KEY idx_student_assignment_master (master_teacher_id),
 			KEY idx_student_assignment_grade_subject (grade_id, subject_id)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`
 	);
+};
+
+const resolveRemedialRoleId = async (masterTeacherId: string): Promise<string | null> => {
+	const columns = await getTableColumns(REMEDIAL_HANDLED_TABLE).catch(() => new Set<string>());
+	if (!columns.size || !columns.has("remedial_role_id") || !columns.has("master_teacher_id")) {
+		return null;
+	}
+
+	const [rows] = await query<RowDataPacket[]>(
+		`SELECT remedial_role_id FROM ${REMEDIAL_HANDLED_TABLE}
+		 WHERE master_teacher_id = ? AND remedial_role_id IS NOT NULL
+		 LIMIT 1`,
+		[masterTeacherId],
+	);
+
+	const value = rows[0]?.remedial_role_id;
+	if (value === null || value === undefined) return null;
+	const trimmed = String(value).trim();
+	return trimmed.length ? trimmed : null;
 };
 
 export async function GET(request: NextRequest) {
@@ -112,40 +133,38 @@ export async function GET(request: NextRequest) {
 		return NextResponse.json({ success: false, error: "Unsupported subject." }, { status: 400 });
 	}
 
-	if (!userIdParam) {
-		return NextResponse.json({ success: false, error: "Missing userId query parameter." }, { status: 400 });
-	}
-
-	const userId = Number(userIdParam);
-	if (!Number.isFinite(userId) || userId <= 0) {
-		return NextResponse.json({ success: false, error: "Invalid userId value." }, { status: 400 });
-	}
-
 	try {
 		await ensureAssignmentTable();
-		const [[masterRow]] = await query<RowDataPacket[]>(
-			"SELECT master_teacher_id FROM master_teacher WHERE user_id = ? LIMIT 1",
-			[userId],
-		);
+		const session = await getMasterTeacherSessionFromCookies();
+		let masterTeacherId = session?.masterTeacherId ?? null;
+		let remedialRoleId = session?.remedialRoleId ?? null;
 
-		const masterTeacherId = masterRow?.master_teacher_id as string | undefined;
+		if (!masterTeacherId) {
+			if (!userIdParam) {
+				return NextResponse.json({ success: false, error: "Missing userId query parameter." }, { status: 400 });
+			}
+
+			const userId = Number(userIdParam);
+			if (!Number.isFinite(userId) || userId <= 0) {
+				return NextResponse.json({ success: false, error: "Invalid userId value." }, { status: 400 });
+			}
+
+			const [[masterRow]] = await query<RowDataPacket[]>(
+				"SELECT master_teacher_id FROM master_teacher WHERE user_id = ? LIMIT 1",
+				[userId],
+			);
+
+			masterTeacherId = (masterRow?.master_teacher_id as string | undefined) ?? null;
+		}
+
 		if (!masterTeacherId) {
 			return NextResponse.json({ success: false, error: "Master Teacher record not found." }, { status: 404 });
 		}
 
-		const masterTeacherCandidates = (() => {
-			const raw = String(masterTeacherId).trim();
-			const set = new Set<string>();
-			if (raw) {
-				set.add(raw);
-				if (/^mt-/i.test(raw)) {
-					set.add(raw.replace(/^mt-/i, ""));
-				} else {
-					set.add(`MT-${raw}`);
-				}
-			}
-			return Array.from(set);
-		})();
+		if (!remedialRoleId) {
+			remedialRoleId = await resolveRemedialRoleId(masterTeacherId);
+		}
+
 
 		const [[englishRow]] = await query<RowDataPacket[]>(
 			"SELECT subject_id FROM subject WHERE LOWER(TRIM(subject_name)) = 'english' LIMIT 1",
@@ -175,15 +194,21 @@ export async function GET(request: NextRequest) {
 			);
 		}
 
-		const masterTeacherPlaceholders = masterTeacherCandidates.map(() => "?").join(", ");
-		// Parameter order must follow placeholder order in the SQL: ssa.subject_id,
-		// masterTeacherCandidates, subjectId.
+		const assignmentColumns = await getTableColumns(ASSIGNMENT_TABLE).catch(() => new Set<string>());
+		const canFilterByRole = assignmentColumns.has("remedial_role_id") && Boolean(remedialRoleId);
+		if (!canFilterByRole) {
+			return NextResponse.json(
+				{ success: false, error: "Remedial role context is missing for this master teacher." },
+				{ status: 400 },
+			);
+		}
+		// Parameter order must follow placeholder order in the SQL: ssa.subject_id, subjectId, remedialRoleId.
 		const params: Array<string | number | null> = [
 			englishId ?? null,
 			filipinoId ?? null,
 			mathId ?? null,
-			...masterTeacherCandidates,
 			subjectId,
+			remedialRoleId as string,
 		];
 
 		const sql = `
@@ -235,9 +260,9 @@ export async function GET(request: NextRequest) {
 			JOIN ${ASSIGNMENT_TABLE} sta
 				ON sta.student_id = s.student_id
 				AND sta.is_active = 1
-				AND sta.teacher_type = 'master_remedial'
-				AND sta.master_teacher_id IN (${masterTeacherPlaceholders})
 				AND sta.subject_id = ?
+				AND sta.grade_id = s.grade_id
+				AND sta.remedial_role_id = ?
 			GROUP BY s.student_id, g.grade_level, s.section, gi.guardian, gi.guardian_contact, s.first_name, s.middle_name, s.last_name
 			ORDER BY g.grade_level, s.section, s.last_name, s.first_name, s.student_id
 		`;

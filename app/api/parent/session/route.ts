@@ -1,11 +1,10 @@
-import mysql, { type Connection, type RowDataPacket } from "mysql2/promise";
+import { type RowDataPacket } from "mysql2/promise";
 import {
   buildClearedParentSessionCookie,
-  buildParentSessionCookie,
-  createParentSession,
   extractParentSessionToken,
   validateParentSession,
 } from "@/lib/server/parent-session";
+import { runWithConnection } from "@/lib/db";
 
 interface ParentUserRow extends RowDataPacket {
   user_id: number;
@@ -16,18 +15,11 @@ interface ParentUserRow extends RowDataPacket {
 }
 
 export async function GET(req: Request): Promise<Response> {
-  let db: Connection | null = null;
-
-  const respond = async (
+  const respond = (
     status: number,
     payload: Record<string, unknown>,
     extraHeaders?: Record<string, string | string[]>,
-  ): Promise<Response> => {
-    if (db) {
-      await db.end();
-      db = null;
-    }
-
+  ): Response => {
     const headers = new Headers({
       "Content-Type": "application/json",
       "Cache-Control": "no-store",
@@ -53,56 +45,43 @@ export async function GET(req: Request): Promise<Response> {
     const cookieHeader = req.headers.get("cookie");
     const sessionToken = extractParentSessionToken(cookieHeader);
     if (!sessionToken) {
-      return respond(401, { error: "Not authenticated" });
-    }
-
-    db = await mysql.createConnection({
-      host: "localhost",
-      user: "root",
-      password: "RIANA28@eg564",
-      database: "rpt-saes_db",
-    });
-
-    const session = await validateParentSession(db, sessionToken);
-    if (!session) {
-      return respond(401, { error: "Session expired" }, {
+      return respond(401, { error: "Not authenticated" }, {
         "Set-Cookie": buildClearedParentSessionCookie(),
       });
     }
 
-    const [rows] = await db.execute<ParentUserRow[]>(
-      `SELECT user_id, email, first_name, middle_name, last_name FROM users WHERE user_id = ? LIMIT 1`,
-      [session.userId],
-    );
-    const user = rows[0];
-    if (!user) {
-      return respond(401, { error: "Account not found" }, {
-        "Set-Cookie": buildClearedParentSessionCookie(),
+    return await runWithConnection(async (db) => {
+      const session = await validateParentSession(db, sessionToken);
+      if (!session) {
+        return respond(401, { error: "Session expired" }, {
+          "Set-Cookie": buildClearedParentSessionCookie(),
+        });
+      }
+
+      const [rows] = await db.execute<ParentUserRow[]>(
+        `SELECT user_id, email, first_name, middle_name, last_name FROM users WHERE user_id = ? LIMIT 1`,
+        [session.userId],
+      );
+      const user = rows[0];
+      if (!user) {
+        return respond(401, { error: "Account not found" }, {
+          "Set-Cookie": buildClearedParentSessionCookie(),
+        });
+      }
+
+      return respond(200, {
+        success: true,
+        user: {
+          userId: user.user_id,
+          email: user.email,
+          firstName: user.first_name,
+          middleName: user.middle_name,
+          lastName: user.last_name,
+        },
       });
-    }
-
-    // Rotate session to extend validity on active use.
-    const userAgent = req.headers.get("user-agent");
-    const { token, expiresAt } = await createParentSession(db, session.userId, userAgent);
-
-    return respond(200, {
-      success: true,
-      user: {
-        userId: user.user_id,
-        email: user.email,
-        firstName: user.first_name,
-        middleName: user.middle_name,
-        lastName: user.last_name,
-      },
-    }, {
-      "Set-Cookie": buildParentSessionCookie(token, expiresAt),
     });
   } catch (error) {
     console.error("Parent session lookup failed", error);
     return respond(500, { error: "Server error" });
-  } finally {
-    if (db) {
-      await db.end();
-    }
   }
 }

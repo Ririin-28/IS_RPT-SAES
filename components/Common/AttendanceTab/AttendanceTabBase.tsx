@@ -36,14 +36,14 @@ type AttendanceTabBaseProps = {
   subjectLabel: string;
   students: any[];
   searchTerm: string;
+  attendanceApiBase?: string;
 };
 
-const buildKey = (studentId: number, iso: string) => `${studentId}|${iso}`;
+const buildKey = (studentId: string | number, iso: string) => `${studentId}|${iso}`;
 
 const resolveStudentId = (student: any, fallback: number) => {
-  const rawId = student?.id ?? student?.studentId ?? fallback;
-  const numericId = typeof rawId === "number" ? rawId : Number(rawId);
-  return Number.isFinite(numericId) ? numericId : fallback;
+  const rawId = student?.studentId ?? student?.id ?? fallback;
+  return String(rawId ?? "").trim() || String(fallback);
 };
 
 // Helper function to capitalize words
@@ -51,7 +51,26 @@ const capitalizeWord = (value: string) => {
   if (!value) {
     return "";
   }
-  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+
+  const normalizePart = (part: string) => {
+    if (!part) return "";
+    return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+  };
+
+  return value
+    .split(/\s+/)
+    .map((word) =>
+      word
+        .split("-")
+        .map((segment) =>
+          segment
+            .split("'")
+            .map((piece) => normalizePart(piece))
+            .join("'"),
+        )
+        .join("-"),
+    )
+    .join(" ");
 };
 
 // Extract name parts from student object
@@ -361,7 +380,13 @@ const formatMonthAbbrev = (month: number): string => {
   return months[month - 1] || "Invalid";
 };
 
-export default function AttendanceTabBase({ subjectKey, subjectLabel, students, searchTerm }: AttendanceTabBaseProps) {
+export default function AttendanceTabBase({
+  subjectKey,
+  subjectLabel,
+  students,
+  searchTerm,
+  attendanceApiBase = "/api/master_teacher/remedial/attendance",
+}: AttendanceTabBaseProps) {
   const [view, setView] = useState<"Day" | "Week" | "Month">("Week");
   const [isEditing, setIsEditing] = useState(false);
   const [currentDate, setCurrentDate] = useState(() => new Date());
@@ -376,14 +401,24 @@ export default function AttendanceTabBase({ subjectKey, subjectLabel, students, 
   const [supportedMonthsLabel, setSupportedMonthsLabel] = useState<string>(() => formatMonthList(DEFAULT_SUPPORTED_MONTHS));
   const [allowedWeekdays, setAllowedWeekdays] = useState<Set<string> | null>(null);
 
+  useEffect(() => {
+    if (!feedback || feedback.type !== "success") {
+      return undefined;
+    }
+    const timeout = window.setTimeout(() => {
+      setFeedback(null);
+    }, 4000);
+
+    return () => window.clearTimeout(timeout);
+  }, [feedback]);
+
   const studentIds = useMemo(() => {
-    const ids: number[] = [];
+    const ids: string[] = [];
     for (const student of students) {
-      const raw = student?.id ?? student?.studentId;
-      const numeric = typeof raw === "number" ? raw : Number(raw);
-      if (Number.isFinite(numeric) && numeric > 0) {
-        ids.push(numeric);
-      }
+      const raw = student?.studentId ?? student?.id;
+      if (raw === null || raw === undefined) continue;
+      const text = String(raw).trim();
+      if (text) ids.push(text);
     }
     return ids;
   }, [students]);
@@ -462,6 +497,67 @@ export default function AttendanceTabBase({ subjectKey, subjectLabel, students, 
 
   const startIso = daysToDisplay[0]?.iso ?? null;
   const endIso = daysToDisplay[daysToDisplay.length - 1]?.iso ?? null;
+
+  const fetchAttendance = useCallback(
+    async (signal?: AbortSignal) => {
+      if (!studentIds.length || !startIso || !endIso) {
+        setStatusMap(new Map());
+        setBaselineMap(new Map());
+        return;
+      }
+
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const params = new URLSearchParams({
+          subject: subjectKey,
+          start: startIso,
+          end: endIso,
+        });
+        if (studentIds.length) {
+          params.set("studentIds", studentIds.join(","));
+        }
+
+        const response = await fetch(`${attendanceApiBase}?${params.toString()}`, {
+          method: "GET",
+          cache: "no-store",
+          signal,
+        });
+
+        const payload = await response.json().catch(() => null);
+
+        if (!response.ok || !payload?.success || !Array.isArray(payload.records)) {
+          throw new Error(payload?.error ?? "Failed to load attendance records.");
+        }
+
+        if (signal?.aborted) {
+          return;
+        }
+
+        const nextMap = new Map<string, AttendanceStatus>();
+        for (const record of payload.records as Array<{ studentId: string | number; date: string; present: "Yes" | "No" }>) {
+          const key = buildKey(String(record.studentId), record.date);
+          nextMap.set(key, record.present === "Yes" ? "present" : "absent");
+        }
+
+        setBaselineMap(new Map(nextMap));
+        setStatusMap(new Map(nextMap));
+      } catch (error) {
+        if (signal?.aborted || (error instanceof DOMException && error.name === "AbortError")) {
+          return;
+        }
+        console.error("Failed to load attendance records", error);
+        setBaselineMap(new Map());
+        setStatusMap(new Map());
+        setLoadError(error instanceof Error ? error.message : "Failed to load attendance records.");
+      } finally {
+        if (!signal?.aborted) {
+          setLoading(false);
+        }
+      }
+    },
+    [attendanceApiBase, endIso, startIso, studentIds, subjectKey],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -592,74 +688,14 @@ export default function AttendanceTabBase({ subjectKey, subjectLabel, students, 
     if (isEditing) {
       return;
     }
-    if (!studentIds.length || !startIso || !endIso) {
-      setStatusMap(new Map());
-      setBaselineMap(new Map());
-      return;
-    }
 
     const controller = new AbortController();
-    let isCancelled = false;
-
-    const loadAttendance = async () => {
-      setLoading(true);
-      setLoadError(null);
-      try {
-        const params = new URLSearchParams({
-          subject: subjectKey,
-          start: startIso,
-          end: endIso,
-        });
-        if (studentIds.length) {
-          params.set("studentIds", studentIds.join(","));
-        }
-
-        const response = await fetch(`/api/master_teacher/remedial/attendance?${params.toString()}`, {
-          method: "GET",
-          cache: "no-store",
-          signal: controller.signal,
-        });
-
-        const payload = await response.json().catch(() => null);
-
-        if (!response.ok || !payload?.success || !Array.isArray(payload.records)) {
-          throw new Error(payload?.error ?? "Failed to load attendance records.");
-        }
-
-        if (isCancelled) {
-          return;
-        }
-
-        const nextMap = new Map<string, AttendanceStatus>();
-        for (const record of payload.records as Array<{ studentId: number; date: string; present: "Yes" | "No" }>) {
-          const key = buildKey(Number(record.studentId), record.date);
-          nextMap.set(key, record.present === "Yes" ? "present" : "absent");
-        }
-
-        setBaselineMap(new Map(nextMap));
-        setStatusMap(new Map(nextMap));
-      } catch (error) {
-        if (isCancelled || (error instanceof DOMException && error.name === "AbortError")) {
-          return;
-        }
-        console.error("Failed to load attendance records", error);
-        setBaselineMap(new Map());
-        setStatusMap(new Map());
-        setLoadError(error instanceof Error ? error.message : "Failed to load attendance records.");
-      } finally {
-        if (!isCancelled) {
-          setLoading(false);
-        }
-      }
-    };
-
-    loadAttendance();
+    void fetchAttendance(controller.signal);
 
     return () => {
-      isCancelled = true;
       controller.abort();
     };
-  }, [isEditing, subjectKey, studentsKey, startIso, endIso]);
+  }, [fetchAttendance, isEditing, studentsKey]);
 
   const toggleAttendance = useCallback(
     (studentId: number, iso: string, isSupported: boolean, isFuture: boolean) => {
@@ -694,7 +730,7 @@ export default function AttendanceTabBase({ subjectKey, subjectLabel, students, 
       return;
     }
 
-    const changes: Array<{ studentId: number; date: string; present: "Yes" | "No" | null }> = [];
+    const changes: Array<{ studentId: string; date: string; present: "Yes" | "No" | null }> = [];
     const allKeys = new Set<string>([...baselineMap.keys(), ...statusMap.keys()]);
 
     for (const key of allKeys) {
@@ -704,8 +740,8 @@ export default function AttendanceTabBase({ subjectKey, subjectLabel, students, 
         continue;
       }
       const [studentIdPart, iso] = key.split("|");
-      const studentId = Number(studentIdPart);
-      if (!Number.isFinite(studentId)) {
+      const studentId = String(studentIdPart ?? "").trim();
+      if (!studentId) {
         continue;
       }
       let present: "Yes" | "No" | null = null;
@@ -727,22 +763,53 @@ export default function AttendanceTabBase({ subjectKey, subjectLabel, students, 
     setFeedback(null);
 
     try {
-      const response = await fetch("/api/master_teacher/remedial/attendance", {
+      console.log("Saving changes:", {
+        subject: subjectKey,
+        entries: changes.map((entry) => ({
+          studentId: entry.studentId,
+          date: entry.date,
+          present: entry.present,
+        })),
+      });
+
+      const response = await fetch(attendanceApiBase, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ subject: subjectKey, entries: changes }),
       });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok || !payload?.success) {
-        throw new Error(payload?.error ?? "Failed to save attendance.");
+
+      const responseText = await response.text();
+      console.log("Raw response:", responseText);
+
+      let payload: any = null;
+      try {
+        payload = responseText ? JSON.parse(responseText) : null;
+      } catch (parseError) {
+        console.error("Failed to parse response:", parseError);
+        throw new Error(
+          `Invalid JSON response: ${responseText.substring(0, 100)}...`,
+        );
       }
+
+      if (!response.ok || !payload?.success) {
+        const errorMessage = payload?.error
+          ? `${payload.error}${payload.code ? ` (Code: ${payload.code})` : ""}`
+          : `HTTP ${response.status}: ${response.statusText}`;
+
+        console.error("Backend error details:", payload);
+        throw new Error(errorMessage);
+      }
+
       setBaselineMap(new Map(statusMap));
       setIsEditing(false);
-      const notified = changes.some((entry) => entry.present === "No");
-      const message = notified
-        ? `Attendance saved. Parents were notified about the absences in ${subjectLabel}.`
-        : `Attendance for ${subjectLabel} saved successfully.`;
-      setFeedback({ type: "success", message });
+
+      await fetchAttendance();
+
+      const successMessage = `Attendance saved: ${payload.updated ?? changes.length} records updated.`;
+      setFeedback({
+        type: "success",
+        message: payload.reason ? `${successMessage} ${payload.reason}` : successMessage,
+      });
     } catch (error) {
       console.error("Failed to save attendance", error);
       setFeedback({
@@ -752,7 +819,7 @@ export default function AttendanceTabBase({ subjectKey, subjectLabel, students, 
     } finally {
       setIsSaving(false);
     }
-  }, [baselineMap, isEditing, statusMap, subjectKey, subjectLabel]);
+  }, [attendanceApiBase, baselineMap, isEditing, statusMap, subjectKey, subjectLabel, fetchAttendance]);
 
   const goToPreviousMonth = () => {
     setCurrentDate((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
