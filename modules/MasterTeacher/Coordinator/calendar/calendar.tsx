@@ -59,6 +59,8 @@ interface RemedialScheduleWindow {
   active: boolean;
 }
 
+type WeeklySubjectSchedule = Record<Weekday, string>;
+
 const SUBJECT_SYNONYM_MAP: Record<string, string> = {
   english: "English",
   math: "Math",
@@ -186,6 +188,15 @@ const normalizeSubjectValue = (raw: string): string | null => {
     .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase())
     .join(" ")
     .trim();
+};
+
+const normalizeWeeklySubjectSchedule = (value: unknown): WeeklySubjectSchedule => {
+  const schedule = {} as WeeklySubjectSchedule;
+  for (const day of WEEKDAY_ORDER) {
+    const raw = (value as Record<string, unknown> | null)?.[day];
+    schedule[day] = typeof raw === "string" ? raw.trim() : "";
+  }
+  return schedule;
 };
 
 const deriveAllowedSubjects = (raw: string | null): string[] => {
@@ -469,6 +480,11 @@ const buildStoredProfileName = (profile: StoredUserProfile | null, fallback: str
 const normalizeDateKey = (date: Date): string =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
+const isWeekendDate = (date: Date): boolean => {
+  const day = date.getDay();
+  return day === 0 || day === 6;
+};
+
 export default function MasterTeacherCalendar() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -504,6 +520,7 @@ export default function MasterTeacherCalendar() {
   const [remedialWindowLoading, setRemedialWindowLoading] = useState<boolean>(true);
   const [remedialWindowError, setRemedialWindowError] = useState<string | null>(null);
   const [remedialGuardMessage, setRemedialGuardMessage] = useState<string | null>(null);
+  const [weeklySubjectSchedule, setWeeklySubjectSchedule] = useState<WeeklySubjectSchedule | null>(null);
   const [importing, setImporting] = useState(false);
   const [templateDownloading, setTemplateDownloading] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
@@ -540,6 +557,13 @@ export default function MasterTeacherCalendar() {
     }
     return "active" as const;
   }, [scheduleRange, remedialWindow?.active]);
+
+  const subjectScheduleConfigured = useMemo(() => {
+    if (!weeklySubjectSchedule) {
+      return false;
+    }
+    return Object.values(weeklySubjectSchedule).some((value) => value.trim().length > 0);
+  }, [weeklySubjectSchedule]);
 
   const hasActiveRemedialWindow = remedialWindowStatus === "active";
 
@@ -711,6 +735,31 @@ export default function MasterTeacherCalendar() {
       setRemedialGuardMessage(null);
     }
   }, [hasActiveRemedialWindow]);
+
+  const loadWeeklySubjectSchedule = useCallback(async () => {
+    try {
+      const response = await fetch("/api/principal/weekly-subject-schedule", { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+      const payload = (await response.json().catch(() => null)) as {
+        success?: boolean;
+        schedule?: Record<string, unknown> | null;
+        error?: string;
+      } | null;
+      if (!payload?.success) {
+        throw new Error(payload?.error ?? "Unable to load the weekly subject schedule.");
+      }
+      setWeeklySubjectSchedule(normalizeWeeklySubjectSchedule(payload.schedule ?? null));
+    } catch (error) {
+      console.warn("Failed to load weekly subject schedule", error);
+      setWeeklySubjectSchedule(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadWeeklySubjectSchedule();
+  }, [loadWeeklySubjectSchedule]);
 
   const loadRemedialWindow = useCallback(async () => {
     setRemedialWindowLoading(true);
@@ -1184,6 +1233,28 @@ export default function MasterTeacherCalendar() {
     [weeklySchedule],
   );
 
+  const isCoordinatorSubjectDay = useCallback(
+    (date: Date) => {
+      if (!subjectScheduleConfigured || !weeklySubjectSchedule) {
+        return true;
+      }
+      if (allowedSubjects.length === 0) {
+        return true;
+      }
+      const weekday = date.toLocaleDateString("en-US", { weekday: "long" });
+      if (!WEEKDAY_ORDER.includes(weekday as Weekday)) {
+        return false;
+      }
+      const scheduledSubject = weeklySubjectSchedule[weekday as Weekday];
+      if (!scheduledSubject || !scheduledSubject.trim()) {
+        return false;
+      }
+      const normalizedScheduled = normalizeSubjectValue(scheduledSubject) ?? scheduledSubject.trim();
+      return allowedSubjects.some((subject) => subject.toLowerCase() === normalizedScheduled.toLowerCase());
+    },
+    [allowedSubjects, subjectScheduleConfigured, weeklySubjectSchedule],
+  );
+
   const isDateWithinRemedialWindow = useCallback(
     (date: Date | null | undefined) => {
       if (!date || !scheduleRange) {
@@ -1194,9 +1265,15 @@ export default function MasterTeacherCalendar() {
       }
       const candidate = new Date(date);
       candidate.setHours(12, 0, 0, 0);
+      if (isWeekendDate(candidate)) {
+        return false;
+      }
+      if (!isCoordinatorSubjectDay(candidate)) {
+        return false;
+      }
       return candidate >= scheduleRange.start && candidate <= scheduleRange.end;
     },
-    [remedialWindowStatus, scheduleRange],
+    [isCoordinatorSubjectDay, remedialWindowStatus, scheduleRange],
   );
 
   // Handle double click on date
@@ -1205,6 +1282,14 @@ export default function MasterTeacherCalendar() {
       if (!hasActiveRemedialWindow && scheduleBlockingReason) {
         setRemedialGuardMessage(scheduleBlockingReason);
       }
+      return;
+    }
+    if (isWeekendDate(date)) {
+      setRemedialGuardMessage("Remedial sessions are only scheduled Monday to Friday.");
+      return;
+    }
+    if (!isCoordinatorSubjectDay(date)) {
+      setRemedialGuardMessage("This day is assigned to a different subject in the weekly schedule.");
       return;
     }
     if (!isDateWithinRemedialWindow(date)) {
@@ -2039,17 +2124,19 @@ export default function MasterTeacherCalendar() {
           const withinRemedialWindow = scheduleRange
             ? currentDay >= scheduleRange.start && currentDay <= scheduleRange.end
             : false;
+          const highlightDay =
+            withinRemedialWindow && !isWeekendDate(currentDay) && isCoordinatorSubjectDay(currentDay);
 
           days.push(
             <div
               key={`day-${day}`}
               className={`h-24 p-1 border overflow-hidden relative hover:bg-gray-50 transition-colors cursor-pointer ${
-                withinRemedialWindow ? "border-green-200 bg-green-50" : "border-gray-100"
+                highlightDay ? "border-green-200 bg-green-50" : "border-gray-100"
               }`}
               onDoubleClick={() => handleDateDoubleClick(currentDay)}
             >
               <div className="text-right text-sm font-medium text-gray-800 mb-1">
-                {withinRemedialWindow && (
+                {highlightDay && (
                   <span className="absolute left-1 top-1 text-[0.65rem] font-semibold uppercase tracking-wide text-[#013300]/70">
                     Remedial
                   </span>

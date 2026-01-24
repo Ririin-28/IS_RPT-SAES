@@ -9,7 +9,7 @@ import KebabMenu from "@/components/Common/Menus/KebabMenu";
 import { exportRowsToExcel } from "@/lib/utils/export-to-excel";
 import type { SubjectKey } from "@/modules/MasterTeacher/RemedialTeacher/report/types";
 
-const DEFAULT_SUPPORTED_MONTHS = new Set([2, 3, 9, 10, 12]);
+const DEFAULT_SUPPORTED_MONTHS = new Set<number>();
 
 type AttendanceStatus = "present" | "absent";
 
@@ -498,22 +498,29 @@ export default function AttendanceTabBase({ subjectKey, subjectLabel, students, 
           const start = range?.startMonth ?? null;
           const end = range?.endMonth ?? null;
           if (!start || !end) continue;
-          if (start > end) continue;
-          for (let month = start; month <= end; month += 1) {
-            if (month >= 1 && month <= 12) {
+          if (start <= end) {
+            for (let month = start; month <= end; month += 1) {
+              if (month >= 1 && month <= 12) {
+                next.add(month);
+              }
+            }
+          } else {
+            for (let month = start; month <= 12; month += 1) {
+              next.add(month);
+            }
+            for (let month = 1; month <= end; month += 1) {
               next.add(month);
             }
           }
         }
 
-        const filtered = new Set(Array.from(next).filter((month) => DEFAULT_SUPPORTED_MONTHS.has(month)));
-        if (filtered.size === 0) {
+        if (next.size === 0) {
           return;
         }
 
         if (!isCancelled) {
-          setSupportedMonths(filtered);
-          setSupportedMonthsLabel(formatMonthList(filtered));
+          setSupportedMonths(next);
+          setSupportedMonthsLabel(formatMonthList(next));
         }
       } catch (error) {
         if (isCancelled || (error instanceof DOMException && error.name === "AbortError")) {

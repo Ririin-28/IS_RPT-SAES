@@ -9,6 +9,7 @@ const MASTER_TEACHER_TABLE = "master_teacher" as const;
 const HANDLED_TABLE = "mt_remedialteacher_handled" as const;
 const SUBJECT_TABLE = "subject" as const;
 const STUDENT_SUBJECT_ASSESSMENT_TABLE = "student_subject_assessment" as const;
+const ASSIGNMENT_TABLE = "student_teacher_assignment" as const;
 
 const SUBJECT_NAMES = ["English", "Filipino", "Math"] as const;
 type SubjectName = (typeof SUBJECT_NAMES)[number];
@@ -378,6 +379,62 @@ async function resolveSubjectCountSource(): Promise<SubjectCountSource | null> {
   return null;
 }
 
+async function countAssignedStudentsBySubject(
+  identifiers: string[],
+  subjectMap: Map<string, number>,
+): Promise<SubjectCounts | null> {
+  if (!identifiers.length) {
+    return null;
+  }
+
+  const assignmentColumns = await safeGetColumns(ASSIGNMENT_TABLE);
+  if (!assignmentColumns.size || !assignmentColumns.has("master_teacher_id") || !assignmentColumns.has("subject_id")) {
+    return null;
+  }
+
+  const placeholders = identifiers.map(() => "?").join(", ");
+  const [rows] = await query<RowDataPacket[]>(
+    `SELECT subject_id, COUNT(DISTINCT student_id) AS total
+     FROM \`${ASSIGNMENT_TABLE}\`
+     WHERE is_active = 1 AND teacher_type = 'master_remedial'
+       AND master_teacher_id IN (${placeholders})
+     GROUP BY subject_id`,
+    identifiers,
+  );
+
+  if (!rows.length) {
+    return null;
+  }
+
+  const inverted = new Map<number, SubjectName>();
+  subjectMap.forEach((id, name) => {
+    const label = SUBJECT_NAMES.find((subject) => subject.toLowerCase() === name);
+    if (label) {
+      inverted.set(id, label);
+    }
+  });
+
+  const counts: SubjectCounts = {
+    English: 0,
+    Filipino: 0,
+    Math: 0,
+  };
+
+  rows.forEach((row) => {
+    const subjectId = Number(row.subject_id);
+    const total = Number(row.total);
+    if (!Number.isFinite(subjectId) || !Number.isFinite(total)) {
+      return;
+    }
+    const label = inverted.get(subjectId);
+    if (label) {
+      counts[label] = total;
+    }
+  });
+
+  return counts;
+}
+
 function buildGradeFilterClause(
   studentColumns: Set<string>,
   alias: string,
@@ -521,6 +578,20 @@ export async function GET(request: NextRequest) {
       resolveSubjectIds(SUBJECT_NAMES),
       resolveSubjectCountSource(),
     ]);
+
+    const assignedCounts = await countAssignedStudentsBySubject(identifiers, subjectMap);
+    if (assignedCounts) {
+      return NextResponse.json({
+        success: true,
+        counts: assignedCounts,
+        metadata: {
+          gradeIds: [],
+          gradeLabels: [],
+          hasGradeContext: false,
+          source: "assignments",
+        },
+      });
+    }
 
     const handledData = await loadHandledGradeData(identifiers);
     const gradeContext = buildGradeContext(handledData.gradeIds, handledData.labels);

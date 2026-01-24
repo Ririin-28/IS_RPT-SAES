@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 const SUBJECT_TABLE = "subject" as const;
 const STUDENT_TABLE = "student" as const;
 const STUDENT_SUBJECT_ASSESSMENT_TABLE = "student_subject_assessment" as const;
+const ASSIGNMENT_TABLE = "student_teacher_assignment" as const;
 const TEACHER_TABLE = "teacher" as const;
 const TEACHER_HANDLED_TABLE = "teacher_handled" as const;
 const USERS_TABLE = "users" as const;
@@ -139,6 +140,22 @@ async function collectTeacherIdentifiers(
   return Array.from(identifiers);
 }
 
+async function resolveTeacherId(userId: number, teacherColumns: Set<string>): Promise<string | null> {
+  if (!teacherColumns.size || !teacherColumns.has("user_id")) {
+    return null;
+  }
+  const teacherIdColumn = pickColumn(teacherColumns, TEACHER_IDENTIFIER_COLUMNS);
+  if (!teacherIdColumn) {
+    return null;
+  }
+  const [rows] = await query<RowDataPacket[]>(
+    `SELECT ${teacherIdColumn} AS teacher_id FROM \`${TEACHER_TABLE}\` WHERE user_id = ? LIMIT 1`,
+    [userId],
+  );
+  const value = sanitize(rows[0]?.teacher_id);
+  return value ?? null;
+}
+
 async function loadHandledGradeIds(
   teacherIds: string[],
   teacherHandledColumns: Set<string>,
@@ -202,6 +219,55 @@ async function resolveSubjectIds(names: readonly string[]): Promise<Map<string, 
   });
 
   return map;
+}
+
+async function countAssignedStudentsBySubject(
+  teacherId: string | null,
+  subjectMap: Map<string, number>,
+): Promise<SubjectCounts | null> {
+  if (!teacherId) {
+    return null;
+  }
+
+  const assignmentColumns = await safeGetColumns(ASSIGNMENT_TABLE);
+  if (!assignmentColumns.size || !assignmentColumns.has("teacher_id") || !assignmentColumns.has("subject_id")) {
+    return null;
+  }
+
+  const [rows] = await query<RowDataPacket[]>(
+    `SELECT subject_id, COUNT(DISTINCT student_id) AS total
+     FROM \`${ASSIGNMENT_TABLE}\`
+     WHERE is_active = 1 AND teacher_type = 'regular_teacher' AND teacher_id = ?
+     GROUP BY subject_id`,
+    [teacherId],
+  );
+
+  if (!rows.length) {
+    return null;
+  }
+
+  const inverted = new Map<number, SubjectName>();
+  subjectMap.forEach((id, name) => {
+    const subjectName = SUBJECT_NAMES.find((label) => label.toLowerCase() === name);
+    if (subjectName) {
+      inverted.set(id, subjectName);
+    }
+  });
+
+  const counts: SubjectCounts = { ...DEFAULT_COUNTS };
+  rows.forEach((row) => {
+    const subjectId = Number(row.subject_id);
+    const total = Number(row.total);
+    if (!Number.isFinite(subjectId) || !Number.isFinite(total)) {
+      return;
+    }
+    const label = inverted.get(subjectId);
+    if (label) {
+      counts[label] = total;
+    }
+  });
+
+  return counts;
 }
 
 async function resolveSubjectCountSource(): Promise<SubjectCountSource | null> {
@@ -332,10 +398,25 @@ export async function GET(request: NextRequest) {
     }
 
     const gradeIds = await loadHandledGradeIds(teacherIds, teacherHandledColumns);
-    const [subjectMap, countSource] = await Promise.all([
+    const [subjectMap, countSource, teacherId] = await Promise.all([
       resolveSubjectIds(SUBJECT_NAMES),
       resolveSubjectCountSource(),
+      resolveTeacherId(userId, teacherColumns),
     ]);
+
+    const assignedCounts = await countAssignedStudentsBySubject(teacherId, subjectMap);
+    if (assignedCounts) {
+      return NextResponse.json({
+        success: true,
+        counts: assignedCounts,
+        metadata: {
+          teacherIds,
+          gradeIds,
+          hasHandledGrades: gradeIds.length > 0,
+          source: "assignments",
+        },
+      });
+    }
 
     if (!countSource) {
       return NextResponse.json(

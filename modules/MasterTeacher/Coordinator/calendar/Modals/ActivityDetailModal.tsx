@@ -80,7 +80,6 @@ export default function ActivityDetailModal({ activity, onClose, onDelete }: Act
     { label: "Submitted By", value: activity.requester },
     { label: "Approved On", value: approvedDate },
     { label: "Approved By", value: activity.approvedBy },
-    { label: "Source", value: activity.sourceTable },
   ].filter((entry) => Boolean(entry.value && String(entry.value).trim().length));
   
   return (

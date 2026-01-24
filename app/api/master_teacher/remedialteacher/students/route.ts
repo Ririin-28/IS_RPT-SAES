@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { query } from "@/lib/db";
+const ASSIGNMENT_TABLE = "student_teacher_assignment";
 
 export const dynamic = "force-dynamic";
 
@@ -78,6 +79,28 @@ const normalizeStudentRow = (row: RawStudentRow) => {
 	};
 };
 
+const ensureAssignmentTable = async () => {
+	await query(
+		`CREATE TABLE IF NOT EXISTS ${ASSIGNMENT_TABLE} (
+			assignment_id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+			student_id VARCHAR(20) NOT NULL,
+			master_teacher_id VARCHAR(20) NULL,
+			teacher_id VARCHAR(20) NULL,
+			grade_id INT NOT NULL,
+			subject_id INT NOT NULL,
+			teacher_type ENUM('master_coordinator','master_remedial','regular_teacher') NOT NULL,
+			assignment_reason VARCHAR(100) NULL,
+			assigned_date DATE NULL,
+			is_active TINYINT(1) NOT NULL DEFAULT 1,
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			KEY idx_student_assignment_student (student_id),
+			KEY idx_student_assignment_master (master_teacher_id),
+			KEY idx_student_assignment_grade_subject (grade_id, subject_id)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`
+	);
+};
+
 export async function GET(request: NextRequest) {
 	const url = new URL(request.url);
 	const userIdParam = url.searchParams.get("userId");
@@ -99,6 +122,7 @@ export async function GET(request: NextRequest) {
 	}
 
 	try {
+		await ensureAssignmentTable();
 		const [[masterRow]] = await query<RowDataPacket[]>(
 			"SELECT master_teacher_id FROM master_teacher WHERE user_id = ? LIMIT 1",
 			[userId],
@@ -109,18 +133,19 @@ export async function GET(request: NextRequest) {
 			return NextResponse.json({ success: false, error: "Master Teacher record not found." }, { status: 404 });
 		}
 
-		const [gradeRows] = await query<RowDataPacket[]>(
-			"SELECT grade_id FROM mt_remedialteacher_handled WHERE master_teacher_id = ?",
-			[masterTeacherId],
-		);
-
-		const gradeIds = gradeRows.map((row) => row.grade_id as number).filter((id) => Number.isFinite(id));
-		if (!gradeIds.length) {
-			return NextResponse.json(
-				{ success: false, error: "No handled grades found for this master teacher." },
-				{ status: 404 },
-			);
-		}
+		const masterTeacherCandidates = (() => {
+			const raw = String(masterTeacherId).trim();
+			const set = new Set<string>();
+			if (raw) {
+				set.add(raw);
+				if (/^mt-/i.test(raw)) {
+					set.add(raw.replace(/^mt-/i, ""));
+				} else {
+					set.add(`MT-${raw}`);
+				}
+			}
+			return Array.from(set);
+		})();
 
 		const [[englishRow]] = await query<RowDataPacket[]>(
 			"SELECT subject_id FROM subject WHERE LOWER(TRIM(subject_name)) = 'english' LIMIT 1",
@@ -150,14 +175,14 @@ export async function GET(request: NextRequest) {
 			);
 		}
 
-		const gradePlaceholders = gradeIds.map(() => "?").join(",");
-		// Parameter order must follow placeholder order in the SQL: ssa.subject_id, subquery subject_id,
-		// all grade placeholders, then ss.subject_id.
-		const params: Array<string | number> = [
+		const masterTeacherPlaceholders = masterTeacherCandidates.map(() => "?").join(", ");
+		// Parameter order must follow placeholder order in the SQL: ssa.subject_id,
+		// masterTeacherCandidates, subjectId.
+		const params: Array<string | number | null> = [
 			englishId ?? null,
 			filipinoId ?? null,
 			mathId ?? null,
-			...gradeIds,
+			...masterTeacherCandidates,
 			subjectId,
 		];
 
@@ -207,11 +232,12 @@ export async function GET(request: NextRequest) {
 			) gi ON gi.student_id = s.student_id
 			LEFT JOIN student_subject_assessment ssa ON ssa.student_id = s.student_id
 			LEFT JOIN phonemic_level pl ON pl.phonemic_id = ssa.phonemic_id
-			WHERE s.grade_id IN (${gradePlaceholders}) 
-				AND EXISTS (
-					SELECT 1 FROM student_subject_assessment ssa2
-					WHERE ssa2.student_id = s.student_id AND ssa2.subject_id = ?
-				)
+			JOIN ${ASSIGNMENT_TABLE} sta
+				ON sta.student_id = s.student_id
+				AND sta.is_active = 1
+				AND sta.teacher_type = 'master_remedial'
+				AND sta.master_teacher_id IN (${masterTeacherPlaceholders})
+				AND sta.subject_id = ?
 			GROUP BY s.student_id, g.grade_level, s.section, gi.guardian, gi.guardian_contact, s.first_name, s.middle_name, s.last_name
 			ORDER BY g.grade_level, s.section, s.last_name, s.first_name, s.student_id
 		`;
