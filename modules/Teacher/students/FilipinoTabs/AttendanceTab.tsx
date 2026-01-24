@@ -14,6 +14,7 @@ export default function AttendanceTab({ students, searchTerm }: AttendanceTabPro
       subjectLabel="Filipino"
       students={students}
       searchTerm={searchTerm}
+      attendanceApiBase="/api/teacher/remedial/attendance"
     />
   );
 }

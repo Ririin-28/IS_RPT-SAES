@@ -100,15 +100,23 @@ const loadWeeklySubjectMap = async (): Promise<Map<string, number>> => {
   return map;
 };
 
-const loadHandledAssignments = async (masterTeacherIds: Array<string | number>, gradeId: number | null) => {
-  if (!masterTeacherIds.length) return [] as Array<{ subject_id: number; grade_id: number }>;
+const loadHandledAssignments = async (
+  masterTeacherIds: Array<string | number>,
+  gradeId: number | null,
+  coordinatorRoleId: string | null,
+) => {
+  const columns = await getTableColumns(MT_HANDLED_TABLE).catch(() => new Set<string>());
+  const canUseRoleId = Boolean(coordinatorRoleId) && columns.has("coordinator_role_id");
+  const filterIds = canUseRoleId ? [coordinatorRoleId as string] : masterTeacherIds;
+  if (!filterIds.length) return [] as Array<{ subject_id: number; grade_id: number }>;
 
-  const params: Array<string | number> = [...masterTeacherIds];
+  const params: Array<string | number> = [...filterIds];
   const gradeFilter = gradeId && Number.isFinite(gradeId) ? " AND grade_id = ?" : "";
   if (gradeFilter) params.push(gradeId as number);
 
+  const filterColumn = canUseRoleId ? "coordinator_role_id" : "master_teacher_id";
   const [rows] = await query<RowDataPacket[]>(
-    `SELECT subject_id, grade_id FROM ${MT_HANDLED_TABLE} WHERE master_teacher_id IN (${masterTeacherIds.map(() => "?").join(", ")})${gradeFilter}`,
+    `SELECT subject_id, grade_id FROM ${MT_HANDLED_TABLE} WHERE ${filterColumn} IN (${filterIds.map(() => "?").join(", ")})${gradeFilter}`,
     params,
   );
 
@@ -161,15 +169,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Grade could not be resolved for this schedule." }, { status: 400 });
     }
 
-    const handledIds = [
-      session.masterTeacherId,
-      String(session.userId),
-    ].filter((value): value is string => {
+    const coordinatorRoleId = session.coordinatorRoleId ? String(session.coordinatorRoleId) : null;
+    const handledIds = (coordinatorRoleId
+      ? [coordinatorRoleId]
+      : [session.masterTeacherId, String(session.userId)]
+    ).filter((value): value is string => {
       if (value === null || value === undefined) return false;
       return String(value).trim().length > 0;
     });
 
-    const assignments = await loadHandledAssignments(handledIds, gradeId);
+    const assignments = await loadHandledAssignments(handledIds, gradeId, coordinatorRoleId);
     if (!assignments.length) {
       return NextResponse.json({ success: false, error: "No subject assignment found for this master teacher." }, { status: 403 });
     }

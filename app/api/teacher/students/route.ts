@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
-import { query } from "@/lib/db";
+import { getTableColumns, query } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +12,7 @@ const SUBJECT_LABELS: Record<string, string> = {
 } as const;
 
 const ASSIGNMENT_TABLE = "student_teacher_assignment";
+const REMEDIAL_HANDLED_TABLE = "mt_remedialteacher_handled";
 
 type SupportedSubject = "English" | "Filipino" | "Math";
 
@@ -90,18 +91,18 @@ const ensureAssignmentTable = async () => {
     `CREATE TABLE IF NOT EXISTS ${ASSIGNMENT_TABLE} (
       assignment_id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
       student_id VARCHAR(20) NOT NULL,
-      master_teacher_id VARCHAR(20) NULL,
       teacher_id VARCHAR(20) NULL,
+      remedial_role_id VARCHAR(20) NULL,
       grade_id INT NOT NULL,
       subject_id INT NOT NULL,
-      teacher_type ENUM('master_coordinator','master_remedial','regular_teacher') NOT NULL,
-      assignment_reason VARCHAR(100) NULL,
+      assigned_by_mt_id VARCHAR(20) NULL,
       assigned_date DATE NULL,
       is_active TINYINT(1) NOT NULL DEFAULT 1,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      KEY idx_student_assignment_student (student_id),
       KEY idx_student_assignment_teacher (teacher_id),
+      KEY idx_student_assignment_remedial (remedial_role_id),
+      KEY idx_student_assignment_student (student_id),
       KEY idx_student_assignment_grade_subject (grade_id, subject_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`
   );
@@ -133,18 +134,10 @@ export async function GET(request: NextRequest) {
       "SELECT teacher_id FROM teacher WHERE user_id = ? LIMIT 1",
       [userId],
     );
+    let teacherIdValue = teacherRow?.teacher_id ? String(teacherRow.teacher_id) : null;
+    let remedialRoleId: string | null = null;
 
-    let gradeIds: number[] = [];
-    let allowedSubjectIds: Set<number> = new Set();
-
-    if (teacherRow?.teacher_id) {
-      const [gradeRows] = await query<RowDataPacket[]>(
-        "SELECT grade_id FROM teacher_handled WHERE teacher_id = ?",
-        [teacherRow.teacher_id],
-      );
-      gradeIds = gradeRows.map((row) => Number(row.grade_id)).filter((id) => Number.isFinite(id));
-    } else {
-      // Fallback: allow master teachers to access if present.
+    if (!teacherIdValue) {
       const [[masterRow]] = await query<RowDataPacket[]>(
         "SELECT master_teacher_id FROM master_teacher WHERE user_id = ? LIMIT 1",
         [userId],
@@ -155,36 +148,19 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ success: false, error: "Teacher record not found." }, { status: 404 });
       }
 
-      const [gradeRows] = await query<RowDataPacket[]>(
-        "SELECT grade_id, subject_id FROM mt_coordinator_handled WHERE master_teacher_id = ?",
+      const [roleRows] = await query<RowDataPacket[]>(
+        `SELECT remedial_role_id FROM ${REMEDIAL_HANDLED_TABLE}
+         WHERE master_teacher_id = ? AND remedial_role_id IS NOT NULL
+         LIMIT 1`,
         [masterTeacherId],
       );
-
-      gradeRows.forEach((row) => {
-        const gid = Number(row.grade_id);
-        const sid = Number(row.subject_id);
-        if (Number.isFinite(gid)) {
-          gradeIds.push(gid);
-        }
-        if (Number.isFinite(sid)) {
-          allowedSubjectIds.add(sid);
-        }
-      });
-
-      if (!gradeIds.length) {
-        const [remedialRows] = await query<RowDataPacket[]>(
-          "SELECT grade_id FROM mt_remedialteacher_handled WHERE master_teacher_id = ?",
-          [masterTeacherId],
+      remedialRoleId = roleRows[0]?.remedial_role_id ? String(roleRows[0].remedial_role_id) : null;
+      if (!remedialRoleId) {
+        return NextResponse.json(
+          { success: false, error: "Remedial role context is missing for this master teacher." },
+          { status: 400 },
         );
-        gradeIds = remedialRows.map((row) => Number(row.grade_id)).filter((id) => Number.isFinite(id));
       }
-    }
-
-    if (!gradeIds.length) {
-      return NextResponse.json(
-        { success: false, error: "No handled grades found for this teacher." },
-        { status: 404 },
-      );
     }
 
     const [[englishRow]] = await query<RowDataPacket[]>(
@@ -215,38 +191,27 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const teacherIdValue = teacherRow?.teacher_id ? String(teacherRow.teacher_id) : null;
-    let useAssignments = false;
-    if (teacherIdValue) {
-      const [[assignmentRow]] = await query<RowDataPacket[]>(
-        `SELECT COUNT(*) AS total FROM ${ASSIGNMENT_TABLE}
-         WHERE is_active = 1 AND teacher_type = 'regular_teacher' AND teacher_id = ? AND subject_id = ? LIMIT 1`,
-        [teacherIdValue, subjectId],
-      );
-      useAssignments = Number(assignmentRow?.total ?? 0) > 0;
-    }
-
-    if (allowedSubjectIds.size && !allowedSubjectIds.has(subjectId)) {
+    const assignmentColumns = await getTableColumns(ASSIGNMENT_TABLE).catch(() => new Set<string>());
+    const canUseTeacher = teacherIdValue && assignmentColumns.has("teacher_id");
+    const canUseRemedial = remedialRoleId && assignmentColumns.has("remedial_role_id");
+    if (!canUseTeacher && !canUseRemedial) {
       return NextResponse.json(
-        { success: false, error: "Subject is not assigned to this master teacher." },
-        { status: 403 },
+        { success: false, error: "Assignment table is not configured for remedial assignments." },
+        { status: 500 },
       );
     }
 
-    const gradePlaceholders = gradeIds.map(() => "?").join(",");
-    // Parameter order must follow placeholder order in the SQL: ssa.subject_id, phonemic_level subject_id,
-    // optional assignment join (teacher_id, subject_id, grade placeholders), where grade placeholders, then ssa2.subject_id.
+    // Parameter order must follow placeholder order in the SQL: ssa.subject_id (english/filipino/math),
+    // assignment subject_id, optional teacher_id/remedial_role_id, then ssa2.subject_id.
     const params: Array<string | number> = [
       Number.isFinite(englishId) ? englishId : null,
       Number.isFinite(filipinoId) ? filipinoId : null,
       Number.isFinite(mathId) ? mathId : null,
+      subjectId,
     ];
-
-    if (useAssignments && teacherIdValue) {
-      params.push(teacherIdValue, subjectId, ...gradeIds);
-    }
-
-    params.push(...gradeIds, subjectId);
+    if (canUseTeacher) params.push(teacherIdValue as string);
+    if (canUseRemedial) params.push(remedialRoleId as string);
+    params.push(subjectId);
 
     const sql = `
       SELECT
@@ -294,15 +259,14 @@ export async function GET(request: NextRequest) {
       ) gi ON gi.student_id = s.student_id
       LEFT JOIN student_subject_assessment ssa ON ssa.student_id = s.student_id
       LEFT JOIN phonemic_level pl ON pl.phonemic_id = ssa.phonemic_id
-      ${useAssignments && teacherIdValue ? `JOIN ${ASSIGNMENT_TABLE} sta
+      JOIN ${ASSIGNMENT_TABLE} sta
         ON sta.student_id = s.student_id
         AND sta.is_active = 1
-        AND sta.teacher_type = 'regular_teacher'
-        AND sta.teacher_id = ?
         AND sta.subject_id = ?
-        AND sta.grade_id IN (${gradePlaceholders})` : ""}
-      WHERE s.grade_id IN (${gradePlaceholders})
-        AND EXISTS (
+        AND sta.grade_id = s.grade_id
+        ${canUseTeacher ? "AND sta.teacher_id = ?" : ""}
+        ${canUseRemedial ? "AND sta.remedial_role_id = ?" : ""}
+      WHERE EXISTS (
           SELECT 1 FROM student_subject_assessment ssa2
           WHERE ssa2.student_id = s.student_id AND ssa2.subject_id = ?
         )

@@ -154,7 +154,7 @@ const toDisplayStudent = (student: RemedialStudent, index: number) => {
   const fallbackId = rawStudentId ?? (numericUserId !== null ? `U-${numericUserId}` : (numericRemedialId !== null ? `R-${numericRemedialId}` : String(index + 1)));
 
   const trimmedIdentifier = student.studentIdentifier?.trim();
-  const identifier = rawStudentId ?? (trimmedIdentifier?.length ? trimmedIdentifier : fallbackId);
+  const identifier = trimmedIdentifier?.length ? trimmedIdentifier : (rawStudentId ?? fallbackId);
 
   return {
     id: fallbackId,

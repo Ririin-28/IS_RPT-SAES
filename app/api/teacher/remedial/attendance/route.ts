@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { getTableColumns, query, runWithConnection } from "@/lib/db";
-import { getMasterTeacherSessionFromCookies } from "@/lib/server/master-teacher-session";
+import { getTeacherSessionFromCookies } from "@/lib/server/teacher-session";
 
 export const dynamic = "force-dynamic";
 
@@ -11,9 +11,8 @@ const ATTENDANCE_SESSION_TABLE = "attendance_session";
 const ATTENDANCE_RECORD_TABLE = "attendance_record";
 const PARENT_NOTIFICATIONS_TABLE = "parent_notifications";
 const SUBJECT_TABLE_CANDIDATES = ["subject", "subjects"] as const;
-const MT_REMEDIAL_HANDLED_TABLE = "mt_remedialteacher_handled";
-const MASTER_TEACHER_TABLE = "master_teacher";
 const STUDENT_TEACHER_ASSIGNMENT_TABLE = "student_teacher_assignment";
+const TEACHER_TABLE = "teacher";
 
 const ISO_DATE_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/;
 const WEEKDAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -73,88 +72,6 @@ const resolveSubjectId = async (subjectLabel: string): Promise<number | null> =>
   if (!rows.length) return null;
   const id = Number(rows[0]?.subject_id);
   return Number.isFinite(id) ? id : null;
-};
-
-const resolveMasterTeacherId = async (userId: number): Promise<string | null> => {
-  if (!Number.isFinite(userId) || userId <= 0) return null;
-  const [rows] = await query<RowDataPacket[]>(
-    `SELECT master_teacher_id FROM ${MASTER_TEACHER_TABLE} WHERE user_id = ? LIMIT 1`,
-    [userId],
-  );
-  const value = rows[0]?.master_teacher_id;
-  if (value === null || value === undefined) return null;
-  const text = String(value).trim();
-  return text.length ? text : null;
-};
-
-const resolveRemedialGradeId = async (
-  masterTeacherId: string | null,
-  userId: number | null,
-): Promise<number | null> => {
-  let resolvedMasterTeacherId = masterTeacherId?.trim() ?? "";
-
-  if (!resolvedMasterTeacherId && userId) {
-    resolvedMasterTeacherId = (await resolveMasterTeacherId(userId)) ?? "";
-  }
-
-  if (!resolvedMasterTeacherId) return null;
-
-  const columns = await getTableColumns(MT_REMEDIAL_HANDLED_TABLE).catch(() => new Set<string>());
-  if (!columns.size || !columns.has("grade_id") || !columns.has("master_teacher_id")) {
-    return null;
-  }
-
-  const [rows] = await query<RowDataPacket[]>(
-    `SELECT grade_id FROM ${MT_REMEDIAL_HANDLED_TABLE} WHERE master_teacher_id = ? AND grade_id IS NOT NULL LIMIT 1`,
-    [resolvedMasterTeacherId],
-  );
-
-  const gradeId = Number(rows[0]?.grade_id);
-  return Number.isFinite(gradeId) ? gradeId : null;
-};
-
-const resolveAssignmentGradeId = async (
-  subjectId: number,
-  session: { masterTeacherId?: string | null; remedialRoleId?: string | null; userId?: number | null } | null,
-): Promise<number | null> => {
-  if (!Number.isFinite(subjectId)) return null;
-
-  const assignmentColumns = await getTableColumns(STUDENT_TEACHER_ASSIGNMENT_TABLE).catch(() => new Set<string>());
-  if (!assignmentColumns.size || !assignmentColumns.has("grade_id") || !assignmentColumns.has("subject_id")) {
-    return null;
-  }
-
-  const filters: string[] = [];
-  const params: Array<string | number> = [subjectId];
-
-  if (assignmentColumns.has("remedial_role_id") && session?.remedialRoleId) {
-    filters.push("remedial_role_id = ?");
-    params.push(String(session.remedialRoleId));
-  }
-
-  if (assignmentColumns.has("teacher_id") && session?.masterTeacherId) {
-    filters.push("teacher_id = ?");
-    params.push(String(session.masterTeacherId));
-  }
-
-  if (assignmentColumns.has("assigned_by_mt_id") && session?.masterTeacherId) {
-    filters.push("assigned_by_mt_id = ?");
-    params.push(String(session.masterTeacherId));
-  }
-
-  if (!filters.length) return null;
-
-  const statusFilter = assignmentColumns.has("is_active") ? " AND is_active = 1" : "";
-
-  const [rows] = await query<RowDataPacket[]>(
-    `SELECT grade_id FROM ${STUDENT_TEACHER_ASSIGNMENT_TABLE}
-     WHERE subject_id = ? AND (${filters.join(" OR ")})${statusFilter}
-     LIMIT 1`,
-    params,
-  );
-
-  const gradeId = Number(rows[0]?.grade_id);
-  return Number.isFinite(gradeId) ? gradeId : null;
 };
 
 const loadRemedialMonths = async (): Promise<Set<number>> => {
@@ -352,7 +269,7 @@ const ensureParentNotificationsTable = async () => {
       UNIQUE KEY uniq_parent_notification (student_id, subject, date),
       KEY idx_parent_notification_student (student_id),
       KEY idx_parent_notification_status (status)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
   );
 
   try {
@@ -360,6 +277,40 @@ const ensureParentNotificationsTable = async () => {
   } catch (error) {
     console.warn("Unable to alter parent_notifications.student_id column", error);
   }
+};
+
+const resolveTeacherId = async (userId: number | null): Promise<string | null> => {
+  if (!userId || !Number.isFinite(userId)) return null;
+  const [rows] = await query<RowDataPacket[]>(
+    `SELECT teacher_id FROM ${TEACHER_TABLE} WHERE user_id = ? LIMIT 1`,
+    [userId],
+  );
+  const value = rows[0]?.teacher_id;
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return text.length ? text : null;
+};
+
+const resolveTeacherGradeId = async (subjectId: number, teacherId: string | null): Promise<number | null> => {
+  if (!Number.isFinite(subjectId) || !teacherId) return null;
+
+  const assignmentColumns = await getTableColumns(STUDENT_TEACHER_ASSIGNMENT_TABLE).catch(() => new Set<string>());
+  if (!assignmentColumns.size || !assignmentColumns.has("grade_id") || !assignmentColumns.has("subject_id")) {
+    return null;
+  }
+
+  const statusFilter = assignmentColumns.has("is_active") ? " AND is_active = 1" : "";
+
+  const [rows] = await query<RowDataPacket[]>(
+    `SELECT grade_id FROM ${STUDENT_TEACHER_ASSIGNMENT_TABLE}
+     WHERE subject_id = ? AND teacher_id = ?${statusFilter}
+     AND grade_id IS NOT NULL
+     LIMIT 1`,
+    [subjectId, teacherId],
+  );
+
+  const gradeId = Number(rows[0]?.grade_id);
+  return Number.isFinite(gradeId) ? gradeId : null;
 };
 
 export async function GET(request: NextRequest) {
@@ -445,12 +396,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  console.log("=== PUT ATTENDANCE START ===");
-  console.log("Request URL:", request.url);
   const body = await request.json().catch(() => null);
-  console.log("Request body:", body);
   if (!body || typeof body !== "object") {
-    console.error("Invalid body:", body);
     return NextResponse.json({ success: false, error: "Invalid payload." }, { status: 400 });
   }
 
@@ -458,19 +405,13 @@ export async function PUT(request: NextRequest) {
   if (!subjectLabel) {
     return NextResponse.json({ success: false, error: "Invalid subject." }, { status: 400 });
   }
-  console.log("Subject label:", subjectLabel);
 
   const entries = await normalizeEntries((body as { entries?: unknown }).entries);
-  console.log("Entries count:", entries.length);
-  if (entries.length > 0) {
-    console.log("First entry sample:", entries[0]);
-  }
   if (!entries.length) {
-    return NextResponse.json({ success: false, updated: 0, reason: "No valid entries to process." });
+    return NextResponse.json({ success: true, updated: 0, reason: "No valid entries to process." });
   }
 
   const subjectId = await resolveSubjectId(subjectLabel);
-  console.log("Subject ID:", subjectId);
   if (!subjectId) {
     return NextResponse.json({ success: true, updated: 0, reason: "Subject not found." });
   }
@@ -478,11 +419,8 @@ export async function PUT(request: NextRequest) {
   const [allowedMonths, allowedWeekdays, session] = await Promise.all([
     loadRemedialMonths(),
     loadAllowedWeekdays(subjectId),
-    getMasterTeacherSessionFromCookies(),
+    getTeacherSessionFromCookies(),
   ]);
-  console.log("Allowed months:", Array.from(allowedMonths));
-  console.log("Allowed weekdays:", Array.from(allowedWeekdays));
-  console.log("Session data:", session);
 
   if (!allowedMonths.size || !allowedWeekdays.size) {
     return NextResponse.json({
@@ -492,217 +430,43 @@ export async function PUT(request: NextRequest) {
     });
   }
 
-  // =================== FIXED GRADE ID RESOLUTION ===================
-  console.log("=== GRADE ID RESOLUTION DEBUG ===");
-  console.log("Session data:", session);
-  console.log("Subject ID:", subjectId);
-
-  let gradeId: number | null = null;
-
-  // 1. Try student_teacher_assignment table first
-  if (session?.masterTeacherId || session?.remedialRoleId) {
-    const conditions: string[] = [];
-    const params: Array<string | number> = [];
-
-    if (session?.masterTeacherId) {
-      conditions.push("(teacher_id = ? OR assigned_by_mt_id = ?)");
-      params.push(session.masterTeacherId, session.masterTeacherId);
-    }
-
-    if (session?.remedialRoleId) {
-      conditions.push("remedial_role_id = ?");
-      params.push(session.remedialRoleId);
-    }
-
-    const whereClause = conditions.length > 0
-      ? `(${conditions.join(" OR ")}) AND subject_id = ?`
-      : "subject_id = ?";
-
-    params.push(subjectId);
-
-    console.log("Checking student_teacher_assignment with:", { whereClause, params });
-
-    const [assignmentRows] = await query<RowDataPacket[]>(
-      `SELECT DISTINCT grade_id FROM ${STUDENT_TEACHER_ASSIGNMENT_TABLE} 
-       WHERE ${whereClause} AND grade_id IS NOT NULL 
-       LIMIT 1`,
-      params,
-    );
-
-    if (assignmentRows.length > 0) {
-      gradeId = Number(assignmentRows[0].grade_id);
-      console.log("Found grade_id from assignment table:", gradeId);
-    }
+  let teacherId = session?.teacherId ?? null;
+  if (!teacherId) {
+    teacherId = await resolveTeacherId(session?.userId ?? null);
   }
 
-  // 2. Fallback to mt_remedialteacher_handled table
-  if (!gradeId && session?.masterTeacherId) {
-    const [remedialRows] = await query<RowDataPacket[]>(
-      `SELECT grade_id FROM ${MT_REMEDIAL_HANDLED_TABLE} 
-       WHERE master_teacher_id = ? AND grade_id IS NOT NULL 
-       LIMIT 1`,
-      [session.masterTeacherId],
-    );
-
-    if (remedialRows.length > 0) {
-      gradeId = Number(remedialRows[0].grade_id);
-      console.log("Found grade_id from remedial table:", gradeId);
-    }
+  if (!teacherId) {
+    return NextResponse.json({ success: false, error: "Teacher assignment is missing." }, { status: 400 });
   }
 
-  // 3. Last resort: Get ANY grade for this subject
+  const gradeId = await resolveTeacherGradeId(subjectId, teacherId);
   if (!gradeId) {
-    const [anyGradeRows] = await query<RowDataPacket[]>(
-      `SELECT DISTINCT grade_id FROM ${STUDENT_TEACHER_ASSIGNMENT_TABLE} 
-       WHERE subject_id = ? AND grade_id IS NOT NULL 
-       LIMIT 1`,
-      [subjectId],
-    );
-
-    if (anyGradeRows.length > 0) {
-      gradeId = Number(anyGradeRows[0].grade_id);
-      console.log("Found ANY grade_id for subject:", gradeId);
-    }
-  }
-
-  // 4. If still no grade_id, we MUST fail since it's NOT NULL
-  if (!gradeId) {
-    console.error("CRITICAL: No grade_id found for subject:", subjectLabel, "subjectId:", subjectId);
-
-    // Diagnostic query to help debug
-    const [diagnostic] = await query<RowDataPacket[]>(
-      "SHOW TABLES LIKE '%grade%'",
-    );
-    console.log("Grade tables found:", diagnostic);
-
     return NextResponse.json(
-      {
-        success: false,
-        error: "Cannot determine grade assignment. Please ensure you are assigned to a grade for this subject.",
-        debug: {
-          subjectId,
-          subjectLabel,
-          masterTeacherId: session?.masterTeacherId,
-          remedialRoleId: session?.remedialRoleId,
-          userId: session?.userId,
-        },
-      },
+      { success: false, error: "Grade assignment is missing for this teacher." },
       { status: 400 },
     );
   }
 
-  console.log("=== USING GRADE ID:", gradeId, "===");
-  console.log("Grade ID resolved:", gradeId);
-  // =================== END GRADE ID RESOLUTION ===================
-
-  if (gradeId) {
-    const [gradeCheck] = await query<RowDataPacket[]>(
-      "SELECT grade_id FROM grade WHERE grade_id = ? LIMIT 1",
-      [gradeId],
-    );
-
-    if (!gradeCheck.length) {
-      console.error(`Grade ID ${gradeId} does not exist in grade table`);
-      return NextResponse.json(
-        { success: false, error: `Invalid grade ID: ${gradeId}` },
-        { status: 400 },
-      );
-    }
-  }
-
-  // =================== FIXED USER ID RESOLUTION ===================
-  console.log("=== USER ID RESOLUTION DEBUG ===");
-
-  const [existingFormats] = await query<RowDataPacket[]>(
-    `SELECT created_by_user_id, COUNT(*) as count 
-     FROM ${ATTENDANCE_SESSION_TABLE} 
-     WHERE created_by_user_id IS NOT NULL AND created_by_user_id != ''
-     GROUP BY created_by_user_id 
-     ORDER BY count DESC 
-     LIMIT 5`,
-  );
-
-  console.log("Existing created_by_user_id formats in DB:", existingFormats);
-
-  let expectedFormat = "unknown";
-  if (existingFormats.length > 0) {
-    const mostCommon = String(existingFormats[0].created_by_user_id);
-    if (mostCommon.includes("MT-")) {
-      expectedFormat = "master_teacher_id";
-    } else if (mostCommon.includes("TEA-")) {
-      expectedFormat = "teacher_id";
-    } else if (mostCommon.includes("U-") || mostCommon.includes("USER-")) {
-      expectedFormat = "user_id";
-    } else if (/^\d+$/.test(mostCommon)) {
-      expectedFormat = "numeric_id";
-    }
-    console.log("Most common format:", mostCommon, "Type:", expectedFormat);
-  }
-
-  let createdBy = "0";
-
-  if (expectedFormat === "master_teacher_id" && session?.masterTeacherId) {
-    createdBy = String(session.masterTeacherId);
-    console.log("Using masterTeacherId (matches DB format):", createdBy);
-  } else if (expectedFormat === "numeric_id" && session?.userId) {
-    createdBy = String(session.userId);
-    console.log("Using userId (numeric format):", createdBy);
-  } else if (session?.masterTeacherId) {
-    createdBy = String(session.masterTeacherId);
-    console.log("Fallback to masterTeacherId:", createdBy);
-  } else if (session?.userId) {
-    createdBy = String(session.userId);
-    console.log("Fallback to userId:", createdBy);
-  } else {
-    createdBy = "SYSTEM";
-    console.log("Using SYSTEM as fallback");
-  }
-
-  if (createdBy.length > 20) {
-    console.warn(`Warning: created_by_user_id "${createdBy}" exceeds 20 chars, truncating`);
-    createdBy = createdBy.substring(0, 20);
-  }
-
-  if (!createdBy || createdBy.trim() === "") {
-    createdBy = "0";
-    console.warn("Warning: created_by_user_id was empty, using '0'");
-  }
-
-  console.log("Final created_by_user_id:", createdBy, "Length:", createdBy.length);
-  console.log("=== END USER ID RESOLUTION ===");
-  // =================== END FIX ===================
-  console.log("Created by user ID:", createdBy);
-
-  await ensureParentNotificationsTable();
+  const createdBy = teacherId ?? (session?.userId ? String(session.userId) : "0");
+  const sessionColumns = await getTableColumns(ATTENDANCE_SESSION_TABLE).catch(() => new Set<string>());
 
   const sessionIdByDate = new Map<string, number>();
   let updated = 0;
   let skippedNotAllowed = 0;
   let skippedNoSession = 0;
-  let sessionsCreated = 0;
-  let sessionsExisting = 0;
+
+  await ensureParentNotificationsTable();
 
   await runWithConnection(async (connection) => {
     await connection.beginTransaction();
-    console.log("Transaction started");
     try {
-      console.log(`Processing ${entries.length} entries...`);
       for (const entry of entries) {
-        console.log("Entry:", {
-          studentId: entry.studentId,
-          date: entry.date,
-          present: entry.present,
-          isAllowed: isAllowedDate(entry.date, allowedMonths, allowedWeekdays),
-        });
         if (!isAllowedDate(entry.date, allowedMonths, allowedWeekdays)) {
-          console.log(`Skipped ${entry.date}: not in allowed schedule`);
           skippedNotAllowed += 1;
           continue;
         }
 
         let sessionId: number | undefined = sessionIdByDate.get(entry.date);
-
-        // Check if session exists
         if (!sessionId) {
           const [existingRows] = await connection.query<RowDataPacket[]>(
             `SELECT session_id FROM ${ATTENDANCE_SESSION_TABLE} 
@@ -710,49 +474,48 @@ export async function PUT(request: NextRequest) {
              LIMIT 1`,
             [entry.date, subjectId, gradeId],
           );
-
-          if (existingRows.length > 0) {
-            sessionId = Number(existingRows[0].session_id);
-            sessionsExisting += 1;
-            console.log(`Existing session found for ${entry.date}:`, sessionId);
+          const existingId = Number(existingRows?.[0]?.session_id);
+          if (Number.isFinite(existingId) && existingId > 0) {
+            sessionId = existingId;
           } else {
-            // Create new session with ALL required fields
-            const insertValues: Array<string | number | null> = [
-              entry.date, // session_date
-              gradeId, // grade_id - REQUIRED
-              subjectId, // subject_id - REQUIRED
-              null, // week_id
-              null, // activity_id
-              createdBy ? String(createdBy) : "0", // created_by_user_id - REQUIRED
-              null, // approved_schedule_id
-            ];
+            const insertColumns: string[] = [];
+            const insertValues: Array<string | number | null> = [];
 
-            console.log(`Creating session for ${entry.date} with grade_id:`, gradeId);
+            insertColumns.push("session_date");
+            insertValues.push(entry.date);
 
-            try {
-              const [result] = await connection.query<RowDataPacket[]>(
-                `INSERT INTO ${ATTENDANCE_SESSION_TABLE} 
-                 (session_date, grade_id, subject_id, week_id, activity_id, created_by_user_id, approved_schedule_id) 
-                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                insertValues,
-              );
-              console.log("Session INSERT result:", result);
-
-              const insertId = Number((result as unknown as { insertId?: number }).insertId);
-              console.log("Insert ID:", insertId);
-              if (Number.isFinite(insertId) && insertId > 0) {
-                sessionId = insertId;
-                sessionsCreated += 1;
-                console.log("Created new session ID:", sessionId);
-              } else {
-                throw new Error("Failed to get insert ID from session creation");
-              }
-            } catch (error) {
-              console.error(`Failed to create session for ${entry.date}:`, error);
-              console.error("Insert values:", insertValues);
-              skippedNoSession += 1;
-              continue;
+            if (sessionColumns.has("grade_id")) {
+              insertColumns.push("grade_id");
+              insertValues.push(gradeId);
             }
+            if (sessionColumns.has("subject_id")) {
+              insertColumns.push("subject_id");
+              insertValues.push(subjectId);
+            }
+            if (sessionColumns.has("week_id")) {
+              insertColumns.push("week_id");
+              insertValues.push(null);
+            }
+            if (sessionColumns.has("activity_id")) {
+              insertColumns.push("activity_id");
+              insertValues.push(null);
+            }
+            if (sessionColumns.has("created_by_user_id")) {
+              insertColumns.push("created_by_user_id");
+              insertValues.push(createdBy);
+            }
+            if (sessionColumns.has("approved_schedule_id")) {
+              insertColumns.push("approved_schedule_id");
+              insertValues.push(null);
+            }
+
+            const placeholders = insertColumns.map(() => "?").join(", ");
+            const [result] = await connection.query<RowDataPacket[]>(
+              `INSERT INTO ${ATTENDANCE_SESSION_TABLE} (${insertColumns.join(", ")}) VALUES (${placeholders})`,
+              insertValues,
+            );
+            const insertId = Number((result as unknown as { insertId?: number }).insertId);
+            sessionId = Number.isFinite(insertId) ? insertId : undefined;
           }
 
           if (sessionId) {
@@ -761,46 +524,30 @@ export async function PUT(request: NextRequest) {
         }
 
         if (!sessionId) {
-          console.error(`Failed to get/create session for ${entry.date}`);
           skippedNoSession += 1;
           continue;
         }
 
-        // Handle attendance record
         if (entry.present === null) {
-          // Delete record if present is null
           await connection.query(
             `DELETE FROM ${ATTENDANCE_RECORD_TABLE} WHERE session_id = ? AND student_id = ?`,
             [sessionId, entry.studentId],
           );
-          console.log(`Deleted attendance for student ${entry.studentId} on ${entry.date}`);
         } else {
           const status = entry.present === "Yes" ? "Present" : "Absent";
-
-          console.log(`Setting ${status} for student ${entry.studentId}`);
-          const attendanceResult = await connection.query(
+          await connection.query(
             `INSERT INTO ${ATTENDANCE_RECORD_TABLE} (session_id, student_id, status, remarks, recorded_at)
              VALUES (?, ?, ?, ?, NOW())
-             ON DUPLICATE KEY UPDATE 
-               status = VALUES(status), 
-               remarks = VALUES(remarks), 
-               recorded_at = NOW()`,
+             ON DUPLICATE KEY UPDATE status = VALUES(status), remarks = VALUES(remarks), recorded_at = NOW()`,
             [sessionId, entry.studentId, status, null],
           );
-          console.log("Attendance INSERT result:", attendanceResult);
 
-          console.log(`Set ${status} for student ${entry.studentId} on ${entry.date}`);
-
-          // Send parent notification for absences
           if (entry.present === "No") {
             const message = `Dear Parent, your child is marked absent for '${formatAbsentDate(entry.date)}'.`;
             await connection.query(
               `INSERT INTO ${PARENT_NOTIFICATIONS_TABLE} (student_id, subject, date, message, status)
                VALUES (?, ?, ?, ?, 'unread')
-               ON DUPLICATE KEY UPDATE 
-                 message = VALUES(message), 
-                 status = 'unread', 
-                 updated_at = CURRENT_TIMESTAMP`,
+               ON DUPLICATE KEY UPDATE message = VALUES(message), status = 'unread', updated_at = CURRENT_TIMESTAMP`,
               [entry.studentId, subjectLabel, entry.date, message],
             );
           }
@@ -810,119 +557,25 @@ export async function PUT(request: NextRequest) {
       }
 
       await connection.commit();
-      console.log("Transaction committed successfully");
     } catch (error) {
       await connection.rollback();
-      console.error("Transaction ROLLED BACK due to error:", error);
       throw error;
     }
   });
 
   const reasonParts: string[] = [];
   if (skippedNotAllowed > 0) {
-    reasonParts.push(`${skippedNotAllowed} dates outside allowed schedule.`);
+    reasonParts.push("Some dates are outside the allowed remedial schedule.");
   }
   if (skippedNoSession > 0) {
-    reasonParts.push(`${skippedNoSession} sessions could not be created.`);
+    reasonParts.push("Some sessions could not be created or found.");
   }
-
-  console.log("=== PUT ATTENDANCE END ===");
-  console.log("Summary:", {
-    updated,
-    sessionsCreated,
-    sessionsExisting,
-    skippedNotAllowed,
-    skippedNoSession,
-  });
 
   return NextResponse.json({
     success: true,
     updated,
-    sessionsCreated,
-    sessionsExisting,
     skippedNotAllowed,
     skippedNoSession,
-    gradeIdUsed: gradeId,
-    reason: reasonParts.length ? reasonParts.join(" ") : "All entries processed.",
-    debug: {
-      entriesProcessed: entries.length,
-      sessionData: {
-        masterTeacherId: session?.masterTeacherId,
-        userId: session?.userId,
-      },
-      validation: {
-        allowedMonths: Array.from(allowedMonths),
-        allowedWeekdays: Array.from(allowedWeekdays),
-        subjectId,
-        gradeId,
-      },
-    },
+    reason: reasonParts.length ? reasonParts.join(" ") : undefined,
   });
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    console.log("=== DEBUG ENDPOINT CALLED ===");
-
-    const session = await getMasterTeacherSessionFromCookies();
-    console.log("Session:", JSON.stringify(session, null, 2));
-
-    const testSubjects = ["Math", "English", "Filipino"];
-    const subjectResults: Array<{ subject: string; id: number | null }> = [];
-    for (const subj of testSubjects) {
-      const id = await resolveSubjectId(subj);
-      subjectResults.push({ subject: subj, id });
-    }
-
-    let gradeAssignmentInfo: RowDataPacket[] = [];
-    if (session?.masterTeacherId) {
-      const [assignments] = await query<RowDataPacket[]>(
-        `SELECT teacher_id, subject_id, grade_id 
-         FROM ${STUDENT_TEACHER_ASSIGNMENT_TABLE} 
-         WHERE teacher_id = ? OR assigned_by_mt_id = ? OR remedial_role_id = ? 
-         LIMIT 10`,
-        [session.masterTeacherId, session.masterTeacherId, session?.remedialRoleId || ""],
-      );
-      gradeAssignmentInfo = assignments;
-    }
-
-    const [existingSessions] = await query<RowDataPacket[]>(
-      `SELECT created_by_user_id, session_date, subject_id, grade_id 
-       FROM ${ATTENDANCE_SESSION_TABLE} 
-       ORDER BY session_date DESC 
-       LIMIT 5`,
-    );
-
-    const [grades] = await query<RowDataPacket[]>(
-      "SELECT grade_id, grade_name FROM grade LIMIT 10",
-    );
-
-    return NextResponse.json({
-      success: true,
-      debug: {
-        session: {
-          exists: !!session,
-          masterTeacherId: session?.masterTeacherId,
-          userId: session?.userId,
-          remedialRoleId: session?.remedialRoleId,
-        },
-        subjects: subjectResults,
-        gradeAssignments: gradeAssignmentInfo,
-        existingSessions,
-        availableGrades: grades,
-        systemTime: new Date().toISOString(),
-      },
-      recommendation: !session
-        ? "⚠️ No session found - check authentication"
-        : !session.masterTeacherId && !session.userId
-          ? "⚠️ No user ID in session"
-          : "✅ Session looks good",
-    });
-  } catch (error) {
-    console.error("Debug endpoint error:", error);
-    return NextResponse.json(
-      { success: false, error: String(error) },
-      { status: 500 },
-    );
-  }
 }

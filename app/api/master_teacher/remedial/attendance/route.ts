@@ -35,11 +35,16 @@ export async function PUT(request: NextRequest) {
 
   try {
     const body = await request.json();
+    const cookie = request.headers.get("cookie");
+    const forwardedHeaders: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (cookie) {
+      forwardedHeaders.cookie = cookie;
+    }
     const response = await fetch(targetUrl, {
       method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: forwardedHeaders,
       body: JSON.stringify(body),
     });
 

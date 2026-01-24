@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { getTableColumns, query } from "@/lib/db";
+import { getMasterTeacherSessionFromCookies } from "@/lib/server/master-teacher-session";
 
 export const dynamic = "force-dynamic";
 
@@ -209,14 +210,19 @@ async function resolveMasterTeacherIdentifiers(userId: number): Promise<string[]
   return Array.from(identifiers);
 }
 
-async function loadHandledGradeData(identifiers: string[]): Promise<{ gradeIds: number[]; labels: string[] }>
+async function loadHandledGradeData(
+  identifiers: string[],
+  roleFilter?: { column: string; ids: string[] },
+): Promise<{ gradeIds: number[]; labels: string[] }>
 {
   if (!identifiers.length) {
     return { gradeIds: [], labels: [] };
   }
 
   const handledColumns = await safeGetColumns(HANDLED_TABLE);
-  if (!handledColumns.size || !handledColumns.has("master_teacher_id")) {
+  const canFilterByRole =
+    roleFilter && roleFilter.ids.length > 0 && handledColumns.has(roleFilter.column);
+  if (!handledColumns.size || (!handledColumns.has("master_teacher_id") && !canFilterByRole)) {
     return { gradeIds: [], labels: [] };
   }
 
@@ -243,7 +249,9 @@ async function loadHandledGradeData(identifiers: string[]): Promise<{ gradeIds: 
     selectParts.push(`g.${gradeTableLabelColumn} AS grade_table_label`);
   }
 
-  const placeholders = identifiers.map(() => "?").join(", ");
+  const filterColumn = canFilterByRole ? roleFilter.column : "master_teacher_id";
+  const filterIds = canFilterByRole ? roleFilter.ids : identifiers;
+  const placeholders = filterIds.map(() => "?").join(", ");
   const joinClause = gradeIdColumn && gradeTableLabelColumn
     ? `LEFT JOIN grade g ON g.grade_id = mr.${gradeIdColumn}`
     : "";
@@ -252,10 +260,10 @@ async function loadHandledGradeData(identifiers: string[]): Promise<{ gradeIds: 
     SELECT ${selectParts.join(", ")}
     FROM \`${HANDLED_TABLE}\` AS mr
     ${joinClause}
-    WHERE mr.master_teacher_id IN (${placeholders})
+    WHERE mr.${filterColumn} IN (${placeholders})
   `;
 
-  const [rows] = await query<RowDataPacket[]>(sql, identifiers);
+  const [rows] = await query<RowDataPacket[]>(sql, filterIds);
 
   const gradeIds: number[] = [];
   const labels: string[] = [];
@@ -380,31 +388,27 @@ async function resolveSubjectCountSource(): Promise<SubjectCountSource | null> {
 }
 
 async function countAssignedStudentsBySubject(
-  identifiers: string[],
+  remedialRoleId: string | null,
   subjectMap: Map<string, number>,
-): Promise<SubjectCounts | null> {
-  if (!identifiers.length) {
-    return null;
+): Promise<SubjectCounts> {
+  const empty: SubjectCounts = { English: 0, Filipino: 0, Math: 0 };
+
+  if (!remedialRoleId) {
+    return empty;
   }
 
   const assignmentColumns = await safeGetColumns(ASSIGNMENT_TABLE);
-  if (!assignmentColumns.size || !assignmentColumns.has("master_teacher_id") || !assignmentColumns.has("subject_id")) {
-    return null;
+  if (!assignmentColumns.size || !assignmentColumns.has("subject_id") || !assignmentColumns.has("remedial_role_id")) {
+    return empty;
   }
 
-  const placeholders = identifiers.map(() => "?").join(", ");
   const [rows] = await query<RowDataPacket[]>(
     `SELECT subject_id, COUNT(DISTINCT student_id) AS total
      FROM \`${ASSIGNMENT_TABLE}\`
-     WHERE is_active = 1 AND teacher_type = 'master_remedial'
-       AND master_teacher_id IN (${placeholders})
+     WHERE is_active = 1 AND remedial_role_id = ?
      GROUP BY subject_id`,
-    identifiers,
+    [remedialRoleId],
   );
-
-  if (!rows.length) {
-    return null;
-  }
 
   const inverted = new Map<number, SubjectName>();
   subjectMap.forEach((id, name) => {
@@ -414,11 +418,7 @@ async function countAssignedStudentsBySubject(
     }
   });
 
-  const counts: SubjectCounts = {
-    English: 0,
-    Filipino: 0,
-    Math: 0,
-  };
+  const counts: SubjectCounts = { English: 0, Filipino: 0, Math: 0 };
 
   rows.forEach((row) => {
     const subjectId = Number(row.subject_id);
@@ -557,54 +557,46 @@ export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const userIdParam = url.searchParams.get("userId");
 
-  if (!userIdParam) {
-    return NextResponse.json(
-      { success: false, error: "Missing userId query parameter." },
-      { status: 400 },
-    );
-  }
-
-  const userId = Number(userIdParam);
-  if (!Number.isFinite(userId) || userId <= 0) {
-    return NextResponse.json(
-      { success: false, error: "Invalid userId value." },
-      { status: 400 },
-    );
-  }
-
   try {
-    const [identifiers, subjectMap, countSource] = await Promise.all([
-      resolveMasterTeacherIdentifiers(userId),
-      resolveSubjectIds(SUBJECT_NAMES),
-      resolveSubjectCountSource(),
-    ]);
+    const session = await getMasterTeacherSessionFromCookies().catch(() => null);
+    let remedialRoleId = session?.remedialRoleId ? String(session.remedialRoleId) : null;
 
-    const assignedCounts = await countAssignedStudentsBySubject(identifiers, subjectMap);
-    if (assignedCounts) {
-      return NextResponse.json({
-        success: true,
-        counts: assignedCounts,
-        metadata: {
-          gradeIds: [],
-          gradeLabels: [],
-          hasGradeContext: false,
-          source: "assignments",
-        },
-      });
+    if (!remedialRoleId) {
+      if (!userIdParam) {
+        return NextResponse.json(
+          { success: false, error: "Missing userId query parameter." },
+          { status: 400 },
+        );
+      }
+
+      const userId = Number(userIdParam);
+      if (!Number.isFinite(userId) || userId <= 0) {
+        return NextResponse.json(
+          { success: false, error: "Invalid userId value." },
+          { status: 400 },
+        );
+      }
+
+      const identifiers = await resolveMasterTeacherIdentifiers(userId);
+      const [rows] = await query<RowDataPacket[]>(
+        `SELECT remedial_role_id FROM ${HANDLED_TABLE} WHERE master_teacher_id IN (${identifiers.map(() => "?").join(", ")}) AND remedial_role_id IS NOT NULL LIMIT 1`,
+        identifiers,
+      );
+      remedialRoleId = rows[0]?.remedial_role_id ? String(rows[0].remedial_role_id) : null;
     }
 
-    const handledData = await loadHandledGradeData(identifiers);
-    const gradeContext = buildGradeContext(handledData.gradeIds, handledData.labels);
+    const subjectMap = await resolveSubjectIds(SUBJECT_NAMES);
 
-    const counts = await countStudentsBySubject(gradeContext, subjectMap, countSource);
+    const counts = await countAssignedStudentsBySubject(remedialRoleId, subjectMap);
 
     return NextResponse.json({
       success: true,
       counts,
       metadata: {
-        gradeIds: gradeContext.numericIds,
-        gradeLabels: gradeContext.labels,
-        hasGradeContext: gradeContext.hasData,
+        gradeIds: [],
+        gradeLabels: [],
+        hasGradeContext: false,
+        source: "assignments",
       },
     });
   } catch (error) {

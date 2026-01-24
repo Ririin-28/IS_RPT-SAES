@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
-import { query } from "@/lib/db";
+import { getTableColumns, query } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
+
+const ASSIGNMENT_TABLE = "student_teacher_assignment";
+const REMEDIAL_HANDLED_TABLE = "mt_remedialteacher_handled";
 
 const SUBJECT_LABELS: Record<string, string> = {
   english: "English",
@@ -99,16 +102,10 @@ export async function GET(request: NextRequest) {
       [userId],
     );
 
-    let gradeIds: number[] = [];
-    let scopeLabel: "teacher" | "master teacher" = "teacher";
+    let teacherId: string | null = teacherRow?.teacher_id ? String(teacherRow.teacher_id) : null;
+    let remedialRoleId: string | null = null;
 
-    if (teacherRow?.teacher_id) {
-      const [gradeRows] = await query<RowDataPacket[]>(
-        "SELECT grade_id FROM teacher_handled WHERE teacher_id = ?",
-        [teacherRow.teacher_id],
-      );
-      gradeIds = gradeRows.map((row) => row.grade_id as number).filter((id) => Number.isFinite(id));
-    } else {
+    if (!teacherId) {
       const [[masterRow]] = await query<RowDataPacket[]>(
         "SELECT master_teacher_id FROM master_teacher WHERE user_id = ? LIMIT 1",
         [userId],
@@ -119,19 +116,20 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ success: false, error: "Teacher record not found." }, { status: 404 });
       }
 
-      scopeLabel = "master teacher";
-      const [gradeRows] = await query<RowDataPacket[]>(
-        "SELECT grade_id FROM mt_remedialteacher_handled WHERE master_teacher_id = ?",
+      const [roleRows] = await query<RowDataPacket[]>(
+        `SELECT remedial_role_id FROM ${REMEDIAL_HANDLED_TABLE}
+         WHERE master_teacher_id = ? AND remedial_role_id IS NOT NULL
+         LIMIT 1`,
         [masterTeacherId],
       );
-      gradeIds = gradeRows.map((row) => row.grade_id as number).filter((id) => Number.isFinite(id));
-    }
 
-    if (!gradeIds.length) {
-      return NextResponse.json(
-        { success: false, error: `No handled grades found for this ${scopeLabel}.` },
-        { status: 404 },
-      );
+      remedialRoleId = roleRows[0]?.remedial_role_id ? String(roleRows[0].remedial_role_id) : null;
+      if (!remedialRoleId) {
+        return NextResponse.json(
+          { success: false, error: "Remedial role context is missing for this master teacher." },
+          { status: 400 },
+        );
+      }
     }
 
     const [[subjectRow]] = await query<RowDataPacket[]>(
@@ -147,8 +145,19 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const gradePlaceholders = gradeIds.map(() => "?").join(",");
-    const params: Array<string | number> = [subjectId, subjectId, subjectId, ...gradeIds, subjectId];
+    const assignmentColumns = await getTableColumns(ASSIGNMENT_TABLE).catch(() => new Set<string>());
+    const canUseTeacher = teacherId && assignmentColumns.has("teacher_id");
+    const canUseRemedial = remedialRoleId && assignmentColumns.has("remedial_role_id");
+    if (!canUseTeacher && !canUseRemedial) {
+      return NextResponse.json(
+        { success: false, error: "Assignment table is not configured for remedial assignments." },
+        { status: 500 },
+      );
+    }
+
+    const params: Array<string | number> = [subjectId, subjectId, subjectId, subjectId, subjectId];
+    if (canUseTeacher) params.push(teacherId as string);
+    if (canUseRemedial) params.push(remedialRoleId as string);
 
     const sql = `
       SELECT
@@ -194,10 +203,18 @@ export async function GET(request: NextRequest) {
           WHERE student_id = s.student_id AND subject_id = ?
         )
       LEFT JOIN phonemic_level pl ON pl.phonemic_id = ssa.phonemic_id AND pl.subject_id = ?
-      WHERE s.grade_id IN (${gradePlaceholders})
-      AND EXISTS (
+      WHERE EXISTS (
         SELECT 1 FROM student_subject_assessment ssa2
         WHERE ssa2.student_id = s.student_id AND ssa2.subject_id = ?
+      )
+      AND EXISTS (
+        SELECT 1 FROM ${ASSIGNMENT_TABLE} sta
+        WHERE sta.student_id = s.student_id
+          AND sta.is_active = 1
+          AND sta.subject_id = ?
+          AND sta.grade_id = s.grade_id
+          ${canUseTeacher ? "AND sta.teacher_id = ?" : ""}
+          ${canUseRemedial ? "AND sta.remedial_role_id = ?" : ""}
       )
       GROUP BY s.student_id, g.grade_level, s.section, gi.guardian, gi.guardian_contact, s.first_name, s.middle_name, s.last_name, s.suffix, ssa.phonemic_id, pl.level_name
       ORDER BY g.grade_level, s.section, s.last_name, s.first_name, s.student_id
