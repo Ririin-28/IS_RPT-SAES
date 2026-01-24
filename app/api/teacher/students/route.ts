@@ -11,6 +11,8 @@ const SUBJECT_LABELS: Record<string, string> = {
   mathematics: "Math",
 } as const;
 
+const ASSIGNMENT_TABLE = "student_teacher_assignment";
+
 type SupportedSubject = "English" | "Filipino" | "Math";
 
 type RawStudentRow = RowDataPacket & {
@@ -83,6 +85,28 @@ const normalizeStudentRow = (row: RawStudentRow) => {
   };
 };
 
+const ensureAssignmentTable = async () => {
+  await query(
+    `CREATE TABLE IF NOT EXISTS ${ASSIGNMENT_TABLE} (
+      assignment_id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      student_id VARCHAR(20) NOT NULL,
+      master_teacher_id VARCHAR(20) NULL,
+      teacher_id VARCHAR(20) NULL,
+      grade_id INT NOT NULL,
+      subject_id INT NOT NULL,
+      teacher_type ENUM('master_coordinator','master_remedial','regular_teacher') NOT NULL,
+      assignment_reason VARCHAR(100) NULL,
+      assigned_date DATE NULL,
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY idx_student_assignment_student (student_id),
+      KEY idx_student_assignment_teacher (teacher_id),
+      KEY idx_student_assignment_grade_subject (grade_id, subject_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`
+  );
+};
+
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const userIdParam = url.searchParams.get("userId");
@@ -104,6 +128,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    await ensureAssignmentTable();
     const [[teacherRow]] = await query<RowDataPacket[]>(
       "SELECT teacher_id FROM teacher WHERE user_id = ? LIMIT 1",
       [userId],
@@ -190,6 +215,17 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const teacherIdValue = teacherRow?.teacher_id ? String(teacherRow.teacher_id) : null;
+    let useAssignments = false;
+    if (teacherIdValue) {
+      const [[assignmentRow]] = await query<RowDataPacket[]>(
+        `SELECT COUNT(*) AS total FROM ${ASSIGNMENT_TABLE}
+         WHERE is_active = 1 AND teacher_type = 'regular_teacher' AND teacher_id = ? AND subject_id = ? LIMIT 1`,
+        [teacherIdValue, subjectId],
+      );
+      useAssignments = Number(assignmentRow?.total ?? 0) > 0;
+    }
+
     if (allowedSubjectIds.size && !allowedSubjectIds.has(subjectId)) {
       return NextResponse.json(
         { success: false, error: "Subject is not assigned to this master teacher." },
@@ -198,15 +234,19 @@ export async function GET(request: NextRequest) {
     }
 
     const gradePlaceholders = gradeIds.map(() => "?").join(",");
-    // Parameter order must follow placeholder order in the SQL: ssa.subject_id, subquery subject_id,
-    // phonemic_level subject_id, all grade placeholders, then ssa2.subject_id.
+    // Parameter order must follow placeholder order in the SQL: ssa.subject_id, phonemic_level subject_id,
+    // optional assignment join (teacher_id, subject_id, grade placeholders), where grade placeholders, then ssa2.subject_id.
     const params: Array<string | number> = [
       Number.isFinite(englishId) ? englishId : null,
       Number.isFinite(filipinoId) ? filipinoId : null,
       Number.isFinite(mathId) ? mathId : null,
-      ...gradeIds,
-      subjectId,
     ];
+
+    if (useAssignments && teacherIdValue) {
+      params.push(teacherIdValue, subjectId, ...gradeIds);
+    }
+
+    params.push(...gradeIds, subjectId);
 
     const sql = `
       SELECT
@@ -254,6 +294,13 @@ export async function GET(request: NextRequest) {
       ) gi ON gi.student_id = s.student_id
       LEFT JOIN student_subject_assessment ssa ON ssa.student_id = s.student_id
       LEFT JOIN phonemic_level pl ON pl.phonemic_id = ssa.phonemic_id
+      ${useAssignments && teacherIdValue ? `JOIN ${ASSIGNMENT_TABLE} sta
+        ON sta.student_id = s.student_id
+        AND sta.is_active = 1
+        AND sta.teacher_type = 'regular_teacher'
+        AND sta.teacher_id = ?
+        AND sta.subject_id = ?
+        AND sta.grade_id IN (${gradePlaceholders})` : ""}
       WHERE s.grade_id IN (${gradePlaceholders})
         AND EXISTS (
           SELECT 1 FROM student_subject_assessment ssa2

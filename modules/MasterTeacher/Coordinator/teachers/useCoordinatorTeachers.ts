@@ -8,6 +8,7 @@ export type CoordinatorTeacher = {
   id: number;
   userId: number | null;
   teacherId: string;
+  masterTeacherId?: string | null;
   name: string;
   email: string;
   contactNumber: string;

@@ -6,7 +6,7 @@ import { buildPrincipalSessionCookie, createPrincipalSession } from "@/lib/serve
 import { buildMasterTeacherSessionCookie, createMasterTeacherSession } from "@/lib/server/master-teacher-session";
 import { buildTeacherSessionCookie, createTeacherSession } from "@/lib/server/teacher-session";
 import { getTableColumns, runWithConnection } from "@/lib/db";
-import { normalizeRoleName, resolvePortalPath, resolveUserRole } from "@/lib/server/role-resolution";
+import { normalizeRoleName, resolveCanonicalRole, resolvePortalPath, resolveUserRole } from "@/lib/server/role-resolution";
 
 /* =======================
    Types
@@ -212,7 +212,8 @@ export async function POST(req: Request): Promise<Response> {
         const resolvedRole = await resolveUserRole(db, user);
         const roleForLogic = resolvedRole ?? user.role ?? null;
         const normalizedRole = normalizeRoleName(roleForLogic);
-        const redirectPath = resolvePortalPath(normalizedRole);
+        const canonicalRole = resolveCanonicalRole(normalizedRole);
+        const redirectPath = resolvePortalPath(canonicalRole);
 
         /* ===== IT Admin validation ===== */
         if (roleRequiresItAdminId(roleForLogic)) {
@@ -266,18 +267,18 @@ export async function POST(req: Request): Promise<Response> {
         /* ===== Create sessions ===== */
         const cookies: string[] = [];
 
-        if (normalizedRole === "parent") {
+        if (canonicalRole === "parent") {
           const { token, expiresAt } = await createParentSession(db, user.user_id, deviceName);
           cookies.push(buildParentSessionCookie(token, expiresAt));
         }
 
-        if (normalizedRole === "admin" || normalizedRole === "it_admin" || normalizedRole === "itadmin") {
+        if (canonicalRole === "admin" || canonicalRole === "it_admin" || canonicalRole === "itadmin") {
           const { token, expiresAt } = await createAdminSession(db, user.user_id, deviceName);
           cookies.push(buildAdminSessionCookie(token, expiresAt));
         }
 
         /* ===== PRINCIPAL SESSION (NEW) ===== */
-        if (normalizedRole === "principal") {
+        if (canonicalRole === "principal") {
           const [rows] = await db.execute<RowDataPacket[]>(
             "SELECT principal_id FROM principal WHERE user_id = ? LIMIT 1",
             [user.user_id],
@@ -299,7 +300,7 @@ export async function POST(req: Request): Promise<Response> {
         }
 
         /* ===== MASTER TEACHER SESSION ===== */
-        if (normalizedRole === "master_teacher" || normalizedRole === "masterteacher") {
+        if (canonicalRole === "master_teacher" || canonicalRole === "masterteacher") {
           const masterTeacherId = await resolveMasterTeacherId(db, user.user_id);
           if (!masterTeacherId) {
             return respond(403, { error: "Master teacher record not found" });
@@ -316,7 +317,7 @@ export async function POST(req: Request): Promise<Response> {
         }
 
         /* ===== TEACHER SESSION ===== */
-        if (normalizedRole === "teacher") {
+        if (canonicalRole === "teacher") {
           const teacherId = await resolveTeacherId(db, user.user_id);
           if (!teacherId) {
             return respond(403, { error: "Teacher record not found" });

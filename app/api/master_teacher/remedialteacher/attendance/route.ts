@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
-import { NextRequest, NextResponse } from "next/server";
-import type { RowDataPacket } from "mysql2/promise";
 import { getTableColumns, query, runWithConnection } from "@/lib/db";
 import { getMasterTeacherSessionFromCookies } from "@/lib/server/master-teacher-session";
 
@@ -11,6 +9,7 @@ const REMEDIAL_QUARTER_TABLE = "remedial_quarter";
 const WEEKLY_SUBJECT_TABLE = "weekly_subject_schedule";
 const ATTENDANCE_SESSION_TABLE = "attendance_session";
 const ATTENDANCE_RECORD_TABLE = "attendance_record";
+const PARENT_NOTIFICATIONS_TABLE = "parent_notifications";
 const SUBJECT_TABLE_CANDIDATES = ["subject", "subjects"] as const;
 
 const ISO_DATE_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -115,6 +114,18 @@ const isAllowedDate = (iso: string, months: Set<number>, weekdays: Set<string>):
   return weekdays.size === 0 ? false : weekdays.has(weekday);
 };
 
+const formatAbsentDate = (iso: string): string => {
+  const date = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
+  const weekday = date.toLocaleDateString("en-US", { weekday: "long" });
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const year = date.getFullYear();
+  return `${weekday}, ${month}-${day}-${year}`;
+};
+
 const normalizeEntries = (entries: unknown): NormalizedEntry[] => {
   if (!Array.isArray(entries)) return [];
   const normalized: NormalizedEntry[] = [];
@@ -132,6 +143,25 @@ const normalizeEntries = (entries: unknown): NormalizedEntry[] => {
     normalized.push({ studentId, date: parsedDate.iso, present });
   }
   return normalized;
+};
+
+const ensureParentNotificationsTable = async () => {
+  await query(
+    `CREATE TABLE IF NOT EXISTS ${PARENT_NOTIFICATIONS_TABLE} (
+      id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+      student_id INT NOT NULL,
+      subject VARCHAR(100) NOT NULL,
+      date DATE NOT NULL,
+      message TEXT NOT NULL,
+      status ENUM('unread', 'read') NOT NULL DEFAULT 'unread',
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY uniq_parent_notification (student_id, subject, date),
+      KEY idx_parent_notification_student (student_id),
+      KEY idx_parent_notification_status (status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`
+  );
 };
 
 export async function GET(request: NextRequest) {
@@ -252,6 +282,8 @@ export async function PUT(request: NextRequest) {
   const sessionIdByDate = new Map<string, number>();
   let updated = 0;
 
+  await ensureParentNotificationsTable();
+
   await runWithConnection(async (connection) => {
     await connection.beginTransaction();
     try {
@@ -328,6 +360,16 @@ export async function PUT(request: NextRequest) {
              ON DUPLICATE KEY UPDATE status = VALUES(status), remarks = VALUES(remarks), recorded_at = NOW()`,
             [sessionId, entry.studentId, status, null],
           );
+
+          if (entry.present === "No") {
+            const message = `Dear Parent, your child is marked absent for '${formatAbsentDate(entry.date)}'.`;
+            await connection.query(
+              `INSERT INTO ${PARENT_NOTIFICATIONS_TABLE} (student_id, subject, date, message, status)
+               VALUES (?, ?, ?, ?, 'unread')
+               ON DUPLICATE KEY UPDATE message = VALUES(message), status = 'unread', updated_at = CURRENT_TIMESTAMP`,
+              [entry.studentId, subjectLabel, entry.date, message],
+            );
+          }
         }
 
         updated += 1;
@@ -341,37 +383,4 @@ export async function PUT(request: NextRequest) {
   });
 
   return NextResponse.json({ success: true, updated });
-}
-            await connection.execute(
-              `DELETE FROM \`${tableName}\` WHERE student_id = ? AND subject = ? AND date = ?`,
-              [entry.studentId, subject, entry.date]
-            );
-          } else {
-            await connection.execute(
-              `INSERT INTO \`${tableName}\` (student_id, subject, date, present)
-               VALUES (?, ?, ?, ?)
-               ON DUPLICATE KEY UPDATE present = VALUES(present), updated_at = CURRENT_TIMESTAMP`,
-              [entry.studentId, subject, entry.date, entry.present]
-            );
-            if (entry.present === "No") {
-              const message = `Your child was absent on ${formatForMessage(entry.date)} for ${subjectLabel}.`;
-              await connection.execute(
-                `INSERT INTO parent_notifications (student_id, subject, date, message, status)
-                 VALUES (?, ?, ?, ?, 'unread')
-                 ON DUPLICATE KEY UPDATE message = VALUES(message), status = 'unread', updated_at = CURRENT_TIMESTAMP`,
-                [entry.studentId, subject, entry.date, message]
-              );
-            }
-          }
-          updatedCount += 1;
-        }
-      }
-      await connection.commit();
-    } catch (error) {
-      await connection.rollback();
-      throw error;
-    }
-  });
-
-  return NextResponse.json({ success: true, updated: updatedCount });
 }

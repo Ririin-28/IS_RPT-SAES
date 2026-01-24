@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import StudentTab, { type CoordinatorStudent } from "./StudentsTab";
 import { type MaterialSubject } from "@/lib/materials/shared";
 import { useCoordinatorTeachers, type CoordinatorTeacher } from "../teachers/useCoordinatorTeachers";
+import { formatFullNameWithMiddleInitial, getStoredUserProfile } from "@/lib/utils/user-profile";
 
 type StudentMeta = {
   subject: MaterialSubject;
@@ -22,6 +23,8 @@ type AssignmentGroup = {
   teacher: CoordinatorTeacher;
   students: CoordinatorStudent[];
 };
+
+type AssignmentTeacherType = "master_coordinator" | "master_remedial" | "regular_teacher";
 
 const normalizeGradeKey = (value?: string | null): string | null => {
   if (!value) return null;
@@ -54,8 +57,35 @@ export default function MasterTeacherStudents() {
   const [showAssignConfirm, setShowAssignConfirm] = useState(false);
   const [assignmentPreview, setAssignmentPreview] = useState<AssignmentGroup[]>([]);
   const [remedialTeachers, setRemedialTeachers] = useState<CoordinatorTeacher[]>([]);
+  const [assignmentSaving, setAssignmentSaving] = useState(false);
+  const [assignmentError, setAssignmentError] = useState<string | null>(null);
+  const [assignmentSuccess, setAssignmentSuccess] = useState<string | null>(null);
 
   const { teachers, loading: teachersLoading } = useCoordinatorTeachers();
+  const coordinatorProfile = useMemo(() => getStoredUserProfile(), []);
+  const coordinatorTeacher = useMemo<CoordinatorTeacher | null>(() => {
+    if (!coordinatorProfile?.userId) {
+      return null;
+    }
+    const userId = typeof coordinatorProfile.userId === "number"
+      ? coordinatorProfile.userId
+      : Number(coordinatorProfile.userId);
+    if (!Number.isFinite(userId)) {
+      return null;
+    }
+    const name = formatFullNameWithMiddleInitial(coordinatorProfile) || "Master Teacher";
+    return {
+      id: userId,
+      userId,
+      teacherId: String(userId),
+      name,
+      email: coordinatorProfile.email ?? "",
+      contactNumber: "",
+      grade: studentMeta.gradeLevel ?? null,
+      sections: null,
+      subjects: String(studentMeta.subject ?? ""),
+    } satisfies CoordinatorTeacher;
+  }, [coordinatorProfile, studentMeta.gradeLevel, studentMeta.subject]);
 
   useEffect(() => {
     const gradeKey = normalizeGradeKey(studentMeta.gradeLevel);
@@ -86,11 +116,13 @@ export default function MasterTeacherStudents() {
 
         const mapped: CoordinatorTeacher[] = filtered.map((record: any, index: number) => {
           const userId = typeof record?.userId === "number" ? record.userId : Number(record?.userId ?? NaN);
-          const teacherId = record?.teacherId ?? record?.masterTeacherId ?? record?.userId ?? `MT-${index + 1}`;
+          const masterTeacherId = record?.masterTeacherId ?? record?.master_teacher_id ?? null;
+          const teacherId = record?.teacherId ?? masterTeacherId ?? record?.userId ?? `MT-${index + 1}`;
           return {
             id: Number.isFinite(userId) ? userId : index + 1,
             userId: Number.isFinite(userId) ? userId : null,
             teacherId: String(teacherId),
+            masterTeacherId: masterTeacherId ? String(masterTeacherId) : null,
             name: record?.name ?? "Master Teacher",
             email: record?.email ?? "",
             contactNumber: record?.contactNumber ?? "",
@@ -128,8 +160,11 @@ export default function MasterTeacherStudents() {
     };
     teachers.forEach(addTeacher);
     remedialTeachers.forEach(addTeacher);
+    if (coordinatorTeacher) {
+      addTeacher(coordinatorTeacher);
+    }
     return Array.from(map.values());
-  }, [teachers, remedialTeachers]);
+  }, [teachers, remedialTeachers, coordinatorTeacher]);
 
   const remedialTeacherKeys = useMemo(() => {
     const keys = new Set<string>();
@@ -149,6 +184,7 @@ export default function MasterTeacherStudents() {
     }
     const shuffled = shuffleStudents(studentMeta.students);
     const groups = assignmentTeachers.map((teacher) => ({ teacher, students: [] as CoordinatorStudent[] }));
+        masterTeacherId: null,
     shuffled.forEach((student, index) => {
       groups[index % groups.length].students.push(student);
     });
@@ -162,6 +198,8 @@ export default function MasterTeacherStudents() {
 
   const handleOpenAssignmentModal = () => {
     setAssignmentPreview(buildAssignmentPreview());
+    setAssignmentError(null);
+    setAssignmentSuccess(null);
     setShowAssignmentModal(true);
   };
 
@@ -169,9 +207,80 @@ export default function MasterTeacherStudents() {
     setShowAssignmentModal(false);
   };
 
-  const handleConfirmAssign = () => {
-    setShowAssignConfirm(false);
-    setShowAssignmentModal(false);
+  const handleConfirmAssign = async () => {
+    if (!studentMeta.gradeLevel) {
+      setAssignmentError("Grade assignment is required before saving assignments.");
+      setShowAssignConfirm(false);
+      return;
+    }
+
+    if (!assignmentPreview.length) {
+      setAssignmentError("No assignments were generated.");
+      setShowAssignConfirm(false);
+      return;
+    }
+
+    setAssignmentSaving(true);
+    setAssignmentError(null);
+    setAssignmentSuccess(null);
+
+    try {
+      const gradeMatch = studentMeta.gradeLevel.match(/\d+/);
+      const gradeId = gradeMatch ? Number(gradeMatch[0]) : Number(studentMeta.gradeLevel);
+      if (!Number.isFinite(gradeId)) {
+        throw new Error("Invalid grade level.");
+      }
+
+      const payload = {
+        gradeId,
+        subject: studentMeta.subject,
+        assignments: assignmentPreview.map((group) => {
+          const teacherKey = group.teacher.userId
+            ? `u:${group.teacher.userId}`
+            : `t:${group.teacher.teacherId}`;
+          const isRemedial = remedialTeacherKeys.has(teacherKey);
+          const isCoordinator = coordinatorTeacher?.userId
+            ? coordinatorTeacher.userId === group.teacher.userId
+            : coordinatorTeacher?.teacherId === group.teacher.teacherId;
+          const teacherType: AssignmentTeacherType = isCoordinator
+            ? "master_coordinator"
+            : isRemedial
+            ? "master_remedial"
+            : "regular_teacher";
+
+          return {
+            teacherType,
+            teacherId: teacherType === "regular_teacher" ? group.teacher.teacherId : null,
+            masterTeacherId:
+              teacherType === "regular_teacher"
+                ? null
+                : group.teacher.masterTeacherId ?? group.teacher.teacherId,
+            teacherUserId: group.teacher.userId ?? null,
+            students: group.students.map((student) => student.id ?? student.studentId),
+          };
+        }),
+      };
+
+      const response = await fetch("/api/master_teacher/coordinator/student-assignments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.error ?? "Unable to save student assignments.");
+      }
+
+      setAssignmentSuccess("Assignments saved successfully.");
+      setShowAssignConfirm(false);
+      setShowAssignmentModal(false);
+    } catch (error) {
+      setAssignmentError(error instanceof Error ? error.message : "Unable to save student assignments.");
+      setShowAssignConfirm(false);
+    } finally {
+      setAssignmentSaving(false);
+    }
   };
 
   return (
@@ -270,9 +379,9 @@ export default function MasterTeacherStudents() {
             <PrimaryButton
               type="button"
               onClick={() => setShowAssignConfirm(true)}
-              disabled={totalTeachers === 0 || totalStudents === 0}
+              disabled={totalTeachers === 0 || totalStudents === 0 || assignmentSaving}
             >
-              Assign
+              {assignmentSaving ? "Assigning..." : "Assign"}
             </PrimaryButton>
           </>
         )}
@@ -299,6 +408,16 @@ export default function MasterTeacherStudents() {
 
         <div className="space-y-3">
           <p className="text-sm font-semibold text-gray-700">Division of Students</p>
+          {assignmentError && (
+            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {assignmentError}
+            </div>
+          )}
+          {assignmentSuccess && (
+            <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+              {assignmentSuccess}
+            </div>
+          )}
           {totalTeachers === 0 || totalStudents === 0 ? (
             <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
               Add teachers and students before running the assignment.

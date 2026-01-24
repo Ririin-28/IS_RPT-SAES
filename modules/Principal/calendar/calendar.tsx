@@ -409,7 +409,8 @@ export default function PrincipalCalendar() {
       );
     })();
 
-    const withinPeriod = isWithinPeriod(cellDate);
+    const isWeekend = cellDate.getDay() === 0 || cellDate.getDay() === 6;
+    const withinPeriod = isWithinPeriod(cellDate) && !isWeekend;
 
     return (
       <div

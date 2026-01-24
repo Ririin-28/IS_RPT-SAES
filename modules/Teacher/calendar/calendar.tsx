@@ -126,6 +126,26 @@ const normalizeGradeLabel = (value: string | null | undefined): string | null =>
   return trimmed;
 };
 
+const getSubjectIndicator = (subject: string | null | undefined): string | null => {
+  if (!subject) {
+    return null;
+  }
+  const normalized = subject.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  if (normalized.startsWith("eng")) {
+    return "E";
+  }
+  if (normalized.startsWith("fil")) {
+    return "F";
+  }
+  if (normalized.startsWith("math") || normalized.includes("mathematics")) {
+    return "M";
+  }
+  return null;
+};
+
 const statusBadgeTone = (status: string | null | undefined) => {
   if (!status) {
     return "bg-gray-100 text-gray-600 border border-gray-200";
@@ -657,18 +677,26 @@ export default function TeacherCalendar() {
                 )}
               </div>
               <div className="overflow-y-auto max-h-12 space-y-1">
-                {dayActivities.slice(0, 2).map((activity) => (
+                {dayActivities.slice(0, 2).map((activity) => {
+                  const indicator = getSubjectIndicator(activity.subject);
+                  return (
                   <div
                     key={activity.id}
                     className={`text-xs p-1 rounded truncate cursor-pointer border ${getActivityColor(activity.type)}`}
                   >
                     <div className="flex justify-between items-center gap-2">
-                      <span className="truncate font-semibold text-[#013300]">
-                        {activity.title}
+                      <span className="truncate font-semibold text-[#013300] flex items-center gap-1">
+                        {indicator && (
+                          <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-[#013300]/10 text-[0.6rem] font-semibold text-[#013300]">
+                            {indicator}
+                          </span>
+                        )}
+                        <span className="truncate">{activity.title}</span>
                       </span>
                     </div>
                   </div>
-                ))}
+                );
+                })}
                 {dayActivities.length > 2 && (
                   <div className="text-xs text-gray-500 text-center bg-gray-100 rounded p-1">
                     +{dayActivities.length - 2} more
@@ -746,6 +774,7 @@ export default function TeacherCalendar() {
                 const statusLabel = activity.status ?? null;
                 const tone = resolveActivityTone(activity.type);
                 const statusClass = statusLabel ? statusBadgeTone(viewOnly ? "Pending" : statusLabel) : null;
+                const indicator = getSubjectIndicator(activity.subject);
 
                 return (
                   <div
@@ -755,6 +784,11 @@ export default function TeacherCalendar() {
                   >
                     <div className="flex flex-col gap-1.5">
                       <div className="flex flex-wrap items-center gap-2">
+                        {indicator && (
+                          <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-[#013300]/10 text-[0.6rem] font-semibold text-[#013300]">
+                            {indicator}
+                          </span>
+                        )}
                         <span className={`font-semibold text-sm ${tone.titleClass}`}>{activity.title}</span>
                         {statusLabel && statusClass && (
                           <span

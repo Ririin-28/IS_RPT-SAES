@@ -36,6 +36,13 @@ const PORTAL_PATH_BY_ROLE: Record<string, string> = {
   masterteacher: "/MasterTeacher/welcome",
 };
 
+const ROLE_ALIASES: Record<string, string> = {
+  coordinator: "master_teacher",
+  mt_coordinator: "master_teacher",
+  master_teacher_coordinator: "master_teacher",
+  masterteacher_coordinator: "master_teacher",
+};
+
 let roleTableAvailable: boolean | null = null;
 
 export function normalizeRoleName(role: string | null | undefined): string {
@@ -43,6 +50,13 @@ export function normalizeRoleName(role: string | null | undefined): string {
     return "";
   }
   return role.trim().toLowerCase().replace(/[\s/\-]+/g, "_");
+}
+
+export function resolveCanonicalRole(normalizedRole: string): string {
+  if (!normalizedRole) {
+    return "";
+  }
+  return ROLE_ALIASES[normalizedRole] ?? normalizedRole;
 }
 
 function pickStringRoleCandidate(source: UserRoleSource): string | null {
@@ -152,5 +166,6 @@ export function resolvePortalPath(normalizedRole: string): string {
   if (!normalizedRole) {
     return "/";
   }
-  return PORTAL_PATH_BY_ROLE[normalizedRole] ?? "/";
+  const canonical = resolveCanonicalRole(normalizedRole);
+  return PORTAL_PATH_BY_ROLE[canonical] ?? "/";
 }

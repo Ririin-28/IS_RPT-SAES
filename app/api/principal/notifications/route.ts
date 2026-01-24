@@ -1,26 +1,34 @@
 import { NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
-import { query, getTableColumns } from "@/lib/db";
+import { query } from "@/lib/db";
 import { getPrincipalSessionFromCookies } from "@/lib/server/principal-session";
 
 export const dynamic = "force-dynamic";
 
 const NOTIFICATIONS_TABLE = "principal_notifications";
 
+let ensureTablePromise: Promise<void> | null = null;
+
 const ensureNotificationsTable = async () => {
-  await query(
-    `CREATE TABLE IF NOT EXISTS ${NOTIFICATIONS_TABLE} (
-      id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-      principal_id VARCHAR(64) NULL,
-      message TEXT NOT NULL,
-      status ENUM('unread', 'read') NOT NULL DEFAULT 'unread',
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      PRIMARY KEY (id),
-      KEY idx_principal_notifications_principal (principal_id),
-      KEY idx_principal_notifications_status (status)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`
-  );
+  if (!ensureTablePromise) {
+    ensureTablePromise = query(
+      `CREATE TABLE IF NOT EXISTS ${NOTIFICATIONS_TABLE} (
+        id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        principal_id VARCHAR(64) NULL,
+        message TEXT NOT NULL,
+        status ENUM('unread', 'read') NOT NULL DEFAULT 'unread',
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        KEY idx_principal_notifications_principal (principal_id),
+        KEY idx_principal_notifications_status (status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`
+    ).then(() => undefined).catch((error) => {
+      ensureTablePromise = null;
+      throw error;
+    });
+  }
+  await ensureTablePromise;
 };
 
 export async function GET() {
@@ -32,16 +40,12 @@ export async function GET() {
 
     await ensureNotificationsTable();
 
-    const columns = await getTableColumns(NOTIFICATIONS_TABLE).catch(() => new Set<string>());
-    const hasPrincipalId = columns.has("principal_id");
-
-    const whereClause = hasPrincipalId ? "WHERE principal_id IS NULL OR principal_id = ?" : "";
     const [rows] = await query<RowDataPacket[]>(
       `SELECT id, message, status, created_at FROM ${NOTIFICATIONS_TABLE}
-       ${whereClause}
+       WHERE principal_id IS NULL OR principal_id = ?
        ORDER BY created_at DESC
        LIMIT 100`,
-      hasPrincipalId ? [session.principalId] : [],
+      [session.principalId],
     );
 
     const notifications = rows.map((row) => ({
@@ -67,16 +71,9 @@ export async function PATCH() {
 
     await ensureNotificationsTable();
 
-    const columns = await getTableColumns(NOTIFICATIONS_TABLE).catch(() => new Set<string>());
-    const hasPrincipalId = columns.has("principal_id");
-
-    const whereClause = hasPrincipalId
-      ? "WHERE status = 'unread' AND (principal_id IS NULL OR principal_id = ?)"
-      : "WHERE status = 'unread'";
-
     await query(
-      `UPDATE ${NOTIFICATIONS_TABLE} SET status = 'read' ${whereClause}`,
-      hasPrincipalId ? [session.principalId] : [],
+      `UPDATE ${NOTIFICATIONS_TABLE} SET status = 'read' WHERE status = 'unread' AND (principal_id IS NULL OR principal_id = ?)`,
+      [session.principalId],
     );
 
     return NextResponse.json({ success: true });
