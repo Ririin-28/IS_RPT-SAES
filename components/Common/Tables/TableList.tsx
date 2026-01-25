@@ -23,6 +23,7 @@ interface TableListProps {
   onSelectItem?: (id: any, checked: boolean) => void;
   hidePagination?: boolean;
   nonSelectableIds?: Set<any>;
+  actionHeaderLabel?: string;
 }
 
 export default function TableList({
@@ -37,6 +38,7 @@ export default function TableList({
   onSelectItem,
   hidePagination = false,
   nonSelectableIds,
+  actionHeaderLabel,
 }: TableListProps) {
   const [page, setPage] = useState(1);
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -158,7 +160,7 @@ export default function TableList({
                 {actions && (
                   <th className="px-4 py-2 text-center">
                     <div className="flex items-center justify-center gap-4">
-                      <TertiaryHeader title="Actions" className="mb-0" />
+                      <TertiaryHeader title={actionHeaderLabel || "Actions"} className="mb-0" />
                       {renderFullScreenToggle(
                         'p-1 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors'
                       )}
