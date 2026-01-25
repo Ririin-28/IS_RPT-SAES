@@ -30,7 +30,7 @@ export default function BaseModal({
   };
 
   return (
-    <div className="fixed inset-0 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-[100] transition-opacity duration-200">
       <div className={`bg-white rounded-lg shadow-xl w-full ${maxWidthClasses[maxWidth]} max-h-[95vh] overflow-y-auto`}>
         {/* Modal Header with green background */}
         <div className="bg-[#013300] text-white rounded-t-lg p-6">

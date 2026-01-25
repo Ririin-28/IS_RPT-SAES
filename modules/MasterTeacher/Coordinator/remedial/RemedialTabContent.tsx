@@ -2,14 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
-import TableList from "@/components/Common/Tables/TableList";
 import EditContentModal, { type FlashcardContent } from "./Modals/EditContentModal";
+import ScheduledRemedialList from "./ScheduledRemedialList";
 
 export type RemedialEntry = {
   id: number;
   title: string;
-  phonemic: string;
-  dateToUse: string;
+  time: string;
+  date: string;
 };
 
 export type RemedialLevelConfig = {
@@ -51,7 +51,7 @@ const cloneInitialMap = (levels: RemedialLevelConfig[]): RemedialsByLevel =>
   }, {});
 
 const normalizeEntries = (entries: unknown, fallback: RemedialEntry[]): RemedialEntry[] => {
-  const fallbackList = fallback.length > 0 ? fallback : [{ id: 0, title: "", phonemic: "", dateToUse: "" }];
+  const fallbackList = fallback.length > 0 ? fallback : [{ id: 0, title: "", time: "", date: "" }];
 
   if (!Array.isArray(entries) || entries.length === 0) {
     return fallbackList.map((item) => ({ ...item }));
@@ -64,14 +64,14 @@ const normalizeEntries = (entries: unknown, fallback: RemedialEntry[]): Remedial
       id: typeof candidate?.id === "number" ? candidate.id : template.id,
       title:
         typeof candidate?.title === "string" && candidate.title.trim() ? candidate.title : template.title,
-      phonemic:
-        typeof candidate?.phonemic === "string" && candidate.phonemic.trim()
-          ? candidate.phonemic
-          : template.phonemic,
-      dateToUse:
-        typeof candidate?.dateToUse === "string" && candidate.dateToUse.trim()
-          ? candidate.dateToUse
-          : template.dateToUse,
+      time:
+        typeof candidate?.time === "string" && candidate.time.trim()
+          ? candidate.time
+          : template.time,
+      date:
+        typeof candidate?.date === "string" && candidate.date.trim()
+          ? candidate.date
+          : template.date,
     };
   });
 };
@@ -202,10 +202,10 @@ export default function RemedialTabContent({ level, config }: RemedialTabContent
     if (!draft || !levelConfig.inlineEditable) return;
 
     const trimmedTitle = draft.title.trim();
-    const trimmedPhonemic = draft.phonemic.trim();
-    const trimmedDate = draft.dateToUse.trim();
+    const trimmedTime = draft.time.trim();
+    const trimmedDate = draft.date.trim();
 
-    if (!trimmedTitle || !trimmedPhonemic || !trimmedDate) {
+    if (!trimmedTitle || !trimmedTime || !trimmedDate) {
       setValidationError(validationMessage);
       return;
     }
@@ -213,8 +213,8 @@ export default function RemedialTabContent({ level, config }: RemedialTabContent
     const updated: RemedialEntry = {
       id: draft.id,
       title: trimmedTitle,
-      phonemic: trimmedPhonemic,
-      dateToUse: trimmedDate,
+      time: trimmedTime,
+      date: trimmedDate,
     };
 
     setRemedialsByLevel((prev) => ({
@@ -246,93 +246,20 @@ export default function RemedialTabContent({ level, config }: RemedialTabContent
       </div>
       {validationError && <p className="text-sm text-red-600 mb-3">{validationError}</p>}
 
-      <TableList
-        columns={[
-          { key: "no", title: "No#" },
-          {
-            key: "title",
-            title: "Title",
-            render: (row: any) =>
-              levelConfig.inlineEditable && editingId === row.id && draft ? (
-                <input
-                  value={draft.title}
-                  onChange={(event) => updateDraft("title", event.target.value)}
-                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-700"
-                />
-              ) : (
-                row.title
-              ),
-          },
-          {
-            key: "phonemic",
-            title: "Phonemic",
-            render: (row: any) =>
-              levelConfig.inlineEditable && editingId === row.id && draft ? (
-                <input
-                  value={draft.phonemic}
-                  onChange={(event) => updateDraft("phonemic", event.target.value)}
-                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-700"
-                />
-              ) : (
-                row.phonemic
-              ),
-          },
-          {
-            key: "dateToUse",
-            title: "Date to use",
-            render: (row: any) =>
-              levelConfig.inlineEditable && editingId === row.id && draft ? (
-                <input
-                  type="date"
-                  value={draft.dateToUse}
-                  onChange={(event) => updateDraft("dateToUse", event.target.value)}
-                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-700"
-                />
-              ) : (
-                formatDate(row.dateToUse)
-              ),
-          },
-        ]}
-        data={rows}
-        actions={(row: any) => (
-          <>
-            {showPlayButton && (
-              <a href={`${playPath}?start=${row.startIndex}`}>
-                <UtilityButton small title="Click to play remedial session">Play</UtilityButton>
-              </a>
-            )}
-            {levelConfig.allowSeeAll && <UtilityButton small>See All</UtilityButton>}
-            {levelConfig.allowFlashcardEdit && (
-              <UtilityButton
-                small
-                className="bg-[#013300] hover:bg-green-900"
-                onClick={() => setIsEditModalOpen(true)} title="Click to edit remedial contents">
-                Edit
-              </UtilityButton>
-            )}
-            {levelConfig.inlineEditable && (
-              editingId === row.id ? (
-                <>
-                  <UtilityButton small onClick={handleSave}>
-                    Save
-                  </UtilityButton>
-                  <UtilityButton
-                    small
-                    className="bg-white text-[#013300] border-[#013300] hover:bg-gray-100"
-                    onClick={cancelEdit}
-                  >
-                    Cancel
-                  </UtilityButton>
-                </>
-              ) : (
-                <UtilityButton small onClick={() => startEdit(row.id)}>
-                  Edit
-                </UtilityButton>
-              )
-            )}
-          </>
-        )}
-        pageSize={10}
+      <ScheduledRemedialList
+        remedials={remedials}
+        showPlayButton={showPlayButton}
+        playPath={playPath}
+        allowSeeAll={levelConfig.allowSeeAll}
+        allowFlashcardEdit={levelConfig.allowFlashcardEdit}
+        inlineEditable={levelConfig.inlineEditable}
+        editingId={editingId}
+        draft={draft}
+        onStartEdit={startEdit}
+        onCancelEdit={cancelEdit}
+        onUpdateDraft={updateDraft}
+        onSave={handleSave}
+        onOpenFlashcardEdit={() => setIsEditModalOpen(true)}
       />
 
       {levelConfig.allowFlashcardEdit && (

@@ -94,8 +94,8 @@ const buildLevels = (config: {
 
 const ENGLISH_INITIAL_ENTRIES: Record<string, RemedialEntry[]> = {
   "Non Reader": [
-    { id: 1, title: "Lesson 1 - Consonant", phonemic: "Non-Reader", dateToUse: "2024-06-01" },
-    { id: 2, title: "Lesson 2 - Vowel", phonemic: "Non-Reader", dateToUse: "2024-06-02" },
+    { id: 1, title: "Lesson 1 - Consonant", time: "08:00", date: "2024-06-01" },
+    { id: 2, title: "Lesson 2 - Vowel", time: "09:00", date: "2024-06-02" },
   ],
   Syllable: [],
   Word: [],
@@ -106,8 +106,8 @@ const ENGLISH_INITIAL_ENTRIES: Record<string, RemedialEntry[]> = {
 
 const FILIPINO_INITIAL_ENTRIES: Record<string, RemedialEntry[]> = {
   "Non Reader": [
-    { id: 1, title: "Aralin 1 - Katinig", phonemic: "Non-Reader", dateToUse: "2024-06-01" },
-    { id: 2, title: "Aralin 2 - Patinig", phonemic: "Non-Reader", dateToUse: "2024-06-02" },
+    { id: 1, title: "Aralin 1 - Katinig", time: "08:00", date: "2024-06-01" },
+    { id: 2, title: "Aralin 2 - Patinig", time: "09:00", date: "2024-06-02" },
   ],
   Syllable: [],
   Word: [],
@@ -118,21 +118,21 @@ const FILIPINO_INITIAL_ENTRIES: Record<string, RemedialEntry[]> = {
 
 const MATH_INITIAL_ENTRIES: Record<string, RemedialEntry[]> = {
   "Not Proficient": [
-    { id: 1, title: "Basic Addition & Subtraction", phonemic: "Not Proficient", dateToUse: "2024-06-01" },
-    { id: 2, title: "Simple Multiplication", phonemic: "Not Proficient", dateToUse: "2024-06-02" },
-    { id: 3, title: "Basic Division", phonemic: "Not Proficient", dateToUse: "2024-06-03" },
+    { id: 1, title: "Basic Addition & Subtraction", time: "08:00", date: "2024-06-01" },
+    { id: 2, title: "Simple Multiplication", time: "09:00", date: "2024-06-02" },
+    { id: 3, title: "Basic Division", time: "10:00", date: "2024-06-03" },
   ],
   "Low Proficient": [
-    { id: 4, title: "Intro Fractions", phonemic: "Low Proficient", dateToUse: "2024-06-04" },
+    { id: 4, title: "Intro Fractions", time: "11:00", date: "2024-06-04" },
   ],
   "Nearly Proficient": [
-    { id: 5, title: "Decimal Operations", phonemic: "Nearly Proficient", dateToUse: "2024-06-05" },
+    { id: 5, title: "Decimal Operations", time: "13:00", date: "2024-06-05" },
   ],
   Proficient: [
-    { id: 6, title: "Intro Algebra", phonemic: "Proficient", dateToUse: "2024-06-06" },
+    { id: 6, title: "Intro Algebra", time: "14:00", date: "2024-06-06" },
   ],
   "Highly Proficient": [
-    { id: 7, title: "Geometry Applications", phonemic: "Highly Proficient", dateToUse: "2024-06-07" },
+    { id: 7, title: "Geometry Applications", time: "15:00", date: "2024-06-07" },
   ],
 };
 
