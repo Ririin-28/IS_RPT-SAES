@@ -16,6 +16,7 @@ type ProfileFormState = {
   coordinatorGrade: string;
   coordinatorSubject: string;
   remedialGrade: string;
+  remedialSubjects: string;
   position: string;
   profilePicture: string;
 };
@@ -30,6 +31,7 @@ function createEmptyProfileState(): ProfileFormState {
     coordinatorGrade: "",
     coordinatorSubject: "",
     remedialGrade: "",
+    remedialSubjects: "",
     position: "Master Teacher",
     profilePicture: "",
   };
@@ -186,6 +188,7 @@ export default function MasterTeacherProfile() {
           coordinatorGrade: coordinatorProfile?.gradeLevel || profile.grade || "",
           coordinatorSubject: coordinatorProfile?.coordinatorSubject || profile.subjectHandled || "",
           remedialGrade: profile.gradeLabel || profile.grade || "",
+          remedialSubjects: profile.remedialSubjects ?? "",
           position: formatRoleLabel(derivedRole),
           profilePicture: "",
         };
@@ -359,6 +362,7 @@ export default function MasterTeacherProfile() {
   const coordinatorGradeDisplay = formatGradeLabel(formData.coordinatorGrade);
   const coordinatorSubjectDisplay = formatDisplay(formData.coordinatorSubject);
   const remedialGradeDisplay = formatGradeLabel(formData.remedialGrade);
+  const remedialSubjectsDisplay = formatDisplay(formData.remedialSubjects);
   const positionDisplay = formData.position || "Master Teacher";
 
   return (
@@ -531,7 +535,7 @@ export default function MasterTeacherProfile() {
                           <div className="space-y-1">
                             <label className="block text-sm font-medium text-gray-700">Remedial Teacher Subjects</label>
                             <div className="w-full bg-gray-100 border border-gray-200 text-gray-600 rounded-md px-3 py-2 text-sm">
-                              English, Filipino, Math
+                                {remedialSubjectsDisplay || "Not assigned"}
                             </div>
                           </div>
                         </div>

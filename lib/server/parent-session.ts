@@ -1,24 +1,12 @@
 import { createHash, randomBytes } from "crypto";
 import type { Connection, PoolConnection, RowDataPacket } from "mysql2/promise";
 import { cookies } from "next/headers";
-import { runWithConnection } from "@/lib/db";
+import { query } from "@/lib/db";
 
 const SESSION_COOKIE_NAME = "rpt_parent_session";
-const DEFAULT_TTL_SECONDS = 4 * 60 * 60;
+const SESSION_DURATION_HOURS = 24;
 
 let schemaPrepared = false;
-
-function resolveTtlSeconds(): number {
-  const raw = process.env.PARENT_SESSION_TTL;
-  if (!raw) {
-    return DEFAULT_TTL_SECONDS;
-  }
-  const parsed = Number(raw);
-  if (Number.isFinite(parsed) && parsed >= 600 && parsed <= 60 * 60 * 24 * 7) {
-    return Math.floor(parsed);
-  }
-  return DEFAULT_TTL_SECONDS;
-}
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -120,20 +108,15 @@ export async function createParentSession(
   await ensureParentSessionSchema(db);
   const token = randomBytes(48).toString("hex");
   const tokenHash = sha256(token);
-  const ttlSeconds = resolveTtlSeconds();
-
-  await db.execute(
-    "UPDATE parent_sessions SET revoked_at = NOW() WHERE user_id = ? AND revoked_at IS NULL",
-    [userId],
-  );
+  const expiresAt = new Date();
+  expiresAt.setHours(expiresAt.getHours() + SESSION_DURATION_HOURS);
 
   await db.execute(
     `INSERT INTO parent_sessions (user_id, token_hash, user_agent, created_at, last_active_at, expires_at)
-     VALUES (?, ?, ?, NOW(), NOW(), DATE_ADD(NOW(), INTERVAL ? SECOND))`,
-    [userId, tokenHash, sanitizeUserAgent(userAgent), ttlSeconds],
+     VALUES (?, ?, ?, NOW(), NOW(), ?)`,
+    [userId, tokenHash, sanitizeUserAgent(userAgent), expiresAt],
   );
 
-  const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
   return { token, expiresAt };
 }
 
@@ -166,10 +149,6 @@ export async function validateParentSession(
 
   const expiresAt = new Date(record.expires_at);
   if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
-    await db.execute(
-      "UPDATE parent_sessions SET revoked_at = NOW() WHERE session_id = ?",
-      [record.session_id],
-    );
     return null;
   }
 
@@ -219,5 +198,32 @@ export async function getParentSessionFromCookies(): Promise<ParentSessionRecord
     return null;
   }
 
-  return runWithConnection((connection) => validateParentSession(connection, cookie.value));
+  const tokenHash = sha256(cookie.value);
+  const [rows] = await query<ParentSessionRow[]>(
+    `
+    SELECT session_id, user_id, expires_at, revoked_at
+    FROM parent_sessions
+    WHERE token_hash = ?
+      AND revoked_at IS NULL
+      AND expires_at > NOW()
+    LIMIT 1
+    `,
+    [tokenHash],
+  );
+
+  if (!rows.length) {
+    return null;
+  }
+
+  const record = rows[0];
+  await query(
+    "UPDATE parent_sessions SET last_active_at = NOW() WHERE session_id = ?",
+    [record.session_id],
+  );
+
+  return {
+    sessionId: Number(record.session_id),
+    userId: Number(record.user_id),
+    expiresAt: new Date(record.expires_at),
+  };
 }

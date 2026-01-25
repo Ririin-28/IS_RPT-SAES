@@ -587,6 +587,13 @@ export default function MasterTeacherDashboard() {
       setGradeCountsError(null);
       try {
         const params = new URLSearchParams({ grade: gradeValue });
+        if (userId !== null) {
+          params.set("userId", String(userId));
+        }
+        const subjectValue = coordinatorProfile?.subjectAssigned?.trim();
+        if (subjectValue && subjectValue.toLowerCase() !== "not assigned") {
+          params.set("subject", subjectValue);
+        }
         const response = await fetch(`/api/master_teacher/coordinator/dashboard?${params.toString()}`, {
           cache: "no-store",
           signal: controller.signal,
@@ -620,7 +627,7 @@ export default function MasterTeacherDashboard() {
     loadGradeCounts();
 
     return () => controller.abort();
-  }, [coordinatorProfile?.gradeHandled]);
+  }, [coordinatorProfile?.gradeHandled, coordinatorProfile?.subjectAssigned, userId]);
 
   // Get today's date in simplified month format (same as Principal)
   const today = new Date();

@@ -1216,7 +1216,7 @@ export async function GET(request: NextRequest) {
     const normalizedGrade = normalizeGradeValue(grade);
     const allowedSubjectsRaw = deriveSubjectList(coordinatorSubject, subjects);
     const allowedSubjects = await mapSubjectTokensToNames(allowedSubjectsRaw);
-    const normalizedCoordinatorSubject = allowedSubjects[0] ?? coordinatorSubject ?? null;
+    const normalizedCoordinatorSubject = coordinatorSubject ?? allowedSubjects[0] ?? null;
     const coordinatorIdSet = new Set<string>();
     const pushCoordinatorId = (value: unknown) => {
       if (value === null || value === undefined) return;

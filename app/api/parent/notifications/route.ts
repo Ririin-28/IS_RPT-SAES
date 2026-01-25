@@ -125,7 +125,7 @@ const hashStringToInt = (input: string): number => {
 
 type NormalizedNotification = {
   id: number;
-  studentId: number;
+  studentId: string;
   subject: string;
   date: string;
   message: string;
@@ -294,7 +294,7 @@ const buildApprovedActivityNotifications = async (): Promise<NormalizedNotificat
 
     notifications.push({
       id: normalizedId,
-      studentId: 0,
+      studentId: "",
       subject: subject ?? title ?? "Approved Activity",
   date: scheduledStartIso ?? createdAtIso.slice(0, 10),
       message,
@@ -315,12 +315,12 @@ export async function GET(request: NextRequest) {
   const fromParam = url.searchParams.get("from");
   const toParam = url.searchParams.get("to");
 
-  const studentIds: number[] = [];
+  const studentIds: string[] = [];
   if (studentIdsParam) {
     for (const part of studentIdsParam.split(",")) {
-      const parsed = Number(part.trim());
-      if (Number.isFinite(parsed) && parsed > 0) {
-        studentIds.push(parsed);
+      const trimmed = part.trim();
+      if (trimmed) {
+        studentIds.push(trimmed);
       }
     }
   }
@@ -369,7 +369,7 @@ export async function GET(request: NextRequest) {
 
     return {
       id: Number(row.id),
-      studentId: Number(row.student_id),
+      studentId: String(row.student_id ?? "").trim(),
       subject: row.subject,
       date: fallbackDate,
       message: row.message,

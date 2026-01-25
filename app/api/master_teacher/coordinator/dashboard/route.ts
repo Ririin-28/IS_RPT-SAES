@@ -5,6 +5,9 @@ import { getTableColumns, query } from "@/lib/db";
 export const dynamic = "force-dynamic";
 
 const ROLE_FILTERS = ["teacher"] as const;
+const SUBJECT_TABLE_CANDIDATES = ["subject", "subjects"] as const;
+const MT_COORDINATOR_TABLE = "mt_coordinator_handled";
+const STUDENT_SUBJECT_ASSESSMENT_TABLE = "student_subject_assessment";
 
 const GRADE_WORD_TO_NUMBER: Record<string, number> = {
   one: 1,
@@ -71,6 +74,16 @@ async function safeGetColumns(table: string): Promise<Set<string>> {
   } catch {
     return new Set<string>();
   }
+}
+
+async function resolveSubjectTable(): Promise<{ table: string | null; columns: Set<string> }> {
+  for (const candidate of SUBJECT_TABLE_CANDIDATES) {
+    const columns = await safeGetColumns(candidate);
+    if (columns.size > 0) {
+      return { table: candidate, columns };
+    }
+  }
+  return { table: null, columns: new Set<string>() };
 }
 
 function extractGradeNumber(raw: string): number | null {
@@ -186,6 +199,20 @@ async function buildGradeContext(raw: string): Promise<GradeContext> {
   } satisfies GradeContext;
 }
 
+function buildGradeContextFromIds(gradeIds: number[]): GradeContext {
+  const normalized = gradeIds.filter((value) => Number.isFinite(value));
+  const primary = normalized.length ? normalized[0] : null;
+  const gradeValue = primary !== null ? `Grade ${primary}` : "";
+  const gradeNumber = primary !== null ? primary : null;
+  const gradeTerms = primary !== null ? buildGradeTerms(String(primary)) : [];
+  return {
+    gradeValue,
+    gradeNumber,
+    gradeTerms,
+    gradeIds: normalized,
+  } satisfies GradeContext;
+}
+
 function normalizeIdValue(value: unknown): string | null {
   if (value === null || value === undefined) {
     return null;
@@ -249,6 +276,173 @@ async function countStudentsByGrade(context: GradeContext): Promise<number> {
   const [rows] = await query<RowDataPacket[]>(sql, params);
   const totalRaw = rows?.[0]?.total ?? 0;
   return Number.isFinite(Number(totalRaw)) ? Number(totalRaw) : 0;
+}
+
+async function resolveSubjectIdsByName(subjectRaw: string): Promise<number[]> {
+  const trimmed = subjectRaw.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  const { table, columns } = await resolveSubjectTable();
+  if (!table || !columns.size || !columns.has("subject_id")) {
+    return [];
+  }
+
+  const nameColumn = columns.has("subject_name")
+    ? "subject_name"
+    : columns.has("name")
+      ? "name"
+      : null;
+
+  if (!nameColumn) {
+    return [];
+  }
+
+  const term = trimmed.toLowerCase();
+  const [rows] = await query<RowDataPacket[]>(
+    `SELECT DISTINCT subject_id FROM \`${table}\` WHERE LOWER(CAST(${nameColumn} AS CHAR)) = ? OR LOWER(CAST(${nameColumn} AS CHAR)) LIKE ?`,
+    [term, `%${term}%`],
+  );
+
+  return (rows ?? [])
+    .map((row) => Number(row.subject_id))
+    .filter((value): value is number => Number.isFinite(value));
+}
+
+async function countStudentsByGradeAndSubject(
+  context: GradeContext,
+  subjectIds: number[],
+): Promise<number> {
+  if (!subjectIds.length) {
+    return 0;
+  }
+
+  const [studentColumns, assessmentColumns] = await Promise.all([
+    safeGetColumns("student"),
+    safeGetColumns(STUDENT_SUBJECT_ASSESSMENT_TABLE),
+  ]);
+
+  if (!studentColumns.size || !assessmentColumns.size) {
+    return 0;
+  }
+
+  const studentIdColumn = studentColumns.has("student_id")
+    ? "student_id"
+    : studentColumns.has("id")
+      ? "id"
+      : null;
+
+  if (!studentIdColumn || !assessmentColumns.has("student_id") || !assessmentColumns.has("subject_id")) {
+    return 0;
+  }
+
+  const clauses: string[] = [];
+  const params: Array<string | number> = [];
+
+  clauses.push(`ssa.subject_id IN (${subjectIds.map(() => "?").join(", ")})`);
+  params.push(...subjectIds);
+
+  if (studentColumns.has("grade_id")) {
+    if (context.gradeIds.length) {
+      clauses.push(`s.grade_id IN (${context.gradeIds.map(() => "?").join(", ")})`);
+      params.push(...context.gradeIds);
+    } else if (context.gradeNumber !== null) {
+      clauses.push("s.grade_id = ?");
+      params.push(context.gradeNumber);
+    }
+  }
+
+  STUDENT_TEXT_GRADE_COLUMNS.forEach((column) => {
+    if (!studentColumns.has(column)) {
+      return;
+    }
+    applyTextColumnClauses(clauses, params, `s.${column}`, context);
+  });
+
+  if (!clauses.length) {
+    return 0;
+  }
+
+  const sql = `
+    SELECT COUNT(DISTINCT s.${studentIdColumn}) AS total
+    FROM \`${STUDENT_SUBJECT_ASSESSMENT_TABLE}\` ssa
+    JOIN \`student\` s ON s.${studentIdColumn} = ssa.student_id
+    WHERE ${clauses.map((clause) => `(${clause})`).join(" AND ")}
+  `;
+
+  const [rows] = await query<RowDataPacket[]>(sql, params);
+  const totalRaw = rows?.[0]?.total ?? 0;
+  return Number.isFinite(Number(totalRaw)) ? Number(totalRaw) : 0;
+}
+
+async function countStudentsByHandledPairs(
+  pairs: Array<{ gradeId: number; subjectId: number }>,
+): Promise<number> {
+  if (!pairs.length) {
+    return 0;
+  }
+
+  const [studentColumns, assessmentColumns] = await Promise.all([
+    safeGetColumns("student"),
+    safeGetColumns(STUDENT_SUBJECT_ASSESSMENT_TABLE),
+  ]);
+
+  if (!studentColumns.size || !assessmentColumns.size) {
+    return 0;
+  }
+
+  const studentIdColumn = studentColumns.has("student_id")
+    ? "student_id"
+    : studentColumns.has("id")
+      ? "id"
+      : null;
+
+  if (!studentIdColumn || !studentColumns.has("grade_id") || !assessmentColumns.has("student_id") || !assessmentColumns.has("subject_id")) {
+    return 0;
+  }
+
+  const clauses: string[] = [];
+  const params: Array<string | number> = [];
+
+  pairs.forEach((pair) => {
+    clauses.push("(ssa.subject_id = ? AND s.grade_id = ?)");
+    params.push(pair.subjectId, pair.gradeId);
+  });
+
+  const sql = `
+    SELECT COUNT(DISTINCT s.${studentIdColumn}) AS total
+    FROM \`${STUDENT_SUBJECT_ASSESSMENT_TABLE}\` ssa
+    JOIN \`student\` s ON s.${studentIdColumn} = ssa.student_id
+    WHERE ${clauses.join(" OR ")}
+  `;
+
+  const [rows] = await query<RowDataPacket[]>(sql, params);
+  const totalRaw = rows?.[0]?.total ?? 0;
+  return Number.isFinite(Number(totalRaw)) ? Number(totalRaw) : 0;
+}
+
+async function loadHandledPairs(masterTeacherId: string): Promise<Array<{ gradeId: number; subjectId: number }>> {
+  if (!masterTeacherId.trim()) {
+    return [];
+  }
+
+  const columns = await safeGetColumns(MT_COORDINATOR_TABLE);
+  if (!columns.size || !columns.has("master_teacher_id") || !columns.has("grade_id") || !columns.has("subject_id")) {
+    return [];
+  }
+
+  const [rows] = await query<RowDataPacket[]>(
+    `SELECT DISTINCT grade_id, subject_id FROM \`${MT_COORDINATOR_TABLE}\` WHERE master_teacher_id = ?`,
+    [masterTeacherId],
+  );
+
+  return (rows ?? [])
+    .map((row) => ({
+      gradeId: Number(row.grade_id),
+      subjectId: Number(row.subject_id),
+    }))
+    .filter((row) => Number.isFinite(row.gradeId) && Number.isFinite(row.subjectId));
 }
 
 async function buildUserRoleFilter(columns: Set<string>): Promise<{ sql: string | null; params: Array<string | number> }>
@@ -453,18 +647,46 @@ export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
     const gradeParam = url.searchParams.get("grade");
-    if (!gradeParam || !gradeParam.trim()) {
-      return NextResponse.json(
-        { success: false, error: "Grade parameter is required." },
-        { status: 400 },
-      );
+    const subjectParam = url.searchParams.get("subject");
+    const userIdParam = url.searchParams.get("userId");
+
+    let context: GradeContext | null = null;
+    if (gradeParam && gradeParam.trim()) {
+      context = await buildGradeContext(gradeParam);
     }
 
-    const context = await buildGradeContext(gradeParam);
-    const [studentTotal, teacherIdentifiers] = await Promise.all([
-      countStudentsByGrade(context),
-      collectTeacherIds(context),
-    ]);
+    const handledPairs = userIdParam ? await loadHandledPairs(String(userIdParam)) : [];
+
+    let studentTotal = 0;
+    let teacherIdentifiers = new Set<string>();
+
+    if (handledPairs.length > 0) {
+      studentTotal = await countStudentsByHandledPairs(handledPairs);
+      const gradeIds = Array.from(new Set(handledPairs.map((pair) => pair.gradeId)));
+      const gradeContext = gradeIds.length ? buildGradeContextFromIds(gradeIds) : context;
+      if (gradeContext) {
+        teacherIdentifiers = await collectTeacherIds(gradeContext);
+        context = gradeContext;
+      }
+    } else {
+      if (!context) {
+        return NextResponse.json(
+          { success: false, error: "Grade parameter is required." },
+          { status: 400 },
+        );
+      }
+
+      if (!subjectParam || !subjectParam.trim()) {
+        return NextResponse.json(
+          { success: false, error: "Subject parameter is required." },
+          { status: 400 },
+        );
+      }
+
+      const subjectIds = await resolveSubjectIdsByName(subjectParam);
+      studentTotal = await countStudentsByGradeAndSubject(context, subjectIds);
+      teacherIdentifiers = await collectTeacherIds(context);
+    }
 
     return NextResponse.json({
       success: true,
@@ -473,8 +695,8 @@ export async function GET(req: NextRequest) {
         teachers: teacherIdentifiers.size,
       },
       metadata: {
-        grade: context.gradeValue,
-        matchedGradeIds: context.gradeIds,
+        grade: context?.gradeValue ?? null,
+        matchedGradeIds: context?.gradeIds ?? [],
       },
     });
   } catch (error) {

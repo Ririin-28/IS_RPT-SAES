@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
-import { query } from "@/lib/db";
+import { getTableColumns, query } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -18,34 +18,43 @@ type ParentRow = RowDataPacket & {
   relationship: string | null;
 };
 
-type StudentRow = RowDataPacket & {
+type ChildRow = RowDataPacket & {
   student_id: string | number;
-  user_id: number;
-  grade: string | null;
+  relationship: string | null;
+  grade_id: number | null;
   section: string | null;
-  english: string | null;
-  filipino: string | null;
-  math: string | null;
   first_name: string | null;
   middle_name: string | null;
   last_name: string | null;
 };
 
-type AttendanceRow = RowDataPacket & {
+type StudentRow = {
+  student_id: string | number;
+  grade_id: number | null;
+  section: string | null;
+  first_name: string | null;
+  middle_name: string | null;
+  last_name: string | null;
+};
+
+type AttendanceRowDb = RowDataPacket & {
   date: string | Date | null;
   subject: string | null;
-  present: string | null;
+  status: string | null;
 };
 
-type SubjectScheduleRow = RowDataPacket & {
-  monday_subject: string | null;
-  tuesday_subject: string | null;
-  wednesday_subject: string | null;
-  thursday_subject: string | null;
-  friday_subject: string | null;
+type AttendanceRow = {
+  date: string | Date | null;
+  subject: string | null;
+  status: string | null;
 };
 
-type TimeScheduleRow = RowDataPacket & Record<string, string | null>;
+type WeeklyScheduleRow = RowDataPacket & {
+  day_of_week: string | null;
+  subject_id: number | null;
+  start_time: string | null;
+  end_time: string | null;
+};
 
 type AttendanceRecord = {
   date: string;
@@ -67,18 +76,7 @@ type ScheduleEntry = {
   timeRange: string | null;
 };
 
-const ATTENDANCE_TABLES = [
-  "sept_attendance",
-  "oct_attendance",
-] as const;
-
-function parseGradeNumber(raw: string | null): number | null {
-  if (!raw) return null;
-  const match = raw.match(/(\d+)/);
-  if (!match) return null;
-  const parsed = Number(match[1]);
-  return Number.isFinite(parsed) ? parsed : null;
-}
+const SUBJECT_TABLE_CANDIDATES = ["subject", "subjects"] as const;
 
 function formatTimeValue(value: string | null | undefined): string | null {
   if (!value) return null;
@@ -94,54 +92,9 @@ function formatTimeValue(value: string | null | undefined): string | null {
   return trimmed;
 }
 
-function listAvailableGradeKeys(timeRow: TimeScheduleRow): number[] {
-  const grades = new Set<number>();
-  for (const key of Object.keys(timeRow)) {
-    const match = key.match(/^gr(\d+)_starttime$/i);
-    if (!match) continue;
-    const gradeNumber = Number(match[1]);
-    if (Number.isFinite(gradeNumber)) {
-      grades.add(gradeNumber);
-    }
-  }
-  return [...grades].sort((a, b) => a - b);
-}
-
-function resolveGradeKey(timeRow: TimeScheduleRow, grade: string | null): number | null {
-  const availableGrades = listAvailableGradeKeys(timeRow);
-  if (availableGrades.length === 0) {
-    return null;
-  }
-
-  const gradeNumber = parseGradeNumber(grade);
-  if (!gradeNumber) {
-    return availableGrades[0];
-  }
-
-  if (availableGrades.includes(gradeNumber)) {
-    return gradeNumber;
-  }
-
-  // Try to find the closest lower grade, otherwise fall back to the smallest defined grade.
-  for (let candidate = gradeNumber - 1; candidate >= 1; candidate -= 1) {
-    if (availableGrades.includes(candidate)) {
-      return candidate;
-    }
-  }
-
-  return availableGrades[0];
-}
-
-function buildTimeRange(timeRow: TimeScheduleRow | undefined, grade: string | null): string | null {
-  if (!timeRow) return null;
-  const resolvedGrade = resolveGradeKey(timeRow, grade);
-  if (!resolvedGrade) return null;
-
-  const startKey = `gr${resolvedGrade}_starttime`;
-  const endKey = `gr${resolvedGrade}_endtime`;
-  const start = formatTimeValue(timeRow[startKey]);
-  const end = formatTimeValue(timeRow[endKey]);
-
+function buildTimeRange(startTime: string | null, endTime: string | null): string | null {
+  const start = formatTimeValue(startTime);
+  const end = formatTimeValue(endTime);
   if (start && end) {
     return `${start} - ${end}`;
   }
@@ -151,7 +104,10 @@ function buildTimeRange(timeRow: TimeScheduleRow | undefined, grade: string | nu
 function normalizeDate(value: string | Date | null): string | null {
   if (!value) return null;
   if (value instanceof Date) {
-    return value.toISOString().slice(0, 10);
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
   }
   const trimmed = value.trim();
   if (!trimmed) return null;
@@ -171,7 +127,8 @@ function mapAttendance(rows: AttendanceRow[]): AttendanceSummary {
   for (const row of rows) {
     const date = normalizeDate(row.date);
     if (!date) continue;
-    const present = String(row.present ?? "").toLowerCase() === "yes";
+    const status = String(row.status ?? "").toLowerCase();
+    const present = status !== "absent" && status !== "";
     records.push({
       date,
       subject: row.subject,
@@ -193,41 +150,106 @@ function mapAttendance(rows: AttendanceRow[]): AttendanceSummary {
   };
 }
 
-function extractSubjects(student: StudentRow): string[] {
-  const subjects: string[] = [];
-  if (String(student.english ?? "").toLowerCase() === "yes") {
-    subjects.push("English");
+function dedupeAttendanceByDate(rows: AttendanceRow[]): AttendanceRow[] {
+  const priority: Record<string, number> = {
+    absent: 4,
+    late: 3,
+    excused: 2,
+    present: 1,
+  };
+
+  const map = new Map<string, { status: string; subjects: Set<string> }>();
+
+  for (const row of rows) {
+    const date = normalizeDate(row.date);
+    if (!date) continue;
+    const status = String(row.status ?? "").toLowerCase();
+    const subject = row.subject ?? null;
+    const current = map.get(date);
+    if (!current) {
+      const subjects = new Set<string>();
+      if (subject) subjects.add(subject);
+      map.set(date, { status, subjects });
+      continue;
+    }
+    if (subject) current.subjects.add(subject);
+    const currentScore = priority[current.status] ?? 0;
+    const nextScore = priority[status] ?? 0;
+    if (nextScore > currentScore) {
+      current.status = status;
+    }
   }
-  if (String(student.filipino ?? "").toLowerCase() === "yes") {
-    subjects.push("Filipino");
+
+  const records: AttendanceRow[] = [];
+  for (const [date, value] of map.entries()) {
+    let subject: string | null = null;
+    if (value.subjects.size === 1) {
+      subject = Array.from(value.subjects)[0];
+    } else if (value.subjects.size > 1) {
+      subject = "Multiple Subjects";
+    }
+    records.push({ date, subject, status: value.status });
   }
-  if (String(student.math ?? "").toLowerCase() === "yes") {
-    subjects.push("Math");
-  }
-  return subjects;
+
+  records.sort((a, b) => {
+    const left = normalizeDate(a.date) ?? "";
+    const right = normalizeDate(b.date) ?? "";
+    return left.localeCompare(right);
+  });
+
+  return records;
 }
 
-function buildSchedule(
-  scheduleRow: SubjectScheduleRow | undefined,
-  timeRow: TimeScheduleRow | undefined,
-  grade: string | null,
-): ScheduleEntry[] {
-  if (!scheduleRow) return [];
-  const timeRange = buildTimeRange(timeRow, grade);
+function buildSchedule(rows: WeeklyScheduleRow[], subjectMap: Map<number, string>): ScheduleEntry[] {
   const entries: ScheduleEntry[] = [];
 
-  for (const { key, label } of SCHEDULE_DAYS) {
-    const subject = scheduleRow[key];
+  for (const row of rows) {
+    const day = row.day_of_week ? String(row.day_of_week) : "";
+    if (!day) continue;
+    const subjectId = row.subject_id ?? null;
+    const subject = subjectId && subjectMap.has(subjectId)
+      ? subjectMap.get(subjectId)!
+      : subjectId
+      ? `Subject ${subjectId}`
+      : "";
     if (!subject) continue;
-    entries.push({ day: label, subject, timeRange });
+    const timeRange = buildTimeRange(row.start_time ?? null, row.end_time ?? null);
+    entries.push({ day, subject, timeRange });
   }
 
   return entries;
 }
 
+async function fetchSubjectMap(): Promise<Map<number, string>> {
+  for (const table of SUBJECT_TABLE_CANDIDATES) {
+    try {
+      const columns = await getTableColumns(table);
+      const idCol = columns.has("subject_id") ? "subject_id" : columns.has("id") ? "id" : null;
+      const nameCol = columns.has("subject_name") ? "subject_name" : columns.has("name") ? "name" : null;
+      if (!idCol || !nameCol) continue;
+      const [rows] = await query<RowDataPacket[]>(
+        `SELECT ${idCol} AS subject_id, ${nameCol} AS subject_name FROM ${table}`,
+      );
+      const map = new Map<number, string>();
+      for (const row of rows) {
+        const id = Number(row.subject_id);
+        const name = typeof row.subject_name === "string" ? row.subject_name.trim() : "";
+        if (Number.isFinite(id) && name) {
+          map.set(id, name);
+        }
+      }
+      return map;
+    } catch {
+      continue;
+    }
+  }
+  return new Map<number, string>();
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const userIdParam = url.searchParams.get("userId");
+  const selectedStudentIdParam = url.searchParams.get("studentId");
 
   if (!userIdParam) {
     return NextResponse.json({ error: "Missing userId query parameter" }, { status: 400 });
@@ -240,7 +262,7 @@ export async function GET(request: Request) {
 
   try {
     const [parentRows] = await query<ParentRow[]>(
-      `SELECT parent_id, student_id, relationship FROM parent WHERE user_id = ? LIMIT 1`,
+      `SELECT parent_id FROM parent WHERE user_id = ? LIMIT 1`,
       [userId],
     );
 
@@ -250,65 +272,94 @@ export async function GET(request: Request) {
 
     const parent = parentRows[0];
 
-    const [studentRows] = await query<StudentRow[]>(
-      `SELECT s.student_id, s.user_id, s.grade, s.section, s.english, s.filipino, s.math,
-              u.first_name, u.middle_name, u.last_name
-       FROM student s
-       JOIN users u ON u.user_id = s.user_id
-       WHERE s.student_id = ?
-       LIMIT 1`,
-      [parent.student_id],
+    const [childRows] = await query<ChildRow[]>(
+      `SELECT ps.student_id, ps.relationship, s.grade_id, s.section,
+              s.first_name, s.middle_name, s.last_name
+       FROM parent_student ps
+       JOIN student s ON s.student_id = ps.student_id
+       WHERE ps.parent_id = ?
+       ORDER BY ps.parent_student_id ASC`,
+      [parent.parent_id],
     );
 
-    if (studentRows.length === 0) {
+    if (childRows.length === 0) {
       return NextResponse.json({ error: "Student profile not found" }, { status: 404 });
     }
 
-    const student = studentRows[0];
+    const normalizedSelectedId = selectedStudentIdParam ? selectedStudentIdParam.trim() : "";
+    const selectedChild = normalizedSelectedId
+      ? childRows.find((child) => String(child.student_id) === normalizedSelectedId)
+      : childRows[0];
 
-    const attendanceChunks: AttendanceRow[] = [];
-    for (const table of ATTENDANCE_TABLES) {
-      const [rows] = await query<AttendanceRow[]>(
-        `SELECT date, subject, present FROM ${table} WHERE student_id = ?`,
-        [student.student_id],
-      );
-      attendanceChunks.push(...rows);
+    if (!selectedChild) {
+      return NextResponse.json({ error: "Student profile not found" }, { status: 404 });
     }
-    attendanceChunks.sort((a, b) => {
-      const left = normalizeDate(a.date) ?? "";
-      const right = normalizeDate(b.date) ?? "";
-      return left.localeCompare(right);
-    });
-    const attendance = mapAttendance(attendanceChunks);
 
-    const [scheduleRows] = await query<SubjectScheduleRow[]>(
-      `SELECT monday_subject, tuesday_subject, wednesday_subject, thursday_subject, friday_subject
-       FROM subject_schedule
-       LIMIT 1`,
+    const student: StudentRow = {
+      student_id: selectedChild.student_id,
+      grade_id: selectedChild.grade_id,
+      section: selectedChild.section,
+      first_name: selectedChild.first_name,
+      middle_name: selectedChild.middle_name,
+      last_name: selectedChild.last_name,
+    };
+
+    const subjectMap = await fetchSubjectMap();
+
+    const [attendanceRows] = await query<AttendanceRowDb[]>(
+      `SELECT sess.session_date AS date, sess.subject_id AS subject_id, ar.status AS status
+       FROM attendance_record ar
+       JOIN attendance_session sess ON sess.session_id = ar.session_id
+       WHERE ar.student_id = ?
+       ORDER BY sess.session_date ASC`,
+      [student.student_id],
     );
 
-    const [timeRows] = await query<TimeScheduleRow[]>(
-      `SELECT * FROM time_schedule LIMIT 1`,
+    const attendance = mapAttendance(
+      dedupeAttendanceByDate(
+        attendanceRows.map((row) => ({
+          date: row.date,
+          status: row.status,
+          subject: row.subject_id
+            ? subjectMap.get(Number(row.subject_id)) ?? `Subject ${row.subject_id}`
+            : null,
+        })) as AttendanceRow[],
+      ),
     );
 
-    const schedule = buildSchedule(scheduleRows[0], timeRows[0], student.grade);
+    const [scheduleRows] = await query<WeeklyScheduleRow[]>(
+      `SELECT day_of_week, subject_id, start_time, end_time
+       FROM weekly_subject_schedule`,
+    );
 
-    const subjects = extractSubjects(student);
+    const schedule = buildSchedule(scheduleRows, subjectMap);
+
+    const subjects = [] as string[];
 
     return NextResponse.json({
       parent: {
         parentId: parent.parent_id,
-        relationship: parent.relationship,
+        relationship: selectedChild.relationship,
       },
+      children: childRows.map((child) => ({
+        studentId: String(child.student_id),
+        userId: 0,
+        firstName: child.first_name ?? "",
+        middleName: child.middle_name,
+        lastName: child.last_name ?? "",
+        grade: child.grade_id != null ? `Grade ${child.grade_id}` : null,
+        section: child.section,
+        relationship: child.relationship,
+        subjects: [],
+      })),
       child: {
-        studentId: student.student_id,
-        userId: student.user_id,
+        studentId: String(student.student_id),
         firstName: student.first_name ?? "",
         middleName: student.middle_name,
         lastName: student.last_name ?? "",
-        grade: student.grade,
+        grade: student.grade_id != null ? `Grade ${student.grade_id}` : null,
         section: student.section,
-        relationship: parent.relationship,
+        relationship: selectedChild.relationship,
         subjects,
       },
       attendance,
