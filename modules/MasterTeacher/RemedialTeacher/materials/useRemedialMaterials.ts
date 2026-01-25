@@ -5,7 +5,7 @@ import type { MaterialDto, MaterialFileDto, MaterialStatus } from "@/lib/materia
 import { MATERIAL_SUBJECTS, type MaterialSubject } from "@/lib/materials/shared";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 
-export type TeacherMaterialListItem = {
+export type RemedialMaterialListItem = {
   id: number;
   title: string;
   status: MaterialStatus;
@@ -29,19 +29,15 @@ type UploadedFileDescriptor = {
 };
 
 const parseUserId = (value: unknown): number | null => {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return Math.floor(value);
-  }
+  if (typeof value === "number" && Number.isFinite(value)) return Math.floor(value);
   if (typeof value === "string") {
     const parsed = Number.parseInt(value, 10);
-    if (Number.isFinite(parsed)) {
-      return parsed;
-    }
+    return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
 };
 
-const mapMaterial = (material: MaterialDto): TeacherMaterialListItem => {
+const mapMaterial = (material: MaterialDto): RemedialMaterialListItem => {
   return {
     id: material.id,
     title: material.title,
@@ -60,7 +56,7 @@ const formatSubject = (subject: string): MaterialSubject => {
   return found ?? "English";
 };
 
-export type UseTeacherMaterialsOptions = {
+export type UseRemedialMaterialsOptions = {
   subject: string;
   level: string;
 };
@@ -70,9 +66,9 @@ export type UploadMaterialsOptions = {
   activityDate?: string | null;
 };
 
-export type UseTeacherMaterialsResult = {
+export type UseRemedialMaterialsResult = {
   teacherUserId: number | null;
-  materials: TeacherMaterialListItem[];
+  materials: RemedialMaterialListItem[];
   loading: boolean;
   uploading: boolean;
   deleting: boolean;
@@ -82,9 +78,9 @@ export type UseTeacherMaterialsResult = {
   deleteMaterials: (materialIds: number[]) => Promise<void>;
 };
 
-export function useTeacherMaterials({ subject, level }: UseTeacherMaterialsOptions): UseTeacherMaterialsResult {
+export function useRemedialMaterials({ subject, level }: UseRemedialMaterialsOptions): UseRemedialMaterialsResult {
   const [teacherUserId, setTeacherUserId] = useState<number | null>(null);
-  const [materials, setMaterials] = useState<TeacherMaterialListItem[]>([]);
+  const [materials, setMaterials] = useState<RemedialMaterialListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -100,9 +96,7 @@ export function useTeacherMaterials({ subject, level }: UseTeacherMaterialsOptio
   }, []);
 
   const fetchMaterials = useCallback(async () => {
-    if (!teacherUserId) {
-      return;
-    }
+    if (!teacherUserId) return;
     setLoading(true);
     setError(null);
     try {
@@ -112,17 +106,13 @@ export function useTeacherMaterials({ subject, level }: UseTeacherMaterialsOptio
         teacherUserId: String(teacherUserId),
         pageSize: "100",
       });
-      const response = await fetch(`/api/materials?${params.toString()}`, {
-        cache: "no-store",
-      });
-      if (!response.ok) {
-        throw new Error(`Failed to load materials (${response.status})`);
-      }
+      const response = await fetch(`/api/materials?${params.toString()}`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`Failed to load materials (${response.status})`);
       const data = await response.json();
       const list = Array.isArray(data?.data) ? (data.data as MaterialDto[]) : [];
       setMaterials(list.map(mapMaterial));
     } catch (err) {
-      console.error("Failed to fetch teacher materials", err);
+      console.error("Failed to fetch remedial materials", err);
       setError("Unable to load materials. Please try again later.");
     } finally {
       setLoading(false);
@@ -166,19 +156,13 @@ export function useTeacherMaterials({ subject, level }: UseTeacherMaterialsOptio
         const uploadedFiles: UploadedFileDescriptor[] = Array.isArray(uploadResult?.files)
           ? (uploadResult.files as UploadedFileDescriptor[])
           : [];
-        if (!uploadedFiles.length) {
-          throw new Error("Files could not be saved");
-        }
+        if (!uploadedFiles.length) throw new Error("Files could not be saved");
 
         for (const uploaded of uploadedFiles) {
-          const displayTitle = [options?.titlePrefix, uploaded.fileName || "Untitled Material"]
-            .filter(Boolean)
-            .join(" - ");
+          const displayTitle = [options?.titlePrefix, uploaded.fileName || "Untitled Material"].filter(Boolean).join(" - ");
           const response = await fetch("/api/materials", {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               teacherUserId,
               subject: normalizedSubject,
@@ -224,9 +208,7 @@ export function useTeacherMaterials({ subject, level }: UseTeacherMaterialsOptio
           materialIds.map(async (materialId) => {
             const response = await fetch(`/api/materials/${materialId}`, {
               method: "DELETE",
-              headers: {
-                "Content-Type": "application/json",
-              },
+              headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ teacherUserId }),
             });
             if (!response.ok) {

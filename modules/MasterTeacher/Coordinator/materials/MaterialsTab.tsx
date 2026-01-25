@@ -1,201 +1,100 @@
 "use client";
 
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useState } from "react";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
-import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
-import TableList from "@/components/Common/Tables/TableList";
-import KebabMenu from "@/components/Common/Menus/KebabMenu";
-import { useCoordinatorMaterials } from "@/modules/MasterTeacher/Coordinator/materials/useCoordinatorMaterials";
+import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
+import { useCoordinatorMaterials, type CoordinatorMaterialRow } from "@/modules/MasterTeacher/Coordinator/materials/useCoordinatorMaterials";
 import type { MaterialStatus } from "@/lib/materials/shared";
 import RejectConfirmationModal from "./RejectConfirmationModal";
-
-type MaterialItem = {
-  id: number;
-  title: string;
-  dateAttached: string;
-  domain?: string;
-  status?: MaterialStatus;
-  rejectionReason?: string | null;
-  submittedBy?: string;
-  attachmentUrl?: string | null;
-  files?: Array<{ publicUrl?: string | null }>; 
-  [key: string]: unknown;
-};
-
-type TableColumn = {
-  key: string;
-  title: string;
-  render?: (row: any) => ReactNode;
-};
 
 type MaterialTabContentProps = {
   subject: string;
   category: string;
-  columns?: TableColumn[];
+  columns?: { key: string; title: string }[];
+  requestId?: string | number | null;
 };
 
 export default function MaterialTabContent({
   subject,
   category,
-  columns,
+  requestId,
 }: MaterialTabContentProps) {
-  const { materials, loading, updating, error, approveMaterial, rejectMaterial } = useCoordinatorMaterials({
+  const { materials, loading, updating, error, approveMaterial, rejectMaterial, refresh } = useCoordinatorMaterials({
     subject,
     level: category,
+    requestId,
   });
 
   const [showRejectModal, setShowRejectModal] = useState(false);
-  const [pendingRejectRow, setPendingRejectRow] = useState<(MaterialItem & { no: number }) | null>(null);
+  const [pendingRejectRow, setPendingRejectRow] = useState<CoordinatorMaterialRow | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [rejectReasonError, setRejectReasonError] = useState<string | null>(null);
-  const [selectMode, setSelectMode] = useState(false);
-  const [selectedMaterials, setSelectedMaterials] = useState<Set<number>>(new Set());
-  const [selectAction, setSelectAction] = useState<"approve" | "reject" | null>(null);
+  const [bulkProcessing, setBulkProcessing] = useState(false);
 
-  const formatDate = useCallback(
-    (value: string) => {
-      const parsed = new Date(value);
-      return Number.isNaN(parsed.getTime())
-        ? value
-        : parsed.toLocaleDateString("en-PH", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-          });
-    },
-    [],
-  );
+  const formatDate = useCallback((value: string) => {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return { month: "??", day: "??", year: "??", weekday: "??", date: parsed };
+    return {
+      month: parsed.toLocaleDateString("en-PH", { month: "short" }),
+      day: parsed.toLocaleDateString("en-PH", { day: "numeric" }),
+      year: parsed.getFullYear(),
+      weekday: parsed.toLocaleDateString("en-PH", { weekday: "short" }),
+      date: parsed
+    };
+  }, []);
 
-  const buildStatusBadge = useCallback((status: MaterialStatus, rejectionReason: string | null) => {
-    const baseClass = "inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold";
-    switch (status) {
+  const buildStatusBadge = (status: MaterialStatus, rejectionReason: string | null) => {
+    const baseClass = "inline-flex items-center px-2 py-0.5 rounded text-[0.6rem] font-bold uppercase tracking-wider";
+    const displayStatus = status.charAt(0).toUpperCase() + status.slice(1);
+    switch (status.toLowerCase()) {
       case "approved":
-        return <span className={`${baseClass} bg-green-100 text-green-700`}>Approved</span>;
+        return <span className={`${baseClass} bg-green-100 text-green-700`}>{displayStatus}</span>;
       case "rejected":
         return (
           <span className={`${baseClass} bg-red-100 text-red-700`} title={rejectionReason ?? undefined}>
-            Rejected
+            {displayStatus}
           </span>
         );
       default:
-        return <span className={`${baseClass} bg-yellow-100 text-yellow-700`}>Pending</span>;
+        return <span className={`${baseClass} bg-yellow-100 text-yellow-700`}>{displayStatus}</span>;
     }
-  }, []);
+  };
 
-  const tableColumns: TableColumn[] = useMemo(() => {
-    const base: TableColumn[] = (columns ?? [
-      { key: "no", title: "No#" },
-      { key: "title", title: "Title" },
-      { key: "dateAttached", title: "Date Submitted" },
-    ]).map((column) => {
-      if (column.key === "dateAttached") {
-        return {
-          ...column,
-          render: (row: any) => formatDate(row.dateAttached),
-        } satisfies TableColumn;
+  const handleApprove = async (material: CoordinatorMaterialRow) => {
+    if (updating || bulkProcessing) return;
+    setBulkProcessing(true);
+    try {
+      const otherPending = materials.filter(
+        (m) => m.id !== material.id && m.status.toLowerCase() === "pending",
+      );
+
+      await approveMaterial(material, { skipRefresh: otherPending.length > 0 });
+
+      if (otherPending.length) {
+        const reason = "Another material was approved for this activity.";
+        await Promise.all(
+          otherPending.map((m, index) =>
+            rejectMaterial(m, reason, { skipRefresh: index < otherPending.length - 1 }),
+          ),
+        );
       }
-      if (column.key === "domain") {
-        return {
-          ...column,
-          render: (row: any) => row.domain ?? "-",
-        } satisfies TableColumn;
-      }
-      return column;
-    });
 
-    base.push({ key: "submittedBy", title: "Submitted By" });
-    base.push({
-      key: "status",
-      title: "Status",
-      render: (row: any) => buildStatusBadge(row.status as MaterialStatus, row.rejectionReason ?? null),
-    });
-
-    return base;
-  }, [columns, buildStatusBadge, formatDate]);
-
-  const tableData = useMemo(
-    () =>
-      materials.map((material, index) => ({
-        id: material.id,
-        no: index + 1,
-        title: material.title,
-        dateAttached: material.createdAt,
-        domain: material.level,
-        submittedBy: material.teacherName,
-        status: material.status,
-        rejectionReason: material.rejectionReason,
-        attachmentUrl: material.attachmentUrl,
-        files: material.files,
-      })),
-    [materials],
-  );
-
-  const handleApprove = async (row: any) => {
-    await approveMaterial(row.id);
-  };
-
-  const handleSelectMaterial = (id: number, checked: boolean) => {
-    const newSelected = new Set(selectedMaterials);
-    if (checked) {
-      newSelected.add(id);
-    } else {
-      newSelected.delete(id);
-    }
-    setSelectedMaterials(newSelected);
-  };
-
-  const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      const pendingIds = tableData.filter(m => m.status === "pending").map(m => m.id);
-      setSelectedMaterials(new Set(pendingIds));
-    } else {
-      setSelectedMaterials(new Set());
+      await refresh();
+    } finally {
+      setBulkProcessing(false);
     }
   };
 
-  const handleEnterSelectMode = (action: "approve" | "reject") => {
-    setSelectMode(true);
-    setSelectAction(action);
-    setSelectedMaterials(new Set());
-  };
-
-  const handleCancelSelect = () => {
-    setSelectMode(false);
-    setSelectAction(null);
-    setSelectedMaterials(new Set());
-  };
-
-  const handleApproveSelected = async () => {
-    if (selectedMaterials.size === 0) return;
-    for (const id of Array.from(selectedMaterials)) {
-      await approveMaterial(id);
-    }
-    handleCancelSelect();
-  };
-
-  const handleRejectSelected = () => {
-    if (selectedMaterials.size === 0) return;
-    const firstSelected = tableData.find(m => selectedMaterials.has(m.id));
-    if (firstSelected) {
-      setPendingRejectRow(firstSelected);
-      setRejectReason("");
-      setRejectReasonError(null);
-      setShowRejectModal(true);
-    }
-  };
-
-  const openRejectModal = (row: MaterialItem & { no: number }) => {
-    setPendingRejectRow(row);
-    setRejectReason(row.rejectionReason ?? "");
+  const openRejectModal = (material: CoordinatorMaterialRow) => {
+    setPendingRejectRow(material);
+    setRejectReason(material.rejectionReason ?? "");
     setRejectReasonError(null);
     setShowRejectModal(true);
   };
 
   const handleRejectCancel = () => {
-    if (updating) {
-      return;
-    }
+    if (updating) return;
     setShowRejectModal(false);
     setPendingRejectRow(null);
     setRejectReason("");
@@ -203,152 +102,171 @@ export default function MaterialTabContent({
   };
 
   const handleRejectConfirm = async () => {
-    if (updating || !pendingRejectRow) {
-      return;
-    }
+    if (updating || !pendingRejectRow) return;
     const normalizedReason = rejectReason.trim();
     if (normalizedReason.length === 0) {
       setRejectReasonError("Rejection reason is required.");
       return;
     }
-
     setRejectReasonError(null);
-    
-    if (selectMode && selectedMaterials.size > 0) {
-      for (const id of Array.from(selectedMaterials)) {
-        await rejectMaterial(id, normalizedReason);
-      }
-      handleCancelSelect();
-    } else {
-      await rejectMaterial(pendingRejectRow.id, normalizedReason);
-    }
-    
+    await rejectMaterial(pendingRejectRow, normalizedReason);
     setShowRejectModal(false);
     setPendingRejectRow(null);
     setRejectReason("");
   };
 
-  const handleRejectReasonChange = (value: string) => {
-    if (rejectReasonError) {
-      setRejectReasonError(null);
+  const handleOpenMaterial = (material: CoordinatorMaterialRow) => {
+    const targetUrl = material.attachmentUrl || (material.files && material.files[0]?.publicUrl);
+    if (!targetUrl || typeof window === "undefined") return;
+    
+    const fileUrl = targetUrl.startsWith('/') ? targetUrl : `/${targetUrl}`;
+    const absoluteUrl = `${window.location.origin}${fileUrl}`;
+    
+    // Check if it's an Office file to use Google Viewer
+    const isOfficeFile = /\.(docx|doc|pptx|ppt|xlsx|xls)$/i.test(targetUrl);
+    
+    if (isOfficeFile) {
+      window.open(`https://docs.google.com/viewer?url=${encodeURIComponent(absoluteUrl)}&embedded=true`, '_blank');
+    } else {
+      window.open(fileUrl, '_blank');
     }
-    setRejectReason(value);
   };
 
-  const handleOpenMaterial = (row: any) => {
-    const targetUrl = row.attachmentUrl || row.files?.[0]?.publicUrl;
-    if (!targetUrl || typeof window === "undefined") return;
-    const url = targetUrl.startsWith("http")
-      ? targetUrl
-      : `${window.location.origin}${targetUrl.startsWith("/") ? "" : "/"}${targetUrl}`;
-    window.open(url, "_blank", "noopener");
-  };
+  const groupedMaterials = useMemo(() => {
+    const groups: Record<string, CoordinatorMaterialRow[]> = {};
+    materials.forEach((m) => {
+      const level = m.level || "Uncategorized";
+      if (!groups[level]) groups[level] = [];
+      groups[level].push(m);
+    });
+    return groups;
+  }, [materials]);
+
+  if (loading) {
+    return (
+      <div className="p-8 text-center text-gray-400 font-medium animate-pulse flex flex-col items-center gap-2">
+        <div className="w-8 h-8 border-4 border-[#013300] border-t-transparent rounded-full animate-spin" />
+        Loading materials...
+      </div>
+    );
+  }
+
+  if (materials.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 text-center border-2 border-dashed border-gray-100 rounded-2xl bg-gray-50/50">
+        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+          <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+        </div>
+        <p className="text-gray-500 font-bold text-lg">No Materials for Review</p>
+        <p className="text-gray-400 text-sm mt-1 max-w-xs">
+          There are currently no submitted materials in this category.
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div>
-      <div
-        className="
-        /* Mobile */
-        flex flex-row justify-between items-center mb-4
-        /* Tablet */
-        sm:mb-6
-        /* Desktop */
-        md:mb-2
-      "
-      >
-        <div className="flex flex-col gap-1">
-          <p className="text-gray-600 text-md font-medium">
-            Total: {materials.length}
-            {loading && <span className="ml-2 text-xs text-gray-400">Loading...</span>}
-          </p>
-          {error && <span className="text-sm text-red-600">{error}</span>}
-        </div>
-        
-        <div className="flex items-center gap-2">
-          {selectMode ? (
-            <>
-              <SecondaryButton small onClick={handleCancelSelect}>
-                Cancel
-              </SecondaryButton>
-              {selectedMaterials.size > 0 && (
-                <>
-                  {selectAction === "approve" && (
-                    <UtilityButton small onClick={handleApproveSelected} disabled={updating}>
-                      Approve ({selectedMaterials.size})
-                    </UtilityButton>
-                  )}
-                  {selectAction === "reject" && (
-                    <DangerButton small onClick={handleRejectSelected} disabled={updating}>
-                      Reject ({selectedMaterials.size})
-                    </DangerButton>
-                  )}
-                </>
-              )}
-            </>
-          ) : (
-            <KebabMenu
-              small
-              align="right"
-              renderItems={(close) => (
-                <div className="py-1">
-                  <button
-                    disabled={updating}
-                    onClick={() => {
-                      if (updating) return;
-                      handleEnterSelectMode("approve");
-                      close();
-                    }}
-                    className={`w-full px-4 py-2 text-left text-sm text-[#013300] flex items-center gap-2 ${updating ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50"}`}
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                    Approve
-                  </button>
-                  <button
-                    disabled={updating}
-                    onClick={() => {
-                      if (updating) return;
-                      handleEnterSelectMode("reject");
-                      close();
-                    }}
-                    className={`w-full px-4 py-2 text-left text-sm text-red-600 flex items-center gap-2 ${updating ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50"}`}
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                    Reject
-                  </button>
-                </div>
-              )}
-            />
-          )}
-        </div>
+    <div className="space-y-8">
+      <div className="flex justify-between items-center mb-2">
+        <p className="text-md font-black text-[#013300]/50 uppercase tracking-[0.2em]">
+          SUBMISSIONS ({materials.length})
+        </p>
+        {error && <span className="text-xs text-red-600 font-medium">{error}</span>}
       </div>
-      <TableList
-        columns={tableColumns}
-        data={tableData}
-        actions={(row: MaterialItem & { no: number }) => (
-          <UtilityButton small onClick={() => handleOpenMaterial(row)}>
-            Open
-          </UtilityButton>
-        )}
-        selectable={selectMode}
-        selectedItems={selectedMaterials}
-        onSelectAll={handleSelectAll}
-        onSelectItem={handleSelectMaterial}
-        pageSize={10}
-      />
+
+      <div className="flex flex-col gap-10">
+        {Object.entries(groupedMaterials).map(([level, items]) => (
+          <div key={level} className="space-y-4">
+            {/* Level Separator */}
+            <div className="flex items-center gap-4">
+                <span className="text-sm font-black text-[#013300] uppercase tracking-[0.3em] whitespace-nowrap">
+                    {level}
+                </span>
+                <div className="h-[1px] flex-1 bg-gray-100" />
+            </div>
+
+            <div className="flex flex-col gap-3">
+                {items.map((material) => {
+                const dateInfo = formatDate(material.createdAt);
+                return (
+                    <div
+                    key={material.id}
+                    className="group flex flex-row items-center justify-between w-full bg-white border border-gray-100 rounded-xl p-4 hover:shadow-md hover:border-[#013300]/20 transition-all duration-300"
+                    >
+                    <div className="flex items-center gap-4 min-w-0">
+                        {/* Date Box */}
+                        <div className="flex-shrink-0 flex flex-col items-center justify-center w-12 h-14 bg-gray-50 text-gray-500 rounded-lg border border-gray-100">
+                        <span className="text-[0.6rem] font-bold uppercase tracking-wide leading-none">{dateInfo.month}</span>
+                        <span className="text-lg font-black leading-none mt-1 text-[#013300]">{dateInfo.day}</span>
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 mb-1.5">
+                            {buildStatusBadge(material.status, material.rejectionReason)}
+                            <span className="text-[0.65rem] font-bold text-gray-300 uppercase tracking-tighter">
+                            {dateInfo.year}
+                            </span>
+                        </div>
+                        
+                        <h4 className="text-base font-black text-[#013300] truncate leading-tight">
+                            {material.title}
+                        </h4>
+                        <div className="flex flex-wrap items-center gap-3 mt-1 text-[0.7rem] text-gray-500">
+                            <span className="inline-flex items-center gap-1">
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                            </svg>
+                            Submitted by: <span className="font-bold text-gray-700">{material.teacherName}</span>
+                            </span>
+                        </div>
+                        </div>
+                    </div>
+
+                    <div className="ml-4 flex-shrink-0 flex items-center gap-2">
+                        <UtilityButton small onClick={() => handleOpenMaterial(material)} className="!px-4 !py-1.5 font-bold">
+                        View
+                        </UtilityButton>
+                        
+                        {material.status.toLowerCase() === "pending" && (
+                        <div className="flex items-center gap-2 border-l border-gray-100 pl-2">
+                            <PrimaryButton 
+                            small 
+                            onClick={() => handleApprove(material)} 
+                            disabled={updating || bulkProcessing}
+                            className="!px-4 !py-1.5 font-bold"
+                            >
+                            Approve
+                            </PrimaryButton>
+                            <DangerButton 
+                            small 
+                            onClick={() => openRejectModal(material)} 
+                            disabled={updating || bulkProcessing}
+                            className="!px-4 !py-1.5 font-bold"
+                            >
+                            Reject
+                            </DangerButton>
+                        </div>
+                        )}
+                    </div>
+                    </div>
+                );
+                })}
+            </div>
+          </div>
+        ))}
+      </div>
 
       <RejectConfirmationModal
         show={showRejectModal}
         onClose={handleRejectCancel}
         onConfirm={handleRejectConfirm}
         reason={rejectReason}
-        onReasonChange={handleRejectReasonChange}
+        onReasonChange={setRejectReason}
         isProcessing={updating}
         errorMessage={rejectReasonError}
-        materialTitle={selectMode && selectedMaterials.size > 1 ? `${selectedMaterials.size} materials` : pendingRejectRow?.title}
+        materialTitle={pendingRejectRow?.title}
       />
     </div>
   );
