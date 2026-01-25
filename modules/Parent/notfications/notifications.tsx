@@ -10,7 +10,7 @@ import { getStoredUserProfile } from "@/lib/utils/user-profile";
 
 type ParentNotification = {
   id: number;
-  studentId: number;
+  studentId: string;
   subject: string;
   date: string;
   message: string;
@@ -30,11 +30,92 @@ const formatDisplayDate = (input: string) => {
   });
 };
 
+const TAGALOG_WEEKDAYS = [
+  "Linggo",
+  "Lunes",
+  "Martes",
+  "Miyerkules",
+  "Huwebes",
+  "Biyernes",
+  "Sabado",
+];
+
+const formatAbsentDate = (input: string, locale: "en" | "tl") => {
+  const date = new Date(input);
+  if (Number.isNaN(date.getTime())) {
+    return input;
+  }
+  const weekday = locale === "tl"
+    ? TAGALOG_WEEKDAYS[date.getDay()]
+    : date.toLocaleDateString("en-US", { weekday: "long" });
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const year = date.getFullYear();
+  return `${weekday}, ${month}-${day}-${year}`;
+};
+
+const isAbsentNotification = (message: string) =>
+  message.toLowerCase().startsWith("dear parent, your child was marked absent on");
+
+const buildAbsentMessage = (date: string, locale: "en" | "tl") => {
+  const dateLabel = formatAbsentDate(date, locale);
+  if (locale === "tl") {
+    return `Mahal na Magulang, ang inyong anak ay minarkahang absent noong ${dateLabel}.`;
+  }
+  return `Dear Parent, your child was marked absent on ${dateLabel}.`;
+};
+
 export default function ParentNotifications() {
   const profile = useMemo(() => getStoredUserProfile(), []);
   const [notifications, setNotifications] = useState<ParentNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [translated, setTranslated] = useState<Record<number, boolean>>({});
+
+  const resolveUserId = useMemo(() => {
+    const rawUserId = profile?.userId;
+    if (typeof rawUserId === "number" && Number.isFinite(rawUserId)) {
+      return rawUserId;
+    }
+    if (typeof rawUserId === "string" && rawUserId.trim()) {
+      const parsed = Number(rawUserId.trim());
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
+  }, [profile?.userId]);
+
+  const resolveParentStudentIds = useMemo(() => {
+    return async (userId: number, signal: AbortSignal) => {
+      const response = await fetch(`/api/parent/dashboard?userId=${encodeURIComponent(String(userId))}`, {
+        method: "GET",
+        cache: "no-store",
+        signal,
+      });
+
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload) {
+        throw new Error(payload?.error ?? "Failed to resolve parent students.");
+      }
+
+      const ids = new Set<string>();
+      const addId = (value: unknown) => {
+        if (value === null || value === undefined) return;
+        const text = String(value).trim();
+        if (text) ids.add(text);
+      };
+
+      if (Array.isArray(payload.children)) {
+        payload.children.forEach((child: any) => {
+          addId(child.studentId ?? child.student_id ?? child.id);
+        });
+      }
+      if (payload.child) {
+        addId(payload.child.studentId ?? payload.child.student_id ?? payload.child.id);
+      }
+
+      return Array.from(ids);
+    };
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -46,15 +127,16 @@ export default function ParentNotifications() {
 
       try {
         const params = new URLSearchParams();
-        const rawStudentId = profile?.userId;
-        if (typeof rawStudentId === "number" && Number.isFinite(rawStudentId) && rawStudentId > 0) {
-          params.set("studentIds", String(rawStudentId));
-        } else if (typeof rawStudentId === "string" && rawStudentId.trim()) {
-          const parsed = Number(rawStudentId.trim());
-          if (Number.isFinite(parsed) && parsed > 0) {
-            params.set("studentIds", String(parsed));
-          }
+        if (!resolveUserId) {
+          throw new Error("Unable to determine the signed-in parent. Please sign in again.");
         }
+
+        const studentIds = await resolveParentStudentIds(resolveUserId, controller.signal);
+        if (studentIds.length === 0) {
+          throw new Error("No linked students were found for this parent.");
+        }
+
+        params.set("studentIds", studentIds.join(","));
 
         const query = params.toString();
         const response = await fetch(query ? `/api/parent/notifications?${query}` : "/api/parent/notifications", {
@@ -76,7 +158,7 @@ export default function ParentNotifications() {
         setNotifications(
           payload.notifications.map((notification: any) => ({
             id: Number(notification.id),
-            studentId: Number(notification.studentId ?? notification.student_id ?? 0) || 0,
+            studentId: String(notification.studentId ?? notification.student_id ?? "").trim(),
             subject: notification.subject ?? "",
             date: notification.date ?? notification.createdAt ?? "",
             message: notification.message ?? "",
@@ -104,7 +186,7 @@ export default function ParentNotifications() {
       isCancelled = true;
       controller.abort();
     };
-  }, [profile?.userId]);
+  }, [resolveParentStudentIds, resolveUserId]);
 
   const handleSubmitReason = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -144,19 +226,44 @@ export default function ParentNotifications() {
                         : "bg-white border-gray-200"
                     }`}
                   >
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                      <TertiaryHeader title={formatDisplayDate(note.date)} />
-                      <span
-                        className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium uppercase tracking-wide ${
-                          note.status === "unread"
-                            ? "bg-green-600 text-white"
-                            : "bg-gray-200 text-gray-700"
-                        }`}
-                      >
-                        {note.status}
-                      </span>
-                    </div>
-                    <div className="text-green-900 font-semibold">{note.message}</div>
+                    {(() => {
+                      const showTranslation = isAbsentNotification(note.message);
+                      const isTranslated = translated[note.id] ?? false;
+                      const displayMessage = showTranslation
+                        ? buildAbsentMessage(note.date, isTranslated ? "tl" : "en")
+                        : note.message;
+                      return (
+                        <>
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                            <TertiaryHeader title={formatDisplayDate(note.date)} />
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium uppercase tracking-wide ${
+                                note.status === "unread"
+                                  ? "bg-green-600 text-white"
+                                  : "bg-gray-200 text-gray-700"
+                              }`}
+                            >
+                              {note.status}
+                            </span>
+                          </div>
+                          <div className="text-green-900 font-semibold">{displayMessage}</div>
+                          {showTranslation && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setTranslated((prev) => ({
+                                  ...prev,
+                                  [note.id]: !prev[note.id],
+                                }))
+                              }
+                              className="self-start text-xs font-semibold text-green-700 hover:text-green-900 underline"
+                            >
+                              {isTranslated ? "Show English" : "Translate to Tagalog"}
+                            </button>
+                          )}
+                        </>
+                      );
+                    })()}
                     <div className="text-sm text-gray-500">
                       Subject: <span className="font-medium text-gray-700">{note.subject}</span>
                     </div>

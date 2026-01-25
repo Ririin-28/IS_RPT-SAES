@@ -128,6 +128,56 @@ const formatAbsentDate = (iso: string): string => {
   return `${weekday}, ${month}-${day}-${year}`;
 };
 
+type StudentNameRow = RowDataPacket & {
+  student_id: string | number;
+  first_name?: string | null;
+  middle_name?: string | null;
+  last_name?: string | null;
+  suffix?: string | null;
+};
+
+const buildStudentName = (row: StudentNameRow | undefined): string => {
+  if (!row) return "";
+  const parts = [row.first_name, row.middle_name, row.last_name, row.suffix]
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter(Boolean);
+  return parts.join(" ").trim();
+};
+
+const buildParentAbsentMessage = (_studentName: string, iso: string): string => {
+  const dateLabel = formatAbsentDate(iso);
+  return `Dear Parent, your child was marked absent on ${dateLabel}.`;
+};
+
+const loadStudentNameMap = async (
+  connection: import("mysql2/promise").PoolConnection,
+  studentIds: string[],
+): Promise<Map<string, string>> => {
+  const map = new Map<string, string>();
+  const uniqueIds = Array.from(new Set(studentIds.filter(Boolean)));
+  if (uniqueIds.length === 0) {
+    return map;
+  }
+
+  const [rows] = await connection.query<StudentNameRow[]>(
+    `SELECT student_id, first_name, middle_name, last_name, suffix
+     FROM student
+     WHERE student_id IN (${uniqueIds.map(() => "?").join(",")})`,
+    uniqueIds,
+  );
+
+  for (const row of rows) {
+    const id = row.student_id ? String(row.student_id).trim() : "";
+    if (!id) continue;
+    const name = buildStudentName(row);
+    if (name) {
+      map.set(id, name);
+    }
+  }
+
+  return map;
+};
+
 const normalizeEntries = async (entries: unknown): Promise<NormalizedEntry[]> => {
   if (!Array.isArray(entries)) return [];
 
@@ -460,6 +510,10 @@ export async function PUT(request: NextRequest) {
   await runWithConnection(async (connection) => {
     await connection.beginTransaction();
     try {
+      const studentNameMap = await loadStudentNameMap(
+        connection,
+        entries.map((entry) => entry.studentId),
+      );
       for (const entry of entries) {
         if (!isAllowedDate(entry.date, allowedMonths, allowedWeekdays)) {
           skippedNotAllowed += 1;
@@ -543,7 +597,8 @@ export async function PUT(request: NextRequest) {
           );
 
           if (entry.present === "No") {
-            const message = `Dear Parent, your child is marked absent for '${formatAbsentDate(entry.date)}'.`;
+            const studentName = studentNameMap.get(entry.studentId) ?? "";
+            const message = buildParentAbsentMessage(studentName, entry.date);
             await connection.query(
               `INSERT INTO ${PARENT_NOTIFICATIONS_TABLE} (student_id, subject, date, message, status)
                VALUES (?, ?, ?, ?, 'unread')

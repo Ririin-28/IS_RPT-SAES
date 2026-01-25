@@ -1,5 +1,5 @@
 "use client";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import { clearStoredUserProfile, storeUserProfile } from "@/lib/utils/user-profile";
 
@@ -26,10 +26,17 @@ function redirectParentToLogin(router: AppRouterInstance) {
 
 export default function ParentSessionGuard({ children }: ParentSessionGuardProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const redirectingRef = useRef(false);
 
   useEffect(() => {
     let active = true;
+
+    if (pathname === "/Parent/welcome") {
+      return () => {
+        active = false;
+      };
+    }
 
     const redirectToLogin = () => {
       if (!active || redirectingRef.current) {
@@ -129,10 +136,13 @@ export default function ParentSessionGuard({ children }: ParentSessionGuardProps
       window.removeEventListener("pageshow", handlePageShow);
       window.removeEventListener("popstate", handlePopState);
     };
-  }, [router]);
+  }, [pathname, router]);
 
   useLayoutEffect(() => {
     if (typeof window === "undefined") {
+      return;
+    }
+    if (pathname === "/Parent/welcome") {
       return;
     }
     try {
@@ -143,7 +153,7 @@ export default function ParentSessionGuard({ children }: ParentSessionGuardProps
     } catch (error) {
       // Ignore storage access issues to avoid blocking render.
     }
-  }, [router]);
+  }, [pathname, router]);
 
   return <>{children}</>;
 }

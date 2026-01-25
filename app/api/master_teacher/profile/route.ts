@@ -6,6 +6,9 @@ export const dynamic = "force-dynamic";
 
 const REMEDIAL_HANDLED_TABLE = "mt_remedialteacher_handled" as const;
 const COORDINATOR_TABLE = "mt_coordinator" as const;
+const COORDINATOR_HANDLED_TABLE = "mt_coordinator_handled" as const;
+const SUBJECT_TABLE = "subject" as const;
+const STUDENT_TEACHER_ASSIGNMENT_TABLE = "student_teacher_assignment" as const;
 
 const COORDINATOR_SUBJECT_COLUMNS = [
   { column: "subject_handled", alias: "mc_subject_handled" },
@@ -219,6 +222,221 @@ async function loadRemedialHandled(masterTeacherIds: Array<string | number>): Pr
   }
 }
 
+async function loadCoordinatorHandledSubject(
+  masterTeacherIds: Array<string | number>,
+): Promise<string | null> {
+  const ids = masterTeacherIds
+    .map((id) => {
+      if (id === null || id === undefined) return null;
+      const text = String(id).trim();
+      return text.length ? text : null;
+    })
+    .filter((id): id is string => Boolean(id));
+
+  if (ids.length === 0) {
+    return null;
+  }
+
+  try {
+    const handledColumns = await safeGetColumns(COORDINATOR_HANDLED_TABLE);
+    const tableExists = handledColumns.size > 0 || await safeTableExists(COORDINATOR_HANDLED_TABLE);
+    if (!tableExists || (handledColumns.size > 0 && !handledColumns.has("master_teacher_id"))) {
+      return null;
+    }
+
+    const subjectColumns = await safeGetColumns(SUBJECT_TABLE);
+    const subjectNameColumn = subjectColumns.has("subject_name")
+      ? "subject_name"
+      : subjectColumns.has("name")
+        ? "name"
+        : null;
+
+    const selectParts = ["mch.subject_id AS subject_id"];
+    if (subjectNameColumn) {
+      selectParts.push(`s.${subjectNameColumn} AS subject_name`);
+    }
+
+    const joinClause = subjectNameColumn ? `LEFT JOIN ${SUBJECT_TABLE} s ON s.subject_id = mch.subject_id` : "";
+
+    const [rows] = await query<RowDataPacket[]>(
+      `SELECT ${selectParts.join(", ")}
+       FROM ${COORDINATOR_HANDLED_TABLE} mch
+       ${joinClause}
+       WHERE mch.master_teacher_id IN (${ids.map(() => "?").join(", ")})
+       LIMIT 1`,
+      ids,
+    );
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return null;
+    }
+
+    const row = rows[0];
+    if (row.subject_name != null) {
+      const name = String(row.subject_name).trim();
+      return name.length ? name : null;
+    }
+    if (row.subject_id != null) {
+      return `Subject ${row.subject_id}`;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+async function loadRemedialSubjectsFromAssignments(
+  masterTeacherIds: Array<string | number>,
+): Promise<string[]> {
+  const ids = masterTeacherIds
+    .map((id) => {
+      if (id === null || id === undefined) return null;
+      const text = String(id).trim();
+      return text.length ? text : null;
+    })
+    .filter((id): id is string => Boolean(id));
+
+  if (ids.length === 0) {
+    return [];
+  }
+
+  try {
+    const assignmentColumns = await safeGetColumns(STUDENT_TEACHER_ASSIGNMENT_TABLE);
+    const tableExists = assignmentColumns.size > 0 || await safeTableExists(STUDENT_TEACHER_ASSIGNMENT_TABLE);
+    if (!tableExists || (assignmentColumns.size > 0 && !assignmentColumns.has("teacher_id"))) {
+      return [];
+    }
+
+    const subjectColumns = await safeGetColumns(SUBJECT_TABLE);
+    const subjectNameColumn = subjectColumns.has("subject_name")
+      ? "subject_name"
+      : subjectColumns.has("name")
+        ? "name"
+        : null;
+
+    const selectParts = ["sta.subject_id AS subject_id"];
+    if (subjectNameColumn) {
+      selectParts.push(`s.${subjectNameColumn} AS subject_name`);
+    }
+
+    const joinClause = subjectNameColumn ? `LEFT JOIN ${SUBJECT_TABLE} s ON s.subject_id = sta.subject_id` : "";
+    const whereClauses = [
+      `sta.teacher_id IN (${ids.map(() => "?").join(", ")})`,
+    ];
+    const params: Array<string | number> = [...ids];
+
+    if (assignmentColumns.has("assigned_role")) {
+      whereClauses.push("sta.assigned_role = ?");
+      params.push("REMEDIAL");
+    }
+
+    if (assignmentColumns.has("is_active")) {
+      whereClauses.push("sta.is_active = 1");
+    }
+
+    const [rows] = await query<RowDataPacket[]>(
+      `SELECT DISTINCT ${selectParts.join(", ")}
+       FROM ${STUDENT_TEACHER_ASSIGNMENT_TABLE} sta
+       ${joinClause}
+       WHERE ${whereClauses.join(" AND ")}`,
+      params,
+    );
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return [];
+    }
+
+    const subjects: string[] = [];
+    for (const row of rows) {
+      if (row.subject_name != null) {
+        const name = String(row.subject_name).trim();
+        if (name.length && !subjects.includes(name)) {
+          subjects.push(name);
+        }
+      } else if (row.subject_id != null) {
+        const subjectId = `Subject ${row.subject_id}`;
+        if (!subjects.includes(subjectId)) {
+          subjects.push(subjectId);
+        }
+      }
+    }
+
+    return subjects;
+  } catch {
+    return [];
+  }
+}
+
+async function loadAllCoordinatorSubjects(
+  masterTeacherIds: Array<string | number>,
+): Promise<string[]> {
+  const ids = masterTeacherIds
+    .map((id) => {
+      if (id === null || id === undefined) return null;
+      const text = String(id).trim();
+      return text.length ? text : null;
+    })
+    .filter((id): id is string => Boolean(id));
+
+  if (ids.length === 0) {
+    return [];
+  }
+
+  try {
+    const handledColumns = await safeGetColumns(COORDINATOR_HANDLED_TABLE);
+    const tableExists = handledColumns.size > 0 || await safeTableExists(COORDINATOR_HANDLED_TABLE);
+    if (!tableExists || (handledColumns.size > 0 && !handledColumns.has("master_teacher_id"))) {
+      return [];
+    }
+
+    const subjectColumns = await safeGetColumns(SUBJECT_TABLE);
+    const subjectNameColumn = subjectColumns.has("subject_name")
+      ? "subject_name"
+      : subjectColumns.has("name")
+        ? "name"
+        : null;
+
+    const selectParts = ["mch.subject_id AS subject_id"];
+    if (subjectNameColumn) {
+      selectParts.push(`s.${subjectNameColumn} AS subject_name`);
+    }
+
+    const joinClause = subjectNameColumn ? `LEFT JOIN ${SUBJECT_TABLE} s ON s.subject_id = mch.subject_id` : "";
+
+    const [rows] = await query<RowDataPacket[]>(
+      `SELECT ${selectParts.join(", ")}
+       FROM ${COORDINATOR_HANDLED_TABLE} mch
+       ${joinClause}
+       WHERE mch.master_teacher_id IN (${ids.map(() => "?").join(", ")})`,
+      ids,
+    );
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return [];
+    }
+
+    const subjects: string[] = [];
+    for (const row of rows) {
+      if (row.subject_name != null) {
+        const name = String(row.subject_name).trim();
+        if (name.length && !subjects.includes(name)) {
+          subjects.push(name);
+        }
+      } else if (row.subject_id != null) {
+        const subjectId = `Subject ${row.subject_id}`;
+        if (!subjects.includes(subjectId)) {
+          subjects.push(subjectId);
+        }
+      }
+    }
+
+    return subjects;
+  } catch {
+    return [];
+  }
+}
+
 export async function PUT(request: NextRequest) {
   const url = new URL(request.url);
   const userIdParam = url.searchParams.get("userId");
@@ -402,6 +620,9 @@ export async function GET(request: NextRequest) {
     masterTeacherIds.forEach((id) => handledIds.push(id));
 
     const handled = await loadRemedialHandled(handledIds);
+    const coordinatorHandledSubject = await loadCoordinatorHandledSubject(handledIds);
+    const allCoordinatorSubjects = await loadAllCoordinatorSubjects(handledIds);
+    const remedialSubjects = await loadRemedialSubjectsFromAssignments(handledIds);
 
     const firstName = pickFirst(row.user_first_name);
     const middleName = pickFirst(row.user_middle_name);
@@ -416,14 +637,18 @@ export async function GET(request: NextRequest) {
 
     const room = null;
 
-    const subjectHandled = pickFirst(
-      row.mc_subject_handled,
-      row.mc_coordinator_subject,
-      row.mc_coordinator_subject_handled,
-      row.mc_subject,
-      row.mc_subjects,
-      row.mc_handled_subjects,
-    ) ?? "English, Filipino, Math";
+    const subjectHandled =
+      allCoordinatorSubjects.length > 0
+        ? allCoordinatorSubjects.join(", ")
+        : pickFirst(
+            coordinatorHandledSubject,
+            row.mc_subject_handled,
+            row.mc_coordinator_subject,
+            row.mc_coordinator_subject_handled,
+            row.mc_subject,
+            row.mc_subjects,
+            row.mc_handled_subjects,
+          );
 
     return NextResponse.json({
       success: true,
@@ -440,6 +665,7 @@ export async function GET(request: NextRequest) {
         gradeLabel: grade,
         room,
         subjectHandled,
+        remedialSubjects: remedialSubjects.length > 0 ? remedialSubjects.join(", ") : null,
         role: pickFirst(row.user_role),
       },
     });

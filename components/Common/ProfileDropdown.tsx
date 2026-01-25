@@ -16,15 +16,32 @@ type RoleSwitchOption = {
   onSelect: () => void;
 };
 
+type ChildSwitchOption = {
+  id: string;
+  label: string;
+};
+
 interface ProfileDropdownProps {
   email?: string;
   name?: string;
   onProfile?: () => void;
   onLogout?: () => void;
   roleOptions?: RoleSwitchOption[];
+  childOptions?: ChildSwitchOption[];
+  selectedChildId?: string | null;
+  onChildSelect?: (childId: string) => void;
 }
 
-export default function ProfileDropdown({ email, name, onProfile, onLogout, roleOptions }: ProfileDropdownProps) {
+export default function ProfileDropdown({
+  email,
+  name,
+  onProfile,
+  onLogout,
+  roleOptions,
+  childOptions,
+  selectedChildId,
+  onChildSelect,
+}: ProfileDropdownProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [storedProfile, setStoredProfile] = React.useState<StoredUserProfile | null>(() => getStoredUserProfile());
@@ -209,6 +226,36 @@ export default function ProfileDropdown({ email, name, onProfile, onLogout, role
                   )}
                 </button>
               ))}
+            </div>
+          </div>
+        </>
+      )}
+      {childOptions && childOptions.length > 1 && (
+        <>
+          <hr className="w-full my-2 border-gray-300" />
+          <div className="w-full">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Switch Child</p>
+            <div className="flex flex-col gap-2">
+              {childOptions.map((child) => {
+                const isActive = (selectedChildId ?? childOptions[0]?.id) === child.id;
+                return (
+                  <button
+                    key={child.id}
+                    type="button"
+                    onClick={() => onChildSelect?.(child.id)}
+                    className={`w-full text-left px-3 py-2 rounded-lg border transition-all duration-150 ${
+                      isActive
+                        ? "bg-[#013300] text-white border-[#013300] shadow"
+                        : "border-transparent text-[#013300] hover:bg-green-50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">{child.label}</span>
+                      {isActive && <span className="text-xs font-semibold uppercase">Active</span>}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </>

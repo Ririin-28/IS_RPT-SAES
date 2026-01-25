@@ -9,6 +9,17 @@ import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 
 const SUPPORTED_SUBJECTS = ["English", "Filipino", "Math"] as const;
 
+function formatChildName(firstName: string, middleName?: string | null, lastName?: string | null) {
+  const safeFirst = typeof firstName === "string" ? firstName.trim() : "";
+  const safeLast = typeof lastName === "string" ? lastName.trim() : "";
+  const middleInitial = typeof middleName === "string" && middleName.trim().length > 0
+    ? `${middleName.trim()[0].toUpperCase()}.`
+    : "";
+
+  const fullName = [safeFirst, middleInitial, safeLast].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+  return fullName.length > 0 ? fullName : "Student";
+}
+
 function OverviewCard({
   value,
   label,
@@ -122,7 +133,7 @@ type SubjectProgress = {
 };
 
 type ChildProfile = {
-  studentId: number;
+  studentId: string;
   userId: number;
   firstName: string;
   middleName: string | null;
@@ -148,46 +159,84 @@ type ParentInfo = {
 
 type ParentDashboardResponse = {
   parent: ParentInfo;
+  children: ChildProfile[];
   child: ChildProfile;
   attendance: AttendanceSummary;
   schedule: ScheduleEntry[];
 };
 
+type ParentDashboardState = {
+  isLoading: boolean;
+  error: string | null;
+  parent: ParentInfo | null;
+  child: ChildProfile | null;
+  children: ChildProfile[];
+  attendance: AttendanceSummary | null;
+  schedule: ScheduleEntry[];
+};
+
+type NotificationType = {
+  id: string;
+  title: string;
+  message: string;
+  date: string;
+  isRead: boolean;
+  childName: string;
+};
+
 function AttendanceCalendar({ attendanceRecords, attendanceRate }: AttendanceCalendarProps) {
+  const parseRecordDate = useCallback((value: string | null | undefined) => {
+    if (!value) return null;
+    const candidate = value.includes("T") ? new Date(value) : new Date(`${value}T00:00:00`);
+    return Number.isNaN(candidate.getTime()) ? null : candidate;
+  }, []);
+
   const latestDate = useMemo(() => {
+    const fallback = new Date();
     if (attendanceRecords.length === 0) {
-      return new Date();
+      return fallback;
     }
-    const last = attendanceRecords[attendanceRecords.length - 1]?.date;
-    const candidate = last ? new Date(`${last}T00:00:00`) : null;
-    return candidate && !Number.isNaN(candidate.getTime()) ? candidate : new Date();
-  }, [attendanceRecords]);
+
+    let latest: Date | null = null;
+    for (const record of attendanceRecords) {
+      const parsed = parseRecordDate(record.date);
+      if (!parsed) continue;
+      if (!latest || parsed.getTime() > latest.getTime()) {
+        latest = parsed;
+      }
+    }
+
+    return latest ?? fallback;
+  }, [attendanceRecords, parseRecordDate]);
 
   const [currentMonth, setCurrentMonth] = useState<number>(latestDate.getMonth());
   const [currentYear, setCurrentYear] = useState<number>(latestDate.getFullYear());
 
   useEffect(() => {
-    const refreshedLatest = attendanceRecords.length > 0 ? attendanceRecords[attendanceRecords.length - 1]?.date : null;
-    if (!refreshedLatest) return;
-    const parsed = new Date(`${refreshedLatest}T00:00:00`);
-    if (Number.isNaN(parsed.getTime())) return;
-    setCurrentMonth(parsed.getMonth());
-    setCurrentYear(parsed.getFullYear());
-  }, [attendanceRecords]);
+    if (attendanceRecords.length === 0) return;
+    setCurrentMonth(latestDate.getMonth());
+    setCurrentYear(latestDate.getFullYear());
+  }, [attendanceRecords, latestDate]);
 
   const attendanceByDate = useMemo(() => {
-    const map = new Map<string, { total: number; present: number }>();
+    const map = new Map<string, { hasRecord: boolean; present: boolean }>();
     for (const record of attendanceRecords) {
-      const key = record.date.slice(0, 10);
-      const current = map.get(key) ?? { total: 0, present: 0 };
-      current.total += 1;
-      if (record.present) {
-        current.present += 1;
+      const parsed = parseRecordDate(record.date);
+      if (!parsed) continue;
+      const key = `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(
+        parsed.getDate(),
+      ).padStart(2, "0")}`;
+      const current = map.get(key);
+      if (!current) {
+        map.set(key, { hasRecord: true, present: record.present });
+        continue;
       }
-      map.set(key, current);
+      // If any record is absent, mark the day as absent
+      current.present = current.present && record.present;
+      current.hasRecord = true;
     }
     return map;
-  }, [attendanceRecords]);
+  }, [attendanceRecords, parseRecordDate]);
 
   const months = [
     "January",
@@ -239,17 +288,13 @@ function AttendanceCalendar({ attendanceRecords, attendanceRate }: AttendanceCal
     const today = new Date();
     const isToday = today.getFullYear() === currentYear && today.getMonth() === currentMonth && today.getDate() === day;
 
-    let statusClass = "bg-green-50 text-green-900";
-    if (isWeekend) {
+    let statusClass = "bg-gray-50 text-gray-400"; // default: no record
+    if (summary?.hasRecord) {
+      statusClass = summary.present
+        ? "bg-green-100 text-green-800 border border-green-200"
+        : "bg-red-100 text-red-800 border border-red-200";
+    } else if (isWeekend) {
       statusClass = "bg-gray-50 text-gray-400";
-    } else if (summary) {
-      if (summary.present === summary.total) {
-        statusClass = "bg-green-100 text-green-800 border border-green-200";
-      } else if (summary.present === 0) {
-        statusClass = "bg-red-100 text-red-800 border border-red-200";
-      } else {
-        statusClass = "bg-yellow-100 text-yellow-800 border border-yellow-200";
-      }
     }
 
     dayCells.push(
@@ -273,7 +318,7 @@ function AttendanceCalendar({ attendanceRecords, attendanceRate }: AttendanceCal
 
   return (
     <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-  <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6">
         <h4 className="font-bold text-gray-800">Monthly Attendance</h4>
         <div className="flex items-center space-x-2">
           <button
@@ -299,11 +344,11 @@ function AttendanceCalendar({ attendanceRecords, attendanceRate }: AttendanceCal
       </div>
 
       <div className="grid grid-cols-7 gap-2 mb-6">
-  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
           <div key={day} className="text-center text-xs font-medium text-gray-600 py-1">
             {day}
           </div>
-        )) }
+        ))}
         {dayCells}
       </div>
 
@@ -317,12 +362,8 @@ function AttendanceCalendar({ attendanceRecords, attendanceRate }: AttendanceCal
           <span className="text-gray-700 font-medium">Absent</span>
         </div>
         <div className="flex items-center space-x-1">
-          <div className="w-3 h-3 bg-yellow-100 rounded border border-yellow-200" />
-          <span className="text-gray-700 font-medium">Partial</span>
-        </div>
-        <div className="flex items-center space-x-1">
           <div className="w-3 h-3 bg-gray-50 rounded border border-gray-200" />
-          <span className="text-gray-700 font-medium">Weekend</span>
+          <span className="text-gray-700 font-medium">No record</span>
         </div>
       </div>
 
@@ -338,6 +379,122 @@ function AttendanceCalendar({ attendanceRecords, attendanceRate }: AttendanceCal
             ? `Based on ${monthPresent} of ${monthTotal} recorded sessions this month.`
             : "No attendance records available for this month."}
         </p>
+      </div>
+    </div>
+  );
+}
+
+function NotificationCard() {
+  const [isTranslated, setIsTranslated] = useState(false);
+  const [isClosed, setIsClosed] = useState(false);
+
+  const formatChildName = (fullName: string) => {
+    const parts = fullName.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return "";
+    if (parts.length === 1) return parts[0];
+    const first = parts[0];
+    const last = parts[parts.length - 1];
+    const middle = parts.slice(1, -1).join(" ").trim();
+    const middleInitial = middle ? `${middle[0].toUpperCase()}.` : "";
+    return [first, middleInitial, last].filter(Boolean).join(" ");
+  };
+
+  const formatDate = (dateString: string) => {
+    try {
+      const [day, month, year] = dateString.split("-").map(Number);
+      const date = new Date(year, month - 1, day);
+      const monthNames = ["Jan.", "Feb.", "Mar.", "Apr.", "May", "Jun.", "Jul.", "Aug.", "Sep.", "Oct.", "Nov.", "Dec."];
+      return `${monthNames[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
+    } catch {
+      return dateString;
+    }
+  };
+
+  const notification: NotificationType = {
+    id: "1",
+    title: "Notifications",
+    message: "Your child, Alon Luan Nadura Ruedas, was marked absent on",
+    date: "01-06-2026",
+    isRead: false,
+    childName: formatChildName("Alon Luan Nadura Ruedas"),
+  };
+
+  const englishText = {
+    close: "Close",
+    title: "Notifications",
+    message: `Your child, ${notification.childName}, was marked absent on`,
+    date: formatDate(notification.date),
+  };
+
+  const tagalogText = {
+    close: "Isara",
+    title: "Mga Paalala",
+    message: `Ang iyong anak na si ${notification.childName}, ay minarkahang liban noong`,
+    date: formatDate(notification.date),
+  };
+
+  const text = isTranslated ? tagalogText : englishText;
+
+  if (isClosed) return null;
+
+  return (
+    <div className="fixed top-4 right-4 z-50 max-w-md">
+      <div className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
+        <div className="flex justify-between items-center p-4 bg-gradient-to-r from-red-50 to-red-100 border-b border-red-200">
+          <h3 className="font-bold text-red-800">{text.title}</h3>
+          <button
+            onClick={() => setIsClosed(true)}
+            className="text-gray-500 hover:text-gray-700 font-bold text-lg"
+            aria-label={text.close}
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="p-4">
+          <div className="flex items-start">
+            <div className="flex-shrink-0 mr-3">
+              <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                <svg
+                  className="w-6 h-6 text-red-600"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.196 16.5c-.77.833.192 2.5 1.732 2.5z"
+                  />
+                </svg>
+              </div>
+            </div>
+            <div className="flex-1">
+              <p className="text-gray-800 mb-2">
+                {text.message} <span className="font-semibold">{text.date}</span>.
+              </p>
+              <div className="text-xs text-gray-500 mt-1">
+                {isTranslated ? "Nai-post noong Enero 25, 2026" : "Posted on January 25, 2026"}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 mt-4 pt-3 border-t border-gray-100">
+            <button
+              onClick={() => setIsTranslated(!isTranslated)}
+              className="px-3 py-1.5 text-sm bg-gradient-to-r from-green-50 to-green-100 text-green-800 font-medium rounded-lg hover:from-green-100 hover:to-green-200 transition-all duration-200 border border-green-200"
+            >
+              {isTranslated ? "Translate to English" : "Isalin sa Tagalog"}
+            </button>
+            <button
+              onClick={() => setIsClosed(true)}
+              className="px-4 py-1.5 text-sm bg-gray-100 text-gray-700 font-medium rounded-lg hover:bg-gray-200 transition-colors duration-200"
+            >
+              {text.close}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -373,116 +530,71 @@ function ProgressCard({ title, value, description, icon, color = "green" }: {
 const FALLBACK_SUBJECTS: SupportedSubject[] = [...SUPPORTED_SUBJECTS];
 
 const FALLBACK_CHILD_VIEW: ChildView = {
-  studentId: 0,
+  studentId: "",
   userId: 0,
   relationship: null,
   subjects: FALLBACK_SUBJECTS,
-  firstName: "John",
-  middleName: "Michael",
-  lastName: "Doe",
-  grade: "5",
-  section: "Section A",
-  age: 10,
-  teacher: "Ms. Johnson",
-  attendance: 94,
+  firstName: "",
+  middleName: null,
+  lastName: "",
+  grade: null,
+  section: null,
+  age: 0,
+  teacher: "—",
+  attendance: 0,
   currentLevel: {
-    English: "Phrase Reader",
-    Filipino: "Word Reader", 
-    Math: "Developing - Nearly Proficient"
+    English: "—",
+    Filipino: "—",
+    Math: "—",
   },
   progressDetails: {
     English: {
-      currentLevel: "Phrase Reader",
-      startingLevel: "Word Reader",
-      improvement: "+1 level",
-      strengths: ["Excellent reading comprehension skills", "Strong vocabulary development", "Good participation in class"],
-      areasForImprovement: ["Grammar and sentence structure", "Writing longer compositions"],
-      recentActivities: [
-        "Completed short stories reading assignment with 90% score",
-        "Active participation in group discussions",
-        "Improved vocabulary quiz from 75% to 88%"
-      ],
-      teacherComments: "John is making excellent progress in reading. He's becoming more confident with longer texts and his vocabulary is expanding nicely. Let's continue practicing writing skills at home.",
-      nextGoals: "Move to Sentence Reader level by improving writing skills",
-      teacher: "Ms. Smith"
+      currentLevel: "—",
+      startingLevel: "—",
+      improvement: "—",
+      strengths: [],
+      areasForImprovement: [],
+      recentActivities: [],
+      teacherComments: "—",
+      nextGoals: "—",
+      teacher: "—",
     },
     Filipino: {
-      currentLevel: "Word Reader", 
-      startingLevel: "Syllable Reader",
-      improvement: "+1 level",
-      strengths: ["Clear pronunciation", "Good understanding of basic sentences", "Enthusiastic during oral reading"],
-      areasForImprovement: ["Reading fluency and speed", "Writing short paragraphs"],
-      recentActivities: [
-        "Successfully mastered all basic syllables",
-        "Can now read simple sentences fluently",
-        "Improved oral reading confidence"
-      ],
-      teacherComments: "John has shown great improvement in Filipino. His pronunciation is clear and he's becoming more comfortable with the language. Regular reading practice will help build fluency.",
-      nextGoals: "Achieve Phrase Reader level by end of semester",
-      teacher: "Ms. Garcia"
+      currentLevel: "—",
+      startingLevel: "—",
+      improvement: "—",
+      strengths: [],
+      areasForImprovement: [],
+      recentActivities: [],
+      teacherComments: "—",
+      nextGoals: "—",
+      teacher: "—",
     },
     Math: {
-      currentLevel: "Developing - Nearly Proficient",
-      startingLevel: "Emerging - Low Proficient", 
-      improvement: "+1 level",
-      strengths: ["Strong basic arithmetic skills", "Quick number recognition", "Good problem-solving approach"],
-      areasForImprovement: ["Word problem comprehension", "Multiplication tables mastery"],
-      recentActivities: [
-        "Completed addition/subtraction exercises with 95% accuracy",
-        "Improved number sequencing skills",
-        "Started multiplication with 80% success rate"
-      ],
-      teacherComments: "John's math skills are developing well. He shows good logical thinking and enjoys math activities. Practice with word problems and multiplication will help him reach the next level.",
-      nextGoals: "Become proficient in multiplication and division",
-      teacher: "Mr. Rodriguez"
-    }
-  }
-};
-type ParentDashboardState = {
-  isLoading: boolean;
-  error: string | null;
-  parent: ParentInfo | null;
-  child: ChildProfile | null;
-  attendance: AttendanceSummary | null;
-  schedule: ScheduleEntry[];
+      currentLevel: "—",
+      startingLevel: "—",
+      improvement: "—",
+      strengths: [],
+      areasForImprovement: [],
+      recentActivities: [],
+      teacherComments: "—",
+      nextGoals: "—",
+      teacher: "—",
+    },
+  },
 };
 
-const FALLBACK_ATTENDANCE_RECORDS: AttendanceRecord[] = [
-  { date: "2025-10-01", subject: "English Remedial", present: true },
-  { date: "2025-10-02", subject: "English Remedial", present: true },
-  { date: "2025-10-03", subject: "Math Remedial", present: false },
-  { date: "2025-10-04", subject: "Filipino Remedial", present: true },
-  { date: "2025-10-07", subject: "Math Remedial", present: true },
-  { date: "2025-10-08", subject: "Filipino Remedial", present: false },
-  { date: "2025-10-09", subject: "English Remedial", present: true },
-  { date: "2025-10-10", subject: "Math Remedial", present: true },
-  { date: "2025-10-11", subject: "Filipino Remedial", present: true },
-  { date: "2025-10-14", subject: "Math Remedial", present: false },
-  { date: "2025-10-15", subject: "English Remedial", present: true },
-  { date: "2025-10-16", subject: "Filipino Remedial", present: true },
-];
+const FALLBACK_ATTENDANCE_RECORDS: AttendanceRecord[] = [];
 
-const FALLBACK_ATTENDANCE_SUMMARY: AttendanceSummary = (() => {
-  const totalSessions = FALLBACK_ATTENDANCE_RECORDS.length;
-  const presentSessions = FALLBACK_ATTENDANCE_RECORDS.filter((record) => record.present).length;
-  const absentSessions = totalSessions - presentSessions;
-  const attendanceRate = totalSessions > 0 ? Math.round((presentSessions / totalSessions) * 100) : null;
-  return {
-    records: FALLBACK_ATTENDANCE_RECORDS,
-    totalSessions,
-    presentSessions,
-    absentSessions,
-    attendanceRate,
-  };
-})();
+const FALLBACK_ATTENDANCE_SUMMARY: AttendanceSummary = {
+  records: [],
+  totalSessions: 0,
+  presentSessions: 0,
+  absentSessions: 0,
+  attendanceRate: null,
+};
 
-const FALLBACK_SCHEDULE: ScheduleEntry[] = [
-  { day: "Monday", subject: "Filipino", timeRange: "8:00-9:30 AM" },
-  { day: "Tuesday", subject: "Filipino", timeRange: "8:00-9:30 AM" },
-  { day: "Wednesday", subject: "English", timeRange: "8:00-9:30 AM" },
-  { day: "Thursday", subject: "Math", timeRange: "8:00-9:30 AM" },
-  { day: "Friday", subject: "Quiz", timeRange: "8:00-9:00 AM" },
-];
+const FALLBACK_SCHEDULE: ScheduleEntry[] = [];
 
 const isSupportedSubject = (subject: string): subject is SupportedSubject =>
   SUPPORTED_SUBJECTS.includes(subject as SupportedSubject);
@@ -494,9 +606,11 @@ export default function ParentDashboard() {
     error: null,
     parent: null,
     child: null,
+    children: [],
     attendance: null,
     schedule: [],
   });
+  const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
   const progressSectionRef = useRef<HTMLDivElement | null>(null);
   const attendanceSectionRef = useRef<HTMLDivElement | null>(null);
 
@@ -522,7 +636,11 @@ export default function ParentDashboard() {
     const loadDashboard = async () => {
       setState((previous) => ({ ...previous, isLoading: true, error: null }));
       try {
-        const response = await fetch(`/api/parent/dashboard?userId=${userId}`, {
+        const query = new URLSearchParams({ userId: String(userId) });
+        if (selectedChildId) {
+          query.set("studentId", selectedChildId);
+        }
+        const response = await fetch(`/api/parent/dashboard?${query.toString()}`, {
           method: "GET",
           signal: controller.signal,
         });
@@ -544,10 +662,15 @@ export default function ParentDashboard() {
 
         const data = payload as ParentDashboardResponse;
 
+        if (!selectedChildId && data.child?.studentId) {
+          setSelectedChildId(data.child.studentId);
+        }
+
         setState({
           isLoading: false,
           error: null,
           parent: data.parent,
+          children: data.children ?? [],
           child: data.child,
           attendance: data.attendance,
           schedule: data.schedule,
@@ -563,6 +686,7 @@ export default function ParentDashboard() {
           error: message,
           parent: null,
           child: null,
+          children: [],
           attendance: null,
           schedule: [],
         });
@@ -574,7 +698,7 @@ export default function ParentDashboard() {
     return () => {
       controller.abort();
     };
-  }, []);
+  }, [selectedChildId]);
 
   const handleSubjectCardClick = useCallback(
     (subject: SupportedSubject) => {
@@ -588,6 +712,10 @@ export default function ParentDashboard() {
     scrollToSection(attendanceSectionRef);
   }, [scrollToSection]);
 
+  const handleChildChange = useCallback((event: React.ChangeEvent<HTMLSelectElement>) => {
+    setSelectedChildId(event.target.value);
+  }, []);
+
   // Get current day for highlighting
   const getCurrentDay = () => {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -595,8 +723,15 @@ export default function ParentDashboard() {
   };
 
   const currentDay = getCurrentDay();
-  const attendanceSummary = state.attendance ?? FALLBACK_ATTENDANCE_SUMMARY;
-  const attendanceRecords = attendanceSummary.records.length > 0 ? attendanceSummary.records : FALLBACK_ATTENDANCE_RECORDS;
+  const attendanceSummary: AttendanceSummary = state.attendance ?? {
+    records: [],
+    totalSessions: 0,
+    presentSessions: 0,
+    absentSessions: 0,
+    attendanceRate: null,
+  };
+
+  const attendanceRecords = attendanceSummary.records;
 
   const currentChild = useMemo<ChildView>(() => {
     if (!state.child) {
@@ -626,6 +761,8 @@ export default function ParentDashboard() {
     return filtered.length > 0 ? filtered : FALLBACK_SUBJECTS;
   }, [currentChild]);
 
+  const childOptions = state.children.length > 0 ? state.children : state.child ? [state.child] : [];
+
   const attendanceRate = attendanceSummary.attendanceRate ?? currentChild.attendance;
 
   useEffect(() => {
@@ -642,15 +779,23 @@ export default function ParentDashboard() {
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
+      <NotificationCard />
       {/*---------------------------------Main Content---------------------------------*/}
       <div className="w-full pt-16 flex flex-col overflow-hidden">
-        <Header title="Dashboard" />
+        <Header
+          title="Dashboard"
+          childOptions={childOptions.map((child) => ({
+            id: child.studentId,
+            label: formatChildName(child.firstName, child.middleName, child.lastName),
+          }))}
+          selectedChildId={selectedChildId}
+          onChildSelect={setSelectedChildId}
+        />
 
         <main className="flex-1 overflow-y-auto">
           <div className="p-4 h-full sm:p-5 md:p-6">
             {/*---------------------------------Main Container---------------------------------*/}
             <div className="bg-white rounded-lg shadow-md border border-gray-200 w-full h-full min-h-[380px] overflow-y-auto p-4 sm:p-5 md:p-6">
-              {/* Child Selection Removed */}
               <div className="mb-6">
                 <SecondaryHeader title="Child Profile" />
               </div>
