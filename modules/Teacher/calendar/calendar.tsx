@@ -861,11 +861,6 @@ export default function TeacherCalendar() {
                       ? `Week of ${currentDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
                       : "Activities by Week"}
                   </h2>
-                  {gradeFilter && (
-                    <span className="px-3 py-1 text-xs font-medium text-[#013300] bg-[#e9f6ed] rounded-full border border-[#c7e2ce]">
-                      {gradeFilter}
-                    </span>
-                  )}
                   <button onClick={goToToday} className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-md text-gray-700">
                     Today
                   </button>

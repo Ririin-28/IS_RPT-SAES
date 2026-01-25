@@ -5,7 +5,7 @@ import DangerButton from "@/components/Common/Buttons/DangerButton";
 import TableList from "@/components/Common/Tables/TableList";
 import KebabMenu from "@/components/Common/Menus/KebabMenu";
 import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
-import { useTeacherMaterials } from "@/modules/Teacher/materials/useTeacherMaterials";
+import { useRemedialMaterials } from "../useRemedialMaterials";
 import type { MaterialStatus } from "@/lib/materials/shared";
 
 export const MATH_LEVELS = [
@@ -55,7 +55,7 @@ interface MathTabProps {
 }
 
 export default function MathTab({ level, searchTerm = "" }: MathTabProps) {
-  const { materials, uploadFiles, deleteMaterials, loading, deleting, error } = useTeacherMaterials({
+  const { materials, uploadFiles, deleteMaterials, loading, deleting, error } = useRemedialMaterials({
     subject: "Math",
     level,
   });
@@ -263,27 +263,29 @@ export default function MathTab({ level, searchTerm = "" }: MathTabProps) {
           )}
         </div>
       </div>
-      <TableList
-        columns={[
-          { key: "no", title: "No#" },
-          { key: "title", title: "Title" },
-          statusColumn,
-          { key: "submittedAt", title: "Date Submitted" },
-        ]}
-        data={rows}
-        actions={(row: any) => (
-          <>
-            <UtilityButton small onClick={() => handleViewMaterial(row)}>
-              Open
-            </UtilityButton>
-          </>
-        )}
-        pageSize={10}
-        selectable={selectMode}
-        selectedItems={selectedIds}
-        onSelectAll={handleSelectAll}
-        onSelectItem={handleSelectItem}
-      />
+      <div className="max-h-[480px] overflow-auto border border-gray-100 rounded-lg">
+        <TableList
+          columns={[
+            { key: "no", title: "No#" },
+            { key: "title", title: "Title" },
+            statusColumn,
+            { key: "submittedAt", title: "Date Submitted" },
+          ]}
+          data={rows}
+          actions={(row: any) => (
+            <>
+              <UtilityButton small onClick={() => handleViewMaterial(row)}>
+                Open
+              </UtilityButton>
+            </>
+          )}
+          pageSize={10}
+          selectable={selectMode}
+          selectedItems={selectedIds}
+          onSelectAll={handleSelectAll}
+          onSelectItem={handleSelectItem}
+        />
+      </div>
       <input
         ref={fileInputRef}
         type="file"
