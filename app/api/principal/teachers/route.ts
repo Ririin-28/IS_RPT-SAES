@@ -4,11 +4,6 @@ import { getTableColumns, query, tableExists } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-const ROLE_VARIANTS: Record<"teacher" | "master_teacher", string[]> = {
-  teacher: ["teacher", "faculty"],
-  master_teacher: ["master_teacher", "master-teacher", "masterteacher"],
-};
-
 const ROLE_TABLE_CANDIDATES: Record<"teacher" | "master_teacher", string[]> = {
   teacher: ["teacher", "teachers", "teacher_info"],
   master_teacher: ["master_teacher", "master_teachers", "master_teacher_info"],
@@ -30,9 +25,6 @@ const SECTION_COLUMNS = ["section", "section_name", "class_section", "handled_se
 const SUBJECT_COLUMNS = ["subjects", "handled_subjects", "subject", "subject_list"] as const;
 const IDENTIFIER_COLUMNS = ["teacher_id", "employee_id", "id", "master_teacher_id", "masterteacher_id"] as const;
 const ROLE_COLUMN_CANDIDATES = ["role", "user_role", "userrole", "type", "user_type", "position"] as const;
-const ROLE_TABLE_NAME = "role";
-const ROLE_TABLE_NAME_COLUMN = "role_name";
-const ROLE_TABLE_ID_COLUMN = "role_id";
 
 function extractGradeNumber(value: unknown): number | null {
   if (value === null || value === undefined) return null;
@@ -108,17 +100,35 @@ function resolveName(row: Record<string, any>): {
   return { firstName: null, middleName: null, lastName: null, fullName: null };
 }
 
+const splitGradeLevels = (value: unknown): number[] => {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.map((item) => extractGradeNumber(item)).filter((item): item is number => Number.isFinite(item));
+  }
+  const text = String(value);
+  const matches = text.match(/\d+/g) ?? [];
+  return matches.map((item) => Number(item)).filter((item) => Number.isFinite(item));
+};
+
+const mergeGrades = (...gradeLists: number[][]): number[] => {
+  const all = gradeLists.flat();
+  const unique = Array.from(new Set(all)).filter((value) => Number.isFinite(value));
+  return unique.sort((a, b) => a - b);
+};
+
 async function fetchRoleRecords(role: "teacher" | "master_teacher") {
   const tableInfo = await resolveRoleTable(role);
+  if (!tableInfo) {
+    return { table: null, records: [] };
+  }
+
   const userColumns = await getTableColumns("users");
-  const roleTableExists = await tableExists(ROLE_TABLE_NAME);
-  const roleTableColumns = roleTableExists ? await getTableColumns(ROLE_TABLE_NAME) : null;
-  const canJoinRoleTable = Boolean(
-    roleTableColumns?.has(ROLE_TABLE_ID_COLUMN) && roleTableColumns?.has(ROLE_TABLE_NAME_COLUMN),
-  );
+  const identifierColumn =
+    pickFirst(tableInfo.columns, IDENTIFIER_COLUMNS) ?? (role === "teacher" ? "teacher_id" : "master_teacher_id");
 
   const baseSelect: string[] = [
-    "u.user_id AS user_id",
+    `t.${identifierColumn} AS table_identifier`,
+    "t.user_id AS user_id",
     "u.username AS username",
   ];
 
@@ -131,139 +141,105 @@ async function fetchRoleRecords(role: "teacher" | "master_teacher") {
   }
 
   const userContactColumn = pickFirst(userColumns, CONTACT_COLUMNS);
-  if (userContactColumn) {
-    baseSelect.push(`u.${userContactColumn} AS user_contact`);
-  } else {
-    baseSelect.push("NULL AS user_contact");
-  }
+  baseSelect.push(userContactColumn ? `u.${userContactColumn} AS user_contact` : "NULL AS user_contact");
 
   const userEmailColumn = pickFirst(userColumns, EMAIL_COLUMNS) ?? "email";
   baseSelect.push(`u.${userEmailColumn} AS user_email`);
-  const userRoleColumn = pickFirst(userColumns, ROLE_COLUMN_CANDIDATES);
-  const tableRoleColumn = tableInfo ? pickFirst(tableInfo.columns, ROLE_COLUMN_CANDIDATES) : null;
 
-  if (canJoinRoleTable) {
-    baseSelect.push(`r.${ROLE_TABLE_NAME_COLUMN} AS user_role`);
-  } else if (userRoleColumn) {
-    baseSelect.push(`u.${userRoleColumn} AS user_role`);
-  } else if (tableRoleColumn) {
-    baseSelect.push(`t.${tableRoleColumn} AS user_role`);
+  baseSelect.push("NULL AS section_value");
+  baseSelect.push("NULL AS subjects_value");
+
+  const joinClauses: string[] = ["JOIN users AS u ON u.user_id = t.user_id"];
+
+  const gradeTableExists = await tableExists("grade");
+  if (role === "teacher") {
+    const teacherHandledExists = await tableExists("teacher_handled");
+    if (teacherHandledExists && gradeTableExists) {
+      joinClauses.push(
+        "LEFT JOIN (",
+        "  SELECT th.teacher_id,",
+        "    GROUP_CONCAT(DISTINCT g.grade_level ORDER BY g.grade_level) AS grade_levels",
+        "  FROM teacher_handled AS th",
+        "  LEFT JOIN grade AS g ON g.grade_id = th.grade_id",
+        "  GROUP BY th.teacher_id",
+        ") AS tg ON tg.teacher_id = t.teacher_id",
+      );
+      baseSelect.push("tg.grade_levels AS grade_levels");
+    } else {
+      baseSelect.push("NULL AS grade_levels");
+    }
   } else {
-    baseSelect.push("NULL AS user_role");
-  }
-
-  let joinClause = "";
-  if (tableInfo) {
-    const { name, columns } = tableInfo;
-    joinClause = `LEFT JOIN \`${name}\` AS t ON t.user_id = u.user_id`;
-
-    const identifierColumn = pickFirst(columns, IDENTIFIER_COLUMNS);
-    baseSelect.push(
-      identifierColumn
-        ? `t.${identifierColumn} AS table_identifier`
-        : "NULL AS table_identifier",
-    );
-
-    for (const column of NAME_COLUMNS) {
-      if (columns.has(column)) {
-        baseSelect.push(`t.${column} AS table_${column}`);
-      } else {
-        baseSelect.push(`NULL AS table_${column}`);
-      }
+    const coordinatorHandledExists = await tableExists("mt_coordinator_handled");
+    const remedialHandledExists = await tableExists("mt_remedialteacher_handled");
+    if (coordinatorHandledExists && gradeTableExists) {
+      joinClauses.push(
+        "LEFT JOIN (",
+        "  SELECT mch.master_teacher_id,",
+        "    GROUP_CONCAT(DISTINCT gc.grade_level ORDER BY gc.grade_level) AS coordinator_grade_levels",
+        "  FROM mt_coordinator_handled AS mch",
+        "  LEFT JOIN grade AS gc ON gc.grade_id = mch.grade_id",
+        "  GROUP BY mch.master_teacher_id",
+        ") AS mtc ON mtc.master_teacher_id = t.master_teacher_id",
+      );
+      baseSelect.push("mtc.coordinator_grade_levels AS coordinator_grade_levels");
+    } else {
+      baseSelect.push("NULL AS coordinator_grade_levels");
     }
 
-    const gradeColumn = pickFirst(columns, GRADE_COLUMNS);
-    baseSelect.push(gradeColumn ? `t.${gradeColumn} AS grade_value` : "NULL AS grade_value");
-
-    const sectionColumn = pickFirst(columns, SECTION_COLUMNS);
-    baseSelect.push(sectionColumn ? `t.${sectionColumn} AS section_value` : "NULL AS section_value");
-
-    const subjectColumn = pickFirst(columns, SUBJECT_COLUMNS);
-    baseSelect.push(subjectColumn ? `t.${subjectColumn} AS subjects_value` : "NULL AS subjects_value");
-
-    const contactColumn = pickFirst(columns, CONTACT_COLUMNS);
-    baseSelect.push(contactColumn ? `t.${contactColumn} AS table_contact` : "NULL AS table_contact");
-
-    const emailColumn = pickFirst(columns, EMAIL_COLUMNS);
-    baseSelect.push(emailColumn ? `t.${emailColumn} AS table_email` : "NULL AS table_email");
-  } else {
-    baseSelect.push("NULL AS table_identifier");
-    baseSelect.push("NULL AS table_first_name");
-    baseSelect.push("NULL AS table_middle_name");
-    baseSelect.push("NULL AS table_last_name");
-    baseSelect.push("NULL AS grade_value");
-    baseSelect.push("NULL AS section_value");
-    baseSelect.push("NULL AS subjects_value");
-    baseSelect.push("NULL AS table_contact");
-    baseSelect.push("NULL AS table_email");
+    if (remedialHandledExists && gradeTableExists) {
+      joinClauses.push(
+        "LEFT JOIN (",
+        "  SELECT mrh.master_teacher_id,",
+        "    GROUP_CONCAT(DISTINCT gr.grade_level ORDER BY gr.grade_level) AS remedial_grade_levels",
+        "  FROM mt_remedialteacher_handled AS mrh",
+        "  LEFT JOIN grade AS gr ON gr.grade_id = mrh.grade_id",
+        "  GROUP BY mrh.master_teacher_id",
+        ") AS mtr ON mtr.master_teacher_id = t.master_teacher_id",
+      );
+      baseSelect.push("mtr.remedial_grade_levels AS remedial_grade_levels");
+    } else {
+      baseSelect.push("NULL AS remedial_grade_levels");
+    }
   }
-
-  const roleFilters = ROLE_VARIANTS[role];
-  const placeholders = roleFilters.map(() => "?").join(", ");
 
   const hasUserLastName = userColumns.has("last_name");
   const hasUserFirstName = userColumns.has("first_name");
   const hasUserUsername = userColumns.has("username");
-  const hasTableLastName = tableInfo ? tableInfo.columns.has("last_name") : false;
-  const hasTableFirstName = tableInfo ? tableInfo.columns.has("first_name") : false;
 
   const orderClauses: string[] = [];
   if (hasUserLastName) {
     orderClauses.push("u.last_name ASC");
-  } else if (hasTableLastName) {
-    orderClauses.push("t.last_name ASC");
   }
-
   if (hasUserFirstName) {
     orderClauses.push("u.first_name ASC");
-  } else if (hasTableFirstName) {
-    orderClauses.push("t.first_name ASC");
   }
-
   if (!orderClauses.length) {
     orderClauses.push(hasUserUsername ? "u.username ASC" : "u.user_id ASC");
   }
 
-  const orderClause = orderClauses.join(", ");
-
-  let whereClause = "";
-  let params: (string | number)[] = [];
-
-  if (canJoinRoleTable) {
-    joinClause = `${joinClause}\n    LEFT JOIN ${ROLE_TABLE_NAME} AS r ON r.${ROLE_TABLE_ID_COLUMN} = u.${ROLE_TABLE_ID_COLUMN}`;
-    whereClause = `WHERE r.${ROLE_TABLE_NAME_COLUMN} IN (${placeholders})`;
-    params = roleFilters;
-  } else if (userRoleColumn) {
-    whereClause = `WHERE u.${userRoleColumn} IN (${placeholders})`;
-    params = roleFilters;
-  } else if (tableRoleColumn) {
-    whereClause = `WHERE t.${tableRoleColumn} IN (${placeholders})`;
-    params = roleFilters;
-  }
-
   const sql = `
     SELECT ${baseSelect.join(", ")}
-    FROM users AS u
-    ${joinClause}
-    ${whereClause}
-    ORDER BY ${orderClause}
+    FROM \`${tableInfo.name}\` AS t
+    ${joinClauses.join("\n")}
+    ORDER BY ${orderClauses.join(", ")}
   `;
 
-  const [rows] = await query<RowDataPacket[]>(sql, params);
+  const [rows] = await query<RowDataPacket[]>(sql);
 
   const records = rows.map((row) => {
-    const identifier = row.table_identifier ?? row.user_id;
-    const gradeNumber = extractGradeNumber(row.grade_value);
-    const gradeLabel = formatGradeLabel(row.grade_value);
-    const sectionRaw = row.section_value ? String(row.section_value).trim() : null;
-    const subjectsRaw = row.subjects_value ? String(row.subjects_value).trim() : null;
     const nameParts = resolveName(row);
-    const email = row.table_email ?? row.user_email ?? null;
-    const contact = row.table_contact ?? row.user_contact ?? null;
+    const email = row.user_email ?? null;
+    const contact = row.user_contact ?? null;
+    const gradeLevels = role === "teacher"
+      ? splitGradeLevels(row.grade_levels)
+      : mergeGrades(splitGradeLevels(row.coordinator_grade_levels), splitGradeLevels(row.remedial_grade_levels));
+
+    const gradeNumber = gradeLevels.length ? gradeLevels[0] : extractGradeNumber(row.grade_value);
+    const gradeLabel = gradeLevels.length ? `Grade ${gradeLevels[0]}` : formatGradeLabel(row.grade_value);
 
     return {
       userId: row.user_id ?? null,
-      teacherId: identifier !== null && identifier !== undefined ? String(identifier) : null,
+      teacherId: row.table_identifier !== null && row.table_identifier !== undefined ? String(row.table_identifier) : null,
       name: nameParts.fullName,
       firstName: nameParts.firstName,
       middleName: nameParts.middleName,
@@ -273,15 +249,16 @@ async function fetchRoleRecords(role: "teacher" | "master_teacher") {
       grade: gradeNumber ?? (gradeLabel ?? null),
       gradeNumber,
       gradeLabel,
-      section: sectionRaw,
-      sections: sectionRaw,
-      subjects: subjectsRaw,
-      role: row.user_role ?? null,
+      gradeLevels,
+      section: null,
+      sections: null,
+      subjects: null,
+      role: role === "teacher" ? "Teacher" : "Master Teacher",
     };
   });
 
   return {
-    table: tableInfo?.name ?? null,
+    table: tableInfo.name,
     records,
   };
 }

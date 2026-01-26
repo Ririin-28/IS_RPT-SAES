@@ -9,6 +9,7 @@ interface AllGradesTabProps {
   teachers: any[];
   setTeachers: (teachers: any[]) => void;
   searchTerm: string;
+  gradeFilter?: string;
 }
 
 interface CustomDropdownProps {
@@ -76,11 +77,64 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
   );
 };
 
-export default function MasterTeacherAllGradesTab({ teachers, setTeachers, searchTerm }: AllGradesTabProps) {
+const extractGradeNumber = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const match = value.match(/(\d+)/);
+    if (match) {
+      return Number(match[1]);
+    }
+  }
+  return null;
+};
+
+const splitGradeLevels = (value: unknown): number[] => {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => extractGradeNumber(item))
+      .filter((item): item is number => Boolean(item));
+  }
+  const matches = String(value).match(/\d+/g) ?? [];
+  return matches.map((item) => Number(item)).filter((item) => Number.isFinite(item));
+};
+
+const matchesGradeFilter = (teacher: any, gradeFilter: string | undefined): boolean => {
+  if (!gradeFilter || gradeFilter === "All Grades") {
+    return true;
+  }
+
+  const filterNumber = extractGradeNumber(gradeFilter);
+  if (!filterNumber) {
+    return true;
+  }
+
+  const gradeLevels = Array.isArray(teacher?.gradeLevels)
+    ? teacher.gradeLevels.map((value: unknown) => extractGradeNumber(value)).filter((value: number | null): value is number => Boolean(value))
+    : splitGradeLevels(teacher?.gradeLevels ?? teacher?.grades ?? teacher?.handledGrades);
+
+  if (gradeLevels.length) {
+    return gradeLevels.includes(filterNumber);
+  }
+
+  const teacherGrade =
+    extractGradeNumber(teacher?.gradeNumber) ??
+    extractGradeNumber(teacher?.grade) ??
+    extractGradeNumber(teacher?.handledGrade) ??
+    extractGradeNumber(teacher?.handled_grade);
+
+  return teacherGrade === filterNumber;
+};
+
+export default function MasterTeacherAllGradesTab({ teachers, setTeachers, searchTerm, gradeFilter = "All Grades" }: AllGradesTabProps) {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedTeacher, setSelectedTeacher] = useState<any>(null);
 
-  const filteredTeachers = teachers.filter((teacher: any) => {
+  const gradeFilteredTeachers = teachers.filter((teacher: any) => matchesGradeFilter(teacher, gradeFilter));
+
+  const filteredTeachers = gradeFilteredTeachers.filter((teacher: any) => {
     const matchSearch = searchTerm === "" || 
       teacher.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       teacher.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -98,7 +152,7 @@ export default function MasterTeacherAllGradesTab({ teachers, setTeachers, searc
     <div>
       <div className="flex flex-row justify-between items-center mb-4">
         <p className="text-gray-600 text-md font-medium">
-          Total: {teachers.length}
+          Total: {gradeFilteredTeachers.length}
         </p>
       </div>
       
