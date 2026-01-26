@@ -9,6 +9,7 @@ interface AllGradesTabProps {
   students: any[];
   setStudents: (students: any[]) => void;
   searchTerm: string;
+  gradeFilter?: string;
 }
 
 interface CustomDropdownProps {
@@ -77,13 +78,34 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
   );
 };
 
-export default function AllGradesTab({ students, searchTerm }: AllGradesTabProps) {
+const extractGradeNumber = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const match = value.match(/(\d+)/);
+    if (match) {
+      return Number(match[1]);
+    }
+  }
+  return null;
+};
+
+export default function AllGradesTab({ students, searchTerm, gradeFilter = "All Grades" }: AllGradesTabProps) {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
 
-  const AllGradesStudents = students;
+  const normalizedGradeFilter = gradeFilter === "All Grades" ? null : extractGradeNumber(gradeFilter);
 
-  const filteredStudents = AllGradesStudents.filter((student) => {
+  const gradeFilteredStudents = students.filter((student) => {
+    if (!normalizedGradeFilter) {
+      return true;
+    }
+    const studentGrade = extractGradeNumber(student?.grade ?? student?.grade_level ?? student?.gradeLevel);
+    return studentGrade === normalizedGradeFilter;
+  });
+
+  const filteredStudents = gradeFilteredStudents.filter((student) => {
     const matchSearch = searchTerm === "" || 
       student.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       student.studentId?.toLowerCase().includes(searchTerm.toLowerCase());
@@ -100,7 +122,7 @@ export default function AllGradesTab({ students, searchTerm }: AllGradesTabProps
     <div>
       <div className="flex flex-row justify-between items-center mb-4">
         <p className="text-gray-700 text-md font-medium">
-          Total: {AllGradesStudents.length}
+          Total: {gradeFilteredStudents.length}
         </p>
       </div>
 

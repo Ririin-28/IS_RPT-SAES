@@ -8,12 +8,6 @@ import { useMemo } from "react";
 import { FaTimes } from "react-icons/fa";
 // Tabs
 import AllGradesTab from "./Tabs/AllGradesTab";
-import GradeOneTab from "./Tabs/GradeOneTab";
-import GradeTwoTab from "./Tabs/GradeTwoTab";
-import GradeThreeTab from "./Tabs/GradeThreeTab";
-import GradeFourTab from "./Tabs/GradeFourTab";
-import GradeFiveTab from "./Tabs/GradeFiveTab";
-import GradeSixTab from "./Tabs/GradeSixTab";
 
 const GRADE_OPTIONS = ["All Grades", "1", "2", "3", "4", "5", "6"] as const;
 
@@ -120,13 +114,12 @@ export default function PrincipalStudents() {
               )}
 
               <div className="mt-4 sm:mt-6">
-                {activeTab === "All Grades" && <AllGradesTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
-                {activeTab === "1" && <GradeOneTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
-                {activeTab === "2" && <GradeTwoTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
-                {activeTab === "3" && <GradeThreeTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
-                {activeTab === "4" && <GradeFourTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
-                {activeTab === "5" && <GradeFiveTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
-                {activeTab === "6" && <GradeSixTab students={students} setStudents={setStudents} searchTerm={searchTerm} />}
+                <AllGradesTab
+                  students={students}
+                  setStudents={setStudents}
+                  searchTerm={searchTerm}
+                  gradeFilter={activeTab}
+                />
               </div>
             </div>
           </div>
