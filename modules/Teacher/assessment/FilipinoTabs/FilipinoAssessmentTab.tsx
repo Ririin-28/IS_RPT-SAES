@@ -10,11 +10,13 @@ import ViewResponsesModal from "../Modals/ViewResponsesModal";
 import DeleteConfirmationModal from "../Modals/DeleteConfirmationModal";
 import UpdateConfirmationModal from "../Modals/UpdateConfirmationModal";
 import { cloneResponses, type QuizResponse } from "../types";
+import { getStoredUserProfile } from "@/lib/utils/user-profile";
+import { createAssessment, fetchAssessments, mapQuizQuestionsToPayload, updateAssessment } from "@/lib/assessments/client";
 
 export const FILIPINO_ASSESSMENT_LEVELS = [
   "Non Reader",
   "Syllable",
-  "Word", 
+  "Word",
   "Phrase",
   "Sentence",
   "Paragraph",
@@ -65,67 +67,15 @@ export interface FilipinoQuiz {
   students?: QuizStudent[];
   sections?: FilipinoQuizSection[];
   responses?: QuizResponse[];
+  subjectId?: number | null;
+  phonemicId?: number | null;
+  quizCode?: string | null;
+  qrToken?: string | null;
+  submittedCount?: number;
 }
 
 const INITIAL_FILIPINO_QUIZZES: Record<FilipinoAssessmentLevel, FilipinoQuiz[]> = {
-  "Non Reader": [
-    {
-      id: 1,
-      title: "Pagsasanay sa Tunog ng mga Letra",
-      phonemicLevel: "Non Reader",
-      schedule: "2024-06-15T10:00:00",
-      startDate: "2024-06-15T10:00:00",
-      endDate: "2024-06-15T10:30:00",
-      duration: 30,
-      sections: [
-        {
-          id: "filipino-di-marunong-test-i",
-          title: "Test I",
-          description: "",
-        },
-      ],
-      questions: [
-        {
-          id: "1",
-          type: "multiple-choice",
-          question: "Aling salita ang nagsisimula sa tunog na 'ba'?",
-          options: ["Bata", "Sata", "Mata", "Pata"],
-          correctAnswer: "Bata",
-          points: 5,
-          testNumber: "Test I",
-          sectionId: "filipino-di-marunong-test-i",
-          sectionTitle: "Test I",
-        },
-      ],
-      isPublished: true,
-      createdAt: "2024-06-01",
-      updatedAt: "2024-06-01",
-      description: "Tunog ng mga letra para sa mga nagsisimula pa lang bumasa.",
-      students: [],
-      responses: [
-        {
-          id: "resp-fil-001",
-          studentId: "S001",
-          studentName: "Juan Dela Cruz",
-          submittedAt: "2024-06-14T09:45:00",
-          score: 5,
-          answers: {
-            "1": "Bata",
-          },
-        },
-        {
-          id: "resp-fil-002",
-          studentId: "S003",
-          studentName: "Pedro Reyes",
-          submittedAt: "2024-06-14T10:12:00",
-          score: 5,
-          answers: {
-            "1": "Bata",
-          },
-        },
-      ],
-    },
-  ],
+  "Non Reader": [],
   Syllable: [],
   Word: [],
   Phrase: [],
@@ -193,7 +143,7 @@ function cloneInitialFilipinoQuizzes(): FilipinoQuizzesByLevel {
 
 function readStoredFilipinoQuizzes(): FilipinoQuizzesByLevel | null {
   if (typeof window === "undefined") return null;
-  
+
   const storedValue = window.localStorage.getItem(STORAGE_KEY);
   if (!storedValue) return null;
 
@@ -209,13 +159,13 @@ const formatDateTime = (value: string) => {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime())
     ? value
-    : parsed.toLocaleDateString("en-PH", { 
-        month: "short", 
-        day: "numeric", 
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit"
-      });
+    : parsed.toLocaleDateString("en-PH", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
 };
 
 const calculateDurationMinutes = (start?: string, end?: string, fallback = 30) => {
@@ -225,6 +175,71 @@ const calculateDurationMinutes = (start?: string, end?: string, fallback = 30) =
     return fallback;
   }
   return Math.max(1, Math.round((endValue - startValue) / 60000));
+};
+
+const mapApiQuestionType = (value: string) => {
+  if (value === "multiple_choice") return "multiple-choice" as const;
+  if (value === "true_false") return "true-false" as const;
+  return "short-answer" as const;
+};
+
+const buildDefaultSection = (): FilipinoQuizSection => ({
+  id: generateSectionId(),
+  title: "Section 1",
+  description: "",
+});
+
+const mapAssessmentToQuiz = (assessment: any): FilipinoQuiz => {
+  const startDate = assessment.startDate ?? assessment.start_time ?? assessment.startTime ?? "";
+  const endDate = assessment.endDate ?? assessment.end_time ?? assessment.endTime ?? "";
+  const duration = calculateDurationMinutes(startDate, endDate, 30);
+  const section = buildDefaultSection();
+  const questions: FilipinoQuizQuestion[] = (assessment.questions ?? []).map((question: any, index: number) => ({
+    id: String(question.id ?? index + 1),
+    type: mapApiQuestionType(question.type ?? question.question_type ?? "short_answer"),
+    question: question.question ?? question.questionText ?? "",
+    options: Array.isArray(question.options) ? [...question.options] : question.choices?.map((choice: any) => choice.text) ?? undefined,
+    correctAnswer: question.correctAnswer ?? "",
+    points: Number(question.points ?? 1),
+    sectionId: section.id,
+    sectionTitle: section.title,
+  }));
+
+  return {
+    id: Number(assessment.id ?? assessment.assessment_id ?? Date.now()),
+    title: assessment.title ?? "",
+    phonemicLevel: (assessment.phonemicLevel ?? assessment.phonemic_level_name ?? "Non Reader") as FilipinoAssessmentLevel,
+    schedule: startDate,
+    duration,
+    questions,
+    isPublished: Boolean(assessment.isPublished ?? assessment.is_published),
+    createdAt: assessment.createdAt ?? assessment.created_at ?? new Date().toISOString(),
+    updatedAt: assessment.updatedAt ?? assessment.updated_at ?? new Date().toISOString(),
+    description: assessment.description ?? "",
+    startDate,
+    endDate,
+    sections: [section],
+    students: [],
+    responses: [],
+    subjectId: assessment.subjectId ?? assessment.subject_id ?? null,
+    phonemicId: assessment.phonemicId ?? assessment.phonemic_id ?? null,
+    quizCode: assessment.quizCode ?? assessment.quiz_code ?? null,
+    qrToken: assessment.qrToken ?? assessment.qr_token ?? null,
+    submittedCount: Number(assessment.submittedCount ?? assessment.submitted_count ?? 0),
+  };
+};
+
+const groupAssessmentsByLevel = (assessments: any[]): FilipinoQuizzesByLevel => {
+  const grouped = createEmptyFilipinoQuizzes();
+
+  assessments.forEach((assessment) => {
+    const level = assessment.phonemicLevel ?? assessment.phonemic_level_name;
+    if (KNOWN_FILIPINO_LEVELS.has(level as FilipinoAssessmentLevel)) {
+      grouped[level as FilipinoAssessmentLevel].push(mapAssessmentToQuiz(assessment));
+    }
+  });
+
+  return grouped;
 };
 
 type QuizScheduleStatus = "Pending" | "Active" | "Completed";
@@ -444,20 +459,39 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
 
   const quizzes = quizzesByLevel[level] ?? [];
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
+  const reloadAssessments = async () => {
+    const profile = getStoredUserProfile();
+    const userId = profile?.userId;
+    if (!userId) return;
+    const assessments = await fetchAssessments({
+      creatorId: String(userId),
+      creatorRole: "teacher",
+    });
+    const grouped = groupAssessmentsByLevel(assessments);
+    setQuizzesByLevel(grouped);
+  };
 
-    const stored = readStoredFilipinoQuizzes();
-    if (stored) {
-      setQuizzesByLevel(stored);
-    } else {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(cloneInitialFilipinoQuizzes()));
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAssessments() {
+      try {
+        await reloadAssessments();
+      } catch (error) {
+        if (cancelled) return;
+        console.error(error);
+      }
     }
+
+    loadAssessments();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const saveQuizzes = (newQuizzes: FilipinoQuizzesByLevel) => {
     setQuizzesByLevel(newQuizzes);
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(newQuizzes));
   };
 
   const handleCreateQuiz = () => {
@@ -466,6 +500,10 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
   };
 
   const handleEditQuiz = (quiz: FilipinoQuiz) => {
+    if ((quiz.submittedCount ?? 0) > 0) {
+      alert("This quiz already has submitted attempts and can no longer be edited.");
+      return;
+    }
     setEditingQuiz(quiz);
     setIsModalOpen(true);
   };
@@ -503,14 +541,36 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
       return;
     }
 
-    const newQuiz = mapQuizDataToQuiz(quizData, level);
-    const updatedQuizzes = {
-      ...quizzesByLevel,
-      [level]: [...quizzesByLevel[level], newQuiz],
-    };
-    saveQuizzes(updatedQuizzes);
-    setIsModalOpen(false);
-    setEditingQuiz(null);
+    (async () => {
+      try {
+        const profile = getStoredUserProfile();
+        const userId = profile?.userId;
+        if (!userId) {
+          alert("Missing user information. Please log in again.");
+          return;
+        }
+
+        await createAssessment({
+          title: quizData.title.trim(),
+          description: quizData.description ?? "",
+          subjectName: "Filipino",
+          phonemicLevel: level,
+          startTime: quizData.startDate,
+          endTime: quizData.endDate,
+          isPublished: quizData.isPublished,
+          createdBy: String(userId),
+          creatorRole: "teacher",
+          questions: mapQuizQuestionsToPayload(quizData.questions),
+        });
+
+        await reloadAssessments();
+        setIsModalOpen(false);
+        setEditingQuiz(null);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to save quiz.";
+        alert(message);
+      }
+    })();
   };
 
   const confirmUpdateQuiz = () => {
@@ -520,18 +580,32 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
       return;
     }
 
-    const updatedQuiz = mapQuizDataToQuiz(pendingUpdateData, level, editingQuiz);
-    const updatedQuizzes = {
-      ...quizzesByLevel,
-      [level]: quizzesByLevel[level].map((quiz) =>
-        quiz.id === editingQuiz.id ? updatedQuiz : quiz
-      ),
-    };
-    saveQuizzes(updatedQuizzes);
-    setIsUpdateConfirmOpen(false);
-    setPendingUpdateData(null);
-    setIsModalOpen(false);
-    setEditingQuiz(null);
+    (async () => {
+      try {
+        await updateAssessment(editingQuiz.id, {
+          title: pendingUpdateData.title.trim(),
+          description: pendingUpdateData.description ?? "",
+          subjectId: editingQuiz.subjectId ?? null,
+          subjectName: "Filipino",
+          gradeId: null,
+          phonemicId: editingQuiz.phonemicId ?? null,
+          phonemicLevel: level,
+          startTime: pendingUpdateData.startDate,
+          endTime: pendingUpdateData.endDate,
+          isPublished: pendingUpdateData.isPublished,
+          questions: mapQuizQuestionsToPayload(pendingUpdateData.questions),
+        });
+
+        await reloadAssessments();
+        setIsUpdateConfirmOpen(false);
+        setPendingUpdateData(null);
+        setIsModalOpen(false);
+        setEditingQuiz(null);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to update quiz.";
+        alert(message);
+      }
+    })();
   };
 
   const cancelUpdateQuiz = () => {
@@ -548,7 +622,7 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
   return (
     <div>
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 sm:mb-6 md:mb-2 gap-4">
-  <p className="text-gray-600 text-md font-medium">Total Quizzes: {quizzes.length}</p>
+        <p className="text-gray-600 text-md font-medium">Total Quizzes: {quizzes.length}</p>
         <div className="flex gap-2">
           {selectMode ? (
             <>
@@ -558,9 +632,9 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
               {selectedQuizzes.size > 0 && (
                 <DangerButton small onClick={handleDeleteSelected}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline mr-1">
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
-                    <path d="M3 6h18"/>
-                    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                    <path d="M3 6h18" />
+                    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                   </svg>
                   Delete ({selectedQuizzes.size})
                 </DangerButton>

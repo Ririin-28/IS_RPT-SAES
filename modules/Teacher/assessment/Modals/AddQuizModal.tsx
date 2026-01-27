@@ -176,6 +176,7 @@ export default function AddQuizModal({ isOpen, show, onClose, onSave, initialDat
   const [description, setDescription] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [isPublished, setIsPublished] = useState(false);
   const [sections, setSections] = useState<Section[]>(() => [createDefaultSection(1)]);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [students, setStudents] = useState<Student[]>(MOCK_STUDENTS);
@@ -186,6 +187,7 @@ export default function AddQuizModal({ isOpen, show, onClose, onSave, initialDat
       setDescription(initialData.description || "");
       setStartDate(normalizePickerValue(initialData.startDate ?? ""));
       setEndDate(normalizePickerValue(initialData.endDate ?? ""));
+      setIsPublished(initialData.isPublished ?? false);
       const { sections: initialSections, questions: initialQuestions } = prepareInitialStructure(initialData);
       setSections(initialSections);
       setQuestions(initialQuestions);
@@ -199,6 +201,7 @@ export default function AddQuizModal({ isOpen, show, onClose, onSave, initialDat
       setDescription("");
       setStartDate("");
       setEndDate("");
+      setIsPublished(false);
       setSections([createDefaultSection(1)]);
       setQuestions([]);
       setStudents(MOCK_STUDENTS);
@@ -262,10 +265,13 @@ export default function AddQuizModal({ isOpen, show, onClose, onSave, initialDat
     // If changing to true-false, set options automatically
     if (field === 'type' && value === 'true-false') {
       updatedQuestions[index].options = ['True', 'False'];
+      updatedQuestions[index].correctAnswer = '';
     } else if (field === 'type' && value === 'multiple-choice') {
       updatedQuestions[index].options = ['', '', '', ''];
+      updatedQuestions[index].correctAnswer = '';
     } else if (field === 'type' && value === 'short-answer') {
       updatedQuestions[index].options = undefined;
+      updatedQuestions[index].correctAnswer = '';
     }
     
     setQuestions(updatedQuestions);
@@ -279,6 +285,23 @@ export default function AddQuizModal({ isOpen, show, onClose, onSave, initialDat
       updatedQuestions[questionIndex] = { ...updatedQuestions[questionIndex], options };
       setQuestions(updatedQuestions);
     }
+  };
+
+  const moveQuestion = (questionId: string, direction: "up" | "down") => {
+    setQuestions((prev) => {
+      const currentIndex = prev.findIndex((question) => question.id === questionId);
+      if (currentIndex < 0) return prev;
+      const sectionId = prev[currentIndex].sectionId;
+      const sectionIndices = prev
+        .map((question, index) => (question.sectionId === sectionId ? index : -1))
+        .filter((index) => index >= 0);
+      const position = sectionIndices.indexOf(currentIndex);
+      const targetIndex = direction === "up" ? sectionIndices[position - 1] : sectionIndices[position + 1];
+      if (targetIndex === undefined) return prev;
+      const updated = [...prev];
+      [updated[currentIndex], updated[targetIndex]] = [updated[targetIndex], updated[currentIndex]];
+      return updated;
+    });
   };
 
   const removeQuestion = (index: number) => {
@@ -388,7 +411,7 @@ export default function AddQuizModal({ isOpen, show, onClose, onSave, initialDat
       students,
       questions: sanitizedQuestions,
       sections: sanitizedSections,
-      isPublished: initialData?.isPublished ?? false
+      isPublished,
     };
 
     onSave(quizData);
@@ -483,6 +506,16 @@ export default function AddQuizModal({ isOpen, show, onClose, onSave, initialDat
                 required
               />
             </div>
+
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={isPublished}
+                onChange={(event) => setIsPublished(event.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-[#013300] focus:ring-[#013300]"
+              />
+              Publish quiz now
+            </label>
           </div>
         </ModalSection>
 
@@ -548,13 +581,31 @@ export default function AddQuizModal({ isOpen, show, onClose, onSave, initialDat
                           <div key={question.id} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
                             <div className="mb-4 flex items-start justify-between">
                               <h5 className="font-medium text-gray-700">Question {qIndex + 1}</h5>
-                              <button
-                                type="button"
-                                onClick={() => removeQuestion(globalIndex)}
-                                className="text-sm font-medium text-red-600 hover:text-red-800"
-                              >
-                                Remove
-                              </button>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => moveQuestion(question.id, "up")}
+                                  className="text-xs font-medium text-gray-500 hover:text-gray-700"
+                                  aria-label="Move question up"
+                                >
+                                  ↑
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => moveQuestion(question.id, "down")}
+                                  className="text-xs font-medium text-gray-500 hover:text-gray-700"
+                                  aria-label="Move question down"
+                                >
+                                  ↓
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => removeQuestion(globalIndex)}
+                                  className="text-sm font-medium text-red-600 hover:text-red-800"
+                                >
+                                  Remove
+                                </button>
+                              </div>
                             </div>
 
                             <div className="space-y-4">
