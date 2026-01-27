@@ -11,18 +11,75 @@ export default function LandingPageAssessment() {
   const [studentId, setStudentId] = useState("");
   const [surname, setSurname] = useState("");
   const [showAssessment, setShowAssessment] = useState(false);
+  const [assessment, setAssessment] = useState<any | null>(null);
+  const [attemptId, setAttemptId] = useState<number | null>(null);
+  const [qrToken, setQrToken] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [completedScore, setCompletedScore] = useState<number | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  const handleStart = () => {
-    setShowAssessment(true);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    const token = params.get("token");
+    if (code) {
+      setQuizCode(code.toUpperCase());
+    }
+    if (token) {
+      setQrToken(token);
+    }
+  }, []);
+
+  const handleStart = async () => {
+    if (!quizCode.trim() || !studentId.trim()) {
+      setErrorMessage("Quiz code and student ID are required.");
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMessage(null);
+    try {
+      const response = await fetch("/api/assessments/access", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          quizCode: quizCode.trim(),
+          qrToken,
+          studentId: studentId.trim(),
+        }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error ?? "Unable to access quiz.");
+      }
+      setAssessment(data.assessment);
+      setAttemptId(Number(data.attemptId));
+      setShowAssessment(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to access quiz.";
+      setErrorMessage(message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  if (showAssessment) {
-    return <RemedialAssessment />;
+  if (showAssessment && assessment && attemptId) {
+    return (
+      <RemedialAssessment
+        assessment={assessment}
+        attemptId={attemptId}
+        onComplete={(score) => {
+          setCompletedScore(score);
+          setShowAssessment(false);
+        }}
+      />
+    );
   }
 
   return (
@@ -104,11 +161,20 @@ export default function LandingPageAssessment() {
               </div>
             </div>
 
+            {errorMessage && (
+              <p className="text-sm text-red-600">{errorMessage}</p>
+            )}
+
+            {completedScore !== null && (
+              <p className="text-sm text-green-700">Quiz submitted. Score: {completedScore}</p>
+            )}
+
             <PrimaryButton
               onClick={handleStart}
               className="w-full mt-4 py-3 rounded-xl text-base font-semibold"
+              disabled={isLoading}
             >
-              Start Quiz
+              {isLoading ? "Starting..." : "Start Quiz"}
             </PrimaryButton>
           </div>
         </div>
