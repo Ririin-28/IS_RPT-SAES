@@ -118,7 +118,8 @@ const hasSubmittedAttempts = async (connection: any, assessmentId: number) => {
   return Number(row?.total ?? 0) > 0;
 };
 
-export async function GET(_: NextRequest, { params }: { params: { assessmentId: string } }) {
+export async function GET(_: NextRequest, props: { params: Promise<{ assessmentId: string }> }) {
+  const params = await props.params;
   const assessmentId = Number(params.assessmentId);
   if (!Number.isFinite(assessmentId)) {
     return NextResponse.json({ success: false, error: "Invalid assessment id." }, { status: 400 });
@@ -166,7 +167,8 @@ export async function GET(_: NextRequest, { params }: { params: { assessmentId: 
   }
 }
 
-export async function PUT(request: NextRequest, { params }: { params: { assessmentId: string } }) {
+export async function PUT(request: NextRequest, props: { params: Promise<{ assessmentId: string }> }) {
+  const params = await props.params;
   const assessmentId = Number(params.assessmentId);
   if (!Number.isFinite(assessmentId)) {
     return NextResponse.json({ success: false, error: "Invalid assessment id." }, { status: 400 });

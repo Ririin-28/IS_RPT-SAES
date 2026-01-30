@@ -203,7 +203,7 @@ export async function GET(request: NextRequest) {
 
     // Parameter order must follow placeholder order in the SQL: ssa.subject_id (english/filipino/math),
     // assignment subject_id, optional teacher_id/remedial_role_id, then ssa2.subject_id.
-    const params: Array<string | number> = [
+    const params: Array<string | number | null> = [
       Number.isFinite(englishId) ? englishId : null,
       Number.isFinite(filipinoId) ? filipinoId : null,
       Number.isFinite(mathId) ? mathId : null,

@@ -10,7 +10,8 @@ type AnswerPayload = {
   answerText?: string | null;
 };
 
-export async function POST(request: NextRequest, { params }: { params: { attemptId: string } }) {
+export async function POST(request: NextRequest, props: { params: Promise<{ attemptId: string }> }) {
+  const params = await props.params;
   const attemptId = Number(params.attemptId);
   if (!Number.isFinite(attemptId)) {
     return NextResponse.json({ success: false, error: "Invalid attempt id." }, { status: 400 });

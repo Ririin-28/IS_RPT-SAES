@@ -28,9 +28,13 @@ export type StudentRecordDto = {
   englishPhonemic: string | null;
   filipinoPhonemic: string | null;
   mathProficiency: string | null;
+  createdBy?: number;
+  updatedBy?: number | null;
   createdAt: string;
   updatedAt: string;
 };
+
+export type StudentQueryOptions = StudentQueryFilters;
 
 export type CreateStudentRecordInput = {
   studentIdentifier?: string | null;

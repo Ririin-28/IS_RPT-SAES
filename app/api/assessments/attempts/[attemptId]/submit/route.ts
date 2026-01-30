@@ -4,7 +4,8 @@ import { runWithConnection } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(_: NextRequest, { params }: { params: { attemptId: string } }) {
+export async function POST(_: NextRequest, props: { params: Promise<{ attemptId: string }> }) {
+  const params = await props.params;
   const attemptId = Number(params.attemptId);
   if (!Number.isFinite(attemptId)) {
     return NextResponse.json({ success: false, error: "Invalid attempt id." }, { status: 400 });

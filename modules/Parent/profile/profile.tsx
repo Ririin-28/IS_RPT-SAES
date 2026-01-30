@@ -63,7 +63,7 @@ export default function ParentProfile() {
         <ParentHeader title="Profile" />
         <main className="flex-1 overflow-y-auto">
           <div className="p-4 h-full sm:p-5 md:p-6">
-            <div className="bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[400px] overflow-y-auto p-4 sm:p-5 md:p-6">
+            <div className="bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-100 overflow-y-auto p-4 sm:p-5 md:p-6">
               <SecondaryHeader title="Parent Details" />
               <form className="flex flex-col gap-8" onSubmit={handleUpdate}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">

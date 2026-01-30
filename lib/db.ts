@@ -51,7 +51,7 @@ export function getPool(): mysql.Pool {
   return ensurePool();
 }
 
-export type QueryParams = Array<string | number | null | undefined | Buffer>;
+export type QueryParams = Array<string | number | null | undefined | Buffer | Date>;
 
 /**
  * Executes a query with retry logic for connection errors

@@ -56,7 +56,7 @@ const extractNameParts = (student: any): NameParts => {
     return { firstName: "", lastName: "", middleNames: [] };
   }
 
-  const commaParts = raw.split(",").map((part) => part.trim()).filter(Boolean);
+  const commaParts = raw.split(",").map((part: string) => part.trim()).filter(Boolean);
   if (commaParts.length >= 2) {
     const lastName = commaParts[0];
     const firstAndMiddle = commaParts[1] ?? "";
