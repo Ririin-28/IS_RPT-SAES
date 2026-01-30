@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { RowDataPacket, ResultSetHeader } from "mysql2/promise";
+import { type RowDataPacket, type ResultSetHeader } from "mysql2/promise";
 import { runWithConnection } from "@/lib/db";
 import {
   buildAccessUrl,
@@ -7,7 +7,7 @@ import {
   generateQrToken,
   generateUniqueQuizCode,
   normalizeQuestionType,
-} from "@/lib/assessments/utils";
+} from "../../../lib/assessments/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +62,80 @@ const resolvePhonemicId = async (
   );
   const row = (rows as RowDataPacket[])[0];
   return row?.phonemic_id ? Number(row.phonemic_id) : null;
+};
+
+const resolveGradeId = async (
+  connection: any,
+  createdBy: string,
+  creatorRole: string,
+) => {
+  console.log(`Resolving grade for user: ${createdBy}, role: ${creatorRole}`);
+  if (!createdBy || !creatorRole) return null;
+
+  try {
+    if (creatorRole === "teacher") {
+      // 1. Try treating createdBy as user_id and join with teacher table
+      const [rowsByUserId] = await connection.query(
+        `SELECT th.grade_id 
+         FROM teacher_handled th
+         JOIN teacher t ON t.teacher_id = th.teacher_id
+         WHERE t.user_id = ? 
+         LIMIT 1`,
+        [createdBy]
+      );
+      if ((rowsByUserId as RowDataPacket[]).length > 0) {
+        console.log("Found grade via user_id -> teacher_handled");
+        return Number((rowsByUserId as RowDataPacket[])[0].grade_id);
+      }
+
+      // 2. Try treating createdBy as teacher_id directly
+      const [rowsByTeacherId] = await connection.query(
+        `SELECT grade_id FROM teacher_handled WHERE teacher_id = ? LIMIT 1`,
+        [createdBy]
+      );
+      if ((rowsByTeacherId as RowDataPacket[]).length > 0) {
+        console.log("Found grade via teacher_id -> teacher_handled");
+        return Number((rowsByTeacherId as RowDataPacket[])[0].grade_id);
+      }
+
+      // 3. Fallback: check student_teacher_assignment (active assignments)
+      const [rowsAssignment] = await connection.query(
+        `SELECT grade_id FROM student_teacher_assignment WHERE teacher_id = ? AND is_active = 1 LIMIT 1`,
+        [createdBy]
+      );
+      if ((rowsAssignment as RowDataPacket[]).length > 0) {
+        console.log("Found grade via student_teacher_assignment (teacher)");
+        return Number((rowsAssignment as RowDataPacket[])[0].grade_id);
+      }
+
+    } else if (creatorRole === "remedial_teacher") {
+      // 1. Check mt_remedialteacher_handled
+      // Assuming createdBy is the remedial_role_id or mapped similarly
+      const [rowsRemedial] = await connection.query(
+        `SELECT grade_id FROM mt_remedialteacher_handled WHERE remedial_role_id = ? LIMIT 1`,
+        [createdBy]
+      );
+      if ((rowsRemedial as RowDataPacket[]).length > 0) {
+        console.log("Found grade via mt_remedialteacher_handled");
+        return Number((rowsRemedial as RowDataPacket[])[0].grade_id);
+      }
+
+      // 2. Fallback: student_teacher_assignment
+      const [rowsAssignment] = await connection.query(
+        `SELECT grade_id FROM student_teacher_assignment WHERE remedial_role_id = ? AND is_active = 1 LIMIT 1`,
+        [createdBy]
+      );
+      if ((rowsAssignment as RowDataPacket[]).length > 0) {
+        console.log("Found grade via student_teacher_assignment (remedial)");
+        return Number((rowsAssignment as RowDataPacket[])[0].grade_id);
+      }
+    }
+  } catch (err) {
+    console.error("Error in resolveGradeId:", err);
+  }
+
+  console.log("Could not resolve gradeId");
+  return null;
 };
 
 const mapAssessmentRows = (rows: RowDataPacket[]) => {
@@ -146,7 +220,42 @@ export async function GET(request: NextRequest) {
         params.push(Number(phonemicId));
       }
 
+      // Resolve teacher_id if we are filtering by creatorId (assuming it's a teacher)
+      let teacherId = null;
+      if (creatorId && creatorRole === 'teacher') {
+        const [tRows] = await connection.query("SELECT teacher_id FROM teacher WHERE user_id = ?", [creatorId]);
+        if ((tRows as RowDataPacket[]).length > 0) {
+          teacherId = (tRows as RowDataPacket[])[0].teacher_id;
+        }
+      }
+
+      console.log(`[AssessmentsAPI] Creator: ${creatorId}, Role: ${creatorRole}, Resolved TeacherId: ${teacherId}`);
+
       const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+      const escapedTeacherId = teacherId ? connection.escape(teacherId) : "''";
+
+      // We explicitly check if we have a resolved teacherId.
+      const submittedCountQuery = teacherId
+        ? `(
+            SELECT COUNT(DISTINCT aa.attempt_id)
+            FROM assessment_attempts aa
+            JOIN student_teacher_assignment sta ON aa.student_id = sta.student_id
+            WHERE aa.assessment_id = a.assessment_id
+              AND aa.status IN ('submitted','graded')
+              AND sta.teacher_id = ${escapedTeacherId}
+              AND sta.is_active = 1
+           )`
+        : `(
+            SELECT COUNT(*)
+            FROM assessment_attempts aa
+            WHERE aa.assessment_id = a.assessment_id
+              AND aa.status IN ('submitted','graded')
+           )`;
+
+      const assignedCountQuery = teacherId
+        ? `(SELECT COUNT(*) FROM student_teacher_assignment sta WHERE sta.teacher_id = ${escapedTeacherId} AND sta.is_active = 1)`
+        : `0`;
+
       const [rows] = await connection.query<RowDataPacket[]>(
         `SELECT
           a.*, 
@@ -156,15 +265,12 @@ export async function GET(request: NextRequest) {
           q.question_type,
           q.points,
           q.question_order,
+          q.correct_answer_text,
           c.choice_id,
           c.choice_text,
           c.is_correct,
-          (
-            SELECT COUNT(*)
-            FROM assessment_attempts aa
-            WHERE aa.assessment_id = a.assessment_id
-              AND aa.status IN ('submitted','graded')
-          ) AS submitted_count
+          ${submittedCountQuery} AS submitted_count,
+          ${assignedCountQuery} AS assigned_count
         FROM assessments a
         LEFT JOIN phonemic_level pl ON pl.phonemic_id = a.phonemic_id
         LEFT JOIN assessment_questions q ON q.assessment_id = a.assessment_id
@@ -204,6 +310,13 @@ export async function POST(request: NextRequest) {
       await connection.beginTransaction();
       try {
         const subjectId = payload.subjectId ?? (await resolveSubjectId(connection, payload.subjectName));
+        const gradeId = payload.gradeId ?? (await resolveGradeId(connection, payload.createdBy, payload.creatorRole));
+
+        if (!gradeId) {
+          console.error("Failed to resolve gradeId for:", payload.createdBy);
+          return NextResponse.json({ success: false, error: "Unable to determine Grade ID. Please ensure the user is assigned to a grade." }, { status: 400 });
+        }
+
         const phonemicId = payload.phonemicId ?? (await resolvePhonemicId(connection, subjectId ?? null, payload.phonemicLevel));
 
         let quizCode: string | null = null;
@@ -226,7 +339,7 @@ export async function POST(request: NextRequest) {
             payload.title.trim(),
             payload.description ?? "",
             subjectId ?? null,
-            payload.gradeId ?? null,
+            gradeId ?? null,
             phonemicId ?? null,
             payload.createdBy,
             payload.creatorRole,
@@ -243,11 +356,23 @@ export async function POST(request: NextRequest) {
         for (let i = 0; i < payload.questions.length; i += 1) {
           const question = payload.questions[i];
           const questionType = normalizeQuestionType(question.questionType);
+
+          let correctAnswerText: string | null = null;
+          // For short answer, look for explicit correct answer if provided in a "choices" array or potentially a direct field (though payload def only has choices)
+          // Based on previous mapAssessmentRows, short answer correct text was stored in assessment_question_choices sometimes? 
+          // But now we have a dedicated column.
+          if (questionType === "short_answer" && question.choices && question.choices.length > 0) {
+            correctAnswerText = question.choices[0].choiceText;
+          } else if (questionType !== "short_answer" && Array.isArray(question.choices)) {
+            // For other types, we still use choices table, but maybe also populate this for easy access if needed?
+            // Let's stick to using it for short_answer primarily as requested by schema implication
+          }
+
           const [questionResult] = await connection.query<ResultSetHeader>(
             `INSERT INTO assessment_questions
-              (assessment_id, question_text, question_type, points, question_order, created_at)
-             VALUES (?, ?, ?, ?, ?, NOW())`,
-            [assessmentId, question.questionText, questionType, question.points ?? 1, i + 1],
+              (assessment_id, question_text, question_type, points, question_order, correct_answer_text, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+            [assessmentId, question.questionText, questionType, question.points ?? 1, i + 1, correctAnswerText],
           );
 
           const questionId = questionResult.insertId;

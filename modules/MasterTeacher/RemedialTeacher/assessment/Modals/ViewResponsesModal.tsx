@@ -1,5 +1,4 @@
-"use client";
-import { type CSSProperties } from "react";
+import { type CSSProperties, useState, useEffect } from "react";
 import BaseModal, { ModalSection, ModalLabel } from "@/components/Common/Modals/BaseModal";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
@@ -14,6 +13,15 @@ interface ResponseQuestion {
   correctAnswer?: string | string[];
 }
 
+interface ItemAnalysis {
+  questionId: string;
+  text: string;
+  type: string;
+  correctCount: number;
+  totalAnswers: number;
+  difficultyIndex: number;
+}
+
 interface ViewResponsesModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -21,6 +29,8 @@ interface ViewResponsesModalProps {
   responses: QuizResponse[];
   questions: ResponseQuestion[];
   totalStudents?: number;
+  quizCode?: string;
+  teacherId?: string;
 }
 
 const formatDateTime = (value: string) => {
@@ -28,12 +38,12 @@ const formatDateTime = (value: string) => {
   return Number.isNaN(parsed.getTime())
     ? value
     : parsed.toLocaleString("en-PH", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
 };
 
 const formatAnswer = (answer: string | string[] | undefined): string => {
@@ -82,8 +92,8 @@ const buildSheetsHtml = (
 
   const tableRows = answersRows.length
     ? answersRows
-        .map((row) => `      <tr>${row.map((cell) => `<td>${escapeHtml(String(cell ?? ""))}</td>`).join("")}</tr>`)
-        .join("\n")
+      .map((row) => `      <tr>${row.map((cell) => `<td>${escapeHtml(String(cell ?? ""))}</td>`).join("")}</tr>`)
+      .join("\n")
     : `      <tr><td colspan="${headers.length}">No responses recorded yet.</td></tr>`;
 
   return `<!DOCTYPE html>
@@ -192,10 +202,46 @@ export default function ViewResponsesModal({
   isOpen,
   onClose,
   quizTitle,
-  responses,
+  responses: initialResponses,
   questions,
-  totalStudents = 0,
+  totalStudents: initialTotalStudents = 0,
+  quizCode,
+  teacherId,
 }: ViewResponsesModalProps) {
+  const [analysisData, setAnalysisData] = useState<{
+    summary?: any;
+    itemAnalysis?: ItemAnalysis[];
+    responses?: any[];
+  } | null>(null);
+
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && quizCode && teacherId) {
+      setIsLoading(true);
+      fetch(`/api/assessments/analysis?code=${quizCode}&teacherId=${teacherId}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success) {
+            setAnalysisData(data);
+          }
+        })
+        .catch((err) => console.error("Failed to load analysis", err))
+        .finally(() => setIsLoading(false));
+    } else {
+      setAnalysisData(null);
+    }
+  }, [isOpen, quizCode, teacherId]);
+
+  const responses = analysisData?.responses
+    ? analysisData.responses.map((r: any) => ({
+      ...r,
+      submittedAt: r.submittedAt,
+      answers: initialResponses.find(ir => String(ir.id) === String(r.id))?.answers ?? {}
+    }))
+    : initialResponses;
+
+  const totalStudents = analysisData?.summary?.totalAssigned ?? initialTotalStudents;
   const responseCount = responses.length;
 
   const totalResponsesLabel = totalStudents > 0
@@ -268,6 +314,48 @@ export default function ViewResponsesModal({
             </div>
           </div>
         </ModalSection>
+
+        {analysisData?.itemAnalysis && analysisData.itemAnalysis.length > 0 && (
+          <ModalSection title="Item Analysis">
+            <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-[#013300] text-white">
+                  <tr>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Question</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Type</th>
+                    <th scope="col" className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider">Correct / Total</th>
+                    <th scope="col" className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider">Difficulty Index</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 bg-white">
+                  {analysisData.itemAnalysis.map((item) => (
+                    <tr key={item.questionId}>
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                        {item.text.length > 50 ? `${item.text.substring(0, 50)}...` : item.text}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-500 capitalize">
+                        {item.type.replace('_', ' ')}
+                      </td>
+                      <td className="px-6 py-4 text-center text-sm text-gray-900">
+                        <span className="font-semibold text-emerald-600">{item.correctCount}</span>
+                        <span className="text-gray-400 mx-1">/</span>
+                        <span className="text-gray-600">{item.totalAnswers}</span>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
+                          ${item.difficultyIndex >= 75 ? 'bg-green-100 text-green-800' :
+                            item.difficultyIndex >= 40 ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-red-100 text-red-800'}`}>
+                          {item.difficultyIndex.toFixed(1)}%
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </ModalSection>
+        )}
 
         <ModalSection title="Individual responses">
           {responses.length === 0 ? (
