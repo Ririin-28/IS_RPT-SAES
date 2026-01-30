@@ -8,6 +8,7 @@ import {
   type CreateStudentRecordInput,
   type UpdateStudentRecordInput,
   STUDENT_SUBJECTS,
+  type StudentQueryOptions,
   resolveStudentSubject,
 } from "./shared";
 import { normalizeMaterialSubject } from "@/lib/materials/shared";
@@ -251,6 +252,7 @@ export function studentRowToDto(row: StudentRecordRow): StudentRecordDto {
     middleName: row.middle_name ?? null,
     lastName: row.last_name ?? null,
     fullName: fullName.trim(),
+    suffix: row.suffix ?? null,
     gradeLevel: row.grade_level ?? (row.grade_id != null ? String(row.grade_id) : null),
     section: row.section ?? null,
     age: row.age ?? null,

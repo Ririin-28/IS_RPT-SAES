@@ -184,7 +184,6 @@ export default function MasterTeacherStudents() {
     }
     const shuffled = shuffleStudents(studentMeta.students);
     const groups = assignmentTeachers.map((teacher) => ({ teacher, students: [] as CoordinatorStudent[] }));
-        masterTeacherId: null,
     shuffled.forEach((student, index) => {
       groups[index % groups.length].students.push(student);
     });
