@@ -171,6 +171,9 @@ type FilipinoFlashcardsProps = {
   initialStudentId?: string | null;
   forceSessionOnly?: boolean;
   onExit?: () => void;
+  subject?: string;
+  phonemicLevel?: string;
+  activityTitle?: string;
 };
 
 export default function FilipinoFlashcards({
@@ -181,6 +184,9 @@ export default function FilipinoFlashcards({
   initialStudentId,
   forceSessionOnly,
   onExit,
+  subject: propSubject,
+  phonemicLevel: propPhonemicLevel,
+  activityTitle: propActivityTitle,
 }: FilipinoFlashcardsProps) {
   const router = useRouter();
   const [flashcardsData, setFlashcardsData] = useState<FlashcardContent[]>(INITIAL_FLASHCARDS);
@@ -370,7 +376,7 @@ export default function FilipinoFlashcards({
   };
 
   const handleBackToDashboard = () => {
-    router.back();
+    router.push('/MasterTeacher/Coordinator/remedial');
   };
 
   const handleSpeak = () => {
@@ -648,7 +654,7 @@ export default function FilipinoFlashcards({
 
   if (!forceSessionOnly && view === "select") {
     return (
-      <div className="min-h-dvh bg-gradient-to-br from-[#f2f8f4] via-white to-[#e6f2ec]">
+      <div className="min-h-dvh bg-linear-to-br from-[#f2f8f4] via-white to-[#e6f2ec]">
         <div className="w-full max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex min-h-dvh flex-col">
           <header className="rounded-3xl border border-gray-300 bg-white/70 backdrop-blur px-8 py-5 sm:py-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between shadow-md shadow-gray-200">
             <div className="space-y-3 text-center sm:text-left">
@@ -721,13 +727,36 @@ export default function FilipinoFlashcards({
     background: `conic-gradient(#013300 ${progressPercent * 3.6}deg, #e6f4ef ${progressPercent * 3.6}deg)`,
   };
 
+  // --- Get previewHeaderLabel from student name for main title, and subtitle from student name or a new prop ---
+  let subtitle = propSubject && propPhonemicLevel ? `${propSubject} • ${propPhonemicLevel}` : "";
+  let mainTitle = propActivityTitle || selectedStudent.name;
+
+  if (!subtitle && !propActivityTitle) {
+      // Fallback to parsing student name if props aren't provided (backward compatibility)
+      const previewRegex = /^(English|Filipino|Math) Preview$/i;
+      const headerLabelRegex = /^(English|Filipino|Math) • (.+) Level$/i;
+      if (headerLabelRegex.test(selectedStudent.name)) {
+        const match = selectedStudent.name.match(headerLabelRegex);
+        if (match) {
+          const subject = match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase();
+          subtitle = `${subject} • ${match[2]} Level`;
+          mainTitle = `${subject} Preview`;
+        }
+      } else if (previewRegex.test(selectedStudent.name)) {
+        mainTitle = selectedStudent.name;
+        subtitle = "";
+      }
+  }
+
   return (
-    <div className="min-h-dvh bg-gradient-to-br from-[#f2f8f4] via-white to-[#e6f2ec]">
+    <div className="min-h-dvh bg-linear-to-br from-[#f2f8f4] via-white to-[#e6f2ec]">
       <div className="w-full max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex min-h-dvh flex-col">
         <header className="rounded-3xl border border-gray-300 bg-white/70 backdrop-blur px-8 py-5 sm:py-6 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between shadow-md shadow-gray-200">
           <div className="space-y-1 text-center lg:text-left">
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">Filipino • Non-Reader Level</p>
-            <h1 className="text-3xl sm:text-4xl font-bold text-[#0d1b16]">{selectedStudent.name}</h1>
+            {subtitle && (
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">{subtitle}</p>
+            )}
+            <h1 className="text-3xl sm:text-4xl font-bold text-[#0d1b16]">{mainTitle}</h1>
           </div>
           <div className="flex flex-col items-center gap-5 sm:flex-row sm:justify-center lg:justify-end">
             <div className="relative grid place-items-center">

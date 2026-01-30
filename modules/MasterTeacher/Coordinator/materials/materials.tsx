@@ -301,7 +301,7 @@ export default function MasterTeacherMaterials() {
                                     options={currentTabOptions.map((tab) => tab.label)}
                                     value={activeTab}
                                     onChange={setActiveTab}
-                                    className="pl-0"
+                                    className="pl-2"
                                 />
                             )}
                         </div>
@@ -329,20 +329,12 @@ export default function MasterTeacherMaterials() {
 
                 {/* Scrollable Content Section */}
                 <div className="flex-1 overflow-hidden flex flex-col relative custom-scrollbar overflow-y-auto">
-                     {/* Subject/Schedule Loaders/Errors */}
-                     {loadingSubject && !subjectError && (
-                        <div className="p-4 text-center text-sm text-gray-500">Loading assigned subject...</div>
-                     )}
-
                      {/* Schedule Section */}
                      <div className="px-4 pt-4 sm:px-6 sm:pt-6 pb-2">
                         <h2 className="text-lg font-bold text-gray-800">Scheduled Activities ({resolvedSubject})</h2>
-                         <p className="text-sm text-gray-500">
-                           Review materials submitted for upcoming activities.
-                        </p>
                      </div>
 
-                     <div className="px-4 sm:px-6 pb-4">
+                     <div className="flex-1 min-h-0 px-4 sm:px-6 pb-4 sm:pb-6">
                         <ScheduledActivitiesList 
                             activities={scheduleActivities} 
                             subject={resolvedSubject} 

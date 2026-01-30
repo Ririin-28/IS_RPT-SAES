@@ -135,9 +135,17 @@ export async function GET(request: NextRequest) {
 
 	try {
 		await ensureAssignmentTable();
-		const session = await getMasterTeacherSessionFromCookies();
-		let masterTeacherId = session?.masterTeacherId ?? null;
-		let remedialRoleId = session?.remedialRoleId ?? null;
+		const session = await getMasterTeacherSessionFromCookies().catch(() => null);
+		
+		// Only use session data if it belongs to the user being queried
+		// This prevents cross-user data contamination when multiple users are logged in different browser windows
+		const sessionUserId = session?.userId;
+		const requestedUserId = userIdParam ? Number(userIdParam) : null;
+		const isSameUser = sessionUserId != null && requestedUserId != null && sessionUserId === requestedUserId;
+		
+		// Use session IDs only if they match the requested user, otherwise fall back to database lookup
+		let masterTeacherId = (isSameUser && session?.masterTeacherId) ? String(session.masterTeacherId) : null;
+		let remedialRoleId = (isSameUser && session?.remedialRoleId) ? String(session.remedialRoleId) : null;
 
 		if (!masterTeacherId) {
 			if (!userIdParam) {

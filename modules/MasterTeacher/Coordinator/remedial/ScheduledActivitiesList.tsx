@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { useMemo } from "react";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
+import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 
 export type CalendarActivity = {
   id: string;
@@ -17,8 +18,10 @@ type Props = {
   subject: string;
   loading: boolean;
   error: string | null;
-  submissionFlags?: Record<string, boolean>;
-  onReview?: (activity: CalendarActivity) => void;
+  onEdit?: (activity: CalendarActivity) => void;
+  onPlay?: (activity: CalendarActivity) => void;
+  playLinkBuilder?: (activity: CalendarActivity) => string;
+  validatingActivityId?: string | null;
 };
 
 const normalizeCalendarSubject = (value: string | null | undefined): string | null => {
@@ -56,7 +59,7 @@ const getWeekNumber = (date: Date): number => {
   return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
 };
 
-export default function ScheduledActivitiesList({ activities, subject, loading, error, submissionFlags, onReview }: Props) {
+export default function ScheduledActivitiesList({ activities, subject, loading, error, onEdit, onPlay, validatingActivityId }: Props) {
   const filteredSchedule = useMemo(() => {
     return activities
       .filter((activity) => {
@@ -120,15 +123,13 @@ export default function ScheduledActivitiesList({ activities, subject, loading, 
             <h3 className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm py-2 text-xs font-bold text-gray-400 uppercase tracking-widest px-1 border-b border-gray-100">
               {group.label}
             </h3>
-            <div className="grid grid-cols-1 lg:grid-flow-col lg:auto-cols-fr gap-3">
+            <div className="grid grid-cols-1 gap-3">
               {group.activities.map((activity) => {
                 const normalizedSubject = normalizeCalendarSubject(activity.subject);
                 const timeLabel = formatTimeRange(activity.startTime, activity.endTime);
                 const month = activity.date.toLocaleDateString("en-PH", { month: "short" });
                 const day = activity.date.toLocaleDateString("en-PH", { day: "numeric" });
                 const weekday = activity.date.toLocaleDateString("en-PH", { weekday: "short" });
-
-                const hasSubmission = submissionFlags?.[String(activity.id)] ?? false;
 
                 return (
                   <div
@@ -137,7 +138,7 @@ export default function ScheduledActivitiesList({ activities, subject, loading, 
                   >
                     <div className="flex items-center gap-4 min-w-0">
                       {/* Date Box */}
-                      <div className="flex-shrink-0 flex flex-col items-center justify-center w-12 h-14 bg-[#013300]/5 text-[#013300] rounded-lg border border-[#013300]/10">
+                      <div className="shrink-0 flex flex-col items-center justify-center w-12 h-14 bg-[#013300]/5 text-[#013300] rounded-lg border border-[#013300]/10">
                         <span className="text-[0.65rem] font-bold uppercase tracking-wide leading-none">{month}</span>
                         <span className="text-xl font-extrabold leading-none mt-0.5">{day}</span>
                       </div>
@@ -169,13 +170,34 @@ export default function ScheduledActivitiesList({ activities, subject, loading, 
                       </div>
                     </div>
 
-                    {onReview && (
-                      <div className="ml-4 flex-shrink-0">
-                        <div className="relative inline-block">
-                          <PrimaryButton small onClick={() => onReview(activity)} className="!py-2 !px-6">
-                            Review
-                          </PrimaryButton>
-                        </div>
+                    {(onEdit || onPlay) && (
+                      <div className="ml-4 shrink-0 flex gap-2">
+                        {onEdit && (
+                          <div className="relative inline-block">
+                            <UtilityButton small onClick={() => onEdit(activity)} className="py-2! px-4!">
+                              Edit
+                            </UtilityButton>
+                          </div>
+                        )}
+                        {onPlay && (
+                          <UtilityButton 
+                            small 
+                            onClick={() => onPlay(activity)} 
+                            className="py-2! px-4! min-w-17.5"
+                            disabled={validatingActivityId === String(activity.id)}
+                          >
+                            {validatingActivityId === String(activity.id) ? (
+                              <span className="inline-flex items-center gap-2">
+                                <svg className="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                              </span>
+                            ) : (
+                              "Play"
+                            )}
+                          </UtilityButton>
+                        )}
                       </div>
                     )}
                   </div>

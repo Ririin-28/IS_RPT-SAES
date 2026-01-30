@@ -65,22 +65,7 @@ export default function MaterialTabContent({
     if (updating || bulkProcessing) return;
     setBulkProcessing(true);
     try {
-      const otherPending = materials.filter(
-        (m) => m.id !== material.id && m.status.toLowerCase() === "pending",
-      );
-
-      await approveMaterial(material, { skipRefresh: otherPending.length > 0 });
-
-      if (otherPending.length) {
-        const reason = "Another material was approved for this activity.";
-        await Promise.all(
-          otherPending.map((m, index) =>
-            rejectMaterial(m, reason, { skipRefresh: index < otherPending.length - 1 }),
-          ),
-        );
-      }
-
-      await refresh();
+      await approveMaterial(material);
     } finally {
       setBulkProcessing(false);
     }

@@ -1151,7 +1151,14 @@ export async function GET(request: NextRequest) {
     if (row.mt_teacher_id) handledIds.push(row.mt_teacher_id);
 
     const session = await getMasterTeacherSessionFromCookies().catch(() => null);
-    const roleFilter = session?.coordinatorRoleId
+    
+    // Only use role-based filtering if the session belongs to the user being queried
+    // This prevents cross-user data contamination when multiple users are logged in different browser windows
+    const sessionUserId = session?.userId;
+    const isSameUser = sessionUserId != null && String(sessionUserId) === String(row.user_id);
+    
+    // Use coordinator_role_id only if session matches, otherwise fall back to master_teacher_id
+    const roleFilter = (isSameUser && session?.coordinatorRoleId)
       ? { column: "coordinator_role_id", ids: [String(session.coordinatorRoleId)] }
       : undefined;
 
