@@ -7,7 +7,7 @@ import {
   generateQrToken,
   generateUniqueQuizCode,
   normalizeQuestionType,
-} from "@/lib/assessments/utils";
+} from "../../../../lib/assessments/utils";
 
 export const dynamic = "force-dynamic";
 

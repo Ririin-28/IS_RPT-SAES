@@ -1,5 +1,5 @@
 "use client";
-import { type CSSProperties } from "react";
+import { type CSSProperties, useState, useEffect } from "react";
 import BaseModal, { ModalSection, ModalLabel } from "@/components/Common/Modals/BaseModal";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
@@ -28,12 +28,12 @@ const formatDateTime = (value: string) => {
   return Number.isNaN(parsed.getTime())
     ? value
     : parsed.toLocaleString("en-PH", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
 };
 
 const formatAnswer = (answer: string | string[] | undefined): string => {
@@ -82,8 +82,8 @@ const buildSheetsHtml = (
 
   const tableRows = answersRows.length
     ? answersRows
-        .map((row) => `      <tr>${row.map((cell) => `<td>${escapeHtml(String(cell ?? ""))}</td>`).join("")}</tr>`)
-        .join("\n")
+      .map((row) => `      <tr>${row.map((cell) => `<td>${escapeHtml(String(cell ?? ""))}</td>`).join("")}</tr>`)
+      .join("\n")
     : `      <tr><td colspan="${headers.length}">No responses recorded yet.</td></tr>`;
 
   return `<!DOCTYPE html>
@@ -192,10 +192,59 @@ export default function ViewResponsesModal({
   isOpen,
   onClose,
   quizTitle,
-  responses,
-  questions,
-  totalStudents = 0,
-}: ViewResponsesModalProps) {
+  responses: initialResponses,
+  questions: initialQuestions,
+  totalStudents: initialTotalStudents = 0,
+  quizCode,
+  teacherId,
+}: ViewResponsesModalProps & { quizCode?: string; teacherId?: string }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [analysisData, setAnalysisData] = useState<any>(null);
+
+  // Use props as fallback or initial state
+  const responses = analysisData?.responses ?? initialResponses;
+  const totalStudents = analysisData?.summary?.totalAssigned ?? initialTotalStudents;
+
+  // Use itemAnalysis for questions if available, otherwise map initial questions
+  const questionsDisplay = analysisData?.itemAnalysis
+    ? analysisData.itemAnalysis.map((q: any) => ({
+      id: String(q.questionId),
+      prompt: q.text,
+      type: q.type,
+      difficultyIndex: q.difficultyIndex
+    }))
+    : initialQuestions;
+
+  useEffect(() => {
+    if (isOpen && quizCode && teacherId) {
+      setLoading(true);
+      setError("");
+
+      fetch(`/api/assessments/analysis?code=${quizCode}&teacherId=${teacherId}`)
+        .then(async (res) => {
+          if (!res.ok) throw new Error("Failed to fetch analysis");
+          const data = await res.json();
+          if (data.success) {
+            setAnalysisData(data);
+          } else {
+            setError(data.error || "Failed to load data");
+          }
+        })
+        .catch((err) => {
+          console.error(err);
+          setError("Could not load analysis data.");
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    } else {
+      // Reset if we don't have enough info to fetch (or closed)
+      setAnalysisData(null);
+      setLoading(false);
+    }
+  }, [isOpen, quizCode, teacherId]);
+
   const responseCount = responses.length;
 
   const totalResponsesLabel = totalStudents > 0
@@ -214,12 +263,17 @@ export default function ViewResponsesModal({
     background: `conic-gradient(#013300 ${clampedRate * 3.6}deg, #e6f4ef ${clampedRate * 3.6}deg)`
   };
 
+  // Calculate average from analysis or fallback
+  const averageScore = analysisData?.summary?.averageScore
+    ? Number(analysisData.summary.averageScore).toFixed(1)
+    : "N/A";
+
   const footer = (
     <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
       <UtilityButton
         type="button"
         small
-        onClick={() => openResponsesSheet(responses, questions, quizTitle, totalStudents)}
+        onClick={() => openResponsesSheet(responses, questionsDisplay, quizTitle, totalStudents)}
       >
         View in Sheets
       </UtilityButton>
@@ -237,84 +291,114 @@ export default function ViewResponsesModal({
       footer={footer}
     >
       <div className="space-y-6">
-        <ModalSection title="Summary">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="rounded-lg border border-gray-200 bg-white p-4 flex flex-col gap-3">
-              <ModalLabel>Total responses</ModalLabel>
-              <p className="text-3xl font-semibold text-[#013300]">{totalResponsesLabel}</p>
-              <p className="text-sm text-gray-600">
-                {responseCount === 1 ? "1 submission collected." : `${responseCount} submissions collected.`}
-              </p>
-              {totalStudents === 0 && (
-                <p className="text-xs text-gray-500">Assign students to track response completion.</p>
-              )}
-            </div>
-            <div className="rounded-lg border border-gray-200 bg-white p-4 flex flex-col gap-3">
-              <ModalLabel>Response rate</ModalLabel>
-              <div className="mt-3 flex items-center gap-4">
-                <div className="relative h-20 w-20">
-                  <div className="h-20 w-20 rounded-full ring-8 ring-emerald-50" style={donutStyle} />
-                  <div className="absolute inset-3 flex flex-col items-center justify-center rounded-full bg-white">
-                    <span className="text-lg font-semibold text-[#013300]">{clampedRate}%</span>
-                    <span className="text-[10px] uppercase tracking-wide text-gray-400">responses</span>
-                  </div>
+        {loading ? (
+          <div className="p-8 text-center text-gray-500 animate-pulse">Loading analysis...</div>
+        ) : error ? (
+          <div className="p-4 bg-red-50 text-red-600 rounded-lg">{error}</div>
+        ) : (
+          <>
+            <ModalSection title="Summary">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div className="rounded-lg border border-gray-200 bg-white p-4 flex flex-col gap-3">
+                  <ModalLabel>Total responses</ModalLabel>
+                  <p className="text-3xl font-semibold text-[#013300]">{totalResponsesLabel}</p>
+                  <p className="text-sm text-gray-600">
+                    {responseCount === 1 ? "1 submission" : `${responseCount} submissions`}
+                  </p>
                 </div>
-                <p className="flex-1 text-sm text-gray-600">
-                  {totalStudents > 0
-                    ? `${responseCount} of ${totalStudents} students responded.`
-                    : "Add students to calculate the completion rate."}
-                </p>
-              </div>
-            </div>
-          </div>
-        </ModalSection>
-
-        <ModalSection title="Individual responses">
-          {responses.length === 0 ? (
-            <p className="text-sm text-gray-500">
-              No responses have been submitted yet. Share the quiz to start collecting answers.
-            </p>
-          ) : (
-            <div className="space-y-4">
-              {responses.map((response) => (
-                <div key={response.id} className="rounded-lg border border-gray-200 bg-white p-4">
-                  <div className="flex flex-col gap-2 border-b border-gray-100 pb-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-[#013300]">{response.studentName}</p>
-                      <p className="text-xs text-gray-500">ID: {response.studentId}</p>
-                    </div>
-                    <div className="text-sm text-gray-600">
-                      Submitted {formatDateTime(response.submittedAt)}
-                      {typeof response.score === "number" && (
-                        <span className="ml-2 font-semibold text-[#013300]">Score: {response.score}</span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="mt-4 space-y-3">
-                    {questions.map((question, index) => (
-                      <div key={question.id} className="rounded-md border border-gray-100 bg-gray-50 p-3">
-                        <p className="text-xs uppercase tracking-wide text-gray-500">
-                          Question {index + 1}
-                          {question.sectionTitle ? ` · ${question.sectionTitle}` : ""}
-                        </p>
-                        <p className="mt-1 text-sm font-medium text-gray-800">{question.prompt}</p>
-                        <p className="mt-2 text-sm text-gray-700">
-                          <span className="font-medium text-gray-600">Answer:</span> {formatAnswer(response.answers?.[question.id])}
-                        </p>
-                        {question.correctAnswer && (
-                          <p className="mt-1 text-xs text-gray-500">
-                            Correct answer: {formatAnswer(Array.isArray(question.correctAnswer) ? question.correctAnswer : String(question.correctAnswer))}
-                          </p>
-                        )}
+                <div className="rounded-lg border border-gray-200 bg-white p-4 flex flex-col gap-3">
+                  <ModalLabel>Response rate</ModalLabel>
+                  <div className="flex items-center gap-3">
+                    <div className="relative h-12 w-12 flex-shrink-0">
+                      <div className="h-12 w-12 rounded-full ring-4 ring-emerald-50" style={donutStyle} />
+                      <div className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-[#013300]">
+                        {clampedRate}%
                       </div>
-                    ))}
+                    </div>
+                    <p className="text-sm text-gray-600 leading-tight">
+                      {totalStudents > 0 ? "of assigned students" : "No students assigned"}
+                    </p>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </ModalSection>
+                <div className="rounded-lg border border-gray-200 bg-white p-4 flex flex-col gap-3">
+                  <ModalLabel>Average Score</ModalLabel>
+                  <p className="text-3xl font-semibold text-[#013300]">{averageScore}</p>
+                  <p className="text-sm text-gray-600">points</p>
+                </div>
+              </div>
+            </ModalSection>
+
+            {analysisData?.itemAnalysis && analysisData.itemAnalysis.length > 0 && (
+              <ModalSection title="Item Analysis">
+                <div className="overflow-x-auto rounded-lg border border-gray-200">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-gray-50 text-gray-700 font-semibold border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 py-3">Question</th>
+                        <th className="px-4 py-3 w-32 text-center">Correct</th>
+                        <th className="px-4 py-3 w-32 text-center">Difficulty</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 bg-white">
+                      {analysisData.itemAnalysis.map((item: any, idx: number) => (
+                        <tr key={idx}>
+                          <td className="px-4 py-3 text-gray-800">
+                            <div className="line-clamp-2" title={item.text}>{item.text}</div>
+                            <div className="text-xs text-gray-500 mt-1 capitalize">{item.type?.replace('_', ' ')}</div>
+                          </td>
+                          <td className="px-4 py-3 text-center text-gray-600">
+                            {item.correctCount}/{item.totalAnswers}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${item.difficultyIndex > 80 ? 'bg-green-100 text-green-800' :
+                              item.difficultyIndex > 50 ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-red-100 text-red-800'
+                              }`}>
+                              {Number(item.difficultyIndex).toFixed(0)}%
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </ModalSection>
+            )}
+
+            <ModalSection title="Individual responses">
+              {responses.length === 0 ? (
+                <p className="text-sm text-gray-500">
+                  No responses have been submitted yet.
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  {responses.map((response: any) => (
+                    <div key={response.id} className="rounded-lg border border-gray-200 bg-white p-4">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-[#013300]">{response.studentName}</p>
+                          <p className="text-xs text-gray-500">ID: {response.studentId}</p>
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          Submitted {formatDateTime(response.submittedAt)}
+                          {typeof response.score !== "undefined" && (
+                            <span className="ml-2 px-2 py-0.5 bg-green-50 text-green-700 rounded font-semibold border border-green-100">
+                              Score: {response.score}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {/* We hide the full answer detail if using API mode to save space/complexity, or we could expand it if API returned details per attempt 
+                          The configured API route currently returns attempt summaries. If detailed breakdown per question per student is needed, we'd need to fetch that too.
+                          For now, we show the summary card.
+                      */}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </ModalSection>
+          </>
+        )}
       </div>
     </BaseModal>
   );

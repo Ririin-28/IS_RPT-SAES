@@ -64,8 +64,31 @@ export async function POST(request: NextRequest, { params }: { params: { attempt
         answerText = null;
       } else {
         selectedChoiceId = null;
-        isCorrect = null;
-        score = 0;
+        // Basic case-insensitive check for short answer
+        // Now using correcting_answer_text column if available, otherwise defaulting to null/0 or need manual check
+        // The schema has "requires_manual_check", implying we might not auto-grade everything.
+        // For now, let's do a simple string match if correct_answer_text is present.
+        const [[qaRow]] = await connection.query<RowDataPacket[]>(
+          "SELECT correct_answer_text, case_sensitive FROM assessment_questions WHERE question_id = ? LIMIT 1",
+          [payload.questionId]
+        );
+
+        const correctText = qaRow?.correct_answer_text;
+
+        if (correctText && answerText) {
+          const isCaseSensitive = Boolean(qaRow?.case_sensitive);
+          if (isCaseSensitive) {
+            isCorrect = answerText.trim() === correctText.trim() ? 1 : 0;
+          } else {
+            isCorrect = answerText.trim().toLowerCase() === correctText.trim().toLowerCase() ? 1 : 0;
+          }
+          score = isCorrect ? Number(questionRow.points ?? 0) : 0;
+        } else {
+          // If no correct text defined, mark as 0 or pending? 
+          // Requirement didn't specify, defaulting to 0/incorrect for now if no match found.
+          isCorrect = 0;
+          score = 0;
+        }
       }
 
       const [existingRows] = await connection.query<RowDataPacket[]>(

@@ -682,7 +682,15 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
           {
             key: "responses",
             title: "Responses",
-            render: (row: TableRow) => row.responses?.length ?? 0,
+            render: (row: TableRow) => {
+              const submitted = row.submittedCount ?? 0;
+              return (
+                <div className="flex flex-col">
+                  <span className="font-semibold text-gray-700">{submitted}</span>
+                  <span className="text-[10px] text-gray-500">submitted</span>
+                </div>
+              );
+            },
           },
           {
             key: "status",
@@ -705,7 +713,7 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
               Edit
             </UtilityButton>
             <UtilityButton small onClick={() => handleViewResponses(row)}>
-              Responses ({row.responses?.length ?? 0})
+              Summary
             </UtilityButton>
           </div>
         )}
@@ -760,6 +768,8 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
             correctAnswer: question.correctAnswer,
           }))}
           totalStudents={responsesQuiz.students?.length ?? 0}
+          quizCode={responsesQuiz.quizCode ?? undefined}
+          teacherId={String(getStoredUserProfile()?.userId)}
         />
       )}
 

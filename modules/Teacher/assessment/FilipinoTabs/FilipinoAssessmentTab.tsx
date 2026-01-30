@@ -9,6 +9,7 @@ import AddQuizModal, { type QuizData, type Student as QuizStudent, type Question
 import ViewResponsesModal from "../Modals/ViewResponsesModal";
 import DeleteConfirmationModal from "../Modals/DeleteConfirmationModal";
 import UpdateConfirmationModal from "../Modals/UpdateConfirmationModal";
+import QrCodeModal from "../Modals/QrCodeModal";
 import { cloneResponses, type QuizResponse } from "../types";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 import { createAssessment, fetchAssessments, mapQuizQuestionsToPayload, updateAssessment } from "@/lib/assessments/client";
@@ -457,6 +458,9 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
   const [isUpdateConfirmOpen, setIsUpdateConfirmOpen] = useState(false);
   const [pendingUpdateData, setPendingUpdateData] = useState<QuizData | null>(null);
 
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+  const [qrQuiz, setQrQuiz] = useState<FilipinoQuiz | null>(null);
+
   const quizzes = quizzesByLevel[level] ?? [];
 
   const reloadAssessments = async () => {
@@ -516,6 +520,11 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
   const closeResponsesModal = () => {
     setIsResponsesOpen(false);
     setResponsesQuiz(null);
+  };
+
+  const handleShowQr = (quiz: FilipinoQuiz) => {
+    setQrQuiz(quiz);
+    setIsQrModalOpen(true);
   };
 
   const handleDeleteSelected = () => {
@@ -682,6 +691,15 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
         columns={[
           { key: "no", title: "No#" },
           { key: "title", title: "Title" },
+          {
+            key: "quizCode",
+            title: "Code",
+            render: (row: TableRow) => (
+              <span className="font-mono font-bold text-gray-700 tracking-wider">
+                {row.quizCode || "-"}
+              </span>
+            )
+          },
           { key: "phonemicLevel", title: "Phonemic" },
           {
             key: "startDate",
@@ -721,6 +739,20 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
             <UtilityButton small onClick={() => handleViewResponses(row)}>
               Responses ({row.responses?.length ?? 0})
             </UtilityButton>
+            {row.isPublished && row.quizCode && (
+              <button
+                onClick={() => handleShowQr(row)}
+                className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
+                title="Show QR Code"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4h2v-4zM6 16H4m12 0v1m0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h4v4H4V4zm12 0h4v4h-4V4zM4 16h4v4H4v-4z M9 9h6 M15 15h.01" />
+                  {/* Fallback rough icon */}
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h18v18H3z M7 7h3v3H7z M14 7h3v3h-3z M7 14h3v3H7z M14 14h3v3h-3z" />
+                </svg>
+              </button>
+            )}
           </div>
         )}
         selectable={selectMode}
@@ -758,6 +790,15 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
         level={level}
         subject="Filipino"
       />
+
+      {qrQuiz && qrQuiz.quizCode && (
+        <QrCodeModal
+          isOpen={isQrModalOpen}
+          onClose={() => setIsQrModalOpen(false)}
+          quizTitle={qrQuiz.title}
+          quizCode={qrQuiz.quizCode}
+        />
+      )}
 
       {responsesQuiz && (
         <ViewResponsesModal

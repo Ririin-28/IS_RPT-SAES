@@ -11,6 +11,7 @@ import ViewResponsesModal from "../Modals/ViewResponsesModal";
 import { cloneResponses, type QuizResponse } from "../types";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 import { createAssessment, fetchAssessments, mapQuizQuestionsToPayload, updateAssessment } from "@/lib/assessments/client";
+import QrCodeModal from "../Modals/QrCodeModal";
 
 export const MATH_ASSESSMENT_LEVELS = [
   "Not Proficient",
@@ -428,6 +429,9 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
   const [responsesQuiz, setResponsesQuiz] = useState<MathQuiz | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+  const [qrQuiz, setQrQuiz] = useState<MathQuiz | null>(null);
+
   const quizzes = quizzesByLevel[level] ?? [];
 
   const reloadAssessments = async () => {
@@ -487,6 +491,11 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
   const closeResponsesModal = () => {
     setIsResponsesOpen(false);
     setResponsesQuiz(null);
+  };
+
+  const handleShowQr = (quiz: MathQuiz) => {
+    setQrQuiz(quiz);
+    setIsQrModalOpen(true);
   };
 
   const handleDeleteSelected = () => {
@@ -635,6 +644,15 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
         columns={[
           { key: "no", title: "No#" },
           { key: "title", title: "Title" },
+          {
+            key: "quizCode",
+            title: "Code",
+            render: (row: TableRow) => (
+              <span className="font-mono font-bold text-gray-700 tracking-wider">
+                {row.quizCode || "-"}
+              </span>
+            )
+          },
           { key: "mathLevel", title: "Phonemic" },
           {
             key: "startDate",
@@ -649,15 +667,22 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
           {
             key: "responses",
             title: "Responses",
-            render: (row: TableRow) => row.responses?.length ?? 0,
+            render: (row: TableRow) => {
+              const submitted = row.submittedCount ?? 0;
+              return (
+                <div className="flex flex-col">
+                  <span className="font-semibold text-gray-700">{submitted}</span>
+                </div>
+              );
+            },
           },
           {
             key: "isPublished",
             title: "Status",
             render: (row: TableRow) => (
               <span className={`px-2 py-1 rounded-full text-xs font-medium ${row.isPublished
-                  ? "bg-green-100 text-green-800"
-                  : "bg-gray-100 text-gray-800"
+                ? "bg-green-100 text-green-800"
+                : "bg-gray-100 text-gray-800"
                 }`}>
                 {row.isPublished ? "Active" : "Inactive"}
               </span>
@@ -671,8 +696,22 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
               Edit
             </UtilityButton>
             <UtilityButton small onClick={() => handleViewResponses(row)}>
-              Responses ({row.responses?.length ?? 0})
+              Summary
             </UtilityButton>
+            {row.isPublished && row.quizCode && (
+              <button
+                onClick={() => handleShowQr(row)}
+                className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
+                title="Show QR Code"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4h2v-4zM6 16H4m12 0v1m0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h4v4H4V4zm12 0h4v4h-4V4zM4 16h4v4H4v-4z M9 9h6 M15 15h.01" />
+                  {/* Fallback rough icon */}
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h18v18H3z M7 7h3v3H7z M14 7h3v3h-3z M7 14h3v3H7z M14 14h3v3h-3z" />
+                </svg>
+              </button>
+            )}
           </div>
         )}
         selectable={selectMode}
@@ -710,6 +749,15 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
           subject: "Math",
         } as any)}
       />
+
+      {qrQuiz && qrQuiz.quizCode && (
+        <QrCodeModal
+          isOpen={isQrModalOpen}
+          onClose={() => setIsQrModalOpen(false)}
+          quizTitle={qrQuiz.title}
+          quizCode={qrQuiz.quizCode}
+        />
+      )}
 
       {responsesQuiz && (
         <ViewResponsesModal
