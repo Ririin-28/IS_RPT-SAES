@@ -134,7 +134,7 @@ export async function GET(request: NextRequest) {
       "SELECT teacher_id FROM teacher WHERE user_id = ? LIMIT 1",
       [userId],
     );
-    let teacherIdValue = teacherRow?.teacher_id ? String(teacherRow.teacher_id) : null;
+    const teacherIdValue = teacherRow?.teacher_id ? String(teacherRow.teacher_id) : null;
     let remedialRoleId: string | null = null;
 
     if (!teacherIdValue) {

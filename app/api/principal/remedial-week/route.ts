@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      let weekStart = new Date(firstWeekStart);
+      const weekStart = new Date(firstWeekStart);
       while (weekStart <= lastWeekStart) {
         const weekEnd = endOfWeekFriday(weekStart);
         const weekNumber = resolveWeekNumber(quarterStart, weekStart);

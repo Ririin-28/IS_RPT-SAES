@@ -155,7 +155,7 @@ export async function GET(request: Request) {
         // 6. Format Individual Responses
         // Fetch names from 'student' table
 
-        let studentMap = new Map<string, string>(); // ID -> Name
+        const studentMap = new Map<string, string>(); // ID -> Name
         try {
             if (assignedStudentIds.length > 0) {
                 const [students] = await pool.query<RowDataPacket[]>(

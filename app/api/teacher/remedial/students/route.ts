@@ -102,7 +102,7 @@ export async function GET(request: NextRequest) {
       [userId],
     );
 
-    let teacherId: string | null = teacherRow?.teacher_id ? String(teacherRow.teacher_id) : null;
+    const teacherId: string | null = teacherRow?.teacher_id ? String(teacherRow.teacher_id) : null;
     let remedialRoleId: string | null = null;
 
     if (!teacherId) {
