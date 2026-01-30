@@ -559,7 +559,15 @@ export async function GET(request: NextRequest) {
 
   try {
     const session = await getMasterTeacherSessionFromCookies().catch(() => null);
-    let remedialRoleId = session?.remedialRoleId ? String(session.remedialRoleId) : null;
+    
+    // Only use session role ID if it belongs to the user being queried
+    // This prevents cross-user data contamination when multiple users are logged in different browser windows
+    const sessionUserId = session?.userId;
+    const requestedUserId = userIdParam ? Number(userIdParam) : null;
+    const isSameUser = sessionUserId != null && requestedUserId != null && sessionUserId === requestedUserId;
+    
+    // Use remedial_role_id from session only if it matches the requested user, otherwise query database
+    let remedialRoleId = (isSameUser && session?.remedialRoleId) ? String(session.remedialRoleId) : null;
 
     if (!remedialRoleId) {
       if (!userIdParam) {

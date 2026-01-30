@@ -320,9 +320,10 @@ export default function Home() {
           {/* Text Content */}
           <div
             className={`
-            w-full flex flex-col justify-center items-start lg:-ml-12
+            w-full flex flex-col justify-center items-center text-center lg:-ml-12
             transition-all duration-700 transform
             ${mounted ? 'translate-x-0 opacity-100 scale-100' : '-translate-x-8 opacity-0 scale-95'}
+            sm:items-start sm:text-left
             `}
             style={{ minHeight: "350px" }}
           >
@@ -348,27 +349,30 @@ export default function Home() {
               md:text-4xl md:mb-5 lg:text-5xl
               transition-all duration-800 delay-200 transform
               ${mounted ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}
+              text-center sm:text-left
             `}
             >
               Transforming Remedial
               <br />
-              Learning with Technology.
+              Learning with Technology
             </h1>
             <p
               className={`
               text-base text-green-900 mb-2 md:text-lg md:mb-2 lg:text-xl lg:mb-2
               transition-all duration-800 delay-300 transform
               ${mounted ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}
+              text-center sm:text-left
             `}
             >
               An innovative platform designed to support teachers in managing and tracking student progress in remedial programs.
             </p>
             <div className={`flex flex-wrap gap-4 mt-4 transition-all duration-800 delay-500 transform ${
               mounted ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-6 opacity-0 scale-95'
-            }`}>
+            } items-center sm:items-start w-full`}>
               <Link href="/auth/login" className="
-                flex items-center pl-4 pr-2 py-2 bg-[#013300] text-white text-base font-bold rounded-lg hover:bg-green-900 transition-all duration-300 transform hover:scale-105
+                flex items-center justify-center pl-4 pr-2 py-2 bg-[#013300] text-white text-base font-bold rounded-lg hover:bg-green-900 transition-all duration-300 transform hover:scale-105
                 md:pl-4 md:py-3 md:text-lg lg:text-xl
+                w-full sm:w-auto sm:justify-start
               ">
                 Get Started
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 ml-2 md:w-6 md:h-6">
@@ -431,11 +435,13 @@ export default function Home() {
                   </button>
                 </div>
 
-                <div className="absolute bottom-0 left-0 right-0 px-6 py-5 bg-gradient-to-t from-[#013300]/80 via-[#013300]/35 to-transparent rounded-b-[32px]">
-                  <h3 className="text-lg font-bold text-white">
+                <div className="absolute bottom-0 left-0 right-0 px-6 py-5 bg-gradient-to-t from-[#013300]/90 via-[#013300]/50 to-transparent rounded-b-[32px]">
+                <h3 className="text-2xl font-bold text-white md:text-2xl lg:text-2xl">
+                  {"San Agustin Elementary School"}
+                </h3>
+                  <h3 className="text-md font-base text-white pb-2">
                     {landingContent?.saesDetails?.location || "San Agustin Elementary School"}
                   </h3>
-                  <p className="mt-1 text-sm text-white/85">Supporting remedial excellence through technology</p>
                 </div>
 
                 <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-2">

@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import EditContentModal, { type FlashcardContent } from "./Modals/EditContentModal";
-import ScheduledRemedialList from "./ScheduledRemedialList";
 
 export type RemedialEntry = {
   id: number;
@@ -33,9 +32,23 @@ export type RemedialSubjectConfig = {
 type RemedialTabContentProps = {
   level: string;
   config: RemedialSubjectConfig;
+  subject: string;
+  gradeLevel?: string | null;
+  requestId?: string | null;
 };
 
 type RemedialsByLevel = Record<string, RemedialEntry[]>;
+
+const formatTo12Hour = (time24: string | null): string => {
+  if (!time24) return "";
+  const parts = time24.split(":");
+  let hours = parseInt(parts[0], 10);
+  const minutes = parseInt(parts[1], 10);
+  if (isNaN(hours) || isNaN(minutes)) return "";
+  const period = hours >= 12 ? "PM" : "AM";
+  hours = hours % 12 || 12;
+  return `${hours}:${minutes.toString().padStart(2, "0")} ${period}`;
+};
 
 const formatDate = (value: string) => {
   const parsed = new Date(value);
@@ -51,14 +64,12 @@ const cloneInitialMap = (levels: RemedialLevelConfig[]): RemedialsByLevel =>
   }, {});
 
 const normalizeEntries = (entries: unknown, fallback: RemedialEntry[]): RemedialEntry[] => {
-  const fallbackList = fallback.length > 0 ? fallback : [{ id: 0, title: "", time: "", date: "" }];
-
   if (!Array.isArray(entries) || entries.length === 0) {
-    return fallbackList.map((item) => ({ ...item }));
+    return fallback.map((item) => ({ ...item }));
   }
 
   return entries.map((candidate: any, index) => {
-    const template = fallback[index] ?? fallbackList[Math.min(index, fallbackList.length - 1)];
+    const template = fallback[index] ?? { id: 0, title: "", time: "", date: "" };
 
     return {
       id: typeof candidate?.id === "number" ? candidate.id : template.id,
@@ -90,7 +101,7 @@ const isValidFlashcards = (value: unknown): value is FlashcardContent[] => {
   });
 };
 
-export default function RemedialTabContent({ level, config }: RemedialTabContentProps) {
+export default function RemedialTabContent({ level, config, subject, gradeLevel, requestId }: RemedialTabContentProps) {
   const { levels, storageKey, validationMessage, flashcardsInitial, flashcardsStorageKey, playPath } = config;
   const levelConfig = useMemo(
     () => levels.find((item) => item.label === level) ?? levels[0],
@@ -106,8 +117,11 @@ export default function RemedialTabContent({ level, config }: RemedialTabContent
   const [draft, setDraft] = useState<RemedialEntry | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [weeklySchedule, setWeeklySchedule] = useState<Array<{ day: string; startTime: string | null; endTime: string | null }>>([]);
 
-  const remedials = remedialsByLevel[levelConfig.label] ?? [];
+  const remedials = (remedialsByLevel[levelConfig.label] ?? []).filter((r) => r.title.trim() !== "");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -171,6 +185,113 @@ export default function RemedialTabContent({ level, config }: RemedialTabContent
 
     hasHydrated.current = true;
   }, [flashcardsInitial, flashcardsStorageKey, levels, storageKey]);
+
+  // Fetch weekly subject schedule
+  useEffect(() => {
+    async function fetchWeeklySchedule() {
+      if (!subject) return;
+      try {
+        const params = new URLSearchParams({ subject });
+        if (gradeLevel) params.append("grade", gradeLevel);
+        const response = await fetch(`/api/remedial/weekly-schedule?${params.toString()}`);
+        const data = await response.json();
+        if (data.success && data.schedule) {
+          setWeeklySchedule(data.schedule);
+        }
+      } catch (err) {
+        console.warn("Failed to fetch weekly schedule", err);
+      }
+    }
+    fetchWeeklySchedule();
+  }, [subject, gradeLevel]);
+
+  // Fetch dynamic calendar activities
+  useEffect(() => {
+    let cancelled = false;
+    const fetchCalendar = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await fetch("/api/teacher/calendar", { cache: "no-store" });
+        const payload = await response.json().catch(() => null);
+        
+        if (!response.ok || !payload?.success) {
+          throw new Error(payload?.error ?? "Failed to load schedule");
+        }
+
+        if (cancelled) return;
+
+        const rawActivities = Array.isArray(payload.activities) ? payload.activities : [];
+        const mapped = rawActivities
+          .filter((act: any) => {
+            if (!act.subject) return true;
+            const lowerSub = act.subject.toLowerCase();
+            const targetSub = subject.toLowerCase();
+            if (targetSub === "math") return lowerSub.includes("math");
+            return lowerSub.startsWith(targetSub.substring(0, 3));
+          })
+          .map((act: any, idx: number) => {
+            const dateStr = act.activityDate ?? act.date ?? "";
+            let startTime = act.startTime ? act.startTime.substring(0, 5) : "";
+            let endTime = act.endTime ? act.endTime.substring(0, 5) : "";
+            
+            // If no specific time, look for it in weekly schedule
+            if (!startTime && dateStr && weeklySchedule.length > 0) {
+              const dateObj = new Date(dateStr);
+              if (!isNaN(dateObj.getTime())) {
+                const dayName = dateObj.toLocaleDateString("en-US", { weekday: "long" });
+                const matchedDay = weeklySchedule.find(s => s.day === dayName);
+                if (matchedDay?.startTime) {
+                  startTime = matchedDay.startTime;
+                  endTime = matchedDay.endTime || "";
+                }
+              }
+            }
+
+            const formattedStart = formatTo12Hour(startTime);
+            const formattedEnd = formatTo12Hour(endTime);
+            const timeSlot = formattedStart && formattedEnd 
+              ? `${formattedStart} - ${formattedEnd}`
+              : formattedStart || "??";
+
+            return {
+              id: Number.isFinite(Number(act.id)) ? Number(act.id) : 1000 + idx,
+              title: act.title ?? "Scheduled Activity",
+              time: timeSlot,
+              date: dateStr,
+            } satisfies RemedialEntry;
+          });
+
+        if (mapped.length > 0 && !cancelled) {
+          setRemedialsByLevel((prev) => {
+            const next = { ...prev };
+            // Simple merge: append fetched to current level if they don't exist by title+date
+            const currentLevelItems = [...(next[levelConfig.label] ?? [])];
+            mapped.forEach((m: RemedialEntry) => {
+              const exists = currentLevelItems.some(
+                (item) => item.title === m.title && item.date === m.date
+              );
+              if (!exists) {
+                currentLevelItems.push(m);
+              }
+            });
+            next[levelConfig.label] = currentLevelItems;
+            return next;
+          });
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error("Failed to fetch calendar for remedial", err);
+          setError("Notice: Dynamic schedule items could not be loaded.");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    fetchCalendar();
+    return () => { cancelled = true; };
+  }, [subject, levelConfig.label]);
 
   useEffect(() => {
     setEditingId(null);
@@ -241,26 +362,15 @@ export default function RemedialTabContent({ level, config }: RemedialTabContent
   return (
     <div>
       <div className="flex flex-row justify-between items-center mb-4 sm:mb-6 md:mb-2">
-        <p className="text-gray-600 text-md font-medium">Total: {remedials.length}</p>
         <div className="flex gap-2" />
       </div>
-      {validationError && <p className="text-sm text-red-600 mb-3">{validationError}</p>}
+      {(validationError || error) && (
+        <p className="text-sm text-red-600 mb-3">{validationError || error}</p>
+      )}
 
-      <ScheduledRemedialList
-        remedials={remedials}
-        showPlayButton={showPlayButton}
-        playPath={playPath}
-        allowSeeAll={levelConfig.allowSeeAll}
-        allowFlashcardEdit={levelConfig.allowFlashcardEdit}
-        inlineEditable={levelConfig.inlineEditable}
-        editingId={editingId}
-        draft={draft}
-        onStartEdit={startEdit}
-        onCancelEdit={cancelEdit}
-        onUpdateDraft={updateDraft}
-        onSave={handleSave}
-        onOpenFlashcardEdit={() => setIsEditModalOpen(true)}
-      />
+
+
+
 
       {levelConfig.allowFlashcardEdit && (
         <EditContentModal

@@ -1,7 +1,7 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import EnglishFlashcards from "@/components/Common/EnglishFlashcards/EnglishFlashcards";
 import FilipinoFlashcards from "@/components/Common/FilipinoFlashcards/FilipinoFlashcards";
 import MathFlashcards from "@/components/Common/MathFlashcards/MathFlashcards";
@@ -18,9 +18,24 @@ type StudentRecord = {
 	section?: string;
 };
 
+const SUBJECT_FLASHCARD_KEYS: Record<MaterialSubject, string> = {
+	English: "MASTER_TEACHER_ENGLISH_FLASHCARDS",
+	Filipino: "MASTER_TEACHER_FILIPINO_FLASHCARDS",
+	Math: "MASTER_TEACHER_MATH_FLASHCARDS",
+};
+
 export default function MasterTeacherCoordinatorRemedialFlashcards() {
 	const router = useRouter();
+	const searchParams = useSearchParams();
 	const [subject, setSubject] = useState<MaterialSubject>(SUBJECT_FALLBACK);
+	const [loadingContent, setLoadingContent] = useState(false);
+	const [contentError, setContentError] = useState<string | null>(null);
+
+	// Get subject and phonemic info from URL parameter first
+	const urlSubject = searchParams?.get('subject') as MaterialSubject;
+	const activityId = searchParams?.get("activity");
+	const phonemicId = searchParams?.get("phonemicId");
+	const phonemicName = searchParams?.get("phonemicName") || "";
 
 	const userProfile = useMemo(() => getStoredUserProfile(), []);
 	const userId = useMemo(() => {
@@ -34,6 +49,13 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 	}, [userProfile]);
 
 	useEffect(() => {
+		// If subject is in URL, use it immediately
+		if (urlSubject && ["English", "Filipino", "Math"].includes(urlSubject)) {
+			setSubject(urlSubject);
+			return;
+		}
+
+		// Otherwise, fetch from coordinator profile
 		if (typeof window === "undefined") return;
 		if (!userId) {
 			setSubject(SUBJECT_FALLBACK);
@@ -51,11 +73,19 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 				if (!response.ok || !payload?.success) {
 					throw new Error(payload?.error ?? "Unable to determine coordinator subject.");
 				}
+				
+				// Try multiple possible fields for the subject
 				const subjectCandidate = payload.coordinator?.coordinatorSubject
 					?? payload.coordinator?.subjectsHandled
 					?? payload.coordinator?.subjectHandled
 					?? null;
+				
+				console.log('Coordinator profile response:', payload);
+				console.log('Subject candidate:', subjectCandidate);
+				
 				const resolvedSubject = normalizeMaterialSubject(subjectCandidate) ?? SUBJECT_FALLBACK;
+				console.log('Resolved subject:', resolvedSubject);
+				
 				setSubject(resolvedSubject);
 			} catch (error) {
 				if (error instanceof DOMException && error.name === "AbortError") return;
@@ -66,22 +96,130 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 
 		loadCoordinatorProfile();
 		return () => controller.abort();
-	}, [userId]);
+	}, [userId, urlSubject]);
+
+	useEffect(() => {
+		let cancelled = false;
+		const load = async () => {
+			if (typeof window === "undefined") return;
+			if (!activityId || !phonemicId) {
+				const storageKey = SUBJECT_FLASHCARD_KEYS[subject] ?? SUBJECT_FLASHCARD_KEYS[SUBJECT_FALLBACK];
+				window.localStorage.removeItem(storageKey);
+				if (!cancelled) {
+					setContentError("Missing activity or phonemic level.");
+				}
+				return;
+			}
+			setLoadingContent(true);
+			setContentError(null);
+			try {
+				const response = await fetch(
+					`/api/remedial-material-content?requestId=${encodeURIComponent(activityId)}&phonemicId=${encodeURIComponent(phonemicId)}`,
+					{ cache: "no-store" },
+				);
+				const payload = await response.json().catch(() => null);
+				if (!response.ok || !payload?.success || !payload?.found) {
+					if (!cancelled) {
+						setContentError("No approved content found for this activity.");
+					}
+					return;
+				}
+
+				const cards = payload.content?.flashcardsOverride ?? payload.content?.flashcards;
+				if (!Array.isArray(cards) || cards.length === 0) {
+					if (!cancelled) {
+						setContentError("No extracted flashcards found.");
+					}
+					return;
+				}
+
+				const storageKey = SUBJECT_FLASHCARD_KEYS[subject] ?? SUBJECT_FLASHCARD_KEYS[SUBJECT_FALLBACK];
+				
+				// Transform data for Math subject to match MathFlashcards expectation
+				let contentToStore = cards;
+				if (subject === "Math") {
+					contentToStore = cards.map((card: any) => ({
+						question: card.sentence ?? "",
+						correctAnswer: card.answer ?? ""
+					}));
+				}
+				
+				window.localStorage.setItem(storageKey, JSON.stringify(contentToStore));
+			} catch (error) {
+				if (!cancelled) {
+					setContentError(error instanceof Error ? error.message : "Failed to load content");
+				}
+			} finally {
+				if (!cancelled) {
+					setLoadingContent(false);
+				}
+			}
+		};
+
+		void load();
+		return () => {
+			cancelled = true;
+		};
+	}, [activityId, phonemicId, subject]);
+
+
+	// Compose the header label with phonemicName if present
+	const previewHeaderLabel = useMemo(() => {
+		if (phonemicName) {
+			return `${subject.toUpperCase()} • ${phonemicName.toUpperCase()} LEVEL`;
+		}
+		return `${subject} Preview`;
+	}, [subject, phonemicName]);
 
 	const previewStudent = useMemo<StudentRecord>(() => {
-		const label = `${subject} Preview`;
 		return {
 			id: `COORDINATOR_PREVIEW_${subject}`,
 			studentId: "PREVIEW",
-			name: label,
+			name: previewHeaderLabel,
 			grade: "",
 			section: "",
 		};
-	}, [subject]);
+	}, [subject, previewHeaderLabel]);
 
 	const previewStudents = useMemo(() => [previewStudent], [previewStudent]);
 	const noopEnglishSave = useMemo(() => (_entry: unknown) => undefined, []);
 	const noopMathSave = useMemo(() => (_entry: unknown) => undefined, []);
+
+	if (loadingContent) {
+		return (
+			<div className="h-screen flex items-center justify-center text-gray-500">
+				Loading flashcards...
+			</div>
+		);
+	}
+
+	if (contentError) {
+		return (
+			<div className="h-screen flex flex-col items-center justify-center gap-3 text-gray-500 p-6">
+				<p className="text-center">{contentError}</p>
+				<button
+					className="px-4 py-2 rounded bg-[#013300] text-white"
+					onClick={() => router.push("/MasterTeacher/Coordinator/remedial")}
+				>
+					Back
+				</button>
+			</div>
+		);
+	}
+
+	// Show the phonemic level name as a header above the flashcards
+	const FlashcardsHeader = () => (
+		<div className="w-full text-left px-4 pt-6 pb-2">
+			{phonemicName && (
+				<div className="text-xs font-bold tracking-widest text-green-900 uppercase mb-2">
+					{phonemicName} Level
+				</div>
+			)}
+			<div className="text-2xl font-bold text-green-900 mb-4">
+				{subject} Preview
+			</div>
+		</div>
+	);
 
 	if (subject === "Math") {
 		return (
@@ -93,6 +231,9 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 				initialStudentId={previewStudent.id}
 				forceSessionOnly
 				onExit={() => router.push("/MasterTeacher/Coordinator/remedial")}
+				subject={subject}
+				phonemicLevel={phonemicName ? `${phonemicName} Level` : undefined}
+				activityTitle={`${subject} Preview`}
 			/>
 		);
 	}
@@ -107,6 +248,9 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 				initialStudentId={previewStudent.id}
 				forceSessionOnly
 				onExit={() => router.push("/MasterTeacher/Coordinator/remedial")}
+				subject={subject}
+				phonemicLevel={phonemicName ? `${phonemicName} Level` : undefined}
+				activityTitle={`${subject} Preview`}
 			/>
 		);
 	}
@@ -120,6 +264,9 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 			initialStudentId={previewStudent.id}
 			forceSessionOnly
 			onExit={() => router.push("/MasterTeacher/Coordinator/remedial")}
+			subject={subject}
+			phonemicLevel={phonemicName ? `${phonemicName} Level` : undefined}
+			activityTitle={`${subject} Preview`}
 		/>
 	);
 }
