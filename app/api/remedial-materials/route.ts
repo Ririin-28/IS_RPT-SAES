@@ -5,6 +5,8 @@ import { normalizeMaterialStatus, type MaterialStatus } from "@/lib/materials/sh
 import path from "path";
 import { promises as fs } from "fs";
 import { MathOCRService } from "@/lib/utils/MathOCRService";
+// @ts-expect-error adm-zip has no proper ES module types
+import PPTX2Json from "pptx2json";
 
 export const dynamic = "force-dynamic";
 
@@ -84,7 +86,6 @@ function collectXmlText(node: unknown, acc: string[]): void {
 }
 
 async function extractSlidesFromPptx(absolutePath: string): Promise<ExtractedSlideText[]> {
-  const PPTX2Json = require("pptx2json") as any;
   const pptx2json = new PPTX2Json();
   const json = (await pptx2json.toJson(absolutePath)) as Record<string, any>;
 
