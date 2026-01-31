@@ -1,20 +1,23 @@
 "use client";
 import TeacherSidebar from "@/components/Teacher/Sidebar";
 import TeacherHeader from "@/components/Teacher/Header";
-import { useState, useEffect } from "react";
-import { usePathname } from "next/navigation";
+import { useState, useEffect, useMemo } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
+import ScheduledActivitiesList, { type CalendarActivity } from "./ScheduledActivitiesList";
+
 // Tabs
 // English Tabs
-import EnglishTab, { ENGLISH_LEVELS, type EnglishLevel } from "./EnglishTabs/EnglishTab";
+import { ENGLISH_LEVELS } from "./EnglishTabs/EnglishTab";
 // Filipino Tabs
-import FilipinoTab, { FILIPINO_LEVELS, type FilipinoLevel } from "./FilipinoTabs/FilipinoTab";
+import { FILIPINO_LEVELS } from "./FilipinoTabs/FilipinoTab";
 // Math Tabs
-import MathTab, { MATH_LEVELS, type MathLevel } from "./MathTabs/MathTab";
+import { MATH_LEVELS } from "./MathTabs/MathTab";
 
-export default function MasterTeacherRemedial() {
+export default function TeacherRemedial() {
   const pathname = usePathname();
+  const router = useRouter();
 
   // Determine subject from URL path
   const getSubjectFromPath = () => {
@@ -30,6 +33,14 @@ export default function MasterTeacherRemedial() {
   const [subject, setSubject] = useState(initialSubject);
   const [activeTab, setActiveTab] = useState(initialTab);
   
+  // Calendar State
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [scheduleActivities, setScheduleActivities] = useState<CalendarActivity[]>([]);
+  
+  const [phonemicLevels, setPhonemicLevels] = useState<Array<{ phonemic_id: number; level_name: string }>>([]);
+  const [validatingActivityId, setValidatingActivityId] = useState<string | null>(null);
+
   // Update subject when path changes
   useEffect(() => {
     const newSubject = getSubjectFromPath();
@@ -48,6 +59,135 @@ export default function MasterTeacherRemedial() {
       setActiveTab(MATH_LEVELS[0]);
     }
   }, [subject]);
+
+  // Load Phonemic Levels
+  useEffect(() => {
+    let cancelled = false;
+    async function loadPhonemicLevels() {
+      try {
+        const response = await fetch(`/api/subject-levels?subject=${encodeURIComponent(subject)}`, { cache: "no-store" });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.success) {
+          throw new Error(payload?.error ?? "Unable to load phonemic levels");
+        }
+        const levels = Array.isArray(payload.levels) ? payload.levels : [];
+        if (!cancelled) {
+          setPhonemicLevels(
+            levels
+              .map((level: any) => ({
+                phonemic_id: Number.parseInt(String(level.phonemic_id), 10),
+                level_name: String(level.level_name ?? "").trim(),
+              }))
+              .filter((level: any) => Number.isFinite(level.phonemic_id) && level.level_name),
+          );
+        }
+      } catch {
+        if (!cancelled) setPhonemicLevels([]);
+      }
+    }
+    loadPhonemicLevels();
+    return () => { cancelled = true; };
+  }, [subject]);
+
+  // Fetch Schedule
+  useEffect(() => {
+    let cancelled = false;
+    const loadSchedule = async () => {
+      setScheduleLoading(true);
+      setScheduleError(null);
+      try {
+        const response = await fetch("/api/teacher/calendar", { cache: "no-store" });
+        const payload = (await response.json().catch(() => null));
+
+        if (!response.ok || !payload?.success) {
+          throw new Error(payload?.error ?? `Unable to load schedule (${response.status})`);
+        }
+
+        const parsed = Array.isArray(payload.activities) ? payload.activities : [];
+        const mapped = parsed
+          .map<CalendarActivity | null>((item: any, index: number) => {
+            const rawDate = item.activityDate ?? item.date ?? null;
+            const dateValue = rawDate ? new Date(rawDate) : null;
+            if (!dateValue || Number.isNaN(dateValue.getTime())) return null;
+            return {
+              id: String(item.id ?? index + 1),
+              title: item.title ?? "Scheduled Activity",
+              subject: item.subject ?? null,
+              date: dateValue,
+              day: item.day ?? null,
+              startTime: item.startTime ?? null,
+              endTime: item.endTime ?? null,
+            } satisfies CalendarActivity;
+          })
+          .filter((item): item is CalendarActivity => item !== null);
+
+        if (!cancelled) {
+          setScheduleActivities(mapped);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setScheduleError("Unable to load schedule. Please try again later.");
+          setScheduleActivities([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setScheduleLoading(false);
+        }
+      }
+    };
+
+    void loadSchedule();
+    return () => { cancelled = true; };
+  }, []);
+
+  const resolveActivePhonemicId = useMemo(() => {
+    const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const activeKey = normalize(activeTab);
+    const match = phonemicLevels.find((level) => normalize(level.level_name) === activeKey);
+    return match?.phonemic_id ?? null;
+  }, [phonemicLevels, activeTab]);
+
+  const handlePlayClick = async (activity: CalendarActivity) => {
+    const phonemicId = resolveActivePhonemicId;
+    const phonemicLevelName = activeTab;
+
+    if (!phonemicId) {
+        alert("Please select a valid level to play.");
+        return;
+    }
+
+    setValidatingActivityId(String(activity.id));
+
+    try {
+      const response = await fetch(
+        `/api/remedial-material-content?requestId=${encodeURIComponent(String(activity.id))}&phonemicId=${encodeURIComponent(String(phonemicId))}`,
+        { cache: "no-store" }
+      );
+
+      const payload = await response.json().catch(() => null);
+
+      if (response.ok && payload?.success && payload?.found) {
+          const phonemicParam = phonemicId ? `&phonemicId=${encodeURIComponent(String(phonemicId))}` : "";
+          const phonemicNameParam = phonemicLevelName ? `&phonemicName=${encodeURIComponent(phonemicLevelName)}` : "";
+          
+          // Determine Flashcards path based on subject
+          let flashcardsPath = "Flashcards"; // Fallback
+          if (subject === "English") flashcardsPath = "EnglishFlashcards";
+          else if (subject === "Filipino") flashcardsPath = "FilipinoFlashcards";
+          else if (subject === "Math") flashcardsPath = "MathFlashcards";
+
+          const playPath = `/Teacher/remedial/${flashcardsPath}?subject=${encodeURIComponent(subject)}&activity=${encodeURIComponent(activity.id)}${phonemicParam}${phonemicNameParam}`;
+          router.push(playPath);
+      } else {
+        alert("No content found for this activity and level.");
+      }
+    } catch (error) {
+      console.error("Validation failed", error);
+      alert("An error occurred while validating content.");
+    } finally {
+      setValidatingActivityId(null);
+    }
+  };
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
@@ -81,46 +221,33 @@ export default function MasterTeacherRemedial() {
               className="
               /* Mobile */
               bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[400px] 
-              overflow-y-auto p-4
-              
-              /* Tablet */
-              sm:p-5
-              
-              /* Desktop */
-              md:p-6
+              overflow-hidden flex flex-col
             "
             >
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
-                <div className="flex items-center gap-0">
-                  <SecondaryHeader title={`${subject} Remedial`} />
-                  <HeaderDropdown
-                    options={[...currentTabOptions]}
-                    value={activeTab}
-                    onChange={(value) => setActiveTab(value as typeof activeTab)}
-                    className="pl-2"
-                  />
-                </div>
+              <div className="p-4 sm:p-5 border-b border-gray-100 shrink-0">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
+                    <div className="flex items-center gap-0">
+                      <SecondaryHeader title={`${subject} Remedial`} />
+                      <HeaderDropdown
+                        options={[...currentTabOptions]}
+                        value={activeTab}
+                        onChange={(value) => setActiveTab(value as typeof activeTab)}
+                        className="pl-2"
+                      />
+                    </div>
+                  </div>
               </div>
 
-              {/*---------------------------------Tab Content---------------------------------*/}
-              <div
-                className="
-                /* Mobile */
-                mt-1
-                /* Tablet */
-                sm:mt-2
-              "
-              >
-                {/* English */}
-                {subject === "English" && (
-                  <>
-                    <EnglishTab level={activeTab as EnglishLevel} />
-                  </>
-                )}
-                {/* Filipino */}
-                {subject === "Filipino" && <FilipinoTab level={activeTab as FilipinoLevel} />}
-                {/* Math */}
-                {subject === "Math" && <MathTab level={activeTab as MathLevel} />}
+              {/*---------------------------------List Content---------------------------------*/}
+              <div className="flex-1 min-h-0 px-4 sm:px-6 pb-4 sm:pb-6 pt-4 overflow-y-auto">
+                 <ScheduledActivitiesList 
+                    activities={scheduleActivities} 
+                    subject={subject} 
+                    loading={scheduleLoading} 
+                    error={scheduleError}
+                    onPlay={handlePlayClick}
+                    validatingActivityId={validatingActivityId}
+                />
               </div>
             </div>
           </div>
@@ -129,5 +256,3 @@ export default function MasterTeacherRemedial() {
     </div>
   );
 }
-
-

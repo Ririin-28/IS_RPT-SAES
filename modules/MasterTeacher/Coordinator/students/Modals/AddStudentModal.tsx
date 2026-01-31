@@ -51,13 +51,11 @@ const GRADE_OPTIONS = ["1", "2", "3", "4", "5", "6"];
 const SECTION_OPTIONS = ["A", "B", "C", "D", "E", "F"];
 const RELATIONSHIP_OPTIONS = ["Mother", "Father", "Grandmother", "Grandfather", "Aunt", "Uncle", "Guardian", "Other"];
 const READING_LEVELS = [
-  "Exempt",
   "Non-Reader",
   "Syllable",
   "Word",
   "Sentence",
   "Paragraph",
-  "Finished",
 ];
 
 const MATH_PROFICIENCY_LEVELS = [
