@@ -19,6 +19,7 @@ const MASTER_TEACHER_TABLE_CANDIDATES = [
 ] as const;
 
 const APPROVED_REMEDIAL_TABLE = "approved_remedial_schedule";
+const REQUEST_REMEDIAL_TABLE = "request_remedial_schedule";
 const REMEDIAL_QUARTER_TABLE = "remedial_quarter";
 const WEEKLY_SUBJECT_TABLE = "weekly_subject_schedule";
 const SUBJECT_TABLE = "subject";
@@ -738,109 +739,224 @@ const loadCoordinatorActivities = async (
     return [];
   }
 
+  const gradeId = parseGradeId(grade ?? null);
+  const gradeLabel = grade ? grade.trim() : null;
+  const results: CoordinatorActivity[] = [];
+
   const approvedColumns = await safeGetColumns(APPROVED_REMEDIAL_TABLE);
-  const idColumn = pickColumn(approvedColumns, ACTIVITY_ID_COLUMNS);
-  const requesterColumn =
+  const approvedIdColumn = pickColumn(approvedColumns, ACTIVITY_ID_COLUMNS);
+  const approvedRequesterColumn =
     pickColumn(approvedColumns, ACTIVITY_MT_ID_COLUMNS) ??
     pickColumn(approvedColumns, ACTIVITY_REQUESTER_ID_COLUMNS);
-  const dateColumn = pickColumn(approvedColumns, ACTIVITY_DATE_COLUMNS);
+  const approvedDateColumn = pickColumn(approvedColumns, ACTIVITY_DATE_COLUMNS);
 
-  if (!idColumn || !requesterColumn || !dateColumn) {
-    return [];
+  if (approvedIdColumn && approvedRequesterColumn && approvedDateColumn) {
+    const approvedTitleColumn = pickColumn(approvedColumns, ACTIVITY_TITLE_COLUMNS);
+    const approvedStatusColumn = pickColumn(approvedColumns, ACTIVITY_STATUS_COLUMNS);
+    const approvedSubjectIdColumn = pickColumn(approvedColumns, ACTIVITY_SUBJECT_COLUMNS);
+    const approvedGradeColumn = pickColumn(approvedColumns, ACTIVITY_GRADE_COLUMNS);
+    const approvedDayColumn = pickColumn(approvedColumns, ACTIVITY_DAY_COLUMNS);
+    const approvedRequestedAtColumn = pickColumn(approvedColumns, ACTIVITY_REQUESTED_AT_COLUMNS);
+
+    const approvedParams: Array<number | string> = [...coordinatorIds];
+    const approvedRequesterFilter = ` AND r.${approvedRequesterColumn} IN (${coordinatorIds
+      .map(() => "?")
+      .join(", ")})`;
+    const approvedGradeFilter =
+      gradeId && approvedGradeColumn ? ` AND (r.${approvedGradeColumn} = ? OR r.${approvedGradeColumn} = ?)` : "";
+    if (gradeId && approvedGradeColumn) {
+      approvedParams.push(gradeId, gradeLabel ?? `Grade ${gradeId}`);
+    }
+
+    const approvedSelectParts = [
+      `r.${approvedIdColumn} AS request_id`,
+      approvedTitleColumn ? `r.${approvedTitleColumn} AS title` : "NULL AS title",
+      approvedStatusColumn ? `r.${approvedStatusColumn} AS status` : "NULL AS status",
+      approvedRequestedAtColumn ? `r.${approvedRequestedAtColumn} AS submitted_at` : "NULL AS submitted_at",
+      approvedSubjectIdColumn ? `r.${approvedSubjectIdColumn} AS subject_id` : "NULL AS subject_id",
+      approvedGradeColumn ? `r.${approvedGradeColumn} AS grade_id` : "NULL AS grade_id",
+      `r.${approvedDateColumn} AS schedule_date`,
+      approvedDayColumn ? `r.${approvedDayColumn} AS day` : "NULL AS day",
+    ];
+
+    if (approvedSubjectIdColumn) {
+      approvedSelectParts.push("s.subject_name AS subject_name");
+    }
+
+    const approvedSubjectJoin = approvedSubjectIdColumn
+      ? `LEFT JOIN ${SUBJECT_TABLE} s ON s.subject_id = r.${approvedSubjectIdColumn}`
+      : "";
+
+    const approvedSql = `
+      SELECT ${approvedSelectParts.join(", ")}
+      FROM ${APPROVED_REMEDIAL_TABLE} r
+      ${approvedSubjectJoin}
+      WHERE 1=1${approvedRequesterFilter}${approvedGradeFilter}
+      ORDER BY r.${approvedDateColumn} DESC, r.${approvedIdColumn} DESC
+      LIMIT ${MAX_ACTIVITIES_PER_TABLE}
+    `;
+
+    const [approvedRows] = await query<RowDataPacket[]>(approvedSql, approvedParams);
+    for (const row of approvedRows) {
+      const dayName = row.day ? String(row.day) : null;
+      const dateValue =
+        row.schedule_date instanceof Date
+          ? row.schedule_date
+          : row.schedule_date
+          ? new Date(
+              String(row.schedule_date).includes("T")
+                ? String(row.schedule_date)
+                : `${row.schedule_date}T00:00:00`,
+            )
+          : null;
+      const startDate = dateValue && !Number.isNaN(dateValue.getTime()) ? dateValue : null;
+      const endDate = startDate ? new Date(startDate.getTime() + 60 * 60 * 1000) : null;
+      const rawGrade = row.grade_id;
+      const rawSubjectId = row.subject_id;
+      const gradeIdValue = rawGrade != null && Number.isFinite(Number(rawGrade)) ? Number(rawGrade) : null;
+      const subjectIdValue = rawSubjectId != null && Number.isFinite(Number(rawSubjectId)) ? Number(rawSubjectId) : null;
+      const gradeLabelValue =
+        typeof rawGrade === "string"
+          ? rawGrade.trim()
+          : Number.isFinite(gradeIdValue)
+          ? `Grade ${gradeIdValue}`
+          : null;
+      const subjectLabel =
+        row.subject_name && String(row.subject_name).trim().length > 0
+          ? String(row.subject_name)
+          : Number.isFinite(subjectIdValue)
+          ? `Subject ${subjectIdValue}`
+          : null;
+
+      results.push({
+        id: String(row.request_id),
+        title: row.title ? String(row.title) : null,
+        subject: subjectLabel,
+        gradeLevel: gradeLabelValue,
+        status: row.status ? String(row.status) : "Approved",
+        startDate: startDate ? startDate.toISOString() : null,
+        endDate: endDate ? endDate.toISOString() : null,
+        date: startDate ? startDate.toISOString() : null,
+        day: dayName,
+        description: null,
+        requestedAt: row.submitted_at ? String(row.submitted_at) : null,
+        approvedAt: null,
+        approvedBy: null,
+        planBatchId: null,
+        weekRef: null,
+        requester: coordinatorName ?? null,
+        sourceTable: APPROVED_REMEDIAL_TABLE,
+        subjectFallback: subjectLabel,
+      } satisfies CoordinatorActivity);
+    }
   }
 
-  const titleColumn = pickColumn(approvedColumns, ACTIVITY_TITLE_COLUMNS);
-  const statusColumn = pickColumn(approvedColumns, ACTIVITY_STATUS_COLUMNS);
-  const subjectIdColumn = pickColumn(approvedColumns, ACTIVITY_SUBJECT_COLUMNS);
-  const gradeColumn = pickColumn(approvedColumns, ACTIVITY_GRADE_COLUMNS);
-  const dayColumn = pickColumn(approvedColumns, ACTIVITY_DAY_COLUMNS);
-  const requestedAtColumn = pickColumn(approvedColumns, ACTIVITY_REQUESTED_AT_COLUMNS);
+  const requestColumns = await safeGetColumns(REQUEST_REMEDIAL_TABLE);
+  const requestIdColumn = pickColumn(requestColumns, ACTIVITY_ID_COLUMNS);
+  const requestRequesterColumn =
+    pickColumn(requestColumns, ACTIVITY_MT_ID_COLUMNS) ??
+    pickColumn(requestColumns, ACTIVITY_REQUESTER_ID_COLUMNS);
+  const requestDateColumn = pickColumn(requestColumns, ACTIVITY_DATE_COLUMNS);
 
-  const gradeId = parseGradeId(grade ?? null);
-  const params: Array<number | string> = [...coordinatorIds];
-  const requesterFilter = ` AND r.${requesterColumn} IN (${coordinatorIds.map(() => "?").join(", ")})`;
-  const gradeLabel = grade ? grade.trim() : null;
-  const gradeFilter = gradeId && gradeColumn
-    ? ` AND (r.${gradeColumn} = ? OR r.${gradeColumn} = ?)`
-    : "";
-  if (gradeId && gradeColumn) {
-    params.push(gradeId, gradeLabel ?? `Grade ${gradeId}`);
-  }
+  if (requestIdColumn && requestRequesterColumn && requestDateColumn) {
+    const requestTitleColumn = pickColumn(requestColumns, ACTIVITY_TITLE_COLUMNS);
+    const requestStatusColumn = pickColumn(requestColumns, ACTIVITY_STATUS_COLUMNS);
+    const requestSubjectIdColumn = pickColumn(requestColumns, ACTIVITY_SUBJECT_COLUMNS);
+    const requestGradeColumn = pickColumn(requestColumns, ACTIVITY_GRADE_COLUMNS);
+    const requestDayColumn = pickColumn(requestColumns, ACTIVITY_DAY_COLUMNS);
+    const requestRequestedAtColumn = pickColumn(requestColumns, ACTIVITY_REQUESTED_AT_COLUMNS);
 
-  const selectParts = [
-    `r.${idColumn} AS request_id`,
-    titleColumn ? `r.${titleColumn} AS title` : "NULL AS title",
-    statusColumn ? `r.${statusColumn} AS status` : "NULL AS status",
-    requestedAtColumn ? `r.${requestedAtColumn} AS submitted_at` : "NULL AS submitted_at",
-    subjectIdColumn ? `r.${subjectIdColumn} AS subject_id` : "NULL AS subject_id",
-    gradeColumn ? `r.${gradeColumn} AS grade_id` : "NULL AS grade_id",
-    `r.${dateColumn} AS schedule_date`,
-    dayColumn ? `r.${dayColumn} AS day` : "NULL AS day",
-  ];
+    const requestParams: Array<number | string> = [...coordinatorIds];
+    const requestRequesterFilter = ` AND r.${requestRequesterColumn} IN (${coordinatorIds
+      .map(() => "?")
+      .join(", ")})`;
+    const requestGradeFilter =
+      gradeId && requestGradeColumn ? ` AND (r.${requestGradeColumn} = ? OR r.${requestGradeColumn} = ?)` : "";
+    if (gradeId && requestGradeColumn) {
+      requestParams.push(gradeId, gradeLabel ?? `Grade ${gradeId}`);
+    }
 
-  if (subjectIdColumn) {
-    selectParts.push("s.subject_name AS subject_name");
-  }
+    const requestSelectParts = [
+      `r.${requestIdColumn} AS request_id`,
+      requestTitleColumn ? `r.${requestTitleColumn} AS title` : "NULL AS title",
+      requestStatusColumn ? `r.${requestStatusColumn} AS status` : "NULL AS status",
+      requestRequestedAtColumn ? `r.${requestRequestedAtColumn} AS submitted_at` : "NULL AS submitted_at",
+      requestSubjectIdColumn ? `r.${requestSubjectIdColumn} AS subject_id` : "NULL AS subject_id",
+      requestGradeColumn ? `r.${requestGradeColumn} AS grade_id` : "NULL AS grade_id",
+      `r.${requestDateColumn} AS schedule_date`,
+      requestDayColumn ? `r.${requestDayColumn} AS day` : "NULL AS day",
+    ];
 
-  const subjectJoin = subjectIdColumn
-    ? `LEFT JOIN ${SUBJECT_TABLE} s ON s.subject_id = r.${subjectIdColumn}`
-    : "";
+    if (requestSubjectIdColumn) {
+      requestSelectParts.push("s.subject_name AS subject_name");
+    }
 
-  const sql = `
-    SELECT ${selectParts.join(", ")}
-    FROM ${APPROVED_REMEDIAL_TABLE} r
-    ${subjectJoin}
-    WHERE 1=1${requesterFilter}${gradeFilter}
-    ORDER BY r.${dateColumn} DESC, r.${idColumn} DESC
-    LIMIT ${MAX_ACTIVITIES_PER_TABLE}
-  `;
+    const requestSubjectJoin = requestSubjectIdColumn
+      ? `LEFT JOIN ${SUBJECT_TABLE} s ON s.subject_id = r.${requestSubjectIdColumn}`
+      : "";
 
-  const [rows] = await query<RowDataPacket[]>(sql, params);
-  const results: CoordinatorActivity[] = [];
-  for (const row of rows) {
-    const dayName = row.day ? String(row.day) : null;
-    const dateValue = row.schedule_date instanceof Date
-      ? row.schedule_date
-      : row.schedule_date
-      ? new Date(String(row.schedule_date).includes("T") ? String(row.schedule_date) : `${row.schedule_date}T00:00:00`)
-      : null;
-    const startDate = dateValue && !Number.isNaN(dateValue.getTime()) ? dateValue : null;
-    const endDate = startDate ? new Date(startDate.getTime() + 60 * 60 * 1000) : null;
-    const rawGrade = row.grade_id;
-    const rawSubjectId = row.subject_id;
-    const gradeIdValue = rawGrade != null && Number.isFinite(Number(rawGrade)) ? Number(rawGrade) : null;
-    const subjectIdValue = rawSubjectId != null && Number.isFinite(Number(rawSubjectId)) ? Number(rawSubjectId) : null;
-    const gradeLabel = typeof rawGrade === "string"
-      ? rawGrade.trim()
-      : Number.isFinite(gradeIdValue)
-      ? `Grade ${gradeIdValue}`
-      : null;
-    const subjectLabel = row.subject_name
-      ? String(row.subject_name)
-      : Number.isFinite(subjectIdValue)
-      ? `Subject ${subjectIdValue}`
-      : null;
+    const requestSql = `
+      SELECT ${requestSelectParts.join(", ")}
+      FROM ${REQUEST_REMEDIAL_TABLE} r
+      ${requestSubjectJoin}
+      WHERE 1=1${requestRequesterFilter}${requestGradeFilter}
+      ORDER BY r.${requestDateColumn} DESC, r.${requestIdColumn} DESC
+      LIMIT ${MAX_ACTIVITIES_PER_TABLE}
+    `;
 
-    results.push({
-      id: String(row.request_id),
-      title: row.title ? String(row.title) : null,
-      subject: subjectLabel,
-      gradeLevel: gradeLabel,
-      status: row.status ? String(row.status) : "Approved",
-      startDate: startDate ? startDate.toISOString() : null,
-      endDate: endDate ? endDate.toISOString() : null,
-      date: startDate ? startDate.toISOString() : null,
-      day: dayName,
-      description: null,
-      requestedAt: row.submitted_at ? String(row.submitted_at) : null,
-      approvedAt: null,
-      approvedBy: null,
-      planBatchId: null,
-      weekRef: null,
-      requester: coordinatorName ?? null,
-      sourceTable: APPROVED_REMEDIAL_TABLE,
-      subjectFallback: subjectLabel,
-    } satisfies CoordinatorActivity);
+    const [requestRows] = await query<RowDataPacket[]>(requestSql, requestParams);
+    for (const row of requestRows) {
+      const dayName = row.day ? String(row.day) : null;
+      const dateValue =
+        row.schedule_date instanceof Date
+          ? row.schedule_date
+          : row.schedule_date
+          ? new Date(
+              String(row.schedule_date).includes("T")
+                ? String(row.schedule_date)
+                : `${row.schedule_date}T00:00:00`,
+            )
+          : null;
+      const startDate = dateValue && !Number.isNaN(dateValue.getTime()) ? dateValue : null;
+      const endDate = startDate ? new Date(startDate.getTime() + 60 * 60 * 1000) : null;
+      const rawGrade = row.grade_id;
+      const rawSubjectId = row.subject_id;
+      const gradeIdValue = rawGrade != null && Number.isFinite(Number(rawGrade)) ? Number(rawGrade) : null;
+      const subjectIdValue = rawSubjectId != null && Number.isFinite(Number(rawSubjectId)) ? Number(rawSubjectId) : null;
+      const gradeLabelValue =
+        typeof rawGrade === "string"
+          ? rawGrade.trim()
+          : Number.isFinite(gradeIdValue)
+          ? `Grade ${gradeIdValue}`
+          : null;
+      const subjectLabel =
+        row.subject_name && String(row.subject_name).trim().length > 0
+          ? String(row.subject_name)
+          : Number.isFinite(subjectIdValue)
+          ? `Subject ${subjectIdValue}`
+          : null;
+
+      results.push({
+        id: String(row.request_id),
+        title: row.title ? String(row.title) : null,
+        subject: subjectLabel,
+        gradeLevel: gradeLabelValue,
+        status: row.status ? String(row.status) : "Pending",
+        startDate: startDate ? startDate.toISOString() : null,
+        endDate: endDate ? endDate.toISOString() : null,
+        date: startDate ? startDate.toISOString() : null,
+        day: dayName,
+        description: null,
+        requestedAt: row.submitted_at ? String(row.submitted_at) : null,
+        approvedAt: null,
+        approvedBy: null,
+        planBatchId: null,
+        weekRef: null,
+        requester: coordinatorName ?? null,
+        sourceTable: REQUEST_REMEDIAL_TABLE,
+        subjectFallback: subjectLabel,
+      } satisfies CoordinatorActivity);
+    }
   }
 
   return results;

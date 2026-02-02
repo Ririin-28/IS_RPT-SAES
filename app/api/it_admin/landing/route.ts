@@ -18,6 +18,53 @@ const parseStoredAsset = (value: string | null) => {
   return { dataUrl: value, name: null };
 };
 
+const getFallbackLandingData = () => {
+  const defaults = getDefaultLandingConfig();
+
+  return {
+    carouselImages: defaults.carouselImages.map((image) => ({
+      id: image.id,
+      image: image.url,
+      dataUrl: image.url,
+      name: image.name,
+      createdAt: image.uploadedAt,
+    })),
+    logo: {
+      id: "default-logo",
+      logo: defaults.theme.logoUrl,
+      dataUrl: defaults.theme.logoUrl,
+      name: defaults.theme.logoFileName ?? null,
+      createdAt: null,
+    },
+    saesDetails: {
+      location: defaults.contact.address,
+      contact_no: defaults.contact.phone,
+      email: defaults.contact.email,
+      facebook: defaults.contact.facebook,
+      updated_at: null,
+    },
+    privacyPolicy: {
+      id: "default-policy",
+      file: `/${defaults.privacyPolicyName}`,
+      dataUrl: `/${defaults.privacyPolicyName}`,
+      name: defaults.privacyPolicyName,
+      createdAt: null,
+    },
+  };
+};
+
+const isDbConnectionError = (error: unknown) => {
+  const code = (error as { code?: string } | null)?.code;
+  return (
+    code === "ENOTFOUND" ||
+    code === "ECONNREFUSED" ||
+    code === "ETIMEDOUT" ||
+    code === "EHOSTUNREACH" ||
+    code === "PROTOCOL_CONNECTION_LOST" ||
+    code === "ECONNRESET"
+  );
+};
+
 let landingSchemaPrepared = false;
 
 const ensureLandingTables = async (connection: Connection | PoolConnection) => {
@@ -214,6 +261,10 @@ export async function GET() {
     return NextResponse.json({ data });
   } catch (error) {
     console.error("Failed to load landing configuration", error);
+    if (isDbConnectionError(error)) {
+      const data = getFallbackLandingData();
+      return NextResponse.json({ data, fallback: true });
+    }
     return NextResponse.json({ error: "Failed to load landing configuration" }, { status: 500 });
   }
 }
