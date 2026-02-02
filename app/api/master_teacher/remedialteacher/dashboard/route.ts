@@ -11,6 +11,8 @@ const HANDLED_TABLE = "mt_remedialteacher_handled" as const;
 const SUBJECT_TABLE = "subject" as const;
 const STUDENT_SUBJECT_ASSESSMENT_TABLE = "student_subject_assessment" as const;
 const ASSIGNMENT_TABLE = "student_teacher_assignment" as const;
+const STUDENT_REMEDIAL_SESSION_TABLE = "student_remedial_session" as const;
+const PHONEMIC_LEVEL_TABLE = "phonemic_level" as const;
 
 const SUBJECT_NAMES = ["English", "Filipino", "Math"] as const;
 type SubjectName = (typeof SUBJECT_NAMES)[number];
@@ -30,6 +32,19 @@ type SubjectCountSource = {
   subjectColumn: string;
 };
 
+type TrendSubjectData = {
+  weekly: number[];
+  monthly: number[];
+  levelLabels: string[];
+  levelDistributionByMonth: Record<string, number[]>;
+};
+
+type TrendPayload = {
+  months: Array<{ key: string; label: string }>;
+  weeks: string[];
+  subjects: Record<SubjectName, TrendSubjectData>;
+};
+
 const STUDENT_ID_COLUMNS = [
   "student_id",
   "studentId",
@@ -44,6 +59,9 @@ const SUBJECT_ID_COLUMNS = [
   "subjectid",
   "id",
 ] as const;
+const SESSION_PHONEMIC_COLUMNS = ["phonemic_id", "phonemicId", "phonemicid"] as const;
+const SESSION_COMPLETED_COLUMNS = ["completed_at", "completedAt", "completeddate", "completed_date"] as const;
+const SESSION_CREATED_COLUMNS = ["created_at", "createdAt", "createddate", "created_date"] as const;
 
 const GRADE_WORD_TO_NUMBER: Record<string, number> = {
   one: 1,
@@ -79,6 +97,40 @@ const STUDENT_TEXT_GRADE_COLUMNS = [
   "grade_section",
   "gradeLevel",
 ] as const;
+
+const DEFAULT_TRENDS: TrendPayload = {
+  months: [],
+  weeks: ["Week 1", "Week 2", "Week 3", "Week 4"],
+  subjects: {
+    English: { weekly: [], monthly: [], levelLabels: [], levelDistributionByMonth: {} },
+    Filipino: { weekly: [], monthly: [], levelLabels: [], levelDistributionByMonth: {} },
+    Math: { weekly: [], monthly: [], levelLabels: [], levelDistributionByMonth: {} },
+  },
+};
+
+const buildRecentMonths = (count = 7) => {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const months: Array<{ key: string; label: string }> = [];
+  for (let i = count - 1; i >= 0; i -= 1) {
+    const date = new Date(start.getFullYear(), start.getMonth() - i, 1);
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    const label = date.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+    months.push({ key, label });
+  }
+  return months;
+};
+
+const getMonthKey = (value: Date) => {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+};
+
+const getWeekIndex = (value: Date) => {
+  const week = Math.floor((value.getDate() - 1) / 7) + 1;
+  return Math.min(Math.max(week, 1), 4);
+};
 
 const sanitize = (value: unknown): string | null => {
   if (value === null || value === undefined) {
@@ -553,6 +605,197 @@ async function countStudentsBySubject(
   return counts;
 }
 
+async function loadRemedialTeacherTrends(
+  remedialRoleId: string | null,
+  subjectMap: Map<string, number>,
+): Promise<TrendPayload> {
+  if (!remedialRoleId) {
+    return { ...DEFAULT_TRENDS, months: buildRecentMonths() };
+  }
+
+  const [assignmentColumns, sessionColumns, phonemicColumns] = await Promise.all([
+    safeGetColumns(ASSIGNMENT_TABLE),
+    safeGetColumns(STUDENT_REMEDIAL_SESSION_TABLE),
+    safeGetColumns(PHONEMIC_LEVEL_TABLE),
+  ]);
+
+  const assignmentStudentColumn = pickColumn(assignmentColumns, STUDENT_ID_COLUMNS);
+  const assignmentRoleColumn = assignmentColumns.has("remedial_role_id")
+    ? "remedial_role_id"
+    : pickColumn(assignmentColumns, ["remedial_role_id", "remedialRoleId", "remedialrole_id"]);
+
+  const sessionStudentColumn = pickColumn(sessionColumns, STUDENT_ID_COLUMNS);
+  const sessionSubjectColumn = pickColumn(sessionColumns, SUBJECT_ID_COLUMNS);
+  const sessionPhonemicColumn = pickColumn(sessionColumns, SESSION_PHONEMIC_COLUMNS);
+  const sessionCompletedColumn = pickColumn(sessionColumns, SESSION_COMPLETED_COLUMNS);
+  const sessionCreatedColumn = pickColumn(sessionColumns, SESSION_CREATED_COLUMNS);
+
+  if (!assignmentStudentColumn || !assignmentRoleColumn || !sessionStudentColumn || !sessionSubjectColumn || !sessionPhonemicColumn) {
+    return { ...DEFAULT_TRENDS, months: buildRecentMonths() };
+  }
+
+  const months = buildRecentMonths();
+  const monthKeys = new Set(months.map((month) => month.key));
+
+  const subjectIds = SUBJECT_NAMES.map((name) => subjectMap.get(name.toLowerCase())).filter((id): id is number => Number.isFinite(id));
+  if (!subjectIds.length || !phonemicColumns.has("phonemic_id") || !phonemicColumns.has("level_name") || !phonemicColumns.has("subject_id")) {
+    return { ...DEFAULT_TRENDS, months };
+  }
+
+  const placeholders = subjectIds.map(() => "?").join(", ");
+  const [levelRows] = await query<RowDataPacket[]>(
+    `SELECT phonemic_id, subject_id, level_name
+     FROM ${PHONEMIC_LEVEL_TABLE}
+     WHERE subject_id IN (${placeholders})
+     ORDER BY subject_id ASC, phonemic_id ASC`,
+    subjectIds,
+  );
+
+  const levelLabelsBySubject = new Map<number, string[]>();
+  const levelIndexByPhonemic = new Map<number, number>();
+  for (const row of levelRows ?? []) {
+    const subjectId = Number(row.subject_id);
+    const phonemicId = Number(row.phonemic_id);
+    const levelName = typeof row.level_name === "string" ? row.level_name.trim() : "";
+    if (!Number.isFinite(subjectId) || !Number.isFinite(phonemicId) || !levelName) {
+      continue;
+    }
+    if (!levelLabelsBySubject.has(subjectId)) {
+      levelLabelsBySubject.set(subjectId, []);
+    }
+    const list = levelLabelsBySubject.get(subjectId)!;
+    list.push(levelName);
+    levelIndexByPhonemic.set(phonemicId, list.length);
+  }
+
+  const activeColumn = assignmentColumns.has("is_active") ? "is_active" : null;
+  const activeClause = activeColumn ? ` AND a.${activeColumn} = 1` : "";
+  const dateSelectParts = [
+    sessionCompletedColumn ? `s.${sessionCompletedColumn} AS completed_at` : "NULL AS completed_at",
+    sessionCreatedColumn ? `s.${sessionCreatedColumn} AS created_at` : "NULL AS created_at",
+  ];
+
+  const [sessionRows] = await query<RowDataPacket[]>(
+    `SELECT s.${sessionSubjectColumn} AS subject_id,
+            s.${sessionPhonemicColumn} AS phonemic_id,
+            ${dateSelectParts.join(", ")}
+     FROM ${STUDENT_REMEDIAL_SESSION_TABLE} s
+     JOIN ${ASSIGNMENT_TABLE} a ON a.${assignmentStudentColumn} = s.${sessionStudentColumn}
+     WHERE a.${assignmentRoleColumn} = ?${activeClause}`,
+    [remedialRoleId],
+  );
+
+  const subjects: Record<SubjectName, TrendSubjectData> = {
+    English: { weekly: [0, 0, 0, 0], monthly: months.map(() => 0), levelLabels: [], levelDistributionByMonth: {} },
+    Filipino: { weekly: [0, 0, 0, 0], monthly: months.map(() => 0), levelLabels: [], levelDistributionByMonth: {} },
+    Math: { weekly: [0, 0, 0, 0], monthly: months.map(() => 0), levelLabels: [], levelDistributionByMonth: {} },
+  };
+
+  const subjectLookup = new Map<number, SubjectName>();
+  SUBJECT_NAMES.forEach((name) => {
+    const id = subjectMap.get(name.toLowerCase());
+    if (Number.isFinite(id)) {
+      subjectLookup.set(Number(id), name);
+    }
+  });
+
+  const sumsBySubjectMonth = new Map<SubjectName, number[]>();
+  const countsBySubjectMonth = new Map<SubjectName, number[]>();
+  const sumsBySubjectWeek = new Map<SubjectName, number[]>();
+  const countsBySubjectWeek = new Map<SubjectName, number[]>();
+
+  SUBJECT_NAMES.forEach((name) => {
+    sumsBySubjectMonth.set(name, months.map(() => 0));
+    countsBySubjectMonth.set(name, months.map(() => 0));
+    sumsBySubjectWeek.set(name, [0, 0, 0, 0]);
+    countsBySubjectWeek.set(name, [0, 0, 0, 0]);
+  });
+
+  const monthIndexLookup = new Map<string, number>();
+  months.forEach((month, index) => monthIndexLookup.set(month.key, index));
+
+  const currentMonthKey = getMonthKey(new Date());
+
+  for (const row of sessionRows ?? []) {
+    const subjectId = Number(row.subject_id);
+    const phonemicId = Number(row.phonemic_id);
+    if (!Number.isFinite(subjectId) || !Number.isFinite(phonemicId)) {
+      continue;
+    }
+
+    const subjectName = subjectLookup.get(subjectId);
+    if (!subjectName) {
+      continue;
+    }
+
+    const levelIndex = levelIndexByPhonemic.get(phonemicId);
+    if (!levelIndex) {
+      continue;
+    }
+
+    const completedRaw = row.completed_at ?? row.created_at;
+    if (!completedRaw) {
+      continue;
+    }
+    const date = completedRaw instanceof Date ? completedRaw : new Date(completedRaw);
+    if (Number.isNaN(date.getTime())) {
+      continue;
+    }
+
+    const monthKey = getMonthKey(date);
+    const monthIndex = monthIndexLookup.get(monthKey);
+    if (monthIndex === undefined || !monthKeys.has(monthKey)) {
+      continue;
+    }
+
+    const monthSums = sumsBySubjectMonth.get(subjectName)!;
+    const monthCounts = countsBySubjectMonth.get(subjectName)!;
+    monthSums[monthIndex] += levelIndex;
+    monthCounts[monthIndex] += 1;
+
+    const levelLabels = levelLabelsBySubject.get(subjectId) ?? [];
+    if (levelLabels.length) {
+      subjects[subjectName].levelLabels = levelLabels;
+      if (!subjects[subjectName].levelDistributionByMonth[monthKey]) {
+        subjects[subjectName].levelDistributionByMonth[monthKey] = levelLabels.map(() => 0);
+      }
+      const distribution = subjects[subjectName].levelDistributionByMonth[monthKey];
+      const index = levelIndex - 1;
+      if (distribution[index] !== undefined) {
+        distribution[index] += 1;
+      }
+    }
+
+    if (monthKey === currentMonthKey) {
+      const weekIndex = getWeekIndex(date) - 1;
+      const weekSums = sumsBySubjectWeek.get(subjectName)!;
+      const weekCounts = countsBySubjectWeek.get(subjectName)!;
+      weekSums[weekIndex] += levelIndex;
+      weekCounts[weekIndex] += 1;
+    }
+  }
+
+  SUBJECT_NAMES.forEach((name) => {
+    const monthSums = sumsBySubjectMonth.get(name)!;
+    const monthCounts = countsBySubjectMonth.get(name)!;
+    const weekSums = sumsBySubjectWeek.get(name)!;
+    const weekCounts = countsBySubjectWeek.get(name)!;
+
+    subjects[name].monthly = monthSums.map((sum, index) =>
+      monthCounts[index] ? Number((sum / monthCounts[index]).toFixed(2)) : 0,
+    );
+    subjects[name].weekly = weekSums.map((sum, index) =>
+      weekCounts[index] ? Number((sum / weekCounts[index]).toFixed(2)) : 0,
+    );
+  });
+
+  return {
+    months,
+    weeks: DEFAULT_TRENDS.weeks,
+    subjects,
+  };
+}
+
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const userIdParam = url.searchParams.get("userId");
@@ -595,11 +838,15 @@ export async function GET(request: NextRequest) {
 
     const subjectMap = await resolveSubjectIds(SUBJECT_NAMES);
 
-    const counts = await countAssignedStudentsBySubject(remedialRoleId, subjectMap);
+    const [counts, trends] = await Promise.all([
+      countAssignedStudentsBySubject(remedialRoleId, subjectMap),
+      loadRemedialTeacherTrends(remedialRoleId, subjectMap),
+    ]);
 
     return NextResponse.json({
       success: true,
       counts,
+      trends,
       metadata: {
         gradeIds: [],
         gradeLabels: [],

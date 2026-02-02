@@ -311,7 +311,7 @@ export default function MasterTeacherStudents({ subjectSlug }: MasterTeacherStud
     (nextLabel: string) => {
       const nextSubject = SUBJECT_OPTIONS.find((option) => option.label === nextLabel)?.value ?? "english";
       if (nextSubject !== subject) {
-        router.push(`/MasterTeacher/RemedialTeacher/students/${nextSubject}`);
+        router.push(`/MasterTeacher/RemedialTeacher/students/subject/${nextSubject}`);
       }
     },
     [router, subject]

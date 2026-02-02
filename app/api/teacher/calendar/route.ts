@@ -60,7 +60,9 @@ type TeacherActivity = {
   id: string;
   title: string | null;
   subject: string | null;
+  subjectId: number | null;
   grade: string | null;
+  gradeId: number | null;
   status: string | null;
   activityDate: string | null;
   startTime: string | null;
@@ -145,18 +147,22 @@ export async function GET(request: NextRequest) {
       const dayName = row.day ? String(row.day) : null;
       const activityDate = row.schedule_date ? String(row.schedule_date) : null;
 
-      const gradeLabel = row.grade_id ? `Grade ${row.grade_id}` : null;
+      const gradeId = row.grade_id != null && Number.isFinite(Number(row.grade_id)) ? Number(row.grade_id) : null;
+      const gradeLabel = gradeId ? `Grade ${gradeId}` : null;
+      const subjectId = row.subject_id != null && Number.isFinite(Number(row.subject_id)) ? Number(row.subject_id) : null;
       const subjectLabel = row.subject_name
         ? String(row.subject_name)
-        : row.subject_id
-        ? `Subject ${row.subject_id}`
+        : subjectId
+        ? `Subject ${subjectId}`
         : null;
 
       return {
         id: String(row.request_id),
         title: row.title ? String(row.title) : null,
         subject: subjectLabel,
+        subjectId,
         grade: gradeLabel,
+        gradeId,
         status: row.status ? String(row.status) : null,
         activityDate,
         startTime: null,

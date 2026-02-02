@@ -1,4 +1,4 @@
-import StudentCardsGrid from "@/modules/MasterTeacher/RemedialTeacher/report/StudentCardsGrid";
+import StudentTab from "@/modules/MasterTeacher/RemedialTeacher/report/StudentTab";
 import { normalizeSubject } from "@/app/api/auth/master_teacher/report/subject-config";
 
 export default async function StudentCardsPage({
@@ -8,5 +8,5 @@ export default async function StudentCardsPage({
 }) {
   const { subject } = await params;
   const normalizedSubject = normalizeSubject(subject);
-  return <StudentCardsGrid subject={normalizedSubject} />;
+  return <StudentTab subject={normalizedSubject} />;
 }

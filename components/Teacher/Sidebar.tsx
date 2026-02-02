@@ -85,9 +85,9 @@ export default function TeacherSidebar() {
         label: "Students", 
         icon: <StudentsIcon />, 
         children: [
-          { label: "English", path: "/Teacher/students/english" },
-          { label: "Filipino", path: "/Teacher/students/filipino" },
-          { label: "Math", path: "/Teacher/students/math" },
+          { label: "English", path: "/Teacher/students/subject/english" },
+          { label: "Filipino", path: "/Teacher/students/subject/filipino" },
+          { label: "Math", path: "/Teacher/students/subject/math" },
         ],
       },
       {

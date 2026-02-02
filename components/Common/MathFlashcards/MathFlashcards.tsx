@@ -1,7 +1,7 @@
 "use client";
 import { useState, useRef, useEffect, useMemo, useCallback, type CSSProperties } from "react";
 import { FiArrowLeft, FiArrowRight } from "react-icons/fi";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import TableList from "@/components/Common/Tables/TableList";
 
@@ -40,6 +40,16 @@ type StudentPerformanceEntry = {
   responseTime: number;
   cardIndex: number;
   question: string;
+  overallAverage?: number;
+};
+
+type SessionScore = {
+  cardIndex: number;
+  question: string;
+  score: number;
+  responseTime: number;
+  readingSpeedWpm: number;
+  transcription?: string | null;
 };
 
 type EnrichedStudent = StudentRecord & {
@@ -77,7 +87,14 @@ export default function MathFlashcards({
 }: MathFlashcardsProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const pathname = usePathname();
   const startParam = searchParams?.get("start");
+  const activityParam = searchParams?.get("activity") ?? "";
+  const subjectParam = searchParams?.get("subject") ?? "";
+  const subjectIdParam = searchParams?.get("subjectId");
+  const gradeIdParam = searchParams?.get("gradeId");
+  const phonemicIdParam = searchParams?.get("phonemicId");
+  const materialIdParam = searchParams?.get("materialId");
 
   const [flashcardsData, setFlashcardsData] = useState<MathFlashcard[]>(INITIAL_FLASHCARDS);
   const startIndex = useMemo(() => {
@@ -88,11 +105,74 @@ export default function MathFlashcards({
     return Math.min(Math.max(parsed, 0), maxIndex);
   }, [flashcardsData.length, startParam]);
 
+  const toNumberParam = (value: string | null | undefined) => {
+    if (!value) return null;
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const approvedScheduleId = useMemo(() => toNumberParam(activityParam), [activityParam]);
+  const subjectId = useMemo(() => toNumberParam(subjectIdParam), [subjectIdParam]);
+  const gradeId = useMemo(() => toNumberParam(gradeIdParam), [gradeIdParam]);
+  const phonemicId = useMemo(() => toNumberParam(phonemicIdParam), [phonemicIdParam]);
+  const materialId = useMemo(() => toNumberParam(materialIdParam), [materialIdParam]);
+
+  type SessionLockState = { completed: boolean; lastIndex: number; updatedAt: string };
+  const sessionLockEnabled = useMemo(() => {
+    if (!pathname) return false;
+    return pathname.includes("/Teacher/remedial") || pathname.includes("/MasterTeacher/RemedialTeacher/remedial");
+  }, [pathname]);
+  const sessionKeyBase = useMemo(() => {
+    if (!sessionLockEnabled) return null;
+    const subjectKey = subjectParam || "subject";
+    const activityKey = activityParam || "activity";
+    return `remedial-session:${subjectKey}:${activityKey}`;
+  }, [activityParam, sessionLockEnabled, subjectParam]);
+  const getSessionKey = useCallback(
+    (studentId: string | null) => {
+      if (!sessionKeyBase || !studentId) return null;
+      return `${sessionKeyBase}:${studentId}`;
+    },
+    [sessionKeyBase],
+  );
+  const readSessionState = useCallback(
+    (studentId: string | null): SessionLockState | null => {
+      if (typeof window === "undefined") return null;
+      const key = getSessionKey(studentId);
+      if (!key) return null;
+      try {
+        const stored = window.localStorage.getItem(key);
+        if (!stored) return null;
+        const parsed = JSON.parse(stored) as SessionLockState;
+        if (!parsed || typeof parsed !== "object") return null;
+        if (typeof parsed.completed !== "boolean") return null;
+        if (!Number.isFinite(parsed.lastIndex)) return null;
+        if (typeof parsed.updatedAt !== "string") return null;
+        return parsed;
+      } catch {
+        return null;
+      }
+    },
+    [getSessionKey],
+  );
+  const writeSessionState = useCallback(
+    (studentId: string | null, state: SessionLockState) => {
+      if (typeof window === "undefined") return;
+      const key = getSessionKey(studentId);
+      if (!key) return;
+      window.localStorage.setItem(key, JSON.stringify(state));
+    },
+    [getSessionKey],
+  );
+
   const [view, setView] = useState<"select" | "session">(forceSessionOnly ? "session" : (initialView ?? "select"));
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(initialStudentId ?? null);
   const [studentSearch, setStudentSearch] = useState("");
   const [lastSavedStudentId, setLastSavedStudentId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [completedByStudent, setCompletedByStudent] = useState<Record<string, boolean>>({});
+  const [dbCompletionByStudent, setDbCompletionByStudent] = useState<Record<string, boolean>>({});
+  const [blockedSessionMessage, setBlockedSessionMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (forceSessionOnly) {
@@ -134,6 +214,86 @@ export default function MathFlashcards({
     }
     return undefined;
   }, [lastSavedStudentId]);
+
+  useEffect(() => {
+    if (!blockedSessionMessage) return undefined;
+    const timer = window.setTimeout(() => setBlockedSessionMessage(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [blockedSessionMessage]);
+
+  useEffect(() => {
+    if (!sessionKeyBase || typeof window === "undefined") return;
+    const next: Record<string, boolean> = {};
+    for (const student of students) {
+      const state = readSessionState(student.id);
+      if (state?.completed) {
+        next[student.id] = true;
+      }
+    }
+    setCompletedByStudent(next);
+  }, [students, readSessionState, sessionKeyBase]);
+
+  useEffect(() => {
+    if (!sessionLockEnabled || !approvedScheduleId || !subjectId || !students.length) {
+      setDbCompletionByStudent({});
+      return;
+    }
+
+    const controller = new AbortController();
+    const loadCompletion = async () => {
+      try {
+        const response = await fetch("/api/remedial/session/status", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            approvedScheduleId,
+            subjectId,
+            phonemicId: phonemicId ?? null,
+            studentIds: students.map((student) => student.id),
+          }),
+        });
+        const payload = (await response.json().catch(() => null)) as
+          | { success?: boolean; statusByStudent?: Record<string, { completed?: boolean }> }
+          | null;
+
+        if (!response.ok || !payload?.success) {
+          return;
+        }
+
+        const next: Record<string, boolean> = {};
+        const status = payload.statusByStudent ?? {};
+        for (const student of students) {
+          next[student.id] = Boolean(status[student.id]?.completed);
+        }
+        setDbCompletionByStudent(next);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+      }
+    };
+
+    loadCompletion();
+    return () => controller.abort();
+  }, [approvedScheduleId, phonemicId, sessionLockEnabled, students, subjectId]);
+
+  useEffect(() => {
+    if (!sessionLockEnabled) {
+      setBlockedSessionMessage(null);
+      return;
+    }
+    const isDbCompleted = selectedStudentId ? Boolean(dbCompletionByStudent[selectedStudentId]) : false;
+    if (isDbCompleted) {
+      setBlockedSessionMessage("This remedial session was already completed for this student.");
+      return;
+    }
+    const state = readSessionState(selectedStudentId);
+    if (state?.completed) {
+      setBlockedSessionMessage("This remedial session was already completed for this student.");
+      return;
+    }
+  }, [dbCompletionByStudent, readSessionState, selectedStudentId, sessionLockEnabled]);
 
   const enrichedStudents = useMemo<EnrichedStudent[]>(() => {
     const latestByStudent = new Map<string, StudentPerformanceEntry>();
@@ -196,11 +356,17 @@ export default function MathFlashcards({
   }, [forceSessionOnly, selectedStudent, view]);
 
   const [current, setCurrent] = useState(startIndex);
+  const [sessionScores, setSessionScores] = useState<SessionScore[]>([]);
+  const [showSummary, setShowSummary] = useState(false);
   const [userAnswer, setUserAnswer] = useState("");
   const [feedback, setFeedback] = useState("");
   const [startTime, setStartTime] = useState<number | null>(null);
   const [rate, setRate] = useState<number | null>(null);
   const [score, setScore] = useState<number | null>(null);
+  const hasRecordedScoreForCurrent = useMemo(
+    () => sessionScores.some((item) => item.cardIndex === current),
+    [current, sessionScores],
+  );
 
   useEffect(() => {
     if (flashcardsData.length === 0) {
@@ -236,39 +402,267 @@ export default function MathFlashcards({
     setStartTime(Date.now());
   }, []);
 
+  const upsertSessionScore = useCallback(
+    (cardIndex: number, questionText: string, sc: { score: number; responseTime: number; transcription?: string | null }) => {
+      setSessionScores((prev) => {
+        const next = prev.filter((item) => item.cardIndex !== cardIndex);
+        const speedWpm = sc.responseTime > 0 ? Math.round(60 / sc.responseTime) : 0;
+        next.push({
+          cardIndex,
+          question: questionText,
+          score: sc.score,
+          responseTime: sc.responseTime,
+          readingSpeedWpm: speedWpm,
+          transcription: sc.transcription ?? null,
+        });
+        return next.sort((a, b) => a.cardIndex - b.cardIndex);
+      });
+    },
+    [],
+  );
+
+  const formatDuration = (seconds: number) => {
+    if (!Number.isFinite(seconds)) return "—";
+    const totalSeconds = Math.round(seconds);
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    if (mins === 0) return `${totalSeconds} sec${totalSeconds === 1 ? "" : "s"}`;
+    const secsPart = secs > 0 ? ` ${secs} sec${secs === 1 ? "" : "s"}` : "";
+    return `${mins} min${mins === 1 ? "" : "s"}${secsPart}`;
+  };
+
+  const updateSessionProgress = useCallback(
+    (nextIndex: number) => {
+      if (!sessionLockEnabled || !selectedStudentId) return;
+      const currentState = readSessionState(selectedStudentId) ?? {
+        completed: false,
+        lastIndex: nextIndex,
+        updatedAt: new Date().toISOString(),
+      };
+      if (nextIndex <= currentState.lastIndex) return;
+      const updated: SessionLockState = {
+        ...currentState,
+        lastIndex: nextIndex,
+        updatedAt: new Date().toISOString(),
+      };
+      writeSessionState(selectedStudentId, updated);
+    },
+    [readSessionState, selectedStudentId, sessionLockEnabled, writeSessionState],
+  );
+
   const handlePrev = () => {
+    if (sessionLockEnabled) return;
     setCurrent((prev) => Math.max(prev - 1, 0));
     resetFields();
   };
 
   const handleNext = () => {
-    setCurrent((prev) => Math.min(prev + 1, flashcardsData.length - 1));
+    if (!hasRecordedScoreForCurrent) {
+      setFeedback("Please submit an answer before moving to the next card.");
+      return;
+    }
+    setCurrent((prev) => {
+      if (showSummary) return prev;
+      if (flashcardsData.length === 0) return 0;
+      if (prev >= flashcardsData.length - 1) {
+        setShowSummary(true);
+        return prev;
+      }
+      const nextIndex = Math.min(prev + 1, flashcardsData.length - 1);
+      if (sessionLockEnabled && nextIndex > prev) {
+        updateSessionProgress(nextIndex);
+      }
+      return nextIndex;
+    });
     resetFields();
   };
 
-  const handleStartSession = (studentId: string) => {
+  const handleStartSession = async (studentId: string) => {
+    if (sessionLockEnabled) {
+      if (dbCompletionByStudent[studentId]) {
+        setBlockedSessionMessage("This remedial session was already completed for this student.");
+        return;
+      }
+      const state = readSessionState(studentId);
+      if (state?.completed) {
+        setBlockedSessionMessage("This remedial session was already completed for this student.");
+        return;
+      }
+    }
     setSelectedStudentId(studentId);
-    setCurrent(startIndex);
+    const localLastIndex = readSessionState(studentId)?.lastIndex ?? startIndex;
+    let resumeIndex = sessionLockEnabled
+      ? Math.max(startIndex, localLastIndex)
+      : startIndex;
+    setSessionScores([]);
+    setShowSummary(false);
     resetFields();
+    if (sessionLockEnabled && approvedScheduleId) {
+      try {
+        const response = await fetch(
+          `/api/remedial/session?studentId=${encodeURIComponent(studentId)}&approvedScheduleId=${encodeURIComponent(String(approvedScheduleId))}`,
+        );
+        const payload = (await response.json().catch(() => null)) as
+          | {
+              success?: boolean;
+              found?: boolean;
+              slides?: Array<{
+                flashcardIndex: number;
+                pronunciationScore: number;
+                correctnessScore: number;
+                readingSpeedWpm: number;
+                slideAverage: number;
+                expectedText?: string | null;
+                transcription?: string | null;
+              }>;
+            }
+          | null;
+
+        if (response.ok && payload?.success && payload.found && Array.isArray(payload.slides)) {
+          const nextScores: SessionScore[] = payload.slides.map((slide) => {
+            const speedWpm = Number.isFinite(slide.readingSpeedWpm) ? slide.readingSpeedWpm : 0;
+            const responseTime = speedWpm > 0 ? Math.max(1, Math.round(60 / speedWpm)) : 0;
+            return {
+              cardIndex: slide.flashcardIndex,
+              question: slide.expectedText ?? flashcardsData[slide.flashcardIndex]?.question ?? "",
+              score: slide.slideAverage,
+              responseTime,
+              readingSpeedWpm: speedWpm,
+              transcription: slide.transcription ?? null,
+            };
+          });
+
+          setSessionScores(nextScores);
+          const maxSavedIndex = nextScores.reduce((max, item) => Math.max(max, item.cardIndex), -1);
+          resumeIndex = Math.max(resumeIndex, maxSavedIndex + 1);
+          const lastIndex = Math.max(localLastIndex, maxSavedIndex);
+          writeSessionState(studentId, {
+            completed: false,
+            lastIndex,
+            updatedAt: new Date().toISOString(),
+          });
+        } else if (sessionLockEnabled) {
+          writeSessionState(studentId, {
+            completed: false,
+            lastIndex: resumeIndex,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      } catch {
+        if (sessionLockEnabled) {
+          writeSessionState(studentId, {
+            completed: false,
+            lastIndex: resumeIndex,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      }
+    } else if (sessionLockEnabled) {
+      writeSessionState(studentId, {
+        completed: false,
+        lastIndex: resumeIndex,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    const boundedResume = Math.min(Math.max(resumeIndex, 0), Math.max(0, flashcardsData.length - 1));
+    setCurrent(boundedResume);
     setView("session");
   };
 
-  const handleStopSession = () => {
+  const handleStopSession = async () => {
     const activeQuestion = flashcardsData[current]?.question ?? "";
-    if (selectedStudentId !== null && score !== null && rate !== null) {
+    const overallAverageForSave = sessionScores.length
+      ? Math.round(
+          sessionScores.reduce((sum, item) => sum + item.score, 0) /
+            Math.max(1, sessionScores.length),
+        )
+      : score ?? 0;
+
+    const averageTimeForSave = sessionScores.length
+      ? sessionScores.reduce((sum, item) => sum + item.responseTime, 0) /
+          Math.max(1, sessionScores.length)
+      : rate ?? 0;
+
+    if (selectedStudentId !== null && (sessionScores.length || (score !== null && rate !== null))) {
       onSavePerformance({
         id: `perf-${Date.now()}`,
         studentId: selectedStudentId,
         timestamp: new Date().toISOString(),
-        score,
-        responseTime: rate,
-        cardIndex: current,
+        score: overallAverageForSave,
+        responseTime: averageTimeForSave,
+        cardIndex: showSummary ? -1 : current,
         question: activeQuestion,
+        overallAverage: overallAverageForSave,
       });
       setLastSavedStudentId(selectedStudentId);
     }
 
+    if (
+      sessionLockEnabled &&
+      selectedStudentId &&
+      approvedScheduleId &&
+      subjectId &&
+      gradeId &&
+      sessionScores.length
+    ) {
+      const slides = sessionScores.map((item) => ({
+        flashcardIndex: item.cardIndex,
+        expectedText: item.question,
+        pronunciationScore: item.score,
+        correctnessScore: item.score,
+        readingSpeedWpm: item.readingSpeedWpm,
+        slideAverage: item.score,
+        transcription: item.transcription ?? null,
+      }));
+
+      try {
+        const response = await fetch("/api/remedial/session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            studentId: selectedStudentId,
+            approvedScheduleId,
+            subjectId,
+            gradeId,
+            phonemicId: phonemicId ?? null,
+            materialId: materialId ?? null,
+            completed: showSummary,
+            slides,
+          }),
+        });
+
+        if (!response.ok && response.status !== 409) {
+          const payload = await response.json().catch(() => null);
+          console.warn("Failed to save remedial session", payload?.error ?? response.statusText);
+        }
+      } catch (error) {
+        console.warn("Failed to save remedial session", error);
+      }
+    }
+
+    if (sessionLockEnabled && selectedStudentId) {
+      const existing = readSessionState(selectedStudentId) ?? {
+        completed: false,
+        lastIndex: current,
+        updatedAt: new Date().toISOString(),
+      };
+      const lastIndexReached = Math.max(existing.lastIndex ?? 0, current);
+      const completed = lastIndexReached >= Math.max(0, flashcardsData.length - 1) && (showSummary || current >= flashcardsData.length - 1);
+      const updated: SessionLockState = {
+        ...existing,
+        completed,
+        lastIndex: lastIndexReached,
+        updatedAt: new Date().toISOString(),
+      };
+      writeSessionState(selectedStudentId, updated);
+      if (completed) {
+        setCompletedByStudent((prev) => ({ ...prev, [selectedStudentId]: true }));
+      }
+    }
+
     resetFields();
+    setSessionScores([]);
+    setShowSummary(false);
     setCurrent(startIndex);
     if (forceSessionOnly) {
       if (onExit) {
@@ -284,7 +678,11 @@ export default function MathFlashcards({
   };
 
   const handleBackToDashboard = () => {
-    router.push('/MasterTeacher/Coordinator/remedial');
+    if (onExit) {
+      onExit();
+      return;
+    }
+    router.back();
   };
 
   useEffect(() => {
@@ -324,12 +722,16 @@ export default function MathFlashcards({
         question: question,
       });
     }
+
+    upsertSessionScore(current, question, { score: isCorrect ? 100 : 0, responseTime: durationSec, transcription: userAnswer.trim() });
   };
 
   const selectionRows = paginatedStudents.map((student, index) => ({
     ...student,
     no: (currentPage - 1) * PAGE_SIZE + index + 1,
-    lastAccuracy: student.lastPerformance ? `${student.lastPerformance.score}%` : "—",
+    lastAccuracy: student.lastPerformance
+      ? `${(student.lastPerformance.overallAverage ?? student.lastPerformance.score).toFixed(0)}%`
+      : "—",
   }));
 
   const selectionSummaryText = filteredStudents.length
@@ -378,6 +780,12 @@ export default function MathFlashcards({
             </div>
           )}
 
+          {blockedSessionMessage && (
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-sm shadow-amber-100">
+              {blockedSessionMessage}
+            </div>
+          )}
+
           <div className="mt-5 rounded-3xl border border-gray-300 bg-white shadow-md shadow-gray-200 p-6 space-y-6 flex flex-1 flex-col min-h-0">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm font-medium text-gray-600">{selectionSummaryText}</p>
@@ -403,11 +811,28 @@ export default function MathFlashcards({
                   { key: "lastAccuracy", title: "Average" },
                 ]}
                 data={selectionRows}
-                actions={(row: any) => (
-                  <UtilityButton small onClick={() => handleStartSession(row.id)}>
-                    Start
-                  </UtilityButton>
-                )}
+                actions={(row: any) => {
+                  const isCompleted = Boolean(
+                    sessionLockEnabled &&
+                      (dbCompletionByStudent[row.id] || completedByStudent[row.id]),
+                  );
+                  const resumeState = Boolean(
+                    sessionLockEnabled &&
+                      !isCompleted &&
+                      (readSessionState(row.id)?.lastIndex ?? 0) > 0,
+                  );
+                  const label = isCompleted ? "Completed" : resumeState ? "Resume" : "Start";
+                  return (
+                    <UtilityButton
+                      small
+                      onClick={() => handleStartSession(row.id)}
+                      disabled={isCompleted}
+                      className={isCompleted ? "opacity-50 cursor-not-allowed" : ""}
+                    >
+                      {label}
+                    </UtilityButton>
+                  );
+                }}
                 pageSize={PAGE_SIZE}
               />
             </div>
@@ -419,12 +844,31 @@ export default function MathFlashcards({
     );
   }
 
+  if (sessionLockEnabled && blockedSessionMessage && forceSessionOnly) {
+    return (
+      <div className="min-h-dvh bg-linear-to-br from-[#f2f8f4] via-white to-[#e6f2ec]">
+        <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10 flex min-h-dvh flex-col items-center justify-center">
+          <div className="rounded-3xl border border-amber-200 bg-amber-50 px-6 py-5 text-center text-amber-900 shadow-sm">
+            <p className="text-lg font-semibold">Session Locked</p>
+            <p className="mt-2 text-sm">{blockedSessionMessage}</p>
+            <button
+              onClick={handleBackToDashboard}
+              className="mt-5 inline-flex items-center gap-2 rounded-full border border-amber-300 px-6 py-2 text-sm font-medium text-amber-900 transition hover:bg-amber-100"
+            >
+              <FiArrowLeft /> Back
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!selectedStudent) {
     return null;
   }
 
   const progressPercent = flashcardsData.length
-    ? ((current + 1) / flashcardsData.length) * 100
+    ? (showSummary ? 100 : ((current + 1) / flashcardsData.length) * 100)
     : 0;
   const progressCircleStyle: CSSProperties = {
     background: `conic-gradient(#013300 ${progressPercent * 3.6}deg, #e6f4ef ${progressPercent * 3.6}deg)`,
@@ -448,6 +892,177 @@ export default function MathFlashcards({
     // If the name is just 'Math Preview', keep as is
     mainTitle = selectedStudent.name;
     subtitle = "";
+  }
+
+  const buildMathInsights = (scores: SessionScore[]) => {
+    if (!scores.length) return null;
+    const avg = (values: number[]) =>
+      values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length);
+    const scoreAvg = Math.round(avg(scores.map((item) => item.score ?? 0)));
+    const timeAvg = avg(scores.map((item) => item.responseTime ?? 0));
+    const timeAvgRounded = Math.round(timeAvg * 10) / 10;
+    const weaknesses: string[] = [];
+    const strengths: string[] = [];
+
+    const accuracyLabel = scoreAvg < 60 ? "low" : scoreAvg < 75 ? "fair" : scoreAvg >= 85 ? "strong" : "ok";
+    const speedLabel = timeAvg <= 4 ? "fast" : timeAvg <= 6 ? "steady" : "slow";
+
+    if (scoreAvg < 75) weaknesses.push("getting answers right");
+    if (timeAvg > 6) weaknesses.push("solving problems quickly");
+
+    if (scoreAvg >= 85) strengths.push("good accuracy");
+    if (timeAvg <= 4) strengths.push("fast problem solving");
+
+    const recommendations: string[] = [];
+    if (scoreAvg < 75) recommendations.push("practice 10–15 problems per session, three times a week");
+    if (timeAvg > 6) recommendations.push("add short timed drills twice a week to build speed");
+    if (!recommendations.length) {
+      recommendations.push("keep a steady practice routine 2–3 times a week");
+    }
+
+    const formatList = (items: string[]) => {
+      if (!items.length) return "";
+      if (items.length === 1) return items[0];
+      if (items.length === 2) return `${items[0]} and ${items[1]}`;
+      return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
+    };
+
+    const confidence = scores.length >= 6 ? "High" : scores.length >= 3 ? "Medium" : "Low";
+    const summary = weaknesses.length
+      ? `Needs focus on ${formatList(weaknesses)}.`
+      : "Strong overall performance in this session.";
+
+    return {
+      scoreAvg,
+      timeAvg: timeAvgRounded,
+      accuracyLabel,
+      speedLabel,
+      weaknesses,
+      strengths,
+      recommendations,
+      confidence,
+      summary,
+    };
+  };
+
+  const buildInsightParagraph = (studentName: string, insights: ReturnType<typeof buildMathInsights>) => {
+    if (!insights) return "Record a few slides to generate insights.";
+    const name = studentName || "The student";
+    const weaknessText = insights.weaknesses.length
+      ? `${name} is having difficulty with ${insights.weaknesses.join(" and ")}.`
+      : `${name} shows no major weaknesses in this session.`;
+    const strengthText = insights.strengths.length
+      ? `Strengths include ${insights.strengths.join(" and ")}.`
+      : "Strengths are still building as more data is collected.";
+    const recommendationText = insights.recommendations.length
+      ? `Recommended next steps: ${insights.recommendations.join(" and ")}.`
+      : "Recommended next steps will appear after more recorded slides.";
+
+    return `${weaknessText} ${strengthText} ${recommendationText}`;
+  };
+
+  if (showSummary) {
+    const overallAverage = sessionScores.length
+      ? Math.round(
+          sessionScores.reduce((sum, item) => sum + item.score, 0) /
+            Math.max(1, sessionScores.length),
+        )
+      : 0;
+    const insights = buildMathInsights(sessionScores);
+    const insightParagraph = buildInsightParagraph(selectedStudent?.name ?? "", insights);
+
+    return (
+      <div className="min-h-dvh bg-linear-to-br from-[#f2f8f4] via-white to-[#e6f2ec]">
+        <div className="w-full max-w-8xl mx-auto px-4 sm:px-6 lg:px-10 py-6 flex min-h-dvh flex-col gap-5">
+          <header className="rounded-3xl border border-gray-300 bg-white/70 backdrop-blur px-8 py-5 flex flex-col gap-2 shadow-md shadow-gray-200">
+            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">Session Summary</p>
+            <h1 className="text-3xl sm:text-4xl font-bold text-black">Overall Performance</h1>
+          </header>
+
+          <div className="grid gap-4 lg:grid-cols-12">
+            <div className="rounded-3xl border border-gray-300 bg-white shadow-md shadow-gray-200 p-6 flex flex-col gap-3 lg:col-span-3">
+              <p className="text-3xl sm:text-2xl font-bold text-black">Total Average</p>
+              <p className="text-7xl font-bold text-[#013300]">{overallAverage}%</p>
+              <p className="text-sm text-slate-600">Based on {sessionScores.length} slide{sessionScores.length === 1 ? "" : "s"} with recorded scores.</p>
+            </div>
+            <div className="rounded-3xl border border-gray-300 bg-white shadow-md shadow-gray-200 p-6 flex flex-col gap-3 lg:col-span-9 min-h-[320px]">
+              <p className="text-3xl sm:text-2xl font-bold text-black">Per-Slide Scores</p>
+              <div className="overflow-auto -mx-4 px-4">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-slate-500">
+                      <th className="py-2 pr-3">Slide</th>
+                      <th className="py-2 pr-3">Question</th>
+                      <th className="py-2 pr-3">Time</th>
+                      <th className="py-2 pr-3">Score</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sessionScores.length === 0 ? (
+                      <tr>
+                        <td className="py-3 text-slate-600" colSpan={4}>No recorded scores yet.</td>
+                      </tr>
+                    ) : (
+                      sessionScores.map((item) => (
+                        <tr key={item.cardIndex} className="border-t border-gray-200">
+                          <td className="py-2 pr-3 font-bold text-[#013300]">{item.cardIndex + 1}</td>
+                          <td className="py-2 pr-3 font-medium text-[#013300]">{item.question}</td>
+                          <td className="py-2 pr-3 font-medium text-[#013300]">{formatDuration(item.responseTime)}</td>
+                          <td className="py-2 pr-3 font-medium text-[#013300]">{item.score}%</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-emerald-200 bg-white shadow-md shadow-emerald-100 p-6">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">AI Driven Insights</p>
+              <h2 className="text-2xl font-bold text-black">Feedback &amp; Recommendations</h2>
+            </div>
+            <p className="mt-3 text-md text-slate-700 leading-relaxed">
+              {insightParagraph}
+            </p>
+
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:flex-wrap items-center justify-center gap-3 mt-auto">
+            {!sessionLockEnabled && (
+              <button
+                onClick={() => setShowSummary(false)}
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-[#013300] px-6 py-3 text-sm font-medium text-[#013300] transition hover:border-[#013300] hover:bg-emerald-50 w-full sm:w-auto"
+              >
+                <FiArrowLeft /> Back to Cards
+              </button>
+            )}
+            <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+              <button
+                onClick={handleStopSession}
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#013300] px-7 py-3 text-sm font-medium text-white shadow-md shadow-gray-200 transition hover:bg-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600 active:scale-95 w-full sm:w-auto"
+              >
+                <span className="h-2 w-2 rounded-full bg-white/70" /> Save &amp; Exit
+              </button>
+              {!sessionLockEnabled && (
+                <button
+                  onClick={() => {
+                    setCurrent(0);
+                    setSessionScores([]);
+                    setShowSummary(false);
+                    resetFields();
+                  }}
+                  className="inline-flex items-center justify-center gap-2 rounded-full border border-[#013300] px-6 py-3 text-sm font-medium text-[#013300] transition hover:border-[#013300] hover:bg-emerald-50 w-full sm:w-auto"
+                >
+                  Restart Session
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -514,24 +1129,21 @@ export default function MathFlashcards({
               <div className="rounded-3xl border border-gray-300 bg-white/80 backdrop-blur px-6 py-7 shadow-md shadow-gray-200 flex flex-1 flex-col min-h-0">
                 <h2 className="text-lg font-semibold text-[#013300]">Real-time Insights</h2>
                 <div className="mt-6 flex flex-1 flex-col gap-4 min-h-0">
-                  <div className="rounded-2xl border border-gray-300 bg-emerald-50/60 px-4 py-3 flex flex-col h-full">
+                  <div className="rounded-2xl border border-gray-300 bg-emerald-50/60 px-4 py-3 flex flex-col flex-1">
                     <p className="text-xs uppercase tracking-wide text-emerald-800">Remarks</p>
                     <p className="mt-1 text-sm font-medium text-[#013300]">
                       {feedback || "Submit an answer to see how you did."}
                     </p>
                   </div>
-                  <dl className="grid flex-1 grid-cols-1 gap-3 text-sm sm:grid-cols-2 auto-rows-fr">
+                  <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 auto-rows-fr">
                     <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col">
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">Accuracy</dt>
-                      <dd className="text-lg font-semibold text-[#013300]">{score !== null ? `${score}%` : "—"}</dd>
-                    </div>
-                    <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col">
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">Response time</dt>
-                      <dd className="text-lg font-semibold text-[#013300]">{rate !== null ? `${rate.toFixed(2)}s` : "—"}</dd>
-                    </div>
-                    <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col">
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">Your input</dt>
-                      <dd className="text-lg font-semibold text-[#013300]">{userAnswer || "—"}</dd>
+                      <dt className="text-xs uppercase tracking-wide text-slate-500">Result</dt>
+                      <dd
+                        className={`text-lg font-semibold ${score === 100 ? "text-[#013300]" : score === 0 ? "text-red-600" : "text-[#013300]"
+                          }`}
+                      >
+                        {score === null ? "—" : score === 100 ? "Correct" : "Wrong"}
+                      </dd>
                     </div>
                     <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col">
                       <dt className="text-xs uppercase tracking-wide text-slate-500">Correct answer</dt>
@@ -547,7 +1159,7 @@ export default function MathFlashcards({
             <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-center gap-3 w-full">
               <button
                 onClick={handlePrev}
-                disabled={current === 0}
+                disabled={current === 0 || sessionLockEnabled}
                 className="inline-flex items-center justify-center gap-2 rounded-full border border-[#013300] px-6 py-3 text-sm font-medium text-[#013300] transition hover:border-[#013300] hover:bg-emerald-50 disabled:opacity-40 disabled:hover:bg-transparent w-full sm:w-auto"
               >
                 <FiArrowLeft /> Previous
@@ -560,10 +1172,10 @@ export default function MathFlashcards({
               </button>
               <button
                 onClick={handleNext}
-                disabled={current === flashcardsData.length - 1}
+                disabled={!hasRecordedScoreForCurrent}
                 className="inline-flex items-center justify-center gap-2 rounded-full border border-[#013300] px-6 py-3 text-sm font-medium text-[#013300] transition hover:border-[#013300] hover:bg-emerald-50 disabled:opacity-40 disabled:hover:bg-transparent w-full sm:w-auto"
               >
-                Next <FiArrowRight />
+                {current === flashcardsData.length - 1 ? "Summary" : "Next"} <FiArrowRight />
               </button>
             </div>
           </div>

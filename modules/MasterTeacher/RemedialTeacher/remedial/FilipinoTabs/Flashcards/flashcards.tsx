@@ -23,6 +23,10 @@ type StudentPerformanceEntry = {
 	fluencyScore: number;
 	phonemeAccuracy: number;
 	wpm: number;
+	correctness?: number;
+	readingSpeedScore?: number;
+	readingSpeedLabel?: string;
+	wordCount?: number;
 	cardIndex: number;
 	sentence: string;
 };

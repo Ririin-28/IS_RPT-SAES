@@ -95,9 +95,9 @@ const NAV_ITEMS: NavItem[] = [
     label: "Students",
     icon: <StudentsIcon />,
     children: [
-      { label: "English", path: "/MasterTeacher/RemedialTeacher/students/english" },
-      { label: "Filipino", path: "/MasterTeacher/RemedialTeacher/students/filipino" },
-      { label: "Math", path: "/MasterTeacher/RemedialTeacher/students/math" },
+      { label: "English", path: "/MasterTeacher/RemedialTeacher/students/subject/english" },
+      { label: "Filipino", path: "/MasterTeacher/RemedialTeacher/students/subject/filipino" },
+      { label: "Math", path: "/MasterTeacher/RemedialTeacher/students/subject/math" },
     ],
   },
   {

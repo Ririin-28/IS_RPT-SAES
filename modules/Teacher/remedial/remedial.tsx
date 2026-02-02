@@ -113,6 +113,8 @@ export default function TeacherRemedial() {
               id: String(item.id ?? index + 1),
               title: item.title ?? "Scheduled Activity",
               subject: item.subject ?? null,
+              subjectId: Number.isFinite(Number(item.subjectId)) ? Number(item.subjectId) : null,
+              gradeId: Number.isFinite(Number(item.gradeId)) ? Number(item.gradeId) : null,
               date: dateValue,
               day: item.day ?? null,
               startTime: item.startTime ?? null,
@@ -167,6 +169,10 @@ export default function TeacherRemedial() {
       const payload = await response.json().catch(() => null);
 
       if (response.ok && payload?.success && payload?.found) {
+          const materialId = payload?.content?.materialId ?? null;
+          const subjectIdParam = activity.subjectId ? `&subjectId=${encodeURIComponent(String(activity.subjectId))}` : "";
+          const gradeIdParam = activity.gradeId ? `&gradeId=${encodeURIComponent(String(activity.gradeId))}` : "";
+          const materialIdParam = materialId ? `&materialId=${encodeURIComponent(String(materialId))}` : "";
           const phonemicParam = phonemicId ? `&phonemicId=${encodeURIComponent(String(phonemicId))}` : "";
           const phonemicNameParam = phonemicLevelName ? `&phonemicName=${encodeURIComponent(phonemicLevelName)}` : "";
           
@@ -176,7 +182,7 @@ export default function TeacherRemedial() {
           else if (subject === "Filipino") flashcardsPath = "FilipinoFlashcards";
           else if (subject === "Math") flashcardsPath = "MathFlashcards";
 
-          const playPath = `/Teacher/remedial/${flashcardsPath}?subject=${encodeURIComponent(subject)}&activity=${encodeURIComponent(activity.id)}${phonemicParam}${phonemicNameParam}`;
+          const playPath = `/Teacher/remedial/${flashcardsPath}?subject=${encodeURIComponent(subject)}&activity=${encodeURIComponent(activity.id)}${subjectIdParam}${gradeIdParam}${materialIdParam}${phonemicParam}${phonemicNameParam}`;
           router.push(playPath);
       } else {
         alert("No content found for this activity and level.");

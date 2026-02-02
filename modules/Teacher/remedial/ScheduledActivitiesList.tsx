@@ -7,10 +7,12 @@ export type CalendarActivity = {
   id: string;
   title: string;
   subject: string | null;
+  subjectId?: number | null;
   date: Date;
   day: string | null;
   startTime: string | null;
   endTime: string | null;
+  gradeId?: number | null;
 };
 
 type Props = {

@@ -27,7 +27,7 @@ const SUBJECT_FLASHCARD_KEYS: Record<MaterialSubject, string> = {
 export default function MasterTeacherCoordinatorRemedialFlashcards() {
 	const router = useRouter();
 	const searchParams = useSearchParams();
-	const [subject, setSubject] = useState<MaterialSubject>(SUBJECT_FALLBACK);
+	const [subject, setSubject] = useState<MaterialSubject | null>(null);
 	const [loadingContent, setLoadingContent] = useState(false);
 	const [contentError, setContentError] = useState<string | null>(null);
 
@@ -58,7 +58,8 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 		// Otherwise, fetch from coordinator profile
 		if (typeof window === "undefined") return;
 		if (!userId) {
-			setSubject(SUBJECT_FALLBACK);
+			// Do not default to fallback if user is missing to avoid session cross-contamination
+			setSubject(null);
 			return;
 		}
 
@@ -83,14 +84,14 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 				console.log('Coordinator profile response:', payload);
 				console.log('Subject candidate:', subjectCandidate);
 				
-				const resolvedSubject = normalizeMaterialSubject(subjectCandidate) ?? SUBJECT_FALLBACK;
+				const resolvedSubject = normalizeMaterialSubject(subjectCandidate) ?? null;
 				console.log('Resolved subject:', resolvedSubject);
 				
 				setSubject(resolvedSubject);
 			} catch (error) {
 				if (error instanceof DOMException && error.name === "AbortError") return;
 				console.warn("Failed to load coordinator subject", error);
-				setSubject(SUBJECT_FALLBACK);
+				setSubject(null);
 			}
 		};
 
@@ -102,9 +103,13 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 		let cancelled = false;
 		const load = async () => {
 			if (typeof window === "undefined") return;
+			if (!subject) return;
+
 			if (!activityId || !phonemicId) {
-				const storageKey = SUBJECT_FLASHCARD_KEYS[subject] ?? SUBJECT_FLASHCARD_KEYS[SUBJECT_FALLBACK];
-				window.localStorage.removeItem(storageKey);
+				const storageKey = SUBJECT_FLASHCARD_KEYS[subject];
+				if (storageKey) {
+					window.localStorage.removeItem(storageKey);
+				}
 				if (!cancelled) {
 					setContentError("Missing activity or phonemic level.");
 				}
@@ -133,7 +138,7 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 					return;
 				}
 
-				const storageKey = SUBJECT_FLASHCARD_KEYS[subject] ?? SUBJECT_FLASHCARD_KEYS[SUBJECT_FALLBACK];
+				const storageKey = SUBJECT_FLASHCARD_KEYS[subject];
 				
 				// Transform data for Math subject to match MathFlashcards expectation
 				let contentToStore = cards;
@@ -144,7 +149,9 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 					}));
 				}
 				
-				window.localStorage.setItem(storageKey, JSON.stringify(contentToStore));
+				if (storageKey) {
+					window.localStorage.setItem(storageKey, JSON.stringify(contentToStore));
+				}
 			} catch (error) {
 				if (!cancelled) {
 					setContentError(error instanceof Error ? error.message : "Failed to load content");
@@ -165,6 +172,7 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 
 	// Compose the header label with phonemicName if present
 	const previewHeaderLabel = useMemo(() => {
+		if (!subject) return "Preview";
 		if (phonemicName) {
 			return `${subject.toUpperCase()} • ${phonemicName.toUpperCase()} LEVEL`;
 		}
@@ -173,7 +181,7 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 
 	const previewStudent = useMemo<StudentRecord>(() => {
 		return {
-			id: `COORDINATOR_PREVIEW_${subject}`,
+			id: `COORDINATOR_PREVIEW_${subject || 'UNKNOWN'}`,
 			studentId: "PREVIEW",
 			name: previewHeaderLabel,
 			grade: "",
@@ -184,6 +192,14 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 	const previewStudents = useMemo(() => [previewStudent], [previewStudent]);
 	const noopEnglishSave = useMemo(() => (_entry: unknown) => undefined, []);
 	const noopMathSave = useMemo(() => (_entry: unknown) => undefined, []);
+
+	if (!subject) {
+		return (
+			<div className="h-screen flex items-center justify-center text-gray-500">
+				Loading subject...
+			</div>
+		);
+	}
 
 	if (loadingContent) {
 		return (

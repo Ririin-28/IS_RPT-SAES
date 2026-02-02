@@ -122,7 +122,7 @@ export default function TeacherStudents({ subjectSlug }: TeacherStudentsProps = 
     (nextLabel: string) => {
       const nextSubject = SUBJECT_OPTIONS.find((option) => option.label === nextLabel)?.value ?? "english";
       if (nextSubject !== subject) {
-        router.push(`/Teacher/students/${nextSubject}`);
+        router.push(`/Teacher/students/subject/${nextSubject}`);
       }
     },
     [router, subject]

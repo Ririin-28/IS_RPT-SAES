@@ -38,6 +38,7 @@ export type RemedialStudentRecord = {
   userId: number | null;
   remedialId: number | null;
   studentIdentifier: string | null;
+  lrn: string | null;
   grade: string | null;
   section: string | null;
   english: string | null;
@@ -45,10 +46,17 @@ export type RemedialStudentRecord = {
   math: string | null;
   guardian: string | null;
   guardianContact: string | null;
+  guardianEmail?: string | null;
+  parentFirstName?: string | null;
+  parentMiddleName?: string | null;
+  parentLastName?: string | null;
+  parentSuffix?: string | null;
+  relationship?: string | null;
   address: string | null;
   firstName: string | null;
   middleName: string | null;
   lastName: string | null;
+  suffix?: string | null;
   fullName: string | null;
   englishStartingLevel: string | null;
   englishSeptLevel: string | null;

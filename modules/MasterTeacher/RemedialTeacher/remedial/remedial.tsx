@@ -117,9 +117,9 @@ export default function MasterTeacherRemedial() {
           throw new Error(payload?.error ?? `Unable to load schedule (${response.status})`);
         }
 
-        const parsed = Array.isArray(payload.activities) ? payload.activities : [];
+        const parsed = Array.isArray(payload.activities) ? (payload.activities as unknown[]) : [];
         const mapped = parsed
-          .map<CalendarActivity | null>((item: any, index: number) => {
+          .map((item: any, index: number): CalendarActivity | null => {
             const rawDate = item.activityDate ?? item.date ?? null;
             const dateValue = rawDate ? new Date(rawDate) : null;
             if (!dateValue || Number.isNaN(dateValue.getTime())) return null;
@@ -127,13 +127,15 @@ export default function MasterTeacherRemedial() {
               id: String(item.id ?? index + 1),
               title: item.title ?? "Scheduled Activity",
               subject: item.subject ?? null,
+              subjectId: Number.isFinite(Number(item.subjectId)) ? Number(item.subjectId) : null,
+              gradeId: Number.isFinite(Number(item.gradeId)) ? Number(item.gradeId) : null,
               date: dateValue,
               day: item.day ?? null,
               startTime: item.startTime ?? null,
               endTime: item.endTime ?? null,
             } satisfies CalendarActivity;
           })
-          .filter((item): item is CalendarActivity => item !== null);
+          .filter((item: CalendarActivity | null): item is CalendarActivity => item !== null);
 
         if (!cancelled) {
           setScheduleActivities(mapped);
@@ -181,6 +183,10 @@ export default function MasterTeacherRemedial() {
       const payload = await response.json().catch(() => null);
 
       if (response.ok && payload?.success && payload?.found) {
+          const materialId = payload?.content?.materialId ?? null;
+          const subjectIdParam = activity.subjectId ? `&subjectId=${encodeURIComponent(String(activity.subjectId))}` : "";
+          const gradeIdParam = activity.gradeId ? `&gradeId=${encodeURIComponent(String(activity.gradeId))}` : "";
+          const materialIdParam = materialId ? `&materialId=${encodeURIComponent(String(materialId))}` : "";
           const phonemicParam = phonemicId ? `&phonemicId=${encodeURIComponent(String(phonemicId))}` : "";
           const phonemicNameParam = phonemicLevelName ? `&phonemicName=${encodeURIComponent(phonemicLevelName)}` : "";
           
@@ -190,7 +196,7 @@ export default function MasterTeacherRemedial() {
           else if (subject === "Filipino") flashcardsPath = "FilipinoFlashcards";
           else if (subject === "Math") flashcardsPath = "MathFlashcards";
 
-          const playPath = `/MasterTeacher/RemedialTeacher/remedial/${flashcardsPath}?subject=${encodeURIComponent(subject)}&activity=${encodeURIComponent(activity.id)}${phonemicParam}${phonemicNameParam}`;
+          const playPath = `/MasterTeacher/RemedialTeacher/remedial/${flashcardsPath}?subject=${encodeURIComponent(subject)}&activity=${encodeURIComponent(activity.id)}${subjectIdParam}${gradeIdParam}${materialIdParam}${phonemicParam}${phonemicNameParam}`;
           router.push(playPath);
       } else {
         alert("No content found for this activity and level.");

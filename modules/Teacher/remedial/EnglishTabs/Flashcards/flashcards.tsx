@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -37,6 +37,10 @@ type StudentPerformanceEntry = {
 	fluencyScore: number;
 	phonemeAccuracy: number;
 	wpm: number;
+	correctness?: number;
+	readingSpeedScore?: number;
+	readingSpeedLabel?: string;
+	wordCount?: number;
 	sentence: string;
 	score?: number;
 	responseTime?: number;

@@ -141,7 +141,21 @@ type SubjectCounts = Record<"English" | "Filipino" | "Math", number>;
 type HandledCountsResponse = {
   success: boolean;
   counts?: SubjectCounts;
+  trends?: TrendPayload;
   error?: string;
+};
+
+type TrendSubjectData = {
+  weekly: number[];
+  monthly: number[];
+  levelLabels: string[];
+  levelDistributionByMonth: Record<string, number[]>;
+};
+
+type TrendPayload = {
+  months: Array<{ key: string; label: string }>;
+  weeks: string[];
+  subjects: Record<keyof SubjectCounts, TrendSubjectData>;
 };
 
 const DEFAULT_SUBJECT_COUNTS: SubjectCounts = {
@@ -187,6 +201,9 @@ export default function TeacherDashboard() {
   const [handledCounts, setHandledCounts] = useState<SubjectCounts>(() => ({ ...DEFAULT_SUBJECT_COUNTS }));
   const [isLoadingCounts, setIsLoadingCounts] = useState(true);
   const [countsError, setCountsError] = useState<string | null>(null);
+  const [trendData, setTrendData] = useState<TrendPayload | null>(null);
+  const [isLoadingTrends, setIsLoadingTrends] = useState(true);
+  const [trendsError, setTrendsError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -255,7 +272,9 @@ export default function TeacherDashboard() {
 
     async function loadHandledStudents() {
       setIsLoadingCounts(true);
+      setIsLoadingTrends(true);
       setCountsError(null);
+      setTrendsError(null);
       try {
         const storedProfile = getStoredUserProfile();
         const userId = storedProfile?.userId;
@@ -283,15 +302,19 @@ export default function TeacherDashboard() {
           Filipino: Number(payload.counts.Filipino) || 0,
           Math: Number(payload.counts.Math) || 0,
         });
+        setTrendData(payload.trends ?? null);
       } catch (error) {
         if (!cancelled) {
           const message = error instanceof Error ? error.message : "Failed to load handled students.";
           setCountsError(message);
           setHandledCounts({ ...DEFAULT_SUBJECT_COUNTS });
+          setTrendData(null);
+          setTrendsError(message);
         }
       } finally {
         if (!cancelled) {
           setIsLoadingCounts(false);
+          setIsLoadingTrends(false);
         }
       }
     }
@@ -324,200 +347,69 @@ export default function TeacherDashboard() {
   const [selectedPeriod, setSelectedPeriod] = useState('monthly');
   const [selectedSubject, setSelectedSubject] = useState('Math');
   const [selectedMonth, setSelectedMonth] = useState('March');
-  const months = ['September', 'October', 'November', 'December', 'January', 'February', 'March'];
+  const fallbackMonths = ['September', 'October', 'November', 'December', 'January', 'February', 'March'];
+  const monthOptions = trendData?.months?.length ? trendData.months.map((item) => item.label) : fallbackMonths;
+
+  useEffect(() => {
+    if (!trendData?.months?.length) {
+      return;
+    }
+    const latest = trendData.months[trendData.months.length - 1]?.label;
+    if (latest && !monthOptions.includes(selectedMonth)) {
+      setSelectedMonth(latest);
+    }
+  }, [monthOptions, selectedMonth, trendData?.months]);
+
+  const fallbackLevelLabels = selectedSubject === 'Math'
+    ? ['Emerging - Not Proficient', 'Emerging - Low Proficient', 'Developing - Nearly Proficient', 'Transitioning - Proficient', 'At Grade Level - Highly Proficient']
+    : ['Non-Reader', 'Syllable Reader', 'Word Reader', 'Phrase Reader', 'Sentence Reader', 'Paragraph Reader'];
+
+  const subjectTrend = trendData?.subjects?.[selectedSubject as keyof SubjectCounts];
+  const resolvedLevelLabels = subjectTrend?.levelLabels?.length ? subjectTrend.levelLabels : fallbackLevelLabels;
+  const weekLabels = trendData?.weeks?.length ? trendData.weeks : ['Week 1', 'Week 2', 'Week 3', 'Week 4'];
+  const periodLabels = selectedPeriod === 'weekly' ? weekLabels : monthOptions;
+  const periodValues = selectedPeriod === 'weekly' ? subjectTrend?.weekly : subjectTrend?.monthly;
+  const normalizedPeriodValues = periodLabels.map((_, index) => (periodValues?.[index] ?? 0));
+
+  const monthKey = trendData?.months?.find((item) => item.label === selectedMonth)?.key ?? null;
+  const distributionValues = monthKey ? subjectTrend?.levelDistributionByMonth?.[monthKey] : undefined;
+  const normalizedDistributionValues = resolvedLevelLabels.map((_, index) => distributionValues?.[index] ?? 0);
   
-  const performanceData = {
-    Math: {
-      weekly: {
-        labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
-        datasets: [
-          {
-            label: 'Average Proficiency Level',
-            data: [1.8, 2.2, 2.7, 3.1],
-            borderColor: 'rgba(79, 70, 229, 1)',
-            backgroundColor: 'rgba(79, 70, 229, 0.2)',
-            tension: 0.4,
-            pointBackgroundColor: 'rgba(79, 70, 229, 1)',
-            pointBorderColor: '#fff',
-            pointHoverRadius: 6,
-            pointRadius: 4,
-          },
-        ],
-      },
-      monthly: {
-        labels: months,
-        datasets: [
-          {
-            label: 'Average Proficiency Level',
-            data: [1.2, 1.8, 2.3, 2.7, 3.2, 3.8, 4.2],
-            borderColor: 'rgba(79, 70, 229, 1)',
-            backgroundColor: 'rgba(79, 70, 229, 0.2)',
-            tension: 0.4,
-            pointBackgroundColor: 'rgba(79, 70, 229, 1)',
-            pointBorderColor: '#fff',
-            pointHoverRadius: 6,
-            pointRadius: 4,
-          },
-        ],
-      },
-    },
-    English: {
-      weekly: {
-        labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
-        datasets: [
-          {
-            label: 'Average Proficiency Level',
-            data: [2.1, 2.5, 3.0, 3.4],
-            borderColor: 'rgba(220, 38, 38, 1)',
-            backgroundColor: 'rgba(220, 38, 38, 0.2)',
-            tension: 0.4,
-            pointBackgroundColor: 'rgba(220, 38, 38, 1)',
-            pointBorderColor: '#fff',
-            pointHoverRadius: 6,
-            pointRadius: 4,
-          },
-        ],
-      },
-      monthly: {
-        labels: months,
-        datasets: [
-          {
-            label: 'Average Proficiency Level',
-            data: [1.5, 2.0, 2.6, 3.1, 3.5, 4.0, 4.4],
-            borderColor: 'rgba(220, 38, 38, 1)',
-            backgroundColor: 'rgba(220, 38, 38, 0.2)',
-            tension: 0.4,
-            pointBackgroundColor: 'rgba(220, 38, 38, 1)',
-            pointBorderColor: '#fff',
-            pointHoverRadius: 6,
-            pointRadius: 4,
-          },
-        ],
-      },
-    },
-    Filipino: {
-      weekly: {
-        labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
-        datasets: [
-          {
-            label: 'Average Proficiency Level',
-            data: [1.9, 2.3, 2.8, 3.2],
-            borderColor: 'rgba(234, 88, 12, 1)',
-            backgroundColor: 'rgba(234, 88, 12, 0.2)',
-            tension: 0.4,
-            pointBackgroundColor: 'rgba(234, 88, 12, 1)',
-            pointBorderColor: '#fff',
-            pointHoverRadius: 6,
-            pointRadius: 4,
-          },
-        ],
-      },
-      monthly: {
-        labels: months,
-        datasets: [
-          {
-            label: 'Average Proficiency Level',
-            data: [1.4, 1.9, 2.4, 2.9, 3.3, 3.7, 4.0],
-            borderColor: 'rgba(234, 88, 12, 1)',
-            backgroundColor: 'rgba(234, 88, 12, 0.2)',
-            tension: 0.4,
-            pointBackgroundColor: 'rgba(234, 88, 12, 1)',
-            pointBorderColor: '#fff',
-            pointHoverRadius: 6,
-            pointRadius: 4,
-          },
-        ],
-      },
-    },
+  const subjectColorMap = {
+    Math: { border: 'rgba(79, 70, 229, 1)', fill: 'rgba(79, 70, 229, 0.2)' },
+    English: { border: 'rgba(220, 38, 38, 1)', fill: 'rgba(220, 38, 38, 0.2)' },
+    Filipino: { border: 'rgba(234, 88, 12, 1)', fill: 'rgba(234, 88, 12, 0.2)' },
   };
 
-  const getMonthlyLevelData = () => {
-    switch(selectedSubject) {
-      case 'English':
-        return {
-          labels: ['Non-Reader', 'Syllable Reader', 'Word Reader', 'Phrase Reader', 'Sentence Reader', 'Paragraph Reader'],
-          datasets: [
-            {
-              label: 'Students',
-              data: [2, 3, 4, 5, 4, 2],
-              backgroundColor: [
-                'rgba(239, 68, 68, 0.8)',
-                'rgba(249, 115, 22, 0.8)',
-                'rgba(234, 179, 8, 0.8)',
-                'rgba(34, 197, 94, 0.8)',
-                'rgba(59, 130, 246, 0.8)',
-                'rgba(139, 92, 246, 0.8)',
-              ],
-              borderColor: [
-                'rgba(239, 68, 68, 1)',
-                'rgba(249, 115, 22, 1)',
-                'rgba(234, 179, 8, 1)',
-                'rgba(34, 197, 94, 1)',
-                'rgba(59, 130, 246, 1)',
-                'rgba(139, 92, 246, 1)',
-              ],
-              borderWidth: 1,
-            },
-          ],
-        };
-      case 'Filipino':
-        return {
-          labels: ['Non-Reader', 'Syllable Reader', 'Word Reader', 'Phrase Reader', 'Sentence Reader', 'Paragraph Reader'],
-          datasets: [
-            {
-              label: 'Students',
-              data: [1, 2, 5, 6, 4, 2],
-              backgroundColor: [
-                'rgba(239, 68, 68, 0.8)',
-                'rgba(249, 115, 22, 0.8)',
-                'rgba(234, 179, 8, 0.8)',
-                'rgba(34, 197, 94, 0.8)',
-                'rgba(59, 130, 246, 0.8)',
-                'rgba(139, 92, 246, 0.8)',
-              ],
-              borderColor: [
-                'rgba(239, 68, 68, 1)',
-                'rgba(249, 115, 22, 1)',
-                'rgba(234, 179, 8, 1)',
-                'rgba(34, 197, 94, 1)',
-                'rgba(59, 130, 246, 1)',
-                'rgba(139, 92, 246, 1)',
-              ],
-              borderWidth: 1,
-            },
-          ],
-        };
-      case 'Math':
-        return {
-          labels: ['Emerging - Not Proficient', 'Emerging - Low Proficient', 'Developing - Nearly Proficient', 'Transitioning - Proficient', 'At Grade Level - Highly Proficient'],
-          datasets: [
-            {
-              label: 'Students',
-              data: [1, 2, 5, 7, 5],
-              backgroundColor: [
-                'rgba(239, 68, 68, 0.8)',
-                'rgba(249, 115, 22, 0.8)',
-                'rgba(234, 179, 8, 0.8)',
-                'rgba(34, 197, 94, 0.8)',
-                'rgba(139, 92, 246, 0.8)',
-              ],
-              borderColor: [
-                'rgba(239, 68, 68, 1)',
-                'rgba(249, 115, 22, 1)',
-                'rgba(234, 179, 8, 1)',
-                'rgba(34, 197, 94, 1)',
-                'rgba(139, 92, 246, 1)',
-              ],
-              borderWidth: 1,
-            },
-          ],
-        };
-      default:
-        return {
-          labels: [],
-          datasets: [],
-        };
-    }
+  const activeColor = subjectColorMap[selectedSubject as keyof typeof subjectColorMap];
+  const performanceLineData = {
+    labels: periodLabels,
+    datasets: [
+      {
+        label: 'Average Proficiency Level',
+        data: normalizedPeriodValues,
+        borderColor: activeColor.border,
+        backgroundColor: activeColor.fill,
+        tension: 0.4,
+        pointBackgroundColor: activeColor.border,
+        pointBorderColor: '#fff',
+        pointHoverRadius: 6,
+        pointRadius: 4,
+      },
+    ],
+  };
+
+  const monthlyLevelData = {
+    labels: resolvedLevelLabels,
+    datasets: [
+      {
+        label: 'Students',
+        data: normalizedDistributionValues,
+        backgroundColor: resolvedLevelLabels.map(() => 'rgba(22, 163, 74, 0.25)'),
+        borderColor: resolvedLevelLabels.map(() => 'rgba(22, 163, 74, 0.8)'),
+        borderWidth: 1,
+      },
+    ],
   };
 
   const lineOptions = {
@@ -530,33 +422,12 @@ export default function TeacherDashboard() {
     scales: {
       y: {
         beginAtZero: true,
-        max: 6,
+        max: Math.max(resolvedLevelLabels.length, 1),
         ticks: {
           stepSize: 1,
           callback: function(value: any) {
-            if (selectedSubject === 'Math') {
-              const mathLevels = [
-                '',
-                'Emerging - Not Proficient',
-                'Emerging - Low Proficient',
-                'Developing - Nearly Proficient',
-                'Transitioning - Proficient',
-                'At Grade Level',
-                ''
-              ];
-              return mathLevels[value] || '';
-            } else {
-              const literacyLevels = [
-                '',
-                'Non-Reader',
-                'Syllable Reader',
-                'Word Reader',
-                'Phrase Reader',
-                'Sentence Reader',
-                'Paragraph Reader'
-              ];
-              return literacyLevels[value] || '';
-            }
+            const index = Number(value) - 1;
+            return resolvedLevelLabels[index] || '';
           }
         }
       },
@@ -573,6 +444,16 @@ export default function TeacherDashboard() {
     },
     maintainAspectRatio: false,
   };
+
+  const monthlySeries = subjectTrend?.monthly ?? [];
+  const firstValue = monthlySeries.find((value) => value > 0);
+  const lastValue = [...monthlySeries].reverse().find((value) => value > 0);
+  const improvementValue = firstValue != null && lastValue != null
+    ? Number((lastValue - firstValue).toFixed(2))
+    : null;
+  const improvementLabel = improvementValue == null
+    ? "No trend data yet."
+    : `Overall improvement: ${improvementValue >= 0 ? "+" : ""}${improvementValue} levels since ${monthOptions[0] ?? "start"}`;
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
@@ -704,12 +585,18 @@ export default function TeacherDashboard() {
                         <CustomDropdown
                           value={selectedMonth}
                           onChange={(e) => setSelectedMonth(e.target.value)}
-                          options={months}
+                          options={monthOptions}
                         />
                       </div>
                     )}
                   </div>
                 </div>
+                {isLoadingTrends && (
+                  <p className="text-sm text-slate-600">Loading trend data...</p>
+                )}
+                {!isLoadingTrends && trendsError && (
+                  <p className="text-sm text-red-600">{trendsError}</p>
+                )}
                 <div className="h-96 mt-4">
                   <Line
                     options={{
@@ -726,11 +613,11 @@ export default function TeacherDashboard() {
                         },
                       }
                     }}
-                    data={performanceData[selectedSubject as keyof typeof performanceData][selectedPeriod as keyof typeof performanceData.Math]}
+                    data={performanceLineData}
                   />
                 </div>
                 <div className="mt-4 text-sm text-gray-600">
-                  <p className="font-medium">Overall improvement: +3.0 levels since September</p>
+                  <p className="font-medium">{improvementLabel}</p>
                 </div>
               </div>
 
@@ -750,11 +637,17 @@ export default function TeacherDashboard() {
                       <CustomDropdown
                         value={selectedMonth}
                         onChange={(e) => setSelectedMonth(e.target.value)}
-                        options={months}
+                        options={monthOptions}
                       />
                     </div>
                   </div>
                 </div>
+                {isLoadingTrends && (
+                  <p className="text-sm text-slate-600">Loading trend data...</p>
+                )}
+                {!isLoadingTrends && trendsError && (
+                  <p className="text-sm text-red-600">{trendsError}</p>
+                )}
                 <div className="h-96 mt-4">
                   <Bar
                     options={{
@@ -771,7 +664,7 @@ export default function TeacherDashboard() {
                         },
                       }
                     }}
-                    data={getMonthlyLevelData()}
+                    data={monthlyLevelData}
                   />
                 </div>
                 <div className="mt-4 text-sm text-gray-600">
