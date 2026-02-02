@@ -109,25 +109,36 @@ const resolveGradeId = async (
       }
 
     } else if (creatorRole === "remedial_teacher") {
-      // 1. Check mt_remedialteacher_handled
-      // Assuming createdBy is the remedial_role_id or mapped similarly
-      const [rowsRemedial] = await connection.query(
-        `SELECT grade_id FROM mt_remedialteacher_handled WHERE remedial_role_id = ? LIMIT 1`,
+      const [masterRows] = await connection.query(
+        `SELECT master_teacher_id FROM master_teacher WHERE user_id = ? LIMIT 1`,
         [createdBy]
       );
-      if ((rowsRemedial as RowDataPacket[]).length > 0) {
-        console.log("Found grade via mt_remedialteacher_handled");
-        return Number((rowsRemedial as RowDataPacket[])[0].grade_id);
-      }
+      const masterTeacherId = (masterRows as RowDataPacket[])[0]?.master_teacher_id;
+      if (masterTeacherId) {
+        const [rowsRemedial] = await connection.query(
+          `SELECT grade_id FROM mt_remedialteacher_handled WHERE master_teacher_id = ? AND grade_id IS NOT NULL LIMIT 1`,
+          [masterTeacherId]
+        );
+        if ((rowsRemedial as RowDataPacket[]).length > 0) {
+          console.log("Found grade via mt_remedialteacher_handled");
+          return Number((rowsRemedial as RowDataPacket[])[0].grade_id);
+        }
 
-      // 2. Fallback: student_teacher_assignment
-      const [rowsAssignment] = await connection.query(
-        `SELECT grade_id FROM student_teacher_assignment WHERE remedial_role_id = ? AND is_active = 1 LIMIT 1`,
-        [createdBy]
-      );
-      if ((rowsAssignment as RowDataPacket[]).length > 0) {
-        console.log("Found grade via student_teacher_assignment (remedial)");
-        return Number((rowsAssignment as RowDataPacket[])[0].grade_id);
+        const [rowsRole] = await connection.query(
+          `SELECT remedial_role_id FROM mt_remedialteacher_handled WHERE master_teacher_id = ? AND remedial_role_id IS NOT NULL LIMIT 1`,
+          [masterTeacherId]
+        );
+        const remedialRoleId = (rowsRole as RowDataPacket[])[0]?.remedial_role_id;
+        if (remedialRoleId) {
+          const [rowsAssignment] = await connection.query(
+            `SELECT grade_id FROM student_teacher_assignment WHERE remedial_role_id = ? AND is_active = 1 LIMIT 1`,
+            [remedialRoleId]
+          );
+          if ((rowsAssignment as RowDataPacket[]).length > 0) {
+            console.log("Found grade via student_teacher_assignment (remedial)");
+            return Number((rowsAssignment as RowDataPacket[])[0].grade_id);
+          }
+        }
       }
     }
   } catch (err) {
