@@ -13,6 +13,17 @@ const GRADE_OPTIONS = ["Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "G
 
 type SubjectTitle = "English" | "Filipino" | "Mathematics";
 
+type SchedulePayloadActivity = {
+  id?: string | number;
+  title?: string;
+  subject?: string | null;
+  activityDate?: string | Date | null;
+  date?: string | Date | null;
+  day?: string | null;
+  startTime?: string | null;
+  endTime?: string | null;
+};
+
 type PrincipalMaterialsProps = {
   subjectSlug?: string;
 };
@@ -54,9 +65,11 @@ export default function PrincipalMaterials({ subjectSlug }: PrincipalMaterialsPr
           throw new Error(payload?.error ?? `Unable to load schedule (${response.status})`);
         }
 
-        const parsed = Array.isArray(payload.activities) ? payload.activities : [];
+        const parsed = Array.isArray(payload.activities)
+          ? (payload.activities as SchedulePayloadActivity[])
+          : [];
         const mapped = parsed
-          .map<CalendarActivity | null>((item: any, index: number) => {
+          .map((item, index): CalendarActivity | null => {
             const rawDate = item.activityDate ?? item.date ?? null;
             const dateValue = rawDate ? new Date(rawDate) : null;
             if (!dateValue || Number.isNaN(dateValue.getTime())) return null;
