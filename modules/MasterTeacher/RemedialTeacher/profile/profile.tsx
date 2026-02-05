@@ -1,6 +1,7 @@
 "use client";
 import Sidebar from "@/components/MasterTeacher/RemedialTeacher/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
@@ -387,7 +388,14 @@ export default function MasterTeacherProfile() {
                       <div className="relative">
                         <div className="w-24 h-24 rounded-full bg-green-100 flex items-center justify-center border-4 border-white shadow-lg overflow-hidden">
                           {formData.profilePicture ? (
-                            <img src={formData.profilePicture} alt="Profile" className="w-full h-full object-cover" />
+                            <Image 
+                              src={formData.profilePicture} 
+                              alt="Profile" 
+                              width={96}
+                              height={96}
+                              className="w-full h-full object-cover" 
+                              unoptimized
+                            />
                           ) : (
                             <svg width="64" height="64" fill="none" stroke="#013300" strokeWidth="2" viewBox="0 0 24 24">
                               <circle cx="12" cy="8" r="5" />

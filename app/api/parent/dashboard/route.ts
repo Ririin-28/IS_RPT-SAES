@@ -4,13 +4,13 @@ import { getTableColumns, query } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-const SCHEDULE_DAYS = [
-  { key: "monday_subject", label: "Monday" },
-  { key: "tuesday_subject", label: "Tuesday" },
-  { key: "wednesday_subject", label: "Wednesday" },
-  { key: "thursday_subject", label: "Thursday" },
-  { key: "friday_subject", label: "Friday" },
-] as const;
+// const SCHEDULE_DAYS = [
+//   { key: "monday_subject", label: "Monday" },
+//   { key: "tuesday_subject", label: "Tuesday" },
+//   { key: "wednesday_subject", label: "Wednesday" },
+//   { key: "thursday_subject", label: "Thursday" },
+//   { key: "friday_subject", label: "Friday" },
+// ] as const;
 
 type ParentRow = RowDataPacket & {
   parent_id: string | number;

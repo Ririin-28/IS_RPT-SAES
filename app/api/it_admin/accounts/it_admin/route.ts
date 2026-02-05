@@ -232,7 +232,7 @@ export async function GET() {
     const itAdminHasAdminId = itAdminColumns.has("admin_id");
     const itAdminHasUserId = itAdminColumns.has("user_id");
     const itAdminHasItAdminId = itAdminColumns.has("it_admin_id");
-    const requireItAdminOnly = itAdminTableExists && itAdminHasUserId;
+    // const requireItAdminOnly = itAdminTableExists && itAdminHasUserId;
     const accountLogsExists = await tableExists("account_logs");
     const accountLogsColumns = accountLogsExists ? await safeGetColumns("account_logs") : new Set<string>();
     const canJoinAccountLogs = accountLogsExists && accountLogsColumns.has("user_id");

@@ -48,6 +48,7 @@ export async function GET() {
     const token = await response.text();
     return NextResponse.json({ token, region, expiresIn: 540 }, { status: 200 });
   } catch (error) {
+    console.error("Token request failed:", error);
     return NextResponse.json(
       { error: "Azure Speech token request failed." },
       { status: 500 },

@@ -105,7 +105,7 @@ export default function TeacherRemedial() {
           throw new Error(payload?.error ?? `Unable to load schedule (${response.status})`);
         }
 
-        const parsed = Array.isArray(payload.activities) ? payload.activities : [];
+        const parsed = Array.isArray(payload.activities) ? (payload.activities as any[]) : [];
         const mapped = parsed
           .map<CalendarActivity | null>((item: any, index: number) => {
             const rawDate = item.activityDate ?? item.date ?? null;
@@ -123,7 +123,8 @@ export default function TeacherRemedial() {
               endTime: item.endTime ?? null,
             } satisfies CalendarActivity;
           })
-          .filter((item): item is CalendarActivity => item !== null);
+          .filter((item: CalendarActivity | null): item is CalendarActivity => item !== null)
+          .sort((a, b) => a.date.getTime() - b.date.getTime());
 
         if (!cancelled) {
           setScheduleActivities(mapped);

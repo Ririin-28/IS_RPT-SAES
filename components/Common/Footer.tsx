@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 type SchoolDetails = {
   location?: string | null;
   contact_no?: string | null;
@@ -37,8 +39,20 @@ export default function Footer({ schoolDetails }: FooterProps) {
         {/* Left: Logos + Description */}
         <div className="flex flex-col items-center md:items-start text-center md:text-left">
           <div className="flex items-center gap-4 mb-4">
-            <img src="/SAES/SAESLogo.png" alt="SAES Logo" className="w-27 h-27" />
-            <img src="/RPT-SAES/RPTLogo.png" alt="RPT-SAES Logo" className="w-25 h-25" />
+            <Image 
+              src="/SAES/SAESLogo.png" 
+              alt="SAES Logo" 
+              width={108} 
+              height={108} 
+              className="w-27 h-27"
+            />
+            <Image 
+              src="/RPT-SAES/RPTLogo.png" 
+              alt="RPT-SAES Logo" 
+              width={100} 
+              height={100} 
+              className="w-25 h-25"
+            />
           </div>
           <p className="text-xs">
             RPT-SAES was developed in association with <br />

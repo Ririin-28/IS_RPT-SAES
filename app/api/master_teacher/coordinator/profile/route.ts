@@ -321,6 +321,7 @@ const normalizeGradeValue = (value: string | null): string | null => {
   return trimmed;
 };
 
+/*
 const buildGradeSearchVariants = (value: string | null): string[] => {
   if (!value) {
     return [];
@@ -359,6 +360,7 @@ const buildGradeSearchVariants = (value: string | null): string[] => {
 
   return Array.from(variants).filter((variant) => variant.trim().length > 0);
 };
+*/
 
 const buildColumnLookup = (columns: Set<string>) => {
   const lookup = new Map<string, string>();

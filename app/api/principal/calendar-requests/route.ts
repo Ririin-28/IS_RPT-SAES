@@ -12,7 +12,7 @@ const REMEDIAL_QUARTER_TABLE = "remedial_quarter";
 const SUBJECT_TABLE = "subject";
 const MT_HANDLED_TABLE = "mt_coordinator_handled";
 const USERS_TABLE = "users";
-const PRINCIPAL_TABLE_CANDIDATES = ["principal", "principals", "principal_info", "principal_profile", "principal_profiles"] as const;
+// const PRINCIPAL_TABLE_CANDIDATES = ["principal", "principals", "principal_info", "principal_profile", "principal_profiles"] as const;
 
 type UpdateAction = "approve" | "reject";
 

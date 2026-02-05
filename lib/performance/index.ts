@@ -114,13 +114,22 @@ export async function getActivityPerformance(activityId: number) {
   return rows;
 }
 
-export async function getStudentDetails(studentId: string) {
+export interface StudentDetails {
+  student_id: string | number;
+  first_name: string | null;
+  middle_name: string | null;
+  last_name: string | null;
+  lrn: string | null;
+  [key: string]: any;
+}
+
+export async function getStudentDetails(studentId: string): Promise<StudentDetails | null> {
   await ensurePerformanceSchema();
   const [rows] = await query<RowDataPacket[]>(
     `SELECT * FROM student WHERE student_id = ?`,
     [studentId]
   );
-  return rows[0] || null;
+  return (rows[0] as unknown as StudentDetails) || null;
 }
 
 export type RemedialSessionSlide = {
@@ -244,7 +253,7 @@ export async function getRemedialSessionTimeline(
   sessionSql += ` ORDER BY COALESCE(completed_at, created_at) DESC`;
 
   const [sessionRows] = await query<RowDataPacket[]>(sessionSql, params);
-  const sessions = (sessionRows ?? []).map((row) => ({
+  const sessions = (sessionRows ?? []).map((row): RemedialSessionTimelineItem => ({
     session_id: row.session_id ?? null,
     student_id: row.student_id ?? null,
     approved_schedule_id: row.approved_schedule_id ?? null,

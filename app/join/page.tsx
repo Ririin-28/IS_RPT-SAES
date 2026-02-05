@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, Suspense } from "react";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 
@@ -61,9 +62,11 @@ function JoinContent() {
             <Background />
 
             <div className="flex flex-col items-center mb-8">
-                <img
+                <Image
                     src="/RPT-SAES/RPTLogo.png"
                     alt="RPT-SAES Logo"
+                    width={80}
+                    height={80}
                     className="h-20 w-20 object-contain drop-shadow-md mb-4"
                 />
                 <h1 className="text-4xl font-bold bg-gradient-to-r from-green-800 to-[#013300] bg-clip-text text-transparent">RPT-SAES</h1>

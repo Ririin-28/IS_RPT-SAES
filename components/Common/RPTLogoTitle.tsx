@@ -1,4 +1,5 @@
 import React from "react";
+import Image from "next/image";
 
 interface RPTLogoTitleProps {
   small?: boolean;
@@ -7,9 +8,11 @@ interface RPTLogoTitleProps {
 export default function RPTLogoTitle({ small = false }: RPTLogoTitleProps) {
   return (
     <div className={`flex flex-row items-center ${small ? "" : "mb-6"}`}>
-      <img
+      <Image
         src="/RPT-SAES/RPTLogo.png"
         alt="RPT-SAES Logo"
+        width={small ? 32 : 64}
+        height={small ? 32 : 64}
         className={`${small ? "h-8 w-8 mr-2" : "h-16 w-16 mr-4"} object-contain drop-shadow-md`}
       />
       <div

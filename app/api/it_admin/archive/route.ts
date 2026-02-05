@@ -121,7 +121,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const roleParam = searchParams.get("role");
 
-    const filters: string[] = [];
+    // const filters: string[] = [];
     const params: Array<string | number> = [];
 
     const normalizedRole = roleParam ? roleParam.toLowerCase() : null;

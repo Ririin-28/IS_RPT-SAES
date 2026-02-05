@@ -89,24 +89,24 @@ function normalizeWhitespace(value: string | null | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function getColumnValue(row: RowDataPacket | null, column: string): any {
-  if (!row) {
-    return undefined;
-  }
-
-  if (column in row) {
-    return row[column as keyof typeof row];
-  }
-
-  const normalized = column.toLowerCase();
-  for (const key of Object.keys(row)) {
-    if (key.toLowerCase() === normalized) {
-      return row[key as keyof typeof row];
-    }
-  }
-
-  return undefined;
-}
+// function getColumnValue(row: RowDataPacket | null, column: string): any {
+//   if (!row) {
+//     return undefined;
+//   }
+//
+//   if (column in row) {
+//     return row[column as keyof typeof row];
+//   }
+//
+//   const normalized = column.toLowerCase();
+//   for (const key of Object.keys(row)) {
+//     if (key.toLowerCase() === normalized) {
+//       return row[key as keyof typeof row];
+//     }
+//   }
+//
+//   return undefined;
+// }
 
 function normalizeRole(value: string | null | undefined): string {
   const normalized = normalizeWhitespace(value);

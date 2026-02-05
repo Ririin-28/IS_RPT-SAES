@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 
 interface Choice {
@@ -169,9 +170,11 @@ export default function StudentQuizPage() {
                 <Background />
 
                 <div className="flex flex-col items-center mb-8">
-                    <img
+                    <Image
                         src="/RPT-SAES/RPTLogo.png"
                         alt="RPT-SAES Logo"
+                        width={80}
+                        height={80}
                         className="h-20 w-20 object-contain drop-shadow-md mb-4"
                     />
                     <h1 className="text-4xl font-bold bg-gradient-to-r from-green-800 to-[#013300] bg-clip-text text-transparent">RPT-SAES</h1>
@@ -234,9 +237,11 @@ export default function StudentQuizPage() {
                 <header className="bg-white/90 backdrop-blur-md shadow-sm border-b border-green-100 sticky top-0 z-10">
                     <div className="max-w-5xl mx-auto px-4 py-3 flex justify-between items-center">
                         <div className="flex items-center gap-3">
-                            <img
+                            <Image
                                 src="/RPT-SAES/RPTLogo.png"
                                 alt="RPT-SAES Logo"
+                                width={32}
+                                height={32}
                                 className="h-8 w-8 object-contain"
                             />
                             <span className="font-bold text-[#013300] hidden sm:block tracking-tight">RPT-SAES</span>

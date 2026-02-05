@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import { useRef, useState, useEffect, useMemo, useCallback, ChangeEvent } from "react";
 import ITAdminSidebar from "@/components/IT_Admin/Sidebar";
 import ITAdminHeader from "@/components/IT_Admin/Header";
@@ -1075,11 +1076,15 @@ export default function SystemConfiguration() {
                               key={`${url}-${index}`}
                               className="group relative overflow-hidden rounded-2xl border border-dashed border-green-200 bg-white shadow-sm"
                             >
-                              <img
-                                src={url}
-                                alt={`Carousel preview ${index + 1}`}
-                                className="h-44 w-full object-cover opacity-90 transition duration-300 group-hover:opacity-100"
-                              />
+                              <div className="relative h-44 w-full">
+                                <Image
+                                  src={url}
+                                  alt={`Carousel preview ${index + 1}`}
+                                  fill
+                                  className="object-cover opacity-90 transition duration-300 group-hover:opacity-100"
+                                  unoptimized
+                                />
+                              </div>
                               <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 bg-gradient-to-t from-black/70 via-black/0 to-transparent px-4 pb-4 pt-10 text-white">
                                 <div className="space-y-0.5">
                                   <p className="text-sm font-medium text-white">

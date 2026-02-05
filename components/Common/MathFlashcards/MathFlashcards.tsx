@@ -686,8 +686,8 @@ export default function MathFlashcards({
   };
 
   useEffect(() => {
-    setStartTime(Date.now());
-  }, [current]);
+    resetFields();
+  }, [current, resetFields, setUserAnswer, setFeedback, setRate, setScore, setStartTime]);
 
   const handleSubmit = () => {
     if (!userAnswer.trim()) {

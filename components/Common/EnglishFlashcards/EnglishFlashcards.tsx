@@ -1000,7 +1000,7 @@ export default function EnglishFlashcards({
 
   useEffect(() => {
     resetSessionTracking();
-  }, [current, resetSessionTracking]);
+  }, [current, resetSessionTracking, setRecognizedText, setLiveTranscription, setFeedback, setStatusMessage, setMetrics, setWordFeedback, stopAudioAnalyser, setIsListening, setIsProcessing, setIsPlaying]);
 
   const readingSpeedBuckets = useMemo(
     () => ([
@@ -1338,11 +1338,11 @@ export default function EnglishFlashcards({
       } | null>((resolve, reject) => {
         let settled = false;
         let silenceTimer: number | undefined;
-        let maxTimer: number | undefined;
+        const maxTimer = window.setTimeout(() => finish(), 120000);
         let totalDuration = 0;
         let totalWords = 0;
         let totalText = "";
-        let weighted = { pronunciation: 0, accuracy: 0, fluency: 0, completeness: 0 };
+        const weighted = { pronunciation: 0, accuracy: 0, fluency: 0, completeness: 0 };
         const allWords: WordFeedback[] = [];
 
         const finish = () => {
@@ -1414,7 +1414,6 @@ export default function EnglishFlashcards({
         };
 
         recognizer.canceled = () => finish();
-        maxTimer = window.setTimeout(() => finish(), 120000);
 
         recognizer.startContinuousRecognitionAsync(
           () => setStatusMessage("Listening... 🎧"),

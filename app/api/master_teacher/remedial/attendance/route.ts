@@ -19,6 +19,7 @@ export async function GET(request: NextRequest) {
     const data = await response.json();
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
+    console.error("Fetch attendance error:", error);
     return NextResponse.json(
       { success: false, error: "Failed to fetch attendance records." },
       { status: 500 }
@@ -51,6 +52,7 @@ export async function PUT(request: NextRequest) {
     const data = await response.json();
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
+    console.error("Save attendance error:", error);
     return NextResponse.json(
       { success: false, error: "Failed to save attendance." },
       { status: 500 }

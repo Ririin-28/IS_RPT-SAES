@@ -51,11 +51,11 @@ const resolveSchoolYearFromDate = (date: Date): string => {
   return month >= 5 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
 };
 
-const parseSchoolYear = (schoolYear: string): { startYear: number; endYear: number } | null => {
-  const [start, end] = schoolYear.split("-").map((part) => Number(part));
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
-  return { startYear: start, endYear: end };
-};
+// const parseSchoolYear = (schoolYear: string): { startYear: number; endYear: number } | null => {
+//   const [start, end] = schoolYear.split("-").map((part) => Number(part));
+//   if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+//   return { startYear: start, endYear: end };
+// };
 
 const monthInRange = (month: number, start: number, end: number): boolean => {
   if (start <= end) return month >= start && month <= end;

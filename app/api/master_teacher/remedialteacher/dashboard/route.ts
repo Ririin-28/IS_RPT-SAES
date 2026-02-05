@@ -388,6 +388,7 @@ function buildGradeContext(rawGradeIds: number[], rawLabels: string[]): GradeCon
   } satisfies GradeContext;
 }
 
+
 async function resolveSubjectIds(names: readonly string[]): Promise<Map<string, number>> {
   const columns = await safeGetColumns(SUBJECT_TABLE);
   if (!columns.size || !columns.has("subject_id")) {
@@ -486,6 +487,7 @@ async function countAssignedStudentsBySubject(
 
   return counts;
 }
+
 
 function buildGradeFilterClause(
   studentColumns: Set<string>,
@@ -836,24 +838,43 @@ export async function GET(request: NextRequest) {
       remedialRoleId = rows[0]?.remedial_role_id ? String(rows[0].remedial_role_id) : null;
     }
 
+    const identifiers = await resolveMasterTeacherIdentifiers(userIdParam ? Number(userIdParam) : (sessionUserId ?? 0));
+
+
+    // Try to get grade context from handled table
+    const { gradeIds, labels } = await loadHandledGradeData(identifiers);
+    const gradeContext = buildGradeContext(gradeIds, labels);
+
     const subjectMap = await resolveSubjectIds(SUBJECT_NAMES);
 
-    const [counts, trends] = await Promise.all([
-      countAssignedStudentsBySubject(remedialRoleId, subjectMap),
-      loadRemedialTeacherTrends(remedialRoleId, subjectMap),
-    ]);
+    let counts: SubjectCounts;
+    let source: string;
+
+    if (gradeContext.hasData) {
+      // If we have grade context, use the more detailed student counting logic
+      const countSource = await resolveSubjectCountSource();
+      counts = await countStudentsBySubject(gradeContext, subjectMap, countSource);
+      source = "grades";
+    } else {
+      // Fallback to simple assignment-based counting
+      counts = await countAssignedStudentsBySubject(remedialRoleId, subjectMap);
+      source = "assignments";
+    }
+
+    const trends = await loadRemedialTeacherTrends(remedialRoleId, subjectMap);
 
     return NextResponse.json({
       success: true,
       counts,
       trends,
       metadata: {
-        gradeIds: [],
-        gradeLabels: [],
-        hasGradeContext: false,
-        source: "assignments",
+        gradeIds: gradeContext.numericIds,
+        gradeLabels: gradeContext.labels,
+        hasGradeContext: gradeContext.hasData,
+        source,
       },
     });
+
   } catch (error) {
     console.error("Failed to load remedial dashboard data", error);
     return NextResponse.json(

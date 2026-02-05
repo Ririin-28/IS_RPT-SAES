@@ -87,75 +87,75 @@ const resolveMasterTeacherId = async (userId: number): Promise<string | null> =>
   return text.length ? text : null;
 };
 
-const resolveRemedialGradeId = async (
-  masterTeacherId: string | null,
-  userId: number | null,
-): Promise<number | null> => {
-  let resolvedMasterTeacherId = masterTeacherId?.trim() ?? "";
+// const resolveRemedialGradeId = async (
+//   masterTeacherId: string | null,
+//   userId: number | null,
+// ): Promise<number | null> => {
+//   let resolvedMasterTeacherId = masterTeacherId?.trim() ?? "";
+//
+//   if (!resolvedMasterTeacherId && userId) {
+//     resolvedMasterTeacherId = (await resolveMasterTeacherId(userId)) ?? "";
+//   }
+//
+//   if (!resolvedMasterTeacherId) return null;
+//
+//   const columns = await getTableColumns(MT_REMEDIAL_HANDLED_TABLE).catch(() => new Set<string>());
+//   if (!columns.size || !columns.has("grade_id") || !columns.has("master_teacher_id")) {
+//     return null;
+//   }
+//
+//   const [rows] = await query<RowDataPacket[]>(
+//     `SELECT grade_id FROM ${MT_REMEDIAL_HANDLED_TABLE} WHERE master_teacher_id = ? AND grade_id IS NOT NULL LIMIT 1`,
+//     [resolvedMasterTeacherId],
+//   );
+//
+//   const gradeId = Number(rows[0]?.grade_id);
+//   return Number.isFinite(gradeId) ? gradeId : null;
+// };
 
-  if (!resolvedMasterTeacherId && userId) {
-    resolvedMasterTeacherId = (await resolveMasterTeacherId(userId)) ?? "";
-  }
-
-  if (!resolvedMasterTeacherId) return null;
-
-  const columns = await getTableColumns(MT_REMEDIAL_HANDLED_TABLE).catch(() => new Set<string>());
-  if (!columns.size || !columns.has("grade_id") || !columns.has("master_teacher_id")) {
-    return null;
-  }
-
-  const [rows] = await query<RowDataPacket[]>(
-    `SELECT grade_id FROM ${MT_REMEDIAL_HANDLED_TABLE} WHERE master_teacher_id = ? AND grade_id IS NOT NULL LIMIT 1`,
-    [resolvedMasterTeacherId],
-  );
-
-  const gradeId = Number(rows[0]?.grade_id);
-  return Number.isFinite(gradeId) ? gradeId : null;
-};
-
-const resolveAssignmentGradeId = async (
-  subjectId: number,
-  session: { masterTeacherId?: string | null; remedialRoleId?: string | null; userId?: number | null } | null,
-): Promise<number | null> => {
-  if (!Number.isFinite(subjectId)) return null;
-
-  const assignmentColumns = await getTableColumns(STUDENT_TEACHER_ASSIGNMENT_TABLE).catch(() => new Set<string>());
-  if (!assignmentColumns.size || !assignmentColumns.has("grade_id") || !assignmentColumns.has("subject_id")) {
-    return null;
-  }
-
-  const filters: string[] = [];
-  const params: Array<string | number> = [subjectId];
-
-  if (assignmentColumns.has("remedial_role_id") && session?.remedialRoleId) {
-    filters.push("remedial_role_id = ?");
-    params.push(String(session.remedialRoleId));
-  }
-
-  if (assignmentColumns.has("teacher_id") && session?.masterTeacherId) {
-    filters.push("teacher_id = ?");
-    params.push(String(session.masterTeacherId));
-  }
-
-  if (assignmentColumns.has("assigned_by_mt_id") && session?.masterTeacherId) {
-    filters.push("assigned_by_mt_id = ?");
-    params.push(String(session.masterTeacherId));
-  }
-
-  if (!filters.length) return null;
-
-  const statusFilter = assignmentColumns.has("is_active") ? " AND is_active = 1" : "";
-
-  const [rows] = await query<RowDataPacket[]>(
-    `SELECT grade_id FROM ${STUDENT_TEACHER_ASSIGNMENT_TABLE}
-     WHERE subject_id = ? AND (${filters.join(" OR ")})${statusFilter}
-     LIMIT 1`,
-    params,
-  );
-
-  const gradeId = Number(rows[0]?.grade_id);
-  return Number.isFinite(gradeId) ? gradeId : null;
-};
+// const resolveAssignmentGradeId = async (
+//   subjectId: number,
+//   session: { masterTeacherId?: string | null; remedialRoleId?: string | null; userId?: number | null } | null,
+// ): Promise<number | null> => {
+//   if (!Number.isFinite(subjectId)) return null;
+//
+//   const assignmentColumns = await getTableColumns(STUDENT_TEACHER_ASSIGNMENT_TABLE).catch(() => new Set<string>());
+//   if (!assignmentColumns.size || !assignmentColumns.has("grade_id") || !assignmentColumns.has("subject_id")) {
+//     return null;
+//   }
+//
+//   const filters: string[] = [];
+//   const params: Array<string | number> = [subjectId];
+//
+//   if (assignmentColumns.has("remedial_role_id") && session?.remedialRoleId) {
+//     filters.push("remedial_role_id = ?");
+//     params.push(String(session.remedialRoleId));
+//   }
+//
+//   if (assignmentColumns.has("teacher_id") && session?.masterTeacherId) {
+//     filters.push("teacher_id = ?");
+//     params.push(String(session.masterTeacherId));
+//   }
+//
+//   if (assignmentColumns.has("assigned_by_mt_id") && session?.masterTeacherId) {
+//     filters.push("assigned_by_mt_id = ?");
+//     params.push(String(session.masterTeacherId));
+//   }
+//
+//   if (!filters.length) return null;
+//
+//   const statusFilter = assignmentColumns.has("is_active") ? " AND is_active = 1" : "";
+//
+//   const [rows] = await query<RowDataPacket[]>(
+//     `SELECT grade_id FROM ${STUDENT_TEACHER_ASSIGNMENT_TABLE}
+//      WHERE subject_id = ? AND (${filters.join(" OR ")})${statusFilter}
+//      LIMIT 1`,
+//     params,
+//   );
+//
+//   const gradeId = Number(rows[0]?.grade_id);
+//   return Number.isFinite(gradeId) ? gradeId : null;
+// };
 
 const loadRemedialMonths = async (): Promise<Set<number>> => {
   const schoolYear = resolveSchoolYear();

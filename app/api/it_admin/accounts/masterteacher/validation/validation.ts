@@ -352,6 +352,18 @@ function subjectNameToIds(subjectsRaw: string | null | undefined): number[] {
     .filter((id): id is number => typeof id === "number");
 }
 
+/*
+function subjectNameToIds(subjectsRaw: string | null | undefined): number[] {
+  if (!subjectsRaw) return [];
+  return subjectsRaw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+    .map((name) => SUBJECT_NAME_TO_ID[name as keyof typeof SUBJECT_NAME_TO_ID])
+    .filter((id): id is number => typeof id === "number");
+}
+*/
+
 async function resolveRoleId(connection: PoolConnection, roleNames: string[], fallbackId?: number): Promise<number | null> {
   if (!roleNames.length) {
     return fallbackId ?? null;

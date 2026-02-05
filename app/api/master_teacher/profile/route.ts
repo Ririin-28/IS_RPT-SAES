@@ -463,7 +463,7 @@ export async function PUT(request: NextRequest) {
   try {
     const userColumns = await safeGetColumns("users");
     const coordinatorColumns = await safeGetColumns(COORDINATOR_TABLE);
-    const coordinatorTableExists = coordinatorColumns.size > 0 || await safeTableExists(COORDINATOR_TABLE);
+    // const coordinatorTableExists = coordinatorColumns.size > 0 || await safeTableExists(COORDINATOR_TABLE);
 
     const updates: string[] = [];
     const params: any[] = [];
