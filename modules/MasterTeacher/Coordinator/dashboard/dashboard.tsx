@@ -24,7 +24,7 @@ import {
   Legend,
 } from 'chart.js';
 import { Bar, Pie } from 'react-chartjs-2';
-import type { RemedialStudentRecord, RemedialStudentResponse } from "../../RemedialTeacher/report/types";
+import type { StudentRecordDto } from "@/lib/students/shared";
 
 // Register ChartJS components
 ChartJS.register(
@@ -111,38 +111,10 @@ const formatSubjectDescriptor = (value?: string | null): string => {
 };
 
 type CoordinatorSubject = "Math" | "English" | "Filipino";
-type ProgressMonthKey = "starting" | "sept" | "oct" | "dec" | "feb";
-
-const PROGRESS_MONTHS: Array<{ key: ProgressMonthKey; label: string }> = [
-  { key: "starting", label: "Starting" },
-  { key: "sept", label: "September" },
-  { key: "oct", label: "October" },
-  { key: "dec", label: "December" },
-  { key: "feb", label: "February" },
-];
-
-const SUBJECT_PROGRESS_FIELDS: Record<CoordinatorSubject, Record<ProgressMonthKey, keyof RemedialStudentRecord>> = {
-  English: {
-    starting: "englishStartingLevel",
-    sept: "englishSeptLevel",
-    oct: "englishOctLevel",
-    dec: "englishDecLevel",
-    feb: "englishFebLevel",
-  },
-  Filipino: {
-    starting: "filipinoStartingLevel",
-    sept: "filipinoSeptLevel",
-    oct: "filipinoOctLevel",
-    dec: "filipinoDecLevel",
-    feb: "filipinoFebLevel",
-  },
-  Math: {
-    starting: "mathStartingLevel",
-    sept: "mathSeptLevel",
-    oct: "mathOctLevel",
-    dec: "mathDecLevel",
-    feb: "mathFebLevel",
-  },
+type CoordinatorStudentResponse = {
+  success: boolean;
+  data?: StudentRecordDto[];
+  error?: string;
 };
 
 const LEVEL_COLOR_PALETTE = [
@@ -164,96 +136,82 @@ const sanitize = (value: unknown): string => {
   return trimmed.length ? trimmed : "";
 };
 
+const getWeekRange = () => {
+  const today = new Date();
+  const day = today.getDay();
+  const diff = (day + 6) % 7;
+  const start = new Date(today);
+  start.setDate(today.getDate() - diff);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+  const toDateString = (value: Date) => value.toISOString().slice(0, 10);
+  return { from: toDateString(start), to: toDateString(end) };
+};
+
 type LevelDistributionResult = {
   labels: string[];
-  datasets: Array<{
-    label: string;
-    data: number[];
-    backgroundColor: string;
-    stack: string;
-  }>;
+  data: number[];
+  colors: string[];
   summary: string;
 };
 
 const buildLevelDistribution = (
-  students: RemedialStudentRecord[],
+  students: StudentRecordDto[],
   subject: CoordinatorSubject,
 ): LevelDistributionResult => {
   if (!students.length) {
     return {
-      labels: PROGRESS_MONTHS.map((month) => month.label),
-      datasets: [],
+      labels: [],
+      data: [],
+      colors: [],
       summary: "No students assigned yet.",
     };
   }
 
-  const fieldMap = SUBJECT_PROGRESS_FIELDS[subject];
-  const levelSet = new Set<string>();
-  const countsByMonth = new Map<ProgressMonthKey, Map<string, number>>();
-
-  PROGRESS_MONTHS.forEach(({ key }) => {
-    countsByMonth.set(key, new Map<string, number>());
-  });
+  const levelMap = new Map<string, number>();
 
   students.forEach((student) => {
-    PROGRESS_MONTHS.forEach(({ key }) => {
-      const field = fieldMap[key];
-      const value = sanitize(student[field]);
-      if (!value) {
-        return;
-      }
-      levelSet.add(value);
-      const monthCounts = countsByMonth.get(key);
-      if (!monthCounts) {
-        return;
-      }
-      monthCounts.set(value, (monthCounts.get(value) ?? 0) + 1);
-    });
+    const level = (() => {
+      if (subject === "English") return sanitize(student.englishPhonemic);
+      if (subject === "Filipino") return sanitize(student.filipinoPhonemic);
+      return sanitize(student.mathProficiency);
+    })();
+
+    if (!level) {
+      return;
+    }
+
+    levelMap.set(level, (levelMap.get(level) ?? 0) + 1);
   });
 
-  const levels = Array.from(levelSet).sort((a, b) => a.localeCompare(b));
-  const labels = PROGRESS_MONTHS.map((month) => month.label);
-
-  const datasets = levels.map((level, index) => {
-    const color = LEVEL_COLOR_PALETTE[index % LEVEL_COLOR_PALETTE.length];
-    const data = PROGRESS_MONTHS.map(({ key }) => countsByMonth.get(key)?.get(level) ?? 0);
+  if (!levelMap.size) {
     return {
-      label: level,
-      data,
-      backgroundColor: color,
-      stack: "levels",
+      labels: [],
+      data: [],
+      colors: [],
+      summary: "No progress data available yet.",
     };
-  });
-
-  const latestMonthWithData = [...PROGRESS_MONTHS].reverse().find(({ key }) => {
-    const monthCounts = countsByMonth.get(key);
-    if (!monthCounts) {
-      return false;
-    }
-    let total = 0;
-    monthCounts.forEach((count) => {
-      total += count;
-    });
-    return total > 0;
-  });
-
-  let summary = "No progress records available yet.";
-  if (latestMonthWithData) {
-    const monthCounts = countsByMonth.get(latestMonthWithData.key);
-    if (monthCounts && monthCounts.size > 0) {
-      let topLevel = "";
-      let topCount = 0;
-      monthCounts.forEach((count, level) => {
-        if (count > topCount) {
-          topLevel = level;
-          topCount = count;
-        }
-      });
-      summary = `${topLevel || "No level"} is the most common level in ${latestMonthWithData.label}.`;
-    }
   }
 
-  return { labels, datasets, summary };
+  const labels = Array.from(levelMap.keys()).sort((a, b) => a.localeCompare(b));
+  const data = labels.map((label) => levelMap.get(label) ?? 0);
+  const colors = labels.map((_, index) => LEVEL_COLOR_PALETTE[index % LEVEL_COLOR_PALETTE.length]);
+
+  let topLevel = labels[0] ?? "";
+  let topCount = 0;
+  labels.forEach((label) => {
+    const count = levelMap.get(label) ?? 0;
+    if (count > topCount) {
+      topLevel = label;
+      topCount = count;
+    }
+  });
+
+  const summary = topLevel ? `Most students are at ${topLevel} level.` : "No progress data available yet.";
+
+  return { labels, data, colors, summary };
 };
 
 // Custom styled dropdown component
@@ -369,7 +327,7 @@ export default function MasterTeacherDashboard() {
   const [coordinatorProfile, setCoordinatorProfile] = useState<CoordinatorProfile | null>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
-  const [students, setStudents] = useState<RemedialStudentRecord[]>([]);
+  const [students, setStudents] = useState<StudentRecordDto[]>([]);
   const [isLoadingStudents, setIsLoadingStudents] = useState(true);
   const [studentsError, setStudentsError] = useState<string | null>(null);
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number | null>(null);
@@ -379,6 +337,7 @@ export default function MasterTeacherDashboard() {
   const [gradeCounts, setGradeCounts] = useState<{ students: number; teachers: number } | null>(null);
   const [isLoadingGradeCounts, setIsLoadingGradeCounts] = useState(false);
   const [gradeCountsError, setGradeCountsError] = useState<string | null>(null);
+  const [selectedSubject, setSelectedSubject] = useState<CoordinatorSubject>('Math');
 
   useEffect(() => {
     let cancelled = false;
@@ -436,28 +395,31 @@ export default function MasterTeacherDashboard() {
   }, [storedProfile, userId]);
 
   useEffect(() => {
-    if (userId === null) {
-      setStudents([]);
-      setIsLoadingStudents(false);
-      setStudentsError("Unable to identify the current user. Please sign in again.");
-      return;
-    }
-
     const controller = new AbortController();
 
     const loadStudents = async () => {
       setIsLoadingStudents(true);
       setStudentsError(null);
       try {
+        const params = new URLSearchParams({
+          subject: selectedSubject,
+          pageSize: "500",
+        });
+
+        const gradeValue = coordinatorProfile?.gradeHandled?.trim();
+        if (gradeValue && gradeValue.toLowerCase() !== "not assigned") {
+          params.set("gradeLevel", gradeValue);
+        }
+
         const response = await fetch(
-          `/api/master_teacher/remedialteacher/students?userId=${encodeURIComponent(String(userId))}`,
+          `/api/master_teacher/coordinator/students?${params.toString()}`,
           { cache: "no-store", signal: controller.signal },
         );
-        const payload = (await response.json()) as RemedialStudentResponse;
-        if (!response.ok || !payload.success || !Array.isArray(payload.students)) {
-          throw new Error(payload.error ?? "Failed to load students.");
+        const payload = (await response.json()) as CoordinatorStudentResponse;
+        if (!response.ok || !payload.success || !Array.isArray(payload.data)) {
+          throw new Error(payload?.error ?? "Failed to load students.");
         }
-        setStudents(payload.students);
+        setStudents(payload.data);
       } catch (error) {
         if (controller.signal.aborted) {
           return;
@@ -477,7 +439,7 @@ export default function MasterTeacherDashboard() {
     return () => {
       controller.abort();
     };
-  }, [userId]);
+  }, [coordinatorProfile?.gradeHandled, selectedSubject]);
 
   const subjectFilter = useMemo(() => {
     const rawSubject = coordinatorProfile?.subjectAssigned?.trim();
@@ -499,6 +461,13 @@ export default function MasterTeacherDashboard() {
         throw new Error("Subject is required (English, Filipino, or Math).");
       }
       params.set("subject", subjectFilter);
+      const weekRange = getWeekRange();
+      if (weekRange.from) {
+        params.set("from", weekRange.from);
+      }
+      if (weekRange.to) {
+        params.set("to", weekRange.to);
+      }
       const response = await fetch(`/api/master_teacher/coordinator/materials?${params.toString()}`, { cache: "no-store" });
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
@@ -637,7 +606,13 @@ export default function MasterTeacherDashboard() {
     'Jul.', 'Aug.', 'Sep.', 'Oct.', 'Nov.', 'Dec.'
   ];
   const dateToday = `${dayShort[today.getDay()]}, ${monthShort[today.getMonth()]} ${today.getDate()}, ${today.getFullYear()}`;
-  const [selectedSubject, setSelectedSubject] = useState<CoordinatorSubject>('Math');
+
+  useEffect(() => {
+    const normalized = normalizeMaterialSubject(coordinatorProfile?.subjectAssigned);
+    if (normalized) {
+      setSelectedSubject(normalized as CoordinatorSubject);
+    }
+  }, [coordinatorProfile?.subjectAssigned]);
 
   // Sample data for the teacher's own students
   const levelDistribution = useMemo(
@@ -686,7 +661,7 @@ export default function MasterTeacherDashboard() {
     maintainAspectRatio: false,
   };
 
-  const stackedBarOptions = useMemo(
+  const levelBarOptions = useMemo(
     () => ({
       responsive: true,
       plugins: {
@@ -695,7 +670,7 @@ export default function MasterTeacherDashboard() {
         },
         title: {
           display: true,
-          text: `${selectedSubject} Levels by Month`,
+          text: `Current ${selectedSubject} Level Distribution`,
           font: {
             size: 16,
             weight: 'bold' as const,
@@ -704,10 +679,10 @@ export default function MasterTeacherDashboard() {
       },
       scales: {
         x: {
-          stacked: true,
+          stacked: false,
         },
         y: {
-          stacked: true,
+          stacked: false,
           beginAtZero: true,
           ticks: {
             stepSize: 1,
@@ -882,14 +857,20 @@ export default function MasterTeacherDashboard() {
                       <div className="flex h-full items-center justify-center text-sm text-gray-500">Loading distribution...</div>
                     ) : studentsError ? (
                       <div className="flex h-full items-center justify-center text-sm text-red-600">{studentsError}</div>
-                    ) : levelDistribution.datasets.length === 0 ? (
+                    ) : levelDistribution.data.length === 0 ? (
                       <div className="flex h-full items-center justify-center text-sm text-gray-500">No progress data available yet.</div>
                     ) : (
                       <Bar 
-                        options={stackedBarOptions}
+                        options={levelBarOptions}
                         data={{
                           labels: levelDistribution.labels,
-                          datasets: levelDistribution.datasets,
+                          datasets: [
+                            {
+                              label: `${selectedSubject} Levels`,
+                              data: levelDistribution.data,
+                              backgroundColor: levelDistribution.colors,
+                            },
+                          ],
                         }} 
                       />
                     )}

@@ -4,11 +4,20 @@ import type { RowDataPacket } from "mysql2/promise";
 
 export const dynamic = "force-dynamic";
 
-const SUBJECT_TABLE_MAP: Record<string, string> = {
-  english: "pending_english_materials",
-  filipino: "pending_filipino_materials",
-  math: "pending_math_materials",
-};
+const SUBJECT_TABLE_MAP = {
+  english: {
+    pending: "pending_english_materials",
+    approved: "english_materials",
+  },
+  filipino: {
+    pending: "pending_filipino_materials",
+    approved: "filipino_materials",
+  },
+  math: {
+    pending: "pending_math_materials",
+    approved: "math_materials",
+  },
+} as const;
 
 const GRADE_COLUMN_CANDIDATES = [
   "grade_level",
@@ -18,6 +27,14 @@ const GRADE_COLUMN_CANDIDATES = [
   "gradeLevel",
   "gradelevel",
   "grade_section",
+] as const;
+
+const DATE_COLUMN_CANDIDATES = [
+  "created_at",
+  "createdAt",
+  "date_created",
+  "submitted_at",
+  "submittedAt",
 ] as const;
 
 const GRADE_WORD_TO_NUMBER: Record<string, number> = {
@@ -56,6 +73,12 @@ function normalizeSubject(raw?: string | null): keyof typeof SUBJECT_TABLE_MAP |
   return null;
 }
 
+function normalizeStatus(raw?: string | null): "pending" | "approved" {
+  const text = raw?.trim().toLowerCase();
+  if (text === "approved") return "approved";
+  return "pending";
+}
+
 function pickGradeColumn(columns: Set<string>): string | null {
   for (const candidate of GRADE_COLUMN_CANDIDATES) {
     if (columns.has(candidate)) {
@@ -63,6 +86,23 @@ function pickGradeColumn(columns: Set<string>): string | null {
     }
   }
   return null;
+}
+
+function pickDateColumn(columns: Set<string>): string | null {
+  for (const candidate of DATE_COLUMN_CANDIDATES) {
+    if (columns.has(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function normalizeDateParam(value: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(/\d{4}-\d{2}-\d{2}/);
+  return match ? match[0] : null;
 }
 
 function extractGradeNumber(raw: string): number | null {
@@ -120,6 +160,9 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const subjectParam = normalizeSubject(searchParams.get("subject"));
     const gradeParam = searchParams.get("grade")?.trim() || null;
+    const statusParam = normalizeStatus(searchParams.get("status"));
+    const fromParam = normalizeDateParam(searchParams.get("from"));
+    const toParam = normalizeDateParam(searchParams.get("to"));
     const pageSize = Number(searchParams.get("pageSize")) || 10;
     const page = Number(searchParams.get("page")) || 1;
 
@@ -127,15 +170,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Subject is required (English, Filipino, or Math)." }, { status: 400 });
     }
 
-    const tableName = SUBJECT_TABLE_MAP[subjectParam];
+    const tableName = SUBJECT_TABLE_MAP[subjectParam][statusParam];
     if (!(await tableExists(tableName))) {
       return NextResponse.json({ success: true, data: [], pagination: { total: 0, page, pageSize, totalPages: 0 }, metadata: { table: tableName, gradeColumn: null } });
     }
 
     const columns = await getTableColumns(tableName);
     const gradeColumn = gradeParam ? pickGradeColumn(columns) : null;
+    const dateColumn = pickDateColumn(columns);
 
-    const whereParts: string[] = [];
+    const gradeClauses: string[] = [];
+    const dateClauses: string[] = [];
     const params: Array<string | number> = [];
 
     if (gradeParam && gradeColumn) {
@@ -144,17 +189,36 @@ export async function GET(request: NextRequest) {
       const gradeExpr = `LOWER(CAST(\`${gradeColumn}\` AS CHAR))`;
 
       if (gradeNumber !== null) {
-        whereParts.push(`CAST(\`${gradeColumn}\` AS SIGNED) = ?`);
+        gradeClauses.push(`CAST(\`${gradeColumn}\` AS SIGNED) = ?`);
         params.push(gradeNumber);
       }
 
       for (const term of gradeTerms) {
-        whereParts.push(`${gradeExpr} LIKE ?`);
+        gradeClauses.push(`${gradeExpr} LIKE ?`);
         params.push(`%${term}%`);
       }
     }
 
-    const whereClause = whereParts.length ? `WHERE ${whereParts.map((p) => `(${p})`).join(" OR ")}` : "";
+    if (dateColumn && (fromParam || toParam)) {
+      if (fromParam) {
+        dateClauses.push(`DATE(\`${dateColumn}\`) >= ?`);
+        params.push(fromParam);
+      }
+      if (toParam) {
+        dateClauses.push(`DATE(\`${dateColumn}\`) <= ?`);
+        params.push(toParam);
+      }
+    }
+
+    const whereParts: string[] = [];
+    if (gradeClauses.length) {
+      whereParts.push(`(${gradeClauses.map((p) => `(${p})`).join(" OR ")})`);
+    }
+    if (dateClauses.length) {
+      whereParts.push(dateClauses.map((p) => `(${p})`).join(" AND "));
+    }
+
+    const whereClause = whereParts.length ? `WHERE ${whereParts.join(" AND ")}` : "";
 
     const [countRows] = await query<RowDataPacket[]>(
       `SELECT COUNT(*) AS total FROM \`${tableName}\` ${whereClause}`,
@@ -187,8 +251,11 @@ export async function GET(request: NextRequest) {
       },
       metadata: {
         table: tableName,
+        status: statusParam,
         gradeColumn,
         gradeFilterApplied: Boolean(gradeParam && gradeColumn),
+        dateColumn,
+        dateFilterApplied: Boolean(dateColumn && (fromParam || toParam)),
       },
     });
   } catch (error) {

@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import ScheduledActivitiesList, { type CalendarActivity } from "./ScheduledActivitiesList";
+import NoContentModal from "./NoContentModal";
 
 // Tabs
 // English Tabs
@@ -40,6 +41,7 @@ export default function TeacherRemedial() {
   
   const [phonemicLevels, setPhonemicLevels] = useState<Array<{ phonemic_id: number; level_name: string }>>([]);
   const [validatingActivityId, setValidatingActivityId] = useState<string | null>(null);
+  const [showNoContentModal, setShowNoContentModal] = useState(false);
 
   // Update subject when path changes
   useEffect(() => {
@@ -154,7 +156,7 @@ export default function TeacherRemedial() {
     const phonemicLevelName = activeTab;
 
     if (!phonemicId) {
-        alert("Please select a valid level to play.");
+        setShowNoContentModal(true);
         return;
     }
 
@@ -185,11 +187,11 @@ export default function TeacherRemedial() {
           const playPath = `/Teacher/remedial/${flashcardsPath}?subject=${encodeURIComponent(subject)}&activity=${encodeURIComponent(activity.id)}${subjectIdParam}${gradeIdParam}${materialIdParam}${phonemicParam}${phonemicNameParam}`;
           router.push(playPath);
       } else {
-        alert("No content found for this activity and level.");
+        setShowNoContentModal(true);
       }
     } catch (error) {
       console.error("Validation failed", error);
-      alert("An error occurred while validating content.");
+      setShowNoContentModal(true);
     } finally {
       setValidatingActivityId(null);
     }
@@ -259,6 +261,11 @@ export default function TeacherRemedial() {
           </div>
         </main>
       </div>
+      
+      <NoContentModal
+        isOpen={showNoContentModal}
+        onClose={() => setShowNoContentModal(false)}
+      />
     </div>
   );
 }

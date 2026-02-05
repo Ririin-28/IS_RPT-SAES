@@ -261,6 +261,7 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 				initialStudentId={previewStudent.id}
 				forceSessionOnly
 				onExit={() => router.push("/MasterTeacher/Coordinator/remedial")}
+				subject={subject}
 				phonemicLevel={phonemicName ? `${phonemicName} Level` : undefined}
 				activityTitle={`${subject} Preview`}
 			/>

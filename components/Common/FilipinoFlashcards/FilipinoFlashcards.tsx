@@ -1,5 +1,7 @@
+
 "use client";
 import { useState, useRef, useEffect, useMemo, useCallback, type CSSProperties } from "react";
+import * as SpeechSDK from "microsoft-cognitiveservices-speech-sdk";
 import { FiArrowLeft, FiArrowRight } from "react-icons/fi";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
@@ -137,10 +139,18 @@ type SessionScore = {
   sentence: string;
   pronScore: number;
   correctness: number;
+  fluencyScore?: number;
+  completenessScore?: number;
   readingSpeedWpm: number;
   readingSpeedScore: number;
   averageScore: number;
   transcription?: string | null;
+};
+
+type WordFeedback = {
+  word: string;
+  accuracyScore: number | null;
+  errorType?: string | null;
 };
 
 type EnrichedStudent = StudentRecord & {
@@ -479,9 +489,13 @@ export default function FilipinoFlashcards({
   // recognition + metrics state
   const [isListening, setIsListening] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [recognizedText, setRecognizedText] = useState("");
+  const [liveTranscription, setLiveTranscription] = useState("");
   const [feedback, setFeedback] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
   const [metrics, setMetrics] = useState<any>(null);
+  const [wordFeedback, setWordFeedback] = useState<WordFeedback[]>([]);
   const hasRecordedScoreForCurrent = useMemo(
     () => sessionScores.some((item) => item.cardIndex === current),
     [current, sessionScores],
@@ -496,6 +510,9 @@ export default function FilipinoFlashcards({
   const speechStartRef = useRef<number | null>(null);
   const speechEndRef = useRef<number | null>(null);
   const cumulativeSilentMsRef = useRef<number>(0);
+  const recognizerRef = useRef<SpeechSDK.SpeechRecognizer | null>(null);
+  const synthesizerRef = useRef<SpeechSDK.SpeechSynthesizer | null>(null);
+  const speechTokenRef = useRef<{ token: string; region: string; expiresAt: number } | null>(null);
 
   const updateSessionProgress = useCallback(
     (nextIndex: number) => {
@@ -587,6 +604,8 @@ export default function FilipinoFlashcards({
             sentence: slide.expectedText ?? flashcardsData[slide.flashcardIndex]?.sentence ?? "",
             pronScore: slide.pronunciationScore,
             correctness: slide.correctnessScore,
+            fluencyScore: undefined,
+            completenessScore: undefined,
             readingSpeedWpm: slide.readingSpeedWpm,
             readingSpeedScore: gradeReadingSpeed(
               slide.readingSpeedWpm,
@@ -662,7 +681,7 @@ export default function FilipinoFlashcards({
 
     if (selectedStudentId && (metrics || sessionScores.length)) {
       const basePron = metrics?.pronScore ?? latestScore?.pronScore ?? 0;
-      const baseCorrectness = metrics?.correctness ?? latestScore?.correctness ?? basePron;
+      const baseCorrectness = metrics?.accuracyScore ?? metrics?.correctness ?? latestScore?.correctness ?? basePron;
       const baseSpeedScore = speedScore ?? latestScore?.readingSpeedScore ?? basePron;
 
       onSavePerformance({
@@ -671,7 +690,7 @@ export default function FilipinoFlashcards({
         timestamp: new Date().toISOString(),
         pronScore: basePron,
         fluencyScore: metrics?.fluencyScore ?? basePron,
-        phonemeAccuracy: metrics?.phonemeAccuracy ?? basePron,
+        phonemeAccuracy: metrics?.accuracyScore ?? metrics?.phonemeAccuracy ?? basePron,
         wpm: metrics?.wpm ?? 0,
         correctness: baseCorrectness,
         readingSpeedScore: baseSpeedScore,
@@ -750,6 +769,10 @@ export default function FilipinoFlashcards({
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
+    recognizerRef.current?.close();
+    recognizerRef.current = null;
+    synthesizerRef.current?.close();
+    synthesizerRef.current = null;
 
     resetSessionTracking();
     setSessionScores([]);
@@ -776,27 +799,128 @@ export default function FilipinoFlashcards({
     router.back();
   };
 
-  const handleSpeak = () => {
+  const getSpeechToken = useCallback(async () => {
+    const now = Date.now();
+    if (speechTokenRef.current && speechTokenRef.current.expiresAt > now + 30000) {
+      return speechTokenRef.current;
+    }
+    const response = await fetch("/api/azure-speech/token", { cache: "no-store" });
+    const payload = (await response.json().catch(() => null)) as
+      | { token?: string; region?: string; expiresIn?: number; error?: string }
+      | null;
+
+    if (!response.ok || !payload?.token || !payload.region) {
+      throw new Error(payload?.error || "Azure Speech token request failed.");
+    }
+
+    const expiresIn = typeof payload.expiresIn === "number" ? payload.expiresIn : 540;
+    const tokenInfo = {
+      token: payload.token,
+      region: payload.region,
+      expiresAt: now + expiresIn * 1000,
+    };
+    speechTokenRef.current = tokenInfo;
+    return tokenInfo;
+  }, []);
+
+  const applyOmissionsToWordFeedback = useCallback((
+    mapped: WordFeedback[],
+    expectedText: string,
+  ): WordFeedback[] => {
+    const expectedWords = normalizeText(expectedText).split(/\s+/).filter(Boolean);
+    if (!expectedWords.length) return mapped;
+
+    const normalizedMapped = mapped.map((item: WordFeedback) => item.word.toLowerCase());
+    const output: WordFeedback[] = [];
+    let j = 0;
+
+    for (const expected of expectedWords) {
+      if (j < normalizedMapped.length && normalizedMapped[j] === expected) {
+        output.push(mapped[j]);
+        j += 1;
+      } else {
+        output.push({ word: expected, accuracyScore: 0, errorType: "Omitted" });
+      }
+    }
+
+    return output;
+  }, []);
+
+  const parseWordFeedback = useCallback((
+    jsonResult: string | undefined | null,
+    expectedText: string,
+    mode: "raw" | "with-omissions" = "with-omissions",
+  ): WordFeedback[] => {
+    if (!jsonResult) return [];
+    try {
+      const parsed = JSON.parse(jsonResult) as any;
+      const words = parsed?.NBest?.[0]?.Words ?? [];
+      const mapped = words.map((word: any) => ({
+        word: word?.Word ?? "",
+        accuracyScore: typeof word?.PronunciationAssessment?.AccuracyScore === "number"
+          ? Math.round(word.PronunciationAssessment.AccuracyScore)
+          : null,
+        errorType: word?.PronunciationAssessment?.ErrorType ?? null,
+      })).filter((item: WordFeedback) => item.word);
+
+      if (mode === "raw") {
+        return mapped;
+      }
+
+      return applyOmissionsToWordFeedback(mapped, expectedText);
+    } catch {
+      return [];
+    }
+  }, [applyOmissionsToWordFeedback]);
+
+
+  const handleSpeakFallback = useCallback(() => {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       const utter = new window.SpeechSynthesisUtterance(sentence);
       utter.rate = 0.9;
       utter.pitch = 1.1;
-      utter.lang = "en-US"; // English language
-      
-      // Set playing state when speech starts
+      utter.lang = "fil-PH";
       setIsPlaying(true);
-      
-      // Reset playing state when speech ends
-      utter.onend = () => {
-        setIsPlaying(false);
-      };
-      
-      // Also handle error case
-      utter.onerror = () => {
-        setIsPlaying(false);
-      };
-      
+      utter.onend = () => setIsPlaying(false);
+      utter.onerror = () => setIsPlaying(false);
       window.speechSynthesis.speak(utter);
+    }
+  }, [sentence]);
+
+  const handleSpeak = async () => {
+    if (!sentence.trim() || isPlaying) return;
+    setStatusMessage("Preparing audio...");
+    setIsPlaying(true);
+    try {
+      const { token, region } = await getSpeechToken();
+      const speechConfig = SpeechSDK.SpeechConfig.fromAuthorizationToken(token, region);
+      speechConfig.speechSynthesisVoiceName = "fil-PH-BlessicaNeural";
+      const audioConfig = SpeechSDK.AudioConfig.fromDefaultSpeakerOutput();
+      const synthesizer = new SpeechSDK.SpeechSynthesizer(speechConfig, audioConfig);
+      synthesizerRef.current = synthesizer;
+
+      synthesizer.speakTextAsync(
+        sentence,
+        () => {
+          synthesizer.close();
+          synthesizerRef.current = null;
+          setIsPlaying(false);
+          setStatusMessage("");
+        },
+        (error) => {
+          console.error("Azure TTS error", error);
+          synthesizer.close();
+          synthesizerRef.current = null;
+          setIsPlaying(false);
+          setStatusMessage("Azure TTS failed. Using browser voice.");
+          handleSpeakFallback();
+        },
+      );
+    } catch (error) {
+      console.error("Azure TTS failed", error);
+      setIsPlaying(false);
+      setStatusMessage("Azure TTS unavailable. Using browser voice.");
+      handleSpeakFallback();
     }
   };
 
@@ -856,19 +980,29 @@ export default function FilipinoFlashcards({
 
   const resetSessionTracking = useCallback(() => {
     setRecognizedText("");
+    setLiveTranscription("");
     setFeedback("");
+    setStatusMessage("");
     setMetrics(null);
+    setWordFeedback([]);
     cumulativeSilentMsRef.current = 0;
     speechStartRef.current = null;
     speechEndRef.current = null;
     stopAudioAnalyser();
     setIsListening(false);
+    setIsProcessing(false);
     setIsPlaying(false);
   }, [stopAudioAnalyser]);
 
   useEffect(() => {
-    return () => stopAudioAnalyser();
-  }, []);
+    return () => {
+      stopAudioAnalyser();
+      recognizerRef.current?.close();
+      recognizerRef.current = null;
+      synthesizerRef.current?.close();
+      synthesizerRef.current = null;
+    };
+  }, [stopAudioAnalyser]);
 
   useEffect(() => {
     resetSessionTracking();
@@ -902,11 +1036,57 @@ export default function FilipinoFlashcards({
     [readingSpeedBuckets],
   );
 
+  const buildAzureMetrics = useCallback((
+    sentenceText: string,
+    spokenText: string,
+    paResult: SpeechSDK.PronunciationAssessmentResult,
+    result: SpeechSDK.SpeechRecognitionResult,
+    words: WordFeedback[],
+  ) => {
+    const wordCount = Math.max(1, normalizeText(sentenceText).split(/\s+/).filter(Boolean).length);
+    const durationSec = result.duration ? result.duration / 10000000 : 0;
+    const wpmRaw = durationSec > 0 ? Math.round((wordCount / durationSec) * 60) : 0;
+    const speedGrade = gradeReadingSpeed(wpmRaw, wordCount);
+
+    const pronScore = Math.round(paResult.pronunciationScore ?? 0);
+    const accuracyScore = Math.round(paResult.accuracyScore ?? 0);
+    const fluencyScore = Math.round(paResult.fluencyScore ?? 0);
+    const completenessScore = Math.round(paResult.completenessScore ?? 0);
+
+    const averageScore = Math.min(
+      100,
+      Math.max(0, Math.round((pronScore + accuracyScore + speedGrade.score) / 3)),
+    );
+
+    return {
+      pronScore,
+      accuracyScore,
+      fluencyScore,
+      completenessScore,
+      wpm: wpmRaw,
+      readingSpeedScore: speedGrade.score,
+      readingSpeedLabel: speedGrade.label,
+      wordCount,
+      averageScore,
+      transcription: spokenText,
+      wordFeedback: words,
+    };
+  }, [gradeReadingSpeed]);
+
   const upsertSessionScore = useCallback(
     (
       cardIndex: number,
       sentenceText: string,
-      sc: { pronScore: number; correctness: number; readingSpeedScore: number; averageScore: number; readingSpeedWpm: number; transcription?: string | null },
+      sc: {
+        pronScore: number;
+        correctness: number;
+        fluencyScore?: number;
+        completenessScore?: number;
+        readingSpeedScore: number;
+        averageScore: number;
+        readingSpeedWpm: number;
+        transcription?: string | null;
+      },
     ) => {
       setSessionScores((prev) => {
         const next = prev.filter((item) => item.cardIndex !== cardIndex);
@@ -915,6 +1095,8 @@ export default function FilipinoFlashcards({
           sentence: sentenceText,
           pronScore: sc.pronScore,
           correctness: sc.correctness,
+          fluencyScore: sc.fluencyScore,
+          completenessScore: sc.completenessScore,
           readingSpeedWpm: sc.readingSpeedWpm,
           readingSpeedScore: sc.readingSpeedScore,
           averageScore: sc.averageScore,
@@ -1014,7 +1196,7 @@ export default function FilipinoFlashcards({
   }
 
   // ---------- Microphone handler ----------
-  const handleMicrophone = async () => {
+  const handleMicrophoneFallback = useCallback(async () => {
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -1028,7 +1210,7 @@ export default function FilipinoFlashcards({
       await startAudioAnalyser(stream);
 
       const recognition = new SpeechRecognition();
-      recognition.lang = "en-US"; // English language
+      recognition.lang = "fil-PH";
       recognition.interimResults = false;
       recognition.maxAlternatives = 1;
 
@@ -1039,8 +1221,11 @@ export default function FilipinoFlashcards({
       silenceStartRef.current = null;
 
       setIsListening(true);
+      setIsProcessing(true);
       setRecognizedText("");
+      setLiveTranscription("");
       setFeedback("Listening... 🎧");
+      setStatusMessage("Using browser speech recognition.");
 
       recognition.onstart = () => {
         speechStartRef.current = performance.now();
@@ -1050,15 +1235,18 @@ export default function FilipinoFlashcards({
         const spoken = event.results[0][0].transcript;
         const conf = event.results[0][0].confidence ?? null;
         setRecognizedText(spoken);
+        setLiveTranscription(spoken);
 
         speechEndRef.current = performance.now();
 
         const sc = computeScores(sentence, spoken, conf);
         setMetrics(sc);
         setFeedback(sc.remarks);
+        setWordFeedback([]);
         upsertSessionScore(current, sentence, {
           pronScore: sc.pronScore,
           correctness: sc.correctness,
+          fluencyScore: sc.fluencyScore,
           readingSpeedScore: sc.readingSpeedScore,
           averageScore: sc.averageScore,
           readingSpeedWpm: sc.wpm,
@@ -1067,12 +1255,14 @@ export default function FilipinoFlashcards({
 
         stopAudioAnalyser();
         setIsListening(false);
+        setIsProcessing(false);
       };
 
-      recognition.onerror = (e: any) => {
+      recognition.onerror = () => {
         setFeedback("Error in speech recognition. Please try again.");
         stopAudioAnalyser();
         setIsListening(false);
+        setIsProcessing(false);
       };
 
       recognition.onend = () => {
@@ -1081,6 +1271,7 @@ export default function FilipinoFlashcards({
           setFeedback("No speech detected. Please try again.");
           stopAudioAnalyser();
           setIsListening(false);
+          setIsProcessing(false);
         }
       };
 
@@ -1089,12 +1280,233 @@ export default function FilipinoFlashcards({
       setTimeout(() => {
         try { recognition.stop(); } catch (e) {}
       }, 45000);
-
     } catch (err) {
       console.error(err);
       setFeedback("Microphone error or permission not granted.");
       setIsListening(false);
+      setIsProcessing(false);
       stopAudioAnalyser();
+    }
+  }, [computeScores, current, recognizedText, sentence, startAudioAnalyser, stopAudioAnalyser, upsertSessionScore]);
+
+  const handleMicrophone = async () => {
+    if (!sentence.trim()) return;
+    if (recognizerRef.current) {
+      try {
+        recognizerRef.current.close();
+      } catch {
+        // ignore
+      }
+      recognizerRef.current = null;
+    }
+    let didFallback = false;
+    setIsListening(true);
+    setIsProcessing(true);
+    setFeedback("");
+    setStatusMessage("Connecting to Azure Speech...");
+    setRecognizedText("");
+    setLiveTranscription("");
+    setWordFeedback([]);
+
+    try {
+      const { token, region } = await getSpeechToken();
+      const speechConfig = SpeechSDK.SpeechConfig.fromAuthorizationToken(token, region);
+      speechConfig.speechRecognitionLanguage = "fil-PH";
+
+      const audioConfig = SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
+      const recognizer = new SpeechSDK.SpeechRecognizer(speechConfig, audioConfig);
+      recognizerRef.current = recognizer;
+
+      const paConfig = new SpeechSDK.PronunciationAssessmentConfig(
+        sentence,
+        SpeechSDK.PronunciationAssessmentGradingSystem.HundredMark,
+        SpeechSDK.PronunciationAssessmentGranularity.Word,
+        true,
+      );
+      (paConfig as any).enableProsodyAssessment = true;
+      paConfig.applyTo(recognizer);
+
+      recognizer.recognizing = (_sender, event) => {
+        const interimText = event.result?.text ?? "";
+        if (interimText) {
+          setLiveTranscription(interimText);
+          setRecognizedText(interimText);
+          setStatusMessage("Listening... 🎧");
+        }
+      };
+
+      const aggregate = await new Promise<{
+        spoken: string;
+        duration: number;
+        wordCount: number;
+        scores: { pronunciation: number; accuracy: number; fluency: number; completeness: number };
+        words: WordFeedback[];
+      } | null>((resolve, reject) => {
+        let settled = false;
+        let silenceTimer: number | undefined;
+        let maxTimer: number | undefined;
+        let totalDuration = 0;
+        let totalWords = 0;
+        let totalText = "";
+        let weighted = { pronunciation: 0, accuracy: 0, fluency: 0, completeness: 0 };
+        const allWords: WordFeedback[] = [];
+
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          if (silenceTimer) window.clearTimeout(silenceTimer);
+          if (maxTimer) window.clearTimeout(maxTimer);
+          recognizer.stopContinuousRecognitionAsync(
+            () => {
+              if (!totalWords) {
+                resolve(null);
+                return;
+              }
+              resolve({
+                spoken: totalText.trim(),
+                duration: totalDuration,
+                wordCount: totalWords,
+                scores: {
+                  pronunciation: weighted.pronunciation / totalWords,
+                  accuracy: weighted.accuracy / totalWords,
+                  fluency: weighted.fluency / totalWords,
+                  completeness: weighted.completeness / totalWords,
+                },
+                words: applyOmissionsToWordFeedback(allWords, sentence),
+              });
+            },
+            (error) => reject(error),
+          );
+        };
+
+        const bumpSilence = () => {
+          if (silenceTimer) window.clearTimeout(silenceTimer);
+          silenceTimer = window.setTimeout(() => finish(), 4000);
+        };
+
+        recognizer.recognized = (_sender, event) => {
+          if (event.result?.reason !== SpeechSDK.ResultReason.RecognizedSpeech) return;
+          const result = event.result;
+          const segmentText = result.text ?? "";
+          if (segmentText) {
+            totalText = totalText ? `${totalText} ${segmentText}` : segmentText;
+          }
+          const segmentWordCount = normalizeText(segmentText).split(/\s+/).filter(Boolean).length;
+          if (segmentWordCount > 0) {
+            const paResult = SpeechSDK.PronunciationAssessmentResult.fromResult(result);
+            weighted.pronunciation += (paResult.pronunciationScore ?? 0) * segmentWordCount;
+            weighted.accuracy += (paResult.accuracyScore ?? 0) * segmentWordCount;
+            weighted.fluency += (paResult.fluencyScore ?? 0) * segmentWordCount;
+            weighted.completeness += (paResult.completenessScore ?? 0) * segmentWordCount;
+            totalWords += segmentWordCount;
+          }
+          totalDuration += result.duration ?? 0;
+          const jsonResult = result.properties.getProperty(
+            SpeechSDK.PropertyId.SpeechServiceResponse_JsonResult,
+          );
+          const segmentWords = parseWordFeedback(jsonResult, sentence, "raw");
+          allWords.push(...segmentWords);
+          bumpSilence();
+        };
+
+        recognizer.recognizing = (_sender, event) => {
+          const interimText = event.result?.text ?? "";
+          if (interimText) {
+            setLiveTranscription(interimText);
+            setRecognizedText(interimText);
+            setStatusMessage("Listening... 🎧");
+            bumpSilence();
+          }
+        };
+
+        recognizer.canceled = () => finish();
+        maxTimer = window.setTimeout(() => finish(), 120000);
+
+        recognizer.startContinuousRecognitionAsync(
+          () => setStatusMessage("Listening... 🎧"),
+          (error) => reject(error),
+        );
+      });
+
+      if (!aggregate) {
+        setStatusMessage("No speech detected. Please try again.");
+        setFeedback("No speech detected. Please try again.");
+        return;
+      }
+
+      const durationSec = aggregate.duration ? aggregate.duration / 10000000 : 0;
+      const wpmRaw = durationSec > 0
+        ? Math.round((aggregate.wordCount / durationSec) * 60)
+        : 0;
+      const speedGrade = gradeReadingSpeed(wpmRaw, Math.max(1, aggregate.wordCount));
+      const pronScore = Math.round(aggregate.scores.pronunciation);
+
+      const expectedWordCount = Math.max(1, normalizeText(sentence).split(/\s+/).filter(Boolean).length);
+      const scoredWords = aggregate.words.filter((item) => typeof item.accuracyScore === "number");
+      const wordAccuracyAvg = scoredWords.length
+        ? scoredWords.reduce((sum, item) => sum + (item.accuracyScore ?? 0), 0) / scoredWords.length
+        : 0;
+      const omittedCount = aggregate.words.filter((item) => (item.accuracyScore ?? 0) === 0).length;
+
+      const accuracyScore = Math.round((aggregate.scores.accuracy * 0.6) + (wordAccuracyAvg * 0.4));
+      const fluencyScore = Math.round(wordAccuracyAvg);
+      const completenessScore = Math.round(
+        Math.max(0, 100 - ((omittedCount / expectedWordCount) * 100)),
+      );
+      const averageScore = Math.min(
+        100,
+        Math.max(0, Math.round((pronScore + accuracyScore + speedGrade.score) / 3)),
+      );
+
+      const azureMetrics = {
+        pronScore,
+        accuracyScore,
+        fluencyScore,
+        completenessScore,
+        wpm: wpmRaw,
+        readingSpeedScore: speedGrade.score,
+        readingSpeedLabel: speedGrade.label,
+        wordCount: aggregate.wordCount,
+        averageScore,
+        transcription: aggregate.spoken,
+        wordFeedback: aggregate.words,
+      };
+
+      const spoken = aggregate.spoken;
+      const words = aggregate.words;
+
+      setRecognizedText(spoken);
+      setLiveTranscription(spoken);
+      setWordFeedback(words);
+      setMetrics(azureMetrics);
+      setFeedback("Pronunciation assessment complete.");
+      setStatusMessage("");
+
+      upsertSessionScore(current, sentence, {
+        pronScore: azureMetrics.pronScore,
+        correctness: azureMetrics.accuracyScore,
+        fluencyScore: azureMetrics.fluencyScore,
+        completenessScore: azureMetrics.completenessScore,
+        readingSpeedScore: azureMetrics.readingSpeedScore,
+        averageScore: azureMetrics.averageScore,
+        readingSpeedWpm: azureMetrics.wpm,
+        transcription: spoken,
+      });
+    } catch (error) {
+      console.error("Azure speech recognition failed", error);
+      setStatusMessage("Azure Speech failed. Falling back to browser recognition.");
+      setIsListening(false);
+      setIsProcessing(false);
+      didFallback = true;
+      await handleMicrophoneFallback();
+      return;
+    } finally {
+      recognizerRef.current?.close();
+      recognizerRef.current = null;
+      if (!didFallback) {
+        setIsListening(false);
+        setIsProcessing(false);
+      }
     }
   };
 
@@ -1282,6 +1694,34 @@ export default function FilipinoFlashcards({
     const weaknesses: string[] = [];
     const strengths: string[] = [];
 
+    const wordCounts = new Map<string, number>();
+    let totalExpected = 0;
+    let totalOmitted = 0;
+    const SIM_THRESHOLD = 60;
+
+    for (const score of scores) {
+      const expectedWords = normalizeText(score.sentence ?? "").split(/\s+/).filter(Boolean);
+      const spokenWords = normalizeText(score.transcription ?? "").split(/\s+/).filter(Boolean);
+      totalExpected += expectedWords.length;
+      for (const expected of expectedWords) {
+        let bestSim = 0;
+        for (const spoken of spokenWords) {
+          const lev = levenshtein(expected, spoken);
+          const sim = (Math.max(0, expected.length - lev) / Math.max(1, expected.length)) * 100;
+          if (sim > bestSim) bestSim = sim;
+          if (bestSim >= SIM_THRESHOLD) break;
+        }
+        if (bestSim < SIM_THRESHOLD) {
+          totalOmitted += 1;
+          wordCounts.set(expected, (wordCounts.get(expected) ?? 0) + 1);
+        }
+      }
+    }
+
+    const completenessAvg = totalExpected
+      ? Math.max(0, Math.round(100 - ((totalOmitted / totalExpected) * 100)))
+      : 100;
+
     const pronLabel = pronAvg < 60 ? "low" : pronAvg < 75 ? "fair" : pronAvg >= 85 ? "strong" : "ok";
     const corrLabel = corrAvg < 60 ? "low" : corrAvg < 75 ? "fair" : corrAvg >= 85 ? "strong" : "ok";
     const speedLabel = speedAvg < 60 ? "slow" : speedAvg < 75 ? "steady" : speedAvg >= 85 ? "fast" : "ok";
@@ -1289,15 +1729,18 @@ export default function FilipinoFlashcards({
     if (pronAvg < 75) weaknesses.push("pronouncing words clearly");
     if (corrAvg < 75) weaknesses.push("getting words right");
     if (speedAvg < 60) weaknesses.push("reading pace");
+    if (completenessAvg < 80) weaknesses.push("completing all words");
 
     if (pronAvg >= 85) strengths.push("clear pronunciation");
     if (corrAvg >= 85) strengths.push("good accuracy");
     if (speedAvg >= 85) strengths.push("fast reading pace");
+    if (completenessAvg >= 90) strengths.push("complete sentence coverage");
 
     const recommendations: string[] = [];
-    if (pronAvg < 75) recommendations.push("practice saying the words out loud with short echo reading");
-    if (corrAvg < 75) recommendations.push("repeat the target word set three times a week");
-    if (speedAvg < 60) recommendations.push("add short timed reading drills twice a week");
+    if (pronAvg < 75) recommendations.push("do 5 minutes of echo reading and mirror the model voice");
+    if (corrAvg < 75) recommendations.push("slow down and tap each word to improve accuracy");
+    if (completenessAvg < 80) recommendations.push("point-and-read to avoid skipping words");
+    if (speedAvg < 60) recommendations.push("add 1-minute timed reading drills twice a week");
     if (!recommendations.length) {
       recommendations.push("keep a steady practice routine 2–3 times a week");
     }
@@ -1314,16 +1757,23 @@ export default function FilipinoFlashcards({
       ? `Needs focus on ${formatList(weaknesses)}.`
       : "Strong overall performance in this session.";
 
+    const weakWords = Array.from(wordCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([word]) => word);
+
     return {
       pronAvg,
       corrAvg,
       speedAvg,
+      completenessAvg,
       pronLabel,
       corrLabel,
       speedLabel,
       weaknesses,
       strengths,
       recommendations,
+      weakWords,
       confidence,
       summary,
     };
@@ -1341,9 +1791,29 @@ export default function FilipinoFlashcards({
     const recommendationText = insights.recommendations.length
       ? `Recommended next steps: ${insights.recommendations.join(" and ")}.`
       : "Recommended next steps will appear after more recorded slides.";
+    const weakWordText = insights.weakWords?.length
+      ? `Key words to revisit: ${insights.weakWords.join(", ")}.`
+      : "";
 
-    return `${weaknessText} ${strengthText} ${recommendationText}`;
+    return `${weaknessText} ${strengthText} ${weakWordText} ${recommendationText}`.trim();
   };
+
+  const formatPercentValue = (value: number | null | undefined) =>
+    typeof value === "number" ? `${Math.round(value)}%` : "—";
+
+  const renderScoreBar = (value: number | null | undefined) => {
+    const safeValue = typeof value === "number" ? Math.min(100, Math.max(0, value)) : 0;
+    return (
+      <div className="mt-2 h-2 w-full rounded-full bg-emerald-100">
+        <div
+          className="h-2 rounded-full bg-emerald-600 transition-all"
+          style={{ width: `${safeValue}%` }}
+        />
+      </div>
+    );
+  };
+
+  const wordItems = metrics?.wordFeedback ?? wordFeedback;
 
   if (showSummary) {
     const overallAverage = sessionScores.length
@@ -1369,7 +1839,7 @@ export default function FilipinoFlashcards({
               <p className="text-7xl font-bold text-[#013300]">{overallAverage}%</p>
               <p className="text-sm text-slate-600">Based on {sessionScores.length} slide{sessionScores.length === 1 ? "" : "s"} with recorded scores.</p>
             </div>
-            <div className="rounded-3xl border border-gray-300 bg-white shadow-md shadow-gray-200 p-6 flex flex-col gap-3 lg:col-span-9 min-h-[320px]">
+            <div className="rounded-3xl border border-gray-300 bg-white shadow-md shadow-gray-200 p-6 flex flex-col gap-3 lg:col-span-9 min-h-80">
               <p className="text-3xl sm:text-2xl font-bold text-black">Per-Slide Average</p>
               <div className="overflow-auto -mx-4 px-4">
                 <table className="min-w-full text-sm">
@@ -1377,7 +1847,9 @@ export default function FilipinoFlashcards({
                     <tr className="text-left text-slate-500">
                       <th className="py-2 pr-3">Slide</th>
                       <th className="py-2 pr-3">Pronunciation</th>
-                      <th className="py-2 pr-3">Correctness</th>
+                      <th className="py-2 pr-3">Accuracy</th>
+                      <th className="py-2 pr-3">Fluency</th>
+                      <th className="py-2 pr-3">Completeness</th>
                       <th className="py-2 pr-3">Reading Speed</th>
                       <th className="py-2 pr-3">Average</th>
                     </tr>
@@ -1385,7 +1857,7 @@ export default function FilipinoFlashcards({
                   <tbody>
                     {sessionScores.length === 0 ? (
                       <tr>
-                        <td className="py-3 text-slate-600" colSpan={5}>No recorded scores yet.</td>
+                        <td className="py-3 text-slate-600" colSpan={7}>No recorded scores yet.</td>
                       </tr>
                     ) : (
                       sessionScores.map((item) => (
@@ -1393,6 +1865,8 @@ export default function FilipinoFlashcards({
                           <td className="py-2 pr-3 font-semibold text-[#013300]">{item.cardIndex + 1}</td>
                           <td className="py-2 pr-3 font-normal text-[#013300]">{item.pronScore}%</td>
                           <td className="py-2 pr-3 font-normal text-[#013300]">{item.correctness}%</td>
+                          <td className="py-2 pr-3 font-normal text-[#013300]">{typeof item.fluencyScore === "number" ? `${item.fluencyScore}%` : "—"}</td>
+                          <td className="py-2 pr-3 font-normal text-[#013300]">{typeof item.completenessScore === "number" ? `${item.completenessScore}%` : "—"}</td>
                           <td className="py-2 pr-3 font-normal text-[#013300]">{item.readingSpeedScore}%</td>
                           <td className="py-2 pr-3 font-bold text-[#013300]">{item.averageScore}%</td>
                         </tr>
@@ -1479,10 +1953,37 @@ export default function FilipinoFlashcards({
           <div className="grid gap-3 xl:grid-cols-12 flex-1 min-h-0">
             <section className="xl:col-span-8 flex flex-col min-h-0">
               <div className="h-full rounded-3xl border border-gray-300 bg-white shadow-md shadow-gray-200 overflow-hidden flex flex-col">
-              <div className="flex-1 px-6 sm:px-8 lg:px-12 py-12 via-white flex items-center justify-center text-center">
+              <div className="flex-1 px-6 sm:px-8 lg:px-12 py-0 via-white flex flex-col items-center justify-center text-center gap-4 overflow-y-auto max-h-[52vh]">
                 <p className="text-3xl sm:text-4xl lg:text-5xl font-semibold text-[#013300] leading-tight">
                   {sentence}
                 </p>
+                <div className="w-full max-w-2xl">
+                  <p className="text-[11px] uppercase tracking-wide text-slate-500">Word-level feedback</p>
+                  {wordItems?.length ? (
+                    <div className="mt-2 flex flex-wrap justify-center gap-1.5">
+                      {wordItems.map((item: WordFeedback, index: number) => {
+                        const accuracy = item.accuracyScore ?? 0;
+                        const isError = item.errorType && item.errorType !== "None";
+                        const badgeClass = isError
+                          ? "bg-rose-100 text-rose-700"
+                          : accuracy >= 85
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-amber-100 text-amber-700";
+                        return (
+                          <span
+                            key={`${item.word}-${index}`}
+                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${badgeClass}`}
+                          >
+                            {item.word}
+                            {typeof item.accuracyScore === "number" ? ` • ${item.accuracyScore}%` : ""}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-[11px] text-slate-500">No word-level feedback yet.</p>
+                  )}
+                </div>
               </div>
               <div className="px-6 sm:px-8 py-6 border-t border-gray-300 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-between">
                 <button
@@ -1527,34 +2028,55 @@ export default function FilipinoFlashcards({
               </div>
             </section>
 
-            <aside className="xl:col-span-4 flex flex-col gap-6 min-h-0">
-              <div className="rounded-3xl border border-gray-300 bg-white/80 backdrop-blur px-6 py-7 shadow-md shadow-gray-200 flex flex-1 flex-col min-h-0">
-                <h2 className="text-lg font-semibold text-[#013300]">Performance Insights</h2>
-                <div className="mt-6 flex flex-1 flex-col gap-4 min-h-0">
-                  <div className="rounded-2xl border border-gray-300 bg-emerald-50/60 px-4 py-3 flex flex-col">
-                  <p className="text-xs uppercase tracking-wide text-emerald-800">Transcription:</p>
-                  <p className="mt-1 text-sm font-medium text-[#013300]">
-                    {recognizedText || "Waiting for microphone recording."}
-                  </p>
-                </div>
-                  <dl className="grid flex-1 grid-cols-1 gap-3 text-sm sm:grid-cols-2 auto-rows-fr">
-                    <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col">
-                    <dt className="text-xs uppercase tracking-wide text-slate-500">Pronunciation</dt>
-                    <dd className="text-lg font-semibold text-[#013300]">{metrics ? `${metrics.pronScore}%` : "—"}</dd>
+            <aside className="xl:col-span-4 flex flex-col gap-4 min-h-0">
+              <div className="rounded-3xl border border-gray-300 bg-white/80 backdrop-blur px-5 py-5 shadow-md shadow-gray-200 flex flex-1 flex-col min-h-0">
+                <h2 className="text-base font-semibold text-[#013300]">Performance Insights</h2>
+                <div className="mt-4 flex flex-1 flex-col gap-3 min-h-0">
+                  <div className="rounded-2xl border border-gray-300 bg-emerald-50/60 px-3 py-2.5 flex flex-col">
+                    <p className="text-[11px] uppercase tracking-wide text-emerald-800">Live Transcription</p>
+                    <p className="mt-1 text-xs font-medium text-[#013300]">
+                      {liveTranscription || recognizedText || "Waiting for microphone recording."}
+                    </p>
                   </div>
+
+                  <dl className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2 auto-rows-fr">
                     <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col">
-                    <dt className="text-xs uppercase tracking-wide text-slate-500">Correctness</dt>
-                    <dd className="text-lg font-semibold text-[#013300]">{metrics ? `${metrics.correctness}%` : "—"}</dd>
-                  </div>
+                      <dt className="text-xs uppercase tracking-wide text-slate-500">Pronunciation</dt>
+                      <dd className="text-base font-semibold text-[#013300]">{formatPercentValue(metrics?.pronScore)}</dd>
+                      {renderScoreBar(metrics?.pronScore)}
+                    </div>
                     <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col">
-                    <dt className="text-xs uppercase tracking-wide text-slate-500">Reading Speed</dt>
-                    <dd className="text-lg font-semibold text-[#013300]">{metrics ? `${metrics.readingSpeed ?? metrics.wpm} WPM${metrics.readingSpeedLabel ? ` (${metrics.readingSpeedLabel})` : ""}` : "—"}</dd>
-                  </div>
+                      <dt className="text-xs uppercase tracking-wide text-slate-500">Accuracy</dt>
+                      <dd className="text-base font-semibold text-[#013300]">{formatPercentValue(metrics?.accuracyScore ?? metrics?.correctness)}</dd>
+                      {renderScoreBar(metrics?.accuracyScore ?? metrics?.correctness)}
+                    </div>
                     <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col">
-                    <dt className="text-xs uppercase tracking-wide text-slate-500">Average</dt>
-                    <dd className="text-lg font-semibold text-[#013300]">{metrics ? `${metrics.averageScore}%` : "—"}</dd>
-                  </div>
-                </dl>
+                      <dt className="text-xs uppercase tracking-wide text-slate-500">Fluency</dt>
+                      <dd className="text-base font-semibold text-[#013300]">{formatPercentValue(metrics?.fluencyScore)}</dd>
+                      {renderScoreBar(metrics?.fluencyScore)}
+                    </div>
+                    <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col">
+                      <dt className="text-xs uppercase tracking-wide text-slate-500">Completeness</dt>
+                      <dd className="text-base font-semibold text-[#013300]">{formatPercentValue(metrics?.completenessScore)}</dd>
+                      {renderScoreBar(metrics?.completenessScore)}
+                    </div>
+                    <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col">
+                      <dt className="text-xs uppercase tracking-wide text-slate-500">Reading Speed</dt>
+                      <dd className="text-base font-semibold text-[#013300]">
+                        {metrics
+                          ? `${metrics.wpm} WPM${metrics.readingSpeedLabel ? ` (${metrics.readingSpeedLabel})` : ""}`
+                          : "—"}
+                      </dd>
+                      {renderScoreBar(metrics?.readingSpeedScore)}
+                    </div>
+                    <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col">
+                      <dt className="text-xs uppercase tracking-wide text-slate-500">Average</dt>
+                      <dd className="text-base font-semibold text-[#013300]">{formatPercentValue(metrics?.averageScore)}</dd>
+                      {renderScoreBar(metrics?.averageScore)}
+                    </div>
+                  </dl>
+
+                  
                 </div>
               </div>
             </aside>
