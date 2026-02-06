@@ -263,6 +263,10 @@ export default function MathTab({ level, searchTerm = "" }: MathTabProps) {
           )}
         </div>
       </div>
+      <p className="mb-3 flex items-center gap-2 text-xs text-gray-500">
+        <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-gray-300 text-[10px] italic font-semibold">i</span>
+        <span>Max file size: 10MB per file.</span>
+      </p>
       <TableList
         columns={[
           { key: "no", title: "No#" },

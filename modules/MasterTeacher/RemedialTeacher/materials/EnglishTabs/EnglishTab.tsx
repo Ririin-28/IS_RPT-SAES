@@ -272,6 +272,10 @@ export default function EnglishTab({ level, searchTerm = "" }: EnglishTabProps) 
 					)}
 				</div>
 			</div>
+			<p className="mb-3 flex items-center gap-2 text-xs text-gray-500">
+				<span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-gray-300 text-[10px] italic font-semibold">i</span>
+				<span>Max file size: 10MB per file.</span>
+			</p>
 			<div className="max-h-[480px] overflow-auto border border-gray-100 rounded-lg">
 				<TableList
 					columns={[

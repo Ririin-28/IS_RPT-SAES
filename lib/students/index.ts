@@ -962,6 +962,17 @@ export async function deleteStudents(userId: number, subject: StudentSubject, id
   const userColumns = await safeGetColumns("users");
   const assessmentColumns = await safeGetColumns("student_subject_assessment");
   const subjectColumns = await safeGetColumns("subject");
+  const assessmentAttemptColumns = await safeGetColumns("assessment_attempts");
+  const assessmentAnswerColumns = await safeGetColumns("assessment_student_answers");
+  const performanceColumns = await safeGetColumns("performance_records");
+  const remarksColumns = await safeGetColumns("remarks");
+  const attendanceRecordColumns = await safeGetColumns("attendance_record");
+  const phonemicHistoryColumns = await safeGetColumns("student_phonemic_history");
+  const remedialSessionColumns = await safeGetColumns("student_remedial_session");
+  const remedialFlashcardColumns = await safeGetColumns("student_remedial_flashcard_performance");
+  const parentNotificationColumns = await safeGetColumns("parent_notifications");
+  const studentTeacherAssignmentColumns = await safeGetColumns("student_teacher_assignment");
+  const studentTeacherAssignmentBackupColumns = await safeGetColumns("student_teacher_assignment_backup");
 
   // Resolve subject_id for subject-scoped deletions
   const subjectId = assessmentColumns.has("subject_id")
@@ -1060,6 +1071,91 @@ export async function deleteStudents(userId: number, subject: StudentSubject, id
   await query(`DELETE FROM student_subject_assessment WHERE student_id IN (${placeholders})`, studentIds);
   if (parentStudentColumns.has("student_id")) {
     await query(`DELETE FROM parent_student WHERE student_id IN (${placeholders})`, studentIds);
+  }
+
+  if (attendanceRecordColumns.has("student_id")) {
+    await query(`DELETE FROM attendance_record WHERE student_id IN (${placeholders})`, studentIds);
+  }
+
+  if (phonemicHistoryColumns.has("student_id")) {
+    await query(`DELETE FROM student_phonemic_history WHERE student_id IN (${placeholders})`, studentIds);
+  }
+
+  if (parentNotificationColumns.has("student_id")) {
+    await query(`DELETE FROM parent_notifications WHERE student_id IN (${placeholders})`, studentIds);
+  }
+
+  if (studentTeacherAssignmentColumns.has("student_id")) {
+    await query(`DELETE FROM student_teacher_assignment WHERE student_id IN (${placeholders})`, studentIds);
+  }
+  if (studentTeacherAssignmentBackupColumns.has("student_id")) {
+    await query(`DELETE FROM student_teacher_assignment_backup WHERE student_id IN (${placeholders})`, studentIds);
+  }
+
+  if (performanceColumns.has("student_id")) {
+    if (performanceColumns.has("record_id") && remarksColumns.has("performance_record_id")) {
+      const [recordRows] = await query<RowDataPacket[]>(
+        `SELECT record_id FROM performance_records WHERE student_id IN (${placeholders})`,
+        studentIds,
+      );
+      const recordIds = Array.isArray(recordRows)
+        ? recordRows
+          .map((row) => Number(row.record_id))
+          .filter((value) => Number.isFinite(value) && value > 0)
+        : [];
+      if (recordIds.length) {
+        const recordPlaceholders = recordIds.map(() => "?").join(", ");
+        await query(
+          `DELETE FROM remarks WHERE performance_record_id IN (${recordPlaceholders})`,
+          recordIds,
+        );
+      }
+    }
+    await query(`DELETE FROM performance_records WHERE student_id IN (${placeholders})`, studentIds);
+  }
+
+  if (assessmentAttemptColumns.has("student_id")) {
+    if (assessmentAttemptColumns.has("attempt_id") && assessmentAnswerColumns.has("attempt_id")) {
+      const [attemptRows] = await query<RowDataPacket[]>(
+        `SELECT attempt_id FROM assessment_attempts WHERE student_id IN (${placeholders})`,
+        studentIds,
+      );
+      const attemptIds = Array.isArray(attemptRows)
+        ? attemptRows
+          .map((row) => Number(row.attempt_id))
+          .filter((value) => Number.isFinite(value) && value > 0)
+        : [];
+      if (attemptIds.length) {
+        const attemptPlaceholders = attemptIds.map(() => "?").join(", ");
+        await query(
+          `DELETE FROM assessment_student_answers WHERE attempt_id IN (${attemptPlaceholders})`,
+          attemptIds,
+        );
+      }
+    }
+    await query(`DELETE FROM assessment_attempts WHERE student_id IN (${placeholders})`, studentIds);
+  }
+
+  if (remedialSessionColumns.has("student_id")) {
+    if (remedialSessionColumns.has("session_id") && remedialFlashcardColumns.has("session_id")) {
+      const [sessionRows] = await query<RowDataPacket[]>(
+        `SELECT session_id FROM student_remedial_session WHERE student_id IN (${placeholders})`,
+        studentIds,
+      );
+      const sessionIds = Array.isArray(sessionRows)
+        ? sessionRows
+          .map((row) => Number(row.session_id))
+          .filter((value) => Number.isFinite(value) && value > 0)
+        : [];
+      if (sessionIds.length) {
+        const sessionPlaceholders = sessionIds.map(() => "?").join(", ");
+        await query(
+          `DELETE FROM student_remedial_flashcard_performance WHERE session_id IN (${sessionPlaceholders})`,
+          sessionIds,
+        );
+      }
+    }
+    await query(`DELETE FROM student_remedial_session WHERE student_id IN (${placeholders})`, studentIds);
   }
 
   const fullPlaceholders = fullDeleteIds.map(() => "?").join(", ");

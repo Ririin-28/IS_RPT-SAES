@@ -3,7 +3,9 @@ import { getTableColumns, query, tableExists } from "@/lib/db";
 import { RowDataPacket, ResultSetHeader } from "mysql2/promise";
 import { normalizeMaterialStatus, type MaterialStatus } from "@/lib/materials/shared";
 import path from "path";
+import os from "os";
 import { promises as fs } from "fs";
+import { randomUUID } from "crypto";
 import { MathOCRService } from "@/lib/utils/MathOCRService";
 // @ts-expect-error adm-zip has no proper ES module types
 import PPTX2Json from "pptx2json";
@@ -50,11 +52,49 @@ async function ensureContentTable(): Promise<void> {
   }
 }
 
-function normalizeStoragePath(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  return trimmed.startsWith("/") ? trimmed.slice(1) : trimmed;
+const isRemoteUrl = (value: string): boolean => /^https?:\/\//i.test(value);
+
+function normalizeContentFilePath(value: string | null): string | null {
+  if (!value) return null;
+  if (isRemoteUrl(value)) return value;
+  return value.startsWith("/") ? value : `/${value}`;
+}
+
+function getFileExtension(value: string): string {
+  if (isRemoteUrl(value)) {
+    try {
+      return path.extname(new URL(value).pathname);
+    } catch {
+      return path.extname(value);
+    }
+  }
+  return path.extname(value);
+}
+
+async function resolveMaterialLocalPath(filePath: string): Promise<{ localPath: string; cleanup?: () => Promise<void> }> {
+  if (!isRemoteUrl(filePath)) {
+    const normalizedLocal = filePath.startsWith("/") ? filePath.slice(1) : filePath;
+    return { localPath: path.join(process.cwd(), "public", normalizedLocal) };
+  }
+
+  const response = await fetch(filePath);
+  if (!response.ok) {
+    throw new Error(`Failed to download material (${response.status})`);
+  }
+  const buffer = Buffer.from(await response.arrayBuffer());
+  const extension = getFileExtension(filePath) || ".bin";
+  const tempPath = path.join(os.tmpdir(), `remedial-material-${randomUUID()}${extension}`);
+  await fs.writeFile(tempPath, buffer);
+  return {
+    localPath: tempPath,
+    cleanup: async () => {
+      try {
+        await fs.unlink(tempPath);
+      } catch {
+        // ignore cleanup errors
+      }
+    },
+  };
 }
 
 function collectXmlText(node: unknown, acc: string[]): void {
@@ -383,20 +423,22 @@ export async function PATCH(request: NextRequest) {
           );
         }
 
-        const filePath = normalizeStoragePath(materialRow?.file_path);
-        const absolutePath = filePath ? path.join(process.cwd(), "public", filePath) : null;
-        const isPptx = filePath && filePath.toLowerCase().endsWith(".pptx");
-        const isImage = filePath && /\.(png|jpe?g)$/i.test(filePath);
+        const rawFilePath = typeof materialRow?.file_path === "string" ? materialRow.file_path.trim() : "";
+        const filePath = rawFilePath.length > 0 ? rawFilePath : null;
+        const fileExtension = filePath ? getFileExtension(filePath).toLowerCase() : "";
+        const isPptx = fileExtension === ".pptx";
+        const isImage = fileExtension === ".png" || fileExtension === ".jpg" || fileExtension === ".jpeg";
 
-        if (requestId && phonemicId && absolutePath && (isPptx || isImage)) {
-          await fs.access(absolutePath);
+        if (requestId && phonemicId && filePath && (isPptx || isImage)) {
+          const { localPath, cleanup } = await resolveMaterialLocalPath(filePath);
 
           let slides: ExtractedSlideText[] = [];
           let flashcards: any[] = [];
 
-          if (isPptx) {
-            // Extract both text and potential images from PPTX
-            slides = await extractSlidesFromPptx(absolutePath);
+          try {
+            if (isPptx) {
+              // Extract both text and potential images from PPTX
+              slides = await extractSlidesFromPptx(localPath);
             
             // Process extracted slides:
             // 1. Text-based slides (already handled)
@@ -466,21 +508,26 @@ export async function PATCH(request: NextRequest) {
             flashcards = [];
           }
 
-          await upsertExtractedContent({
-            materialId,
-            requestId,
-            phonemicId,
-            filePath: `/${filePath}`,
-            slides,
-            flashcards,
-            extractionError: null,
-          });
+            await upsertExtractedContent({
+              materialId,
+              requestId,
+              phonemicId,
+              filePath: normalizeContentFilePath(filePath),
+              slides,
+              flashcards,
+              extractionError: null,
+            });
+          } finally {
+            if (cleanup) {
+              await cleanup();
+            }
+          }
         } else {
           await upsertExtractedContent({
             materialId,
             requestId: requestId ?? 0,
             phonemicId: phonemicId ?? 0,
-            filePath: filePath ? `/${filePath}` : null,
+            filePath: normalizeContentFilePath(filePath),
             slides: [],
             flashcards: [],
             extractionError: isImage ? "OCR failed or file not accessible" : "Only .pptx and image files are supported for automatic extraction.",

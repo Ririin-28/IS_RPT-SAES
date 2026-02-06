@@ -160,6 +160,10 @@ export default function MaterialGridModal({ isOpen, onClose, activity, subject }
             <span>Title: <span className="text-[#013300]">{activity.title}</span></span>
             <span>Subject: <span className="text-[#013300]">{subject}</span></span>
         </div>
+        <p className="flex items-center gap-2 text-xs text-gray-500">
+          <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-gray-300 text-[10px] italic font-semibold">i</span>
+          <span>Max file size: 10MB per file.</span>
+        </p>
 
         {/* Level List Table */}
         <div className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
