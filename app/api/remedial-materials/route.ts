@@ -441,6 +441,12 @@ export async function PATCH(request: NextRequest) {
 
         const rawFilePath = typeof materialRow?.file_path === "string" ? materialRow.file_path.trim() : "";
         const filePath = normalizeMaterialFilePath(rawFilePath);
+        if (filePath && rawFilePath && filePath !== rawFilePath) {
+          await query(
+            "UPDATE remedial_materials SET file_path = ?, updated_at = NOW() WHERE material_id = ?",
+            [filePath, materialId],
+          );
+        }
         const fileExtension = filePath ? getFileExtension(filePath).toLowerCase() : "";
         const isPptx = fileExtension === ".pptx";
         const isImage = fileExtension === ".png" || fileExtension === ".jpg" || fileExtension === ".jpeg";
