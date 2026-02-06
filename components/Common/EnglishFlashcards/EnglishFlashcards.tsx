@@ -1133,6 +1133,23 @@ export default function EnglishFlashcards({
 
     const wordAccuracy = ((exactMatches + 0.6 * softMatches) / Math.max(1, expWords.length)) * 100;
 
+    const wordFeedback: WordFeedback[] = perWordDetails.map((item) => {
+      const score = Number.isFinite(item.similarity) ? Math.round(item.similarity) : 0;
+      let errorType: string | null = null;
+      if (score === 0) errorType = "Omitted";
+      else if (score < 85) errorType = "Mispronounced";
+      else errorType = "None";
+      return {
+        word: item.expected,
+        accuracyScore: score,
+        errorType,
+      };
+    });
+    const omittedCount = wordFeedback.filter((item) => (item.accuracyScore ?? 0) === 0).length;
+    const completenessScore = expWords.length
+      ? Math.max(0, Math.round(100 - ((omittedCount / expWords.length) * 100)))
+      : 100;
+
     // English phoneme analysis
     const expPhArr = expWords.flatMap(w => approxPhonemes(w));
     const spkPhArr = spkWords.flatMap(w => approxPhonemes(w));
@@ -1183,9 +1200,11 @@ export default function EnglishFlashcards({
       readingSpeedLabel,
       wordCount,
       pronScore,
+      completenessScore,
       averageScore,
       averageLabel,
       remarks: remarkMessages[averageLabel],
+      wordFeedback,
     };
   }
 
@@ -1236,11 +1255,12 @@ export default function EnglishFlashcards({
         const sc = computeScores(sentence, spoken, conf);
         setMetrics(sc);
         setFeedback(sc.remarks);
-        setWordFeedback([]);
+        setWordFeedback(sc.wordFeedback ?? []);
         upsertSessionScore(current, sentence, {
           pronScore: sc.pronScore,
           correctness: sc.correctness,
           fluencyScore: sc.fluencyScore,
+          completenessScore: sc.completenessScore,
           readingSpeedScore: sc.readingSpeedScore,
           averageScore: sc.averageScore,
           readingSpeedWpm: sc.wpm,
