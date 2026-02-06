@@ -54,35 +54,51 @@ async function ensureContentTable(): Promise<void> {
 
 const isRemoteUrl = (value: string): boolean => /^https?:\/\//i.test(value);
 
-function normalizeContentFilePath(value: string | null): string | null {
+function normalizeMaterialFilePath(value: string | null): string | null {
   if (!value) return null;
-  if (isRemoteUrl(value)) return value;
-  return value.startsWith("/") ? value : `/${value}`;
+  let trimmed = value.trim();
+  if (!trimmed) return null;
+  if (/^\/?https?:/i.test(trimmed)) {
+    if (trimmed.startsWith("/http")) {
+      trimmed = trimmed.slice(1);
+    }
+    trimmed = trimmed.replace(/^(https?:)\/(?!\/)/i, "$1//");
+  }
+  return trimmed;
+}
+
+function normalizeContentFilePath(value: string | null): string | null {
+  const normalized = normalizeMaterialFilePath(value);
+  if (!normalized) return null;
+  if (isRemoteUrl(normalized)) return normalized;
+  return normalized.startsWith("/") ? normalized : `/${normalized}`;
 }
 
 function getFileExtension(value: string): string {
-  if (isRemoteUrl(value)) {
+  const normalized = normalizeMaterialFilePath(value) ?? value;
+  if (isRemoteUrl(normalized)) {
     try {
-      return path.extname(new URL(value).pathname);
+      return path.extname(new URL(normalized).pathname);
     } catch {
-      return path.extname(value);
+      return path.extname(normalized);
     }
   }
-  return path.extname(value);
+  return path.extname(normalized);
 }
 
 async function resolveMaterialLocalPath(filePath: string): Promise<{ localPath: string; cleanup?: () => Promise<void> }> {
-  if (!isRemoteUrl(filePath)) {
-    const normalizedLocal = filePath.startsWith("/") ? filePath.slice(1) : filePath;
+  const normalizedPath = normalizeMaterialFilePath(filePath) ?? filePath;
+  if (!isRemoteUrl(normalizedPath)) {
+    const normalizedLocal = normalizedPath.startsWith("/") ? normalizedPath.slice(1) : normalizedPath;
     return { localPath: path.join(process.cwd(), "public", normalizedLocal) };
   }
 
-  const response = await fetch(filePath);
+  const response = await fetch(normalizedPath);
   if (!response.ok) {
     throw new Error(`Failed to download material (${response.status})`);
   }
   const buffer = Buffer.from(await response.arrayBuffer());
-  const extension = getFileExtension(filePath) || ".bin";
+  const extension = getFileExtension(normalizedPath) || ".bin";
   const tempPath = path.join(os.tmpdir(), `remedial-material-${randomUUID()}${extension}`);
   await fs.writeFile(tempPath, buffer);
   return {
@@ -424,7 +440,7 @@ export async function PATCH(request: NextRequest) {
         }
 
         const rawFilePath = typeof materialRow?.file_path === "string" ? materialRow.file_path.trim() : "";
-        const filePath = rawFilePath.length > 0 ? rawFilePath : null;
+        const filePath = normalizeMaterialFilePath(rawFilePath);
         const fileExtension = filePath ? getFileExtension(filePath).toLowerCase() : "";
         const isPptx = fileExtension === ".pptx";
         const isImage = fileExtension === ".png" || fileExtension === ".jpg" || fileExtension === ".jpeg";
