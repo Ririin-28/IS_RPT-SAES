@@ -1513,11 +1513,11 @@ export default function FilipinoFlashcards({
       });
     } catch (error) {
       console.error("Azure speech recognition failed", error);
-      setStatusMessage("Azure Speech failed. Falling back to browser recognition.");
+      setStatusMessage("Azure Speech failed. Please try again.");
+      setFeedback("Azure Speech is required for live transcription.");
       setIsListening(false);
       setIsProcessing(false);
       didFallback = true;
-      await handleMicrophoneFallback();
       return;
     } finally {
       recognizerRef.current?.close();
