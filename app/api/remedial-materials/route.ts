@@ -441,6 +441,12 @@ export async function PATCH(request: NextRequest) {
 
         const rawFilePath = typeof materialRow?.file_path === "string" ? materialRow.file_path.trim() : "";
         const filePath = normalizeMaterialFilePath(rawFilePath);
+        console.info("Remedial material extraction file path", {
+          materialId,
+          rawFilePath,
+          normalizedFilePath: filePath,
+          isRemote: filePath ? /^https?:\/\//i.test(filePath) : false,
+        });
         if (filePath && rawFilePath && filePath !== rawFilePath) {
           await query(
             "UPDATE remedial_materials SET file_path = ?, updated_at = NOW() WHERE material_id = ?",
