@@ -213,13 +213,14 @@ export default function MaterialGridModal({ isOpen, onClose, activity, subject }
                     {material ? (
                       <div className="flex justify-end gap-2">
                         <UtilityButton small onClick={() => {
-                          const fileUrl = material.file_path.startsWith('/') ? material.file_path : `/${material.file_path}`;
-                          const absoluteUrl = `${window.location.origin}${fileUrl}`;
+                          const absoluteUrl = /^https?:\/\//i.test(material.file_path)
+                            ? material.file_path
+                            : `${window.location.origin}${material.file_path.startsWith("/") ? "" : "/"}${material.file_path}`;
                           const isOfficeFile = /\.(docx|doc|pptx|ppt|xlsx|xls)$/i.test(material.file_path);
                           if (isOfficeFile) {
                             window.open(`https://docs.google.com/viewer?url=${encodeURIComponent(absoluteUrl)}&embedded=true`, '_blank');
                           } else {
-                            window.open(fileUrl, '_blank');
+                            window.open(absoluteUrl, '_blank');
                           }
                         }} className="!px-4 !py-1.5 font-bold">
                           View

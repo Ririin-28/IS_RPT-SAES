@@ -103,17 +103,18 @@ export default function MaterialTabContent({
   const handleOpenMaterial = (material: CoordinatorMaterialRow) => {
     const targetUrl = material.attachmentUrl || (material.files && material.files[0]?.publicUrl);
     if (!targetUrl || typeof window === "undefined") return;
-    
-    const fileUrl = targetUrl.startsWith('/') ? targetUrl : `/${targetUrl}`;
-    const absoluteUrl = `${window.location.origin}${fileUrl}`;
-    
+
+    const absoluteUrl = /^https?:\/\//i.test(targetUrl)
+      ? targetUrl
+      : `${window.location.origin}${targetUrl.startsWith("/") ? "" : "/"}${targetUrl}`;
+
     // Check if it's an Office file to use Google Viewer
     const isOfficeFile = /\.(docx|doc|pptx|ppt|xlsx|xls)$/i.test(targetUrl);
     
     if (isOfficeFile) {
       window.open(`https://docs.google.com/viewer?url=${encodeURIComponent(absoluteUrl)}&embedded=true`, '_blank');
     } else {
-      window.open(fileUrl, '_blank');
+      window.open(absoluteUrl, '_blank');
     }
   };
 
