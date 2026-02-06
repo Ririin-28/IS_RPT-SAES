@@ -1,6 +1,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
+import { del, put } from "@vercel/blob";
 
 const MATERIAL_UPLOAD_ROOT = path.join(process.cwd(), "public", "uploads", "materials");
 
@@ -32,11 +33,27 @@ export async function saveMaterialFile(options: {
   mimeType: string | null;
   fileSize: number;
 }): Promise<SavedMaterialFile> {
-  await ensureUploadDir();
-
   const storedFileName = createStoredFileName(options.originalName || "file");
-  const filePath = path.join(MATERIAL_UPLOAD_ROOT, storedFileName);
+  const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
+  if (blobToken) {
+    const blobPath = path.posix.join("materials", storedFileName);
+    const { url } = await put(blobPath, options.buffer, {
+      access: "public",
+      contentType: options.mimeType ?? undefined,
+      addRandomSuffix: false,
+    });
+    return {
+      fileName: options.originalName,
+      storedFileName,
+      storagePath: url,
+      publicUrl: url,
+      mimeType: options.mimeType,
+      fileSize: options.fileSize,
+    };
+  }
 
+  await ensureUploadDir();
+  const filePath = path.join(MATERIAL_UPLOAD_ROOT, storedFileName);
   await fs.writeFile(filePath, options.buffer);
 
   const storagePath = path.posix.join("uploads", "materials", storedFileName);
@@ -54,6 +71,14 @@ export async function saveMaterialFile(options: {
 
 export async function deleteMaterialFile(storagePath: string | null | undefined): Promise<void> {
   if (!storagePath) return;
+  if (/^https?:\/\//i.test(storagePath)) {
+    try {
+      await del(storagePath);
+    } catch (error) {
+      console.warn(`Failed to remove blob material file at ${storagePath}:`, error);
+    }
+    return;
+  }
   try {
     const normalized = storagePath.startsWith("/") ? storagePath.slice(1) : storagePath;
     const filePath = path.join(process.cwd(), "public", normalized);

@@ -149,6 +149,14 @@ export function useTeacherMaterials({ subject, level }: UseTeacherMaterialsOptio
         return;
       }
 
+        const maxFileMb = Number(process.env.NEXT_PUBLIC_MATERIALS_MAX_FILE_MB ?? 10);
+        const maxFileBytes = Math.max(1, Math.floor(maxFileMb * 1024 * 1024));
+        const tooLarge = files.find((file) => file.size > maxFileBytes);
+        if (tooLarge) {
+          setError(`File "${tooLarge.name}" exceeds the ${maxFileMb}MB limit.`);
+          return;
+        }
+
       setUploading(true);
       setError(null);
       try {
