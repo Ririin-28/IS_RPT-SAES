@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   HttpError,
-  createTeacher,
+  createTeachersBulk,
   sanitizeEmail,
   sanitizeNamePart,
   sanitizeOptionalNamePart,
   sanitizePhoneNumber,
   sanitizeGrade,
   sanitizeOptionalString,
+  type BulkCreateTeacherItem,
 } from "../validation/validation";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +41,7 @@ export async function POST(request: NextRequest) {
 
   const inserted: UploadResultItem[] = [];
   const failures: UploadFailureItem[] = [];
+  const pending: BulkCreateTeacherItem[] = [];
 
   for (let index = 0; index < teachers.length; index += 1) {
     const item = teachers[index];
@@ -56,7 +58,8 @@ export async function POST(request: NextRequest) {
       const subjects = sanitizeOptionalString(item?.subjects);
       const teacherId = sanitizeOptionalString(item?.teacherId);
 
-      const result = await createTeacher({
+      pending.push({
+        index,
         firstName,
         middleName,
         lastName,
@@ -68,13 +71,6 @@ export async function POST(request: NextRequest) {
         subjects,
         teacherId,
       });
-
-      inserted.push({
-        index,
-        userId: result.userId,
-        record: result.record,
-        temporaryPassword: result.temporaryPassword,
-      });
     } catch (error) {
       const normalizedEmail = typeof item?.email === "string" ? item.email : null;
       if (error instanceof HttpError) {
@@ -83,6 +79,34 @@ export async function POST(request: NextRequest) {
       }
       console.error("Failed to import Teacher", error);
       failures.push({ index, email: normalizedEmail, error: "Unexpected error while importing." });
+    }
+  }
+
+  if (pending.length > 0) {
+    const seen = new Map<string, number>();
+    const duplicates = new Set<number>();
+    for (const entry of pending) {
+      const key = entry.email.toLowerCase();
+      const firstIndex = seen.get(key);
+      if (firstIndex === undefined) {
+        seen.set(key, entry.index);
+      } else {
+        duplicates.add(entry.index);
+      }
+    }
+
+    const deduped = pending.filter((entry) => {
+      if (duplicates.has(entry.index)) {
+        failures.push({ index: entry.index, email: entry.email, error: "Duplicate email in upload." });
+        return false;
+      }
+      return true;
+    });
+
+    if (deduped.length > 0) {
+      const bulkResult = await createTeachersBulk(deduped);
+      inserted.push(...bulkResult.inserted);
+      failures.push(...bulkResult.failures);
     }
   }
 

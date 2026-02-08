@@ -93,15 +93,10 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 export default function ITAdminSidebar() {
-  const [isMounted, setIsMounted] = React.useState(false);
   const [open, setOpen] = React.useState(false);
   const [openSubmenu, setOpenSubmenu] = React.useState<string | null>(null);
   const router = useRouter();
   const pathname = usePathname() ?? "";
-
-  React.useEffect(() => {
-    setIsMounted(true);
-  }, []);
 
   // Memoized toggle function
   const toggleSidebar = useCallback(() => {
@@ -128,10 +123,6 @@ export default function ITAdminSidebar() {
     (path: string) => Boolean(pathname?.toLowerCase().startsWith(path.toLowerCase())),
     [pathname]
   );
-
-  if (!isMounted) {
-    return null;
-  }
 
   return (
     <>

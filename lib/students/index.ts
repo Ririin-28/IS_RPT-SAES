@@ -480,6 +480,233 @@ export async function insertStudents(
       const parentRoleId = await resolveParentRoleId();
       let inserted = 0;
 
+      const trimValue = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
+      const uniqueValues = (values: string[]) => Array.from(new Set(values.filter((value) => value.length > 0)));
+
+      const lrnCandidates: string[] = [];
+      const parentEmails: string[] = [];
+      const parentPhones: string[] = [];
+      const parentUsernames: string[] = [];
+      const parentUserCodes: string[] = [];
+
+      for (const student of students) {
+        const lrn = trimValue(student.lrn);
+        if (lrn) {
+          lrnCandidates.push(lrn);
+          parentUserCodes.push(lrn);
+        }
+        const parentEmail = trimValue(student.guardianEmail);
+        const parentPhone = trimValue(student.guardianContact);
+        if (parentEmail) parentEmails.push(parentEmail);
+        if (parentPhone) parentPhones.push(parentPhone);
+        const candidateUsername = parentEmail || parentPhone || lrn;
+        if (candidateUsername) parentUsernames.push(candidateUsername);
+      }
+
+      const existingStudentsByLrn = new Map<string, { studentId: string; parentId: string | null }>();
+      const parentIdByStudentId = new Map<string, string>();
+      const parentUserByParentId = new Map<string, number>();
+      const userByEmail = new Map<string, number>();
+      const userByPhone = new Map<string, number>();
+      const userByUsername = new Map<string, number>();
+      const userByUserCode = new Map<string, number>();
+      const parentByEmail = new Map<string, { parentId: string; userId: number | null }>();
+      const parentByPhone = new Map<string, { parentId: string; userId: number | null }>();
+      const parentByUserId = new Map<number, string>();
+
+      const lrnList = uniqueValues(lrnCandidates);
+      if (lrnList.length && studentColumns.has("lrn") && studentColumns.has("student_id")) {
+        const selectCols = ["student_id", "lrn"];
+        if (studentColumns.has("parent_id")) {
+          selectCols.push("parent_id");
+        }
+        const placeholders = lrnList.map(() => "?").join(", ");
+        const [rows] = await connection.query<RowDataPacket[]>(
+          `SELECT ${selectCols.join(", ")} FROM \`${STUDENT_TABLE}\` WHERE lrn IN (${placeholders})`,
+          lrnList,
+        );
+
+        const missingParentIds: string[] = [];
+        for (const row of rows) {
+          const rowLrn = trimValue((row as any).lrn);
+          const studentId = trimValue((row as any).student_id);
+          if (!rowLrn || !studentId) continue;
+          const parentId = normalizeParentIdentifier((row as any).parent_id) ?? null;
+          existingStudentsByLrn.set(rowLrn, { studentId, parentId });
+          if (!parentId) {
+            missingParentIds.push(studentId);
+          }
+        }
+
+        if (missingParentIds.length && parentStudentColumns.has("parent_id") && parentStudentColumns.has("student_id")) {
+          const studentPlaceholders = missingParentIds.map(() => "?").join(", ");
+          const [linkRows] = await connection.query<RowDataPacket[]>(
+            `SELECT student_id, parent_id FROM parent_student WHERE student_id IN (${studentPlaceholders})`,
+            missingParentIds,
+          );
+          for (const row of linkRows) {
+            const studentId = trimValue((row as any).student_id);
+            const parentId = normalizeParentIdentifier((row as any).parent_id);
+            if (studentId && parentId) {
+              parentIdByStudentId.set(studentId, parentId);
+            }
+          }
+
+          for (const [lrn, entry] of existingStudentsByLrn.entries()) {
+            if (!entry.parentId) {
+              const inferredParentId = parentIdByStudentId.get(entry.studentId) ?? null;
+              existingStudentsByLrn.set(lrn, { studentId: entry.studentId, parentId: inferredParentId });
+            }
+          }
+        }
+      }
+
+      const parentIdCandidates = uniqueValues(
+        Array.from(existingStudentsByLrn.values())
+          .map((entry) => normalizeParentIdentifier(entry.parentId ?? null) ?? "")
+          .filter((value) => value.length > 0),
+      );
+
+      if (parentIdCandidates.length && parentColumns.has("parent_id") && parentColumns.has("user_id")) {
+        const parentPlaceholders = parentIdCandidates.map(() => "?").join(", ");
+        const [parentRows] = await connection.query<RowDataPacket[]>(
+          `SELECT parent_id, user_id FROM parent WHERE parent_id IN (${parentPlaceholders})`,
+          parentIdCandidates,
+        );
+        for (const row of parentRows) {
+          const parentId = normalizeParentIdentifier((row as any).parent_id);
+          const userId = Number((row as any).user_id);
+          if (parentId && Number.isFinite(userId)) {
+            parentUserByParentId.set(parentId, userId);
+          }
+        }
+      }
+
+      const emailList = uniqueValues(parentEmails);
+      const phoneList = uniqueValues(parentPhones);
+      const usernameList = uniqueValues(parentUsernames);
+      const userCodeList = uniqueValues(parentUserCodes);
+
+      if (emailList.length && effectiveUserColumns.has("email")) {
+        const placeholders = emailList.map(() => "?").join(", ");
+        const [rows] = await connection.query<RowDataPacket[]>(
+          `SELECT user_id, email FROM users WHERE email IN (${placeholders})`,
+          emailList,
+        );
+        for (const row of rows) {
+          const email = trimValue((row as any).email);
+          const userId = Number((row as any).user_id);
+          if (email && Number.isFinite(userId)) userByEmail.set(email, userId);
+        }
+      }
+
+      if (phoneList.length && effectiveUserColumns.has("phone_number")) {
+        const placeholders = phoneList.map(() => "?").join(", ");
+        const [rows] = await connection.query<RowDataPacket[]>(
+          `SELECT user_id, phone_number FROM users WHERE phone_number IN (${placeholders})`,
+          phoneList,
+        );
+        for (const row of rows) {
+          const phone = trimValue((row as any).phone_number);
+          const userId = Number((row as any).user_id);
+          if (phone && Number.isFinite(userId)) userByPhone.set(phone, userId);
+        }
+      }
+
+      if (usernameList.length && effectiveUserColumns.has("username")) {
+        const placeholders = usernameList.map(() => "?").join(", ");
+        const [rows] = await connection.query<RowDataPacket[]>(
+          `SELECT user_id, username FROM users WHERE username IN (${placeholders})`,
+          usernameList,
+        );
+        for (const row of rows) {
+          const username = trimValue((row as any).username);
+          const userId = Number((row as any).user_id);
+          if (username && Number.isFinite(userId)) userByUsername.set(username, userId);
+        }
+      }
+
+      if (userCodeList.length && effectiveUserColumns.has("user_code")) {
+        const placeholders = userCodeList.map(() => "?").join(", ");
+        const [rows] = await connection.query<RowDataPacket[]>(
+          `SELECT user_id, user_code FROM users WHERE user_code IN (${placeholders})`,
+          userCodeList,
+        );
+        for (const row of rows) {
+          const userCode = trimValue((row as any).user_code);
+          const userId = Number((row as any).user_id);
+          if (userCode && Number.isFinite(userId)) userByUserCode.set(userCode, userId);
+        }
+      }
+
+      if (emailList.length && parentColumns.has("email")) {
+        const placeholders = emailList.map(() => "?").join(", ");
+        const [rows] = await connection.query<RowDataPacket[]>(
+          `SELECT parent_id, user_id, email FROM parent WHERE email IN (${placeholders})`,
+          emailList,
+        );
+        for (const row of rows) {
+          const email = trimValue((row as any).email);
+          const parentId = normalizeParentIdentifier((row as any).parent_id);
+          const userId = Number((row as any).user_id);
+          if (email && parentId) {
+            parentByEmail.set(email, { parentId, userId: Number.isFinite(userId) ? userId : null });
+          }
+        }
+      }
+
+      if (phoneList.length && parentColumns.has("phone_number")) {
+        const placeholders = phoneList.map(() => "?").join(", ");
+        const [rows] = await connection.query<RowDataPacket[]>(
+          `SELECT parent_id, user_id, phone_number FROM parent WHERE phone_number IN (${placeholders})`,
+          phoneList,
+        );
+        for (const row of rows) {
+          const phone = trimValue((row as any).phone_number);
+          const parentId = normalizeParentIdentifier((row as any).parent_id);
+          const userId = Number((row as any).user_id);
+          if (phone && parentId) {
+            parentByPhone.set(phone, { parentId, userId: Number.isFinite(userId) ? userId : null });
+          }
+        }
+      }
+
+      const userIdsForParents = uniqueValues(
+        Array.from(new Set([
+          ...Array.from(userByEmail.values()),
+          ...Array.from(userByPhone.values()),
+          ...Array.from(userByUsername.values()),
+          ...Array.from(userByUserCode.values()),
+        ].map((value) => String(value)))),
+      ).map((value) => Number(value)).filter((value) => Number.isFinite(value) && value > 0);
+
+      if (userIdsForParents.length && parentColumns.has("user_id") && parentColumns.has("parent_id")) {
+        const placeholders = userIdsForParents.map(() => "?").join(", ");
+        const [rows] = await connection.query<RowDataPacket[]>(
+          `SELECT parent_id, user_id FROM parent WHERE user_id IN (${placeholders})`,
+          userIdsForParents,
+        );
+        for (const row of rows) {
+          const parentId = normalizeParentIdentifier((row as any).parent_id);
+          const userId = Number((row as any).user_id);
+          if (parentId && Number.isFinite(userId)) {
+            parentByUserId.set(userId, parentId);
+          }
+        }
+      }
+
+      const processedStudents: Array<{
+        studentId: string;
+        parentId: string | null;
+        parentRelationship: string | null;
+        parentAddress: string | null;
+        student: CreateStudentRecordInput;
+        gradeId: number | null;
+        lrn: string | null;
+        isNew: boolean;
+      }> = [];
+      const studentInsertRows: Array<Array<string | number | null>> = [];
+
       for (const student of students) {
         const normalizedGrade = normalizeGradeValue(student.gradeLevel);
         const gradeId = normalizedGrade ? Number(normalizedGrade) : null;
@@ -488,10 +715,16 @@ export async function insertStudents(
         let parentUserId: number | null = null;
         let studentId: string | null = null;
 
-        const lrn = (student.lrn ?? "").trim() || null;
+        const lrn = trimValue(student.lrn) || null;
+        const existing = lrn ? existingStudentsByLrn.get(lrn) : null;
 
-        // Reuse existing student (and parent) when the LRN already exists, regardless of subject
-        if (lrn) {
+        if (existing) {
+          studentId = existing.studentId;
+          parentId = existing.parentId ?? null;
+          if (parentId && parentUserByParentId.has(parentId)) {
+            parentUserId = parentUserByParentId.get(parentId) ?? null;
+          }
+        } else if (lrn) {
           const parentIdSelectable = studentColumns.has("parent_id");
           const selectCols = parentIdSelectable ? "student_id, parent_id" : "student_id";
           const [existingRows] = await connection.query<RowDataPacket[]>(
@@ -500,130 +733,109 @@ export async function insertStudents(
           );
 
           if (Array.isArray(existingRows) && existingRows.length > 0) {
-            const existing = existingRows[0];
-            const existingId = typeof existing.student_id === "string" ? existing.student_id.trim() : null;
-            const existingParentId = parentIdSelectable ? normalizeParentIdentifier((existing as any).parent_id) : null;
+            const found = existingRows[0];
+            const existingId = trimValue((found as any).student_id);
+            const existingParentId = parentIdSelectable ? normalizeParentIdentifier((found as any).parent_id) : null;
             studentId = existingId && existingId.length > 0 ? existingId : null;
             parentId = existingParentId;
-
-            // If parent_id is not stored on student, attempt to resolve via parent_student link
-            if (!parentId && parentStudentColumns.has("parent_id") && parentStudentColumns.has("student_id") && studentId) {
-              const [linkRows] = await connection.query<RowDataPacket[]>(
-                "SELECT parent_id FROM parent_student WHERE student_id = ? LIMIT 1",
-                [studentId],
-              );
-              if (Array.isArray(linkRows) && linkRows.length > 0) {
-                parentId = normalizeParentIdentifier(linkRows[0].parent_id);
+            if (studentId && !parentId && parentStudentColumns.has("parent_id") && parentStudentColumns.has("student_id")) {
+              const cachedParent = parentIdByStudentId.get(studentId) ?? null;
+              if (cachedParent) {
+                parentId = cachedParent;
+              } else {
+                const [linkRows] = await connection.query<RowDataPacket[]>(
+                  "SELECT parent_id FROM parent_student WHERE student_id = ? LIMIT 1",
+                  [studentId],
+                );
+                if (Array.isArray(linkRows) && linkRows.length > 0) {
+                  parentId = normalizeParentIdentifier((linkRows[0] as any).parent_id);
+                }
               }
             }
-
+            if (studentId) {
+              existingStudentsByLrn.set(lrn, { studentId, parentId });
+            }
             if (parentId && parentColumns.has("user_id")) {
-              const [parentRows] = await connection.query<RowDataPacket[]>(
-                "SELECT user_id FROM parent WHERE parent_id = ? LIMIT 1",
-                [parentId],
-              );
-              const existingUser = Number(parentRows?.[0]?.user_id);
-              if (Number.isFinite(existingUser)) {
-                parentUserId = existingUser;
+              if (parentUserByParentId.has(parentId)) {
+                parentUserId = parentUserByParentId.get(parentId) ?? null;
+              } else {
+                const [parentRows] = await connection.query<RowDataPacket[]>(
+                  "SELECT user_id FROM parent WHERE parent_id = ? LIMIT 1",
+                  [parentId],
+                );
+                const existingUser = Number(parentRows?.[0]?.user_id);
+                if (Number.isFinite(existingUser)) {
+                  parentUserId = existingUser;
+                  parentUserByParentId.set(parentId, existingUser);
+                }
               }
             }
           }
         }
 
-        const parentName = (student.guardianName ?? "").trim();
+        const parentName = trimValue(student.guardianName ?? "");
         const parentFirstName = student.guardianFirstName ?? parentName.split(" ")[0] ?? null;
         const parentLastName = student.guardianLastName
           ?? (parentName.split(" ").length > 1 ? parentName.split(" ").slice(-1).join(" ") : null);
         const parentMiddleName = student.guardianMiddleName ?? null;
         const parentSuffix = student.guardianSuffix ?? null;
-        const parentEmail = student.guardianEmail ?? null;
-        const parentPhone = student.guardianContact ?? null;
+        const parentEmail = trimValue(student.guardianEmail ?? "") || null;
+        const parentPhone = trimValue(student.guardianContact ?? "") || null;
         const parentAddress = student.address ?? null;
         const parentRelationship = (student as any).relationship ?? null;
 
         const hasParentData = [parentName, parentFirstName, parentLastName, parentEmail, parentPhone, parentAddress]
           .some((v) => typeof v === "string" && v.trim().length > 0);
 
-        // Try to reuse existing parent (and user) before creating new ones
         if (hasParentData && !parentId) {
-          // Reuse existing user by email/phone/username/user_code when possible
           if (!parentUserId && effectiveUserColumns.size) {
-            if (effectiveUserColumns.has("email") && parentEmail) {
-              const [existingUserRows] = await connection.query<RowDataPacket[]>(
-                "SELECT user_id FROM users WHERE email = ? LIMIT 1",
-                [parentEmail],
-              );
-              const existingUserId = Number(existingUserRows?.[0]?.user_id);
-              if (Number.isFinite(existingUserId)) parentUserId = existingUserId;
+            if (parentEmail && effectiveUserColumns.has("email")) {
+              const emailMatch = userByEmail.get(parentEmail);
+              if (Number.isFinite(emailMatch)) parentUserId = emailMatch ?? null;
             }
 
-            if (!parentUserId && effectiveUserColumns.has("phone_number") && parentPhone) {
-              const [existingUserRows] = await connection.query<RowDataPacket[]>(
-                "SELECT user_id FROM users WHERE phone_number = ? LIMIT 1",
-                [parentPhone],
-              );
-              const existingUserId = Number(existingUserRows?.[0]?.user_id);
-              if (Number.isFinite(existingUserId)) parentUserId = existingUserId;
+            if (!parentUserId && parentPhone && effectiveUserColumns.has("phone_number")) {
+              const phoneMatch = userByPhone.get(parentPhone);
+              if (Number.isFinite(phoneMatch)) parentUserId = phoneMatch ?? null;
             }
 
             if (!parentUserId && effectiveUserColumns.has("username")) {
               const candidateUsername = parentEmail?.trim() || parentPhone?.trim() || (student.lrn ?? "").trim() || null;
               if (candidateUsername) {
-                const [existingUserRows] = await connection.query<RowDataPacket[]>(
-                  "SELECT user_id FROM users WHERE username = ? LIMIT 1",
-                  [candidateUsername],
-                );
-                const existingUserId = Number(existingUserRows?.[0]?.user_id);
-                if (Number.isFinite(existingUserId)) parentUserId = existingUserId;
+                const usernameMatch = userByUsername.get(candidateUsername);
+                if (Number.isFinite(usernameMatch)) parentUserId = usernameMatch ?? null;
               }
             }
 
             if (!parentUserId && effectiveUserColumns.has("user_code")) {
               const candidateCode = (student.lrn ?? "").trim() || null;
               if (candidateCode) {
-                const [existingUserRows] = await connection.query<RowDataPacket[]>(
-                  "SELECT user_id FROM users WHERE user_code = ? LIMIT 1",
-                  [candidateCode],
-                );
-                const existingUserId = Number(existingUserRows?.[0]?.user_id);
-                if (Number.isFinite(existingUserId)) parentUserId = existingUserId;
+                const userCodeMatch = userByUserCode.get(candidateCode);
+                if (Number.isFinite(userCodeMatch)) parentUserId = userCodeMatch ?? null;
               }
             }
           }
 
-          // If we resolved a user, reuse the existing parent linked to that user
           if (!parentId && parentUserId !== null && parentColumns.has("parent_id") && parentColumns.has("user_id")) {
-            const [existingParent] = await connection.query<RowDataPacket[]>(
-              "SELECT parent_id, user_id FROM parent WHERE user_id = ? LIMIT 1",
-              [parentUserId],
-            );
-            if (Array.isArray(existingParent) && existingParent.length > 0) {
-              parentId = normalizeParentIdentifier(existingParent[0].parent_id);
+            const existingParentId = parentByUserId.get(parentUserId);
+            if (existingParentId) {
+              parentId = existingParentId;
             }
           }
 
-          // Reuse parent by email/phone when parent table stores those fields
           if (!parentId && parentColumns.has("email") && parentEmail) {
-            const [existingParent] = await connection.query<RowDataPacket[]>(
-              "SELECT parent_id, user_id FROM parent WHERE email = ? LIMIT 1",
-              [parentEmail],
-            );
-            if (Array.isArray(existingParent) && existingParent.length > 0) {
-              parentId = normalizeParentIdentifier(existingParent[0].parent_id);
-              const existingUser = Number(existingParent[0].user_id);
-              if (Number.isFinite(existingUser)) parentUserId = existingUser;
+            const existingParent = parentByEmail.get(parentEmail);
+            if (existingParent) {
+              parentId = existingParent.parentId;
+              if (Number.isFinite(existingParent.userId)) parentUserId = existingParent.userId;
             }
           }
 
           if (!parentId && parentColumns.has("phone_number") && parentPhone) {
-            const [existingParent] = await connection.query<RowDataPacket[]>(
-              "SELECT parent_id, user_id FROM parent WHERE phone_number = ? LIMIT 1",
-              [parentPhone],
-            );
-            if (Array.isArray(existingParent) && existingParent.length > 0) {
-              parentId = normalizeParentIdentifier(existingParent[0].parent_id);
-              const existingUser = Number(existingParent[0].user_id);
-              if (Number.isFinite(existingUser)) parentUserId = existingUser;
+            const existingParent = parentByPhone.get(parentPhone);
+            if (existingParent) {
+              parentId = existingParent.parentId;
+              if (Number.isFinite(existingParent.userId)) parentUserId = existingParent.userId;
             }
           }
         }
@@ -638,7 +850,6 @@ export async function insertStudents(
             || null;
           const parentPassword = (student.lrn ?? "").trim() || null;
 
-          // Insert parent first so we own the authoritative identifier.
           if (parentColumns.has("parent_id")) {
             if (normalizedParentIdentifier) {
               const [existingParent] = await connection.query<RowDataPacket[]>(
@@ -647,8 +858,8 @@ export async function insertStudents(
               );
               if (existingParent.length > 0) {
                 parentId = normalizedParentIdentifier;
-                if (Number.isFinite(Number(existingParent[0].user_id))) {
-                  parentUserId = Number(existingParent[0].user_id);
+                if (Number.isFinite(Number((existingParent[0] as any).user_id))) {
+                  parentUserId = Number((existingParent[0] as any).user_id);
                 }
               }
             }
@@ -691,46 +902,30 @@ export async function insertStudents(
             };
 
             if (!parentUserId && normalizedParentIdentifier && effectiveUserColumns.has("user_code")) {
-              const [existingUserRows] = await connection.query<RowDataPacket[]>(
-                "SELECT user_id FROM users WHERE user_code = ? LIMIT 1",
-                [normalizedParentIdentifier],
-              );
-              const existingUserId = Number(existingUserRows?.[0]?.user_id);
+              const existingUserId = userByUserCode.get(normalizedParentIdentifier);
               if (Number.isFinite(existingUserId)) {
-                parentUserId = existingUserId;
+                parentUserId = existingUserId ?? null;
               }
             }
 
             if (!parentUserId && parentEmail && effectiveUserColumns.has("email")) {
-              const [existingUserRows] = await connection.query<RowDataPacket[]>(
-                "SELECT user_id FROM users WHERE email = ? LIMIT 1",
-                [parentEmail],
-              );
-              const existingUserId = Number(existingUserRows?.[0]?.user_id);
+              const existingUserId = userByEmail.get(parentEmail);
               if (Number.isFinite(existingUserId)) {
-                parentUserId = existingUserId;
+                parentUserId = existingUserId ?? null;
               }
             }
 
             if (!parentUserId && parentPhone && effectiveUserColumns.has("phone_number")) {
-              const [existingUserRows] = await connection.query<RowDataPacket[]>(
-                "SELECT user_id FROM users WHERE phone_number = ? LIMIT 1",
-                [parentPhone],
-              );
-              const existingUserId = Number(existingUserRows?.[0]?.user_id);
+              const existingUserId = userByPhone.get(parentPhone);
               if (Number.isFinite(existingUserId)) {
-                parentUserId = existingUserId;
+                parentUserId = existingUserId ?? null;
               }
             }
 
             if (!parentUserId && parentUsername && effectiveUserColumns.has("username")) {
-              const [existingUserRows] = await connection.query<RowDataPacket[]>(
-                "SELECT user_id FROM users WHERE username = ? LIMIT 1",
-                [parentUsername],
-              );
-              const existingUserId = Number(existingUserRows?.[0]?.user_id);
+              const existingUserId = userByUsername.get(parentUsername);
               if (Number.isFinite(existingUserId)) {
-                parentUserId = existingUserId;
+                parentUserId = existingUserId ?? null;
               }
             }
 
@@ -765,23 +960,37 @@ export async function insertStudents(
                 throw new Error("Failed to create parent user record");
               }
               parentUserId = newUserId;
-              // Backfill parent.user_id after user is created
               if (parentId && parentColumns.has("user_id")) {
                 await connection.query("UPDATE parent SET user_id = ? WHERE parent_id = ? LIMIT 1", [parentUserId, parentId]);
               }
+              if (parentEmail) userByEmail.set(parentEmail, parentUserId);
+              if (parentPhone) userByPhone.set(parentPhone, parentUserId);
+              if (parentUsername) userByUsername.set(parentUsername, parentUserId);
+              if (normalizedParentIdentifier) userByUserCode.set(normalizedParentIdentifier, parentUserId);
             }
           }
-          // If parent.user_id still empty after reuse/insert, update once userId is known.
+
           if (parentId && parentUserId !== null && parentColumns.has("user_id")) {
             await connection.query("UPDATE parent SET user_id = ? WHERE parent_id = ? LIMIT 1", [parentUserId, parentId]);
           }
 
-          // Ensure parentId is populated for downstream relations.
           if (!parentId) {
             parentId = normalizedParentIdentifier ?? null;
           }
+
+          if (parentId && parentUserId !== null) {
+            parentByUserId.set(parentUserId, parentId);
+            parentUserByParentId.set(parentId, parentUserId);
+          }
+          if (parentEmail && parentId) {
+            parentByEmail.set(parentEmail, { parentId, userId: parentUserId });
+          }
+          if (parentPhone && parentId) {
+            parentByPhone.set(parentPhone, { parentId, userId: parentUserId });
+          }
         }
 
+        let isNew = false;
         if (!studentId) {
           const studentIdValue = studentColumns.has("student_id")
             ? await generateStudentId(connection, requestTime)
@@ -804,12 +1013,12 @@ export async function insertStudents(
             }
           });
 
-          const studentSql = `INSERT INTO \`${STUDENT_TABLE}\` (${studentCols.map((c) => `\`${c}\``).join(", ")}) VALUES (${studentCols.map(() => "?").join(", ")})`;
-          await connection.query<ResultSetHeader>(studentSql, studentVals);
           studentId = studentIdValue ? String(studentIdValue) : null;
           if (!studentId) {
             throw new Error("Failed to generate student identifier");
           }
+          studentInsertRows.push(studentVals);
+          isNew = true;
         } else {
           const updateCols: string[] = [];
           const updateVals: Array<string | number | null> = [];
@@ -851,30 +1060,75 @@ export async function insertStudents(
           }
         }
 
-        const linkedParentId = normalizeParentIdentifier(parentId);
-        if (parentStudentColumns.size && linkedParentId && studentId) {
-          const [existingLink] = await connection.query<RowDataPacket[]>(
-            "SELECT parent_student_id, parent_id FROM parent_student WHERE student_id = ? LIMIT 1",
-            [studentId],
+        processedStudents.push({
+          studentId,
+          parentId,
+          parentRelationship,
+          parentAddress,
+          student,
+          gradeId,
+          lrn,
+          isNew,
+        });
+
+        inserted += 1;
+      }
+
+      if (studentInsertRows.length > 0) {
+        const insertColumns = availableStudentCols.map((c) => `\`${c}\``).join(", ");
+        const chunkSize = 200;
+        for (let i = 0; i < studentInsertRows.length; i += chunkSize) {
+          const chunk = studentInsertRows.slice(i, i + chunkSize);
+          const placeholders = chunk
+            .map(() => `(${availableStudentCols.map(() => "?").join(", ")})`)
+            .join(", ");
+          const values = chunk.flat();
+          await connection.query<ResultSetHeader>(
+            `INSERT INTO \`${STUDENT_TABLE}\` (${insertColumns}) VALUES ${placeholders}`,
+            values,
           );
+        }
+      }
 
-          const relationCols: string[] = [];
-          const relationVals: Array<string | null> = [];
-          const pushRel = (column: string, value: any) => {
-            relationCols.push(column);
-            relationVals.push(value);
-          };
+      const parentLinkCandidates = parentStudentColumns.has("parent_id") && parentStudentColumns.has("student_id")
+        ? processedStudents.filter((entry) => normalizeParentIdentifier(entry.parentId) && entry.studentId)
+        : [];
 
-          if (existingLink.length === 0) {
-            if (parentStudentColumns.has("parent_id")) pushRel("parent_id", linkedParentId);
-            if (parentStudentColumns.has("student_id")) pushRel("student_id", studentId);
-            if (parentStudentColumns.has("relationship")) pushRel("relationship", parentRelationship ?? null);
-            if (parentStudentColumns.has("address")) pushRel("address", parentAddress ?? null);
+      if (parentLinkCandidates.length) {
+        const linkStudentIds = parentLinkCandidates.map((entry) => entry.studentId);
+        const placeholders = linkStudentIds.map(() => "?").join(", ");
+        const [linkRows] = await connection.query<RowDataPacket[]>(
+          `SELECT student_id FROM parent_student WHERE student_id IN (${placeholders})`,
+          linkStudentIds,
+        );
+        const existingLinks = new Set(
+          Array.isArray(linkRows)
+            ? linkRows.map((row) => trimValue((row as any).student_id)).filter((value) => value.length > 0)
+            : [],
+        );
 
-            if (relationCols.length) {
-              const relSql = `INSERT INTO parent_student (${relationCols.map((c) => `\`${c}\``).join(", ")}) VALUES (${relationCols.map(() => "?").join(", ")})`;
-              await connection.query<ResultSetHeader>(relSql, relationVals);
-            }
+        const relationCols: string[] = [];
+        if (parentStudentColumns.has("parent_id")) relationCols.push("parent_id");
+        if (parentStudentColumns.has("student_id")) relationCols.push("student_id");
+        if (parentStudentColumns.has("relationship")) relationCols.push("relationship");
+        if (parentStudentColumns.has("address")) relationCols.push("address");
+
+        const insertRows: Array<Array<string | null>> = [];
+
+        for (const entry of parentLinkCandidates) {
+          const linkedParentId = normalizeParentIdentifier(entry.parentId);
+          if (!linkedParentId) continue;
+          if (!existingLinks.has(entry.studentId)) {
+            const rowValues = relationCols.map((col) => {
+              switch (col) {
+                case "parent_id": return linkedParentId;
+                case "student_id": return entry.studentId;
+                case "relationship": return entry.parentRelationship ?? null;
+                case "address": return entry.parentAddress ?? null;
+                default: return null;
+              }
+            });
+            insertRows.push(rowValues);
           } else {
             const updateCols: string[] = [];
             const updateVals: Array<string | null> = [];
@@ -882,25 +1136,43 @@ export async function insertStudents(
               updateCols.push("parent_id = ?");
               updateVals.push(linkedParentId);
             }
-            if (parentStudentColumns.has("relationship") && parentRelationship) {
+            if (parentStudentColumns.has("relationship") && entry.parentRelationship) {
               updateCols.push("relationship = ?");
-              updateVals.push(parentRelationship);
+              updateVals.push(entry.parentRelationship);
             }
-            if (parentStudentColumns.has("address") && parentAddress) {
+            if (parentStudentColumns.has("address") && entry.parentAddress) {
               updateCols.push("address = ?");
-              updateVals.push(parentAddress);
+              updateVals.push(entry.parentAddress);
             }
             if (updateCols.length) {
               await connection.query(
                 `UPDATE parent_student SET ${updateCols.join(", ")} WHERE student_id = ? LIMIT 1`,
-                [...updateVals, studentId],
+                [...updateVals, entry.studentId],
               );
             }
           }
         }
 
-        // Only insert a placeholder row when the assessment table does NOT enforce phonemic_id.
-        // If phonemic_id exists, we rely on the explicit phonemic inserts below to avoid NULL constraint errors.
+        if (insertRows.length && relationCols.length) {
+          const chunkSize = 200;
+          for (let i = 0; i < insertRows.length; i += chunkSize) {
+            const chunk = insertRows.slice(i, i + chunkSize);
+            const placeholders = chunk
+              .map(() => `(${relationCols.map(() => "?").join(", ")})`)
+              .join(", ");
+            const values = chunk.flat();
+            await connection.query<ResultSetHeader>(
+              `INSERT INTO parent_student (${relationCols.map((c) => `\`${c}\``).join(", ")}) VALUES ${placeholders}`,
+              values,
+            );
+          }
+        }
+      }
+
+      for (const entry of processedStudents) {
+        const studentId = entry.studentId;
+        if (!studentId) continue;
+
         if (
           assessmentColumns.has("student_id") &&
           assessmentColumns.has("subject_id") &&
@@ -911,18 +1183,18 @@ export async function insertStudents(
               `INSERT INTO student_subject_assessment (student_id, subject_id, phonemic_id, assessed_at)
                VALUES (?, ?, NULL, ?)
                ON DUPLICATE KEY UPDATE assessed_at = VALUES(assessed_at)`,
-              [studentId, resolvedMainSubjectId, requestTime]
+              [studentId, resolvedMainSubjectId, requestTime],
             );
           }
         }
 
         if (assessmentColumns.has("student_id") && assessmentColumns.has("subject_id") && assessmentColumns.has("phonemic_id")) {
           const phonemicInserts: Array<[number, number]> = [];
-          const englishId = resolvePhonemicLevelId(student.englishPhonemic, englishSubjectId, phonemicLookup);
+          const englishId = resolvePhonemicLevelId(entry.student.englishPhonemic, englishSubjectId, phonemicLookup);
           if (englishId && englishSubjectId) phonemicInserts.push([englishSubjectId, englishId]);
-          const filipinoId = resolvePhonemicLevelId(student.filipinoPhonemic, filipinoSubjectId, phonemicLookup);
+          const filipinoId = resolvePhonemicLevelId(entry.student.filipinoPhonemic, filipinoSubjectId, phonemicLookup);
           if (filipinoId && filipinoSubjectId) phonemicInserts.push([filipinoSubjectId, filipinoId]);
-          const mathId = resolvePhonemicLevelId(student.mathProficiency, mathSubjectId, phonemicLookup);
+          const mathId = resolvePhonemicLevelId(entry.student.mathProficiency, mathSubjectId, phonemicLookup);
           if (mathId && mathSubjectId) phonemicInserts.push([mathSubjectId, mathId]);
 
           for (const [subId, phonId] of phonemicInserts) {
@@ -934,10 +1206,7 @@ export async function insertStudents(
             );
           }
         }
-
-        inserted += 1;
       }
-
       await connection.commit();
       return inserted;
     } catch (error) {
@@ -985,13 +1254,23 @@ export async function deleteStudents(userId: number, subject: StudentSubject, id
   const scopedDeleteIds: string[] = [];
 
   if (canScopedDelete) {
-    for (const studentId of ids) {
-      const [counts] = await query<RowDataPacket[]>(
-        "SELECT COUNT(DISTINCT subject_id) AS cnt FROM student_subject_assessment WHERE student_id = ?",
-        [studentId],
-      );
-      const subjectCount = Number(counts?.[0]?.cnt ?? 0);
+    const idPlaceholders = ids.map(() => "?").join(", ");
+    const [countRows] = await query<RowDataPacket[]>(
+      `SELECT student_id, COUNT(DISTINCT subject_id) AS cnt
+       FROM student_subject_assessment
+       WHERE student_id IN (${idPlaceholders})
+       GROUP BY student_id`,
+      ids,
+    );
+    const countsById = new Map<string, number>(
+      (Array.isArray(countRows) ? countRows : []).map((row) => [
+        String(row.student_id),
+        Number(row.cnt ?? 0),
+      ]),
+    );
 
+    for (const studentId of ids) {
+      const subjectCount = countsById.get(studentId) ?? 0;
       if (subjectCount > 1) {
         scopedDeleteIds.push(studentId);
       } else {

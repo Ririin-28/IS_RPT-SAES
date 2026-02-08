@@ -143,6 +143,27 @@ function getColumnValue(row: RowDataPacket | null, column: string): any {
   return undefined;
 }
 
+const IN_CHUNK_SIZE = 500;
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  if (items.length === 0) {
+    return [];
+  }
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
+
+function uniqueNumbers(values: number[]): number[] {
+  return Array.from(new Set(values));
+}
+
+function buildPlaceholders(count: number): string {
+  return new Array(count).fill("?").join(", ");
+}
+
 export async function POST(request: NextRequest) {
   let payload: any;
   try {
@@ -183,22 +204,91 @@ export async function POST(request: NextRequest) {
       const userReferencingMap = await fetchReferencingMap(connection, "users");
       const teacherReferencingMap = teacherTable ? await fetchReferencingMap(connection, teacherTable) : new Map<string, ReferencingEntry[]>();
 
+      const uniqueUserIds = uniqueNumbers(userIds);
+      const userRows: RowDataPacket[] = [];
+      for (const chunk of chunkArray(uniqueUserIds, IN_CHUNK_SIZE)) {
+        const placeholders = buildPlaceholders(chunk.length);
+        const [rows] = await connection.query<RowDataPacket[]>(
+          `SELECT * FROM users WHERE user_id IN (${placeholders})`,
+          chunk,
+        );
+        userRows.push(...rows);
+      }
+
+      const userRowById = new Map<number, RowDataPacket>();
+      for (const row of userRows) {
+        const rawUserId = getColumnValue(row, "user_id");
+        const parsedUserId = rawUserId !== null && rawUserId !== undefined ? Number(rawUserId) : NaN;
+        if (Number.isInteger(parsedUserId) && parsedUserId > 0) {
+          userRowById.set(parsedUserId, row);
+        }
+      }
+
+      const foundUserIds = Array.from(userRowById.keys());
+      if (foundUserIds.length === 0) {
+        return { archived: [] as ArchiveResult[] };
+      }
+
+      let teacherLookupColumn: string | null = null;
+      if (teacherTable) {
+        if (teacherColumns.has("user_id")) {
+          teacherLookupColumn = "user_id";
+        } else if (teacherColumns.has("teacher_id")) {
+          teacherLookupColumn = "teacher_id";
+        } else if (teacherColumns.has("employee_id")) {
+          teacherLookupColumn = "employee_id";
+        }
+      }
+
+      const teacherRowByLookup = new Map<number, RowDataPacket>();
+      if (teacherTable && teacherLookupColumn) {
+        for (const chunk of chunkArray(foundUserIds, IN_CHUNK_SIZE)) {
+          const placeholders = buildPlaceholders(chunk.length);
+          const [rows] = await connection.query<RowDataPacket[]>(
+            `SELECT * FROM \`${teacherTable}\` WHERE \`${teacherLookupColumn}\` IN (${placeholders})`,
+            chunk,
+          );
+          for (const row of rows) {
+            const keyValue = getColumnValue(row, teacherLookupColumn);
+            const parsedKey = keyValue !== null && keyValue !== undefined ? Number(keyValue) : NaN;
+            if (Number.isInteger(parsedKey) && parsedKey > 0) {
+              teacherRowByLookup.set(parsedKey, row);
+            }
+          }
+        }
+      }
+
+      const existingArchiveByUserId = new Map<number, number>();
+      for (const chunk of chunkArray(foundUserIds, IN_CHUNK_SIZE)) {
+        const placeholders = buildPlaceholders(chunk.length);
+        const [archiveRows] = await connection.query<RowDataPacket[]>(
+          `SELECT archived_id, user_id FROM ${ARCHIVE_TABLE} WHERE user_id IN (${placeholders})`,
+          chunk,
+        );
+        for (const row of archiveRows) {
+          const userId = Number(row.user_id);
+          const archivedId = Number(row.archived_id);
+          if (Number.isInteger(userId) && Number.isInteger(archivedId)) {
+            existingArchiveByUserId.set(userId, archivedId);
+          }
+        }
+      }
+
       await connection.beginTransaction();
       try {
         const archived: ArchiveResult[] = [];
         const archiveReason = reason && reason.length > 0 ? reason : "Archived by IT Administrator";
 
-        for (const userId of userIds) {
-          const [userRows] = await connection.query<RowDataPacket[]>(
-            "SELECT * FROM users WHERE user_id = ? LIMIT 1",
-            [userId],
-          );
+        const archivedIdByUserId = new Map<number, number>();
+        const archivedIdByTeacherId = new Map<number, number>();
+        const resolvedTeacherIdByUserId = new Map<number, number>();
 
-          if (userRows.length === 0) {
+        for (const userId of foundUserIds) {
+          const userRow = userRowById.get(userId);
+          if (!userRow) {
             continue;
           }
 
-          const userRow = userRows[0];
           const rawUserId = getColumnValue(userRow, "user_id");
           const parsedUserId = rawUserId !== null && rawUserId !== undefined ? Number(rawUserId) : NaN;
           const resolvedUserId = Number.isInteger(parsedUserId) && parsedUserId > 0
@@ -219,14 +309,7 @@ export async function POST(request: NextRequest) {
           const createdAt = getColumnValue(userRow, "created_at");
           const updatedAt = getColumnValue(userRow, "updated_at");
 
-          let teacherRow: RowDataPacket | null = null;
-          if (teacherTable) {
-            const [rows] = await connection.query<RowDataPacket[]>(
-              `SELECT * FROM \`${teacherTable}\` WHERE user_id = ? LIMIT 1`,
-              [userId],
-            );
-            teacherRow = rows.length > 0 ? rows[0] : null;
-          }
+          const teacherRow = teacherLookupColumn ? teacherRowByLookup.get(userId) ?? null : null;
 
           const resolvedTeacherId =
             getColumnValue(teacherRow, "teacher_id") ??
@@ -235,15 +318,15 @@ export async function POST(request: NextRequest) {
             getColumnValue(teacherRow, "teacher_code") ??
             getColumnValue(teacherRow, "user_id") ??
             userId;
+          const resolvedTeacherNumeric = Number(resolvedTeacherId);
+          if (Number.isInteger(resolvedTeacherNumeric) && resolvedTeacherNumeric > 0) {
+            resolvedTeacherIdByUserId.set(userId, resolvedTeacherNumeric);
+          }
 
-          const [existingArchive] = await connection.query<RowDataPacket[]>(
-            `SELECT archived_id FROM ${ARCHIVE_TABLE} WHERE user_id = ? LIMIT 1`,
-            [resolvedUserId],
-          );
-
+          const existingArchiveId = existingArchiveByUserId.get(resolvedUserId);
           let archivedIdForRelations: number | null = null;
 
-          if (existingArchive.length === 0) {
+          if (!existingArchiveId) {
             const columns: string[] = [];
             const values: any[] = [];
 
@@ -315,7 +398,7 @@ export async function POST(request: NextRequest) {
               pushValue("snapshot_json", JSON.stringify(snapshot));
             }
 
-            const placeholders = columns.map(() => "?").join(", ");
+            const placeholders = buildPlaceholders(columns.length);
             const columnsSql = columns.join(", ");
 
             const [insertResult] = await connection.query<ResultSetHeader>(
@@ -327,166 +410,258 @@ export async function POST(request: NextRequest) {
           } else if (archiveColumns.has("user_id")) {
             await connection.query<ResultSetHeader>(
               `UPDATE \`${ARCHIVE_TABLE}\` SET user_id = ? WHERE archived_id = ? AND (user_id IS NULL OR user_id = 0)`,
-              [resolvedUserId, existingArchive[0]?.archived_id],
+              [resolvedUserId, existingArchiveId],
             );
-            const existingId = Number(existingArchive[0]?.archived_id);
-            archivedIdForRelations = Number.isInteger(existingId) && existingId > 0 ? existingId : null;
+            archivedIdForRelations = existingArchiveId;
           }
 
-          if (
-            archivedIdForRelations !== null &&
-            archivedTeacherHandledColumns &&
-            archivedTeacherHandledColumns.size > 0 &&
-            teacherHandledColumns &&
-            teacherHandledColumns.has("teacher_id")
-          ) {
-            const [handledRows] = await connection.query<RowDataPacket[]>(
-              "SELECT teacher_id, grade_id FROM teacher_handled WHERE teacher_id = ?",
-              [resolvedTeacherId],
-            );
-
-            for (const row of handledRows) {
-              const columns: string[] = [];
-              const values: any[] = [];
-              const pushValue = (column: string, value: any) => {
-                columns.push(`\`${column}\``);
-                values.push(value);
-              };
-
-              if (archivedTeacherHandledColumns.has("archived_id")) {
-                pushValue("archived_id", archivedIdForRelations);
-              }
-              if (archivedTeacherHandledColumns.has("teacher_id")) {
-                pushValue("teacher_id", row.teacher_id ?? resolvedTeacherId);
-              }
-              if (archivedTeacherHandledColumns.has("grade_id") && row.grade_id != null) {
-                pushValue("grade_id", row.grade_id);
-              }
-              if (archivedTeacherHandledColumns.has("archived_at")) {
-                pushValue("archived_at", new Date());
-              }
-
-              if (columns.length > 0) {
-                const placeholders = columns.map(() => "?").join(", ");
-                const columnsSql = columns.join(", ");
-                await connection.query<ResultSetHeader>(
-                  `INSERT INTO archived_teacher_handled (${columnsSql}) VALUES (${placeholders})`,
-                  values,
-                );
-              }
+          if (archivedIdForRelations !== null) {
+            archivedIdByUserId.set(resolvedUserId, archivedIdForRelations);
+            const resolvedTeacherNumericId = resolvedTeacherIdByUserId.get(userId);
+            if (resolvedTeacherNumericId) {
+              archivedIdByTeacherId.set(resolvedTeacherNumericId, archivedIdForRelations);
             }
           }
-
-          if (teacherRow) {
-            for (const [tableName, entries] of teacherReferencingMap) {
-              if (!entries.length) {
-                continue;
-              }
-
-              if (teacherTable && tableName.toLowerCase() === teacherTable.toLowerCase()) {
-                continue;
-              }
-
-              for (const { column, referencedColumn } of entries) {
-                if (!column || !referencedColumn) {
-                  continue;
-                }
-                const value = teacherRow[referencedColumn];
-                if (value === null || value === undefined) {
-                  continue;
-                }
-                await connection.query<ResultSetHeader>(
-                  `DELETE FROM \`${tableName}\` WHERE \`${column}\` = ?`,
-                  [value],
-                );
-              }
-            }
-          }
-
-          if (teacherTable) {
-            if (teacherColumns.has("user_id")) {
-              await connection.query<ResultSetHeader>(
-                `DELETE FROM \`${teacherTable}\` WHERE user_id = ?`,
-                [userId],
-              );
-            } else if (teacherColumns.has("teacher_id")) {
-              await connection.query<ResultSetHeader>(
-                `DELETE FROM \`${teacherTable}\` WHERE teacher_id = ?`,
-                [userId],
-              );
-            } else if (teacherColumns.has("employee_id")) {
-              await connection.query<ResultSetHeader>(
-                `DELETE FROM \`${teacherTable}\` WHERE employee_id = ?`,
-                [userId],
-              );
-            }
-          }
-
-          if (teacherHandledColumns && teacherHandledColumns.size > 0) {
-            if (teacherHandledColumns.has("teacher_id")) {
-              await connection.query<ResultSetHeader>(
-                "DELETE FROM `teacher_handled` WHERE teacher_id = ?",
-                [resolvedTeacherId],
-              );
-            } else if (teacherHandledColumns.has("user_id")) {
-              await connection.query<ResultSetHeader>(
-                "DELETE FROM `teacher_handled` WHERE user_id = ?",
-                [userId],
-              );
-            }
-          }
-
-          if (mtCoordinatorHandledColumns && mtCoordinatorHandledColumns.size > 0) {
-            if (mtCoordinatorHandledColumns.has("master_teacher_id")) {
-              await connection.query<ResultSetHeader>(
-                "DELETE FROM `mt_coordinator_handled` WHERE master_teacher_id = ?",
-                [resolvedTeacherId],
-              );
-            } else if (mtCoordinatorHandledColumns.has("teacher_id")) {
-              await connection.query<ResultSetHeader>(
-                "DELETE FROM `mt_coordinator_handled` WHERE teacher_id = ?",
-                [resolvedTeacherId],
-              );
-            }
-          }
-
-          for (const [tableName, entries] of userReferencingMap) {
-            const normalizedTableName = tableName.toLowerCase();
-            if (normalizedTableName === "users") {
-              continue;
-            }
-            if (normalizedTableName === ARCHIVE_TABLE.toLowerCase()) {
-              continue;
-            }
-            if (normalizedTableName === "account_logs") {
-              continue;
-            }
-            if (teacherTable && normalizedTableName === teacherTable.toLowerCase()) {
-              continue;
-            }
-
-            for (const { column } of entries) {
-              if (!column) {
-                continue;
-              }
-              await connection.query<ResultSetHeader>(
-                `DELETE FROM \`${tableName}\` WHERE \`${column}\` = ?`,
-                [userId],
-              );
-            }
-          }
-
-          if (canDeleteAccountLogs) {
-            await connection.query<ResultSetHeader>("DELETE FROM `account_logs` WHERE user_id = ?", [userId]);
-          }
-
-          await connection.query<ResultSetHeader>("DELETE FROM users WHERE user_id = ?", [userId]);
 
           archived.push({
             userId,
             name,
             email,
           });
+        }
+
+        if (
+          archivedTeacherHandledColumns &&
+          archivedTeacherHandledColumns.size > 0 &&
+          teacherHandledColumns &&
+          teacherHandledColumns.size > 0
+        ) {
+          const handledRows: RowDataPacket[] = [];
+          const handledUsesUserId = teacherHandledColumns.has("user_id") && !teacherHandledColumns.has("teacher_id");
+          if (teacherHandledColumns.has("teacher_id")) {
+            const teacherIds = uniqueNumbers(Array.from(resolvedTeacherIdByUserId.values()));
+            for (const chunk of chunkArray(teacherIds, IN_CHUNK_SIZE)) {
+              const placeholders = buildPlaceholders(chunk.length);
+              const [rows] = await connection.query<RowDataPacket[]>(
+                `SELECT teacher_id, grade_id FROM teacher_handled WHERE teacher_id IN (${placeholders})`,
+                chunk,
+              );
+              handledRows.push(...rows);
+            }
+          } else if (teacherHandledColumns.has("user_id")) {
+            for (const chunk of chunkArray(foundUserIds, IN_CHUNK_SIZE)) {
+              const placeholders = buildPlaceholders(chunk.length);
+              const [rows] = await connection.query<RowDataPacket[]>(
+                `SELECT user_id, grade_id FROM teacher_handled WHERE user_id IN (${placeholders})`,
+                chunk,
+              );
+              handledRows.push(...rows);
+            }
+          }
+
+          if (handledRows.length > 0) {
+            const insertColumns: string[] = [];
+            if (archivedTeacherHandledColumns.has("archived_id")) {
+              insertColumns.push("archived_id");
+            }
+            if (archivedTeacherHandledColumns.has("teacher_id")) {
+              insertColumns.push("teacher_id");
+            }
+            if (archivedTeacherHandledColumns.has("grade_id")) {
+              insertColumns.push("grade_id");
+            }
+            if (archivedTeacherHandledColumns.has("archived_at")) {
+              insertColumns.push("archived_at");
+            }
+
+            if (insertColumns.length === 0) {
+              handledRows.length = 0;
+            }
+
+            const insertValues: any[][] = [];
+            for (const row of handledRows) {
+              const teacherIdValue = Number(row.teacher_id ?? row.user_id ?? 0);
+              if (!Number.isInteger(teacherIdValue) || teacherIdValue <= 0) {
+                continue;
+              }
+              const archivedId = handledUsesUserId
+                ? archivedIdByUserId.get(teacherIdValue) ?? archivedIdByTeacherId.get(teacherIdValue)
+                : archivedIdByTeacherId.get(teacherIdValue);
+              if (!archivedId) {
+                continue;
+              }
+              const rowValues: any[] = [];
+              for (const column of insertColumns) {
+                if (column === "archived_id") {
+                  rowValues.push(archivedId);
+                } else if (column === "teacher_id") {
+                  rowValues.push(teacherIdValue);
+                } else if (column === "grade_id") {
+                  rowValues.push(row.grade_id ?? null);
+                } else if (column === "archived_at") {
+                  rowValues.push(new Date());
+                }
+              }
+              if (rowValues.length > 0) {
+                insertValues.push(rowValues);
+              }
+            }
+
+            const columnSql = insertColumns.map((column) => `\`${column}\``).join(", ");
+            const rowPlaceholder = `(${buildPlaceholders(insertColumns.length)})`;
+            for (const chunk of chunkArray(insertValues, IN_CHUNK_SIZE)) {
+              const placeholders = new Array(chunk.length).fill(rowPlaceholder).join(", ");
+              const flatValues = chunk.flat();
+              await connection.query<ResultSetHeader>(
+                `INSERT INTO archived_teacher_handled (${columnSql}) VALUES ${placeholders}`,
+                flatValues,
+              );
+            }
+          }
+        }
+
+        if (teacherTable) {
+          let deleteColumn: string | null = null;
+          if (teacherColumns.has("user_id")) {
+            deleteColumn = "user_id";
+          } else if (teacherColumns.has("teacher_id")) {
+            deleteColumn = "teacher_id";
+          } else if (teacherColumns.has("employee_id")) {
+            deleteColumn = "employee_id";
+          }
+
+          if (deleteColumn) {
+            for (const chunk of chunkArray(foundUserIds, IN_CHUNK_SIZE)) {
+              const placeholders = buildPlaceholders(chunk.length);
+              await connection.query<ResultSetHeader>(
+                `DELETE FROM \`${teacherTable}\` WHERE \`${deleteColumn}\` IN (${placeholders})`,
+                chunk,
+              );
+            }
+          }
+        }
+
+        if (teacherHandledColumns && teacherHandledColumns.size > 0) {
+          if (teacherHandledColumns.has("teacher_id")) {
+            const teacherIds = uniqueNumbers(Array.from(resolvedTeacherIdByUserId.values()));
+            for (const chunk of chunkArray(teacherIds, IN_CHUNK_SIZE)) {
+              const placeholders = buildPlaceholders(chunk.length);
+              await connection.query<ResultSetHeader>(
+                `DELETE FROM \`teacher_handled\` WHERE teacher_id IN (${placeholders})`,
+                chunk,
+              );
+            }
+          } else if (teacherHandledColumns.has("user_id")) {
+            for (const chunk of chunkArray(foundUserIds, IN_CHUNK_SIZE)) {
+              const placeholders = buildPlaceholders(chunk.length);
+              await connection.query<ResultSetHeader>(
+                `DELETE FROM \`teacher_handled\` WHERE user_id IN (${placeholders})`,
+                chunk,
+              );
+            }
+          }
+        }
+
+        if (mtCoordinatorHandledColumns && mtCoordinatorHandledColumns.size > 0) {
+          const teacherIds = uniqueNumbers(Array.from(resolvedTeacherIdByUserId.values()));
+          if (mtCoordinatorHandledColumns.has("master_teacher_id")) {
+            for (const chunk of chunkArray(teacherIds, IN_CHUNK_SIZE)) {
+              const placeholders = buildPlaceholders(chunk.length);
+              await connection.query<ResultSetHeader>(
+                `DELETE FROM \`mt_coordinator_handled\` WHERE master_teacher_id IN (${placeholders})`,
+                chunk,
+              );
+            }
+          } else if (mtCoordinatorHandledColumns.has("teacher_id")) {
+            for (const chunk of chunkArray(teacherIds, IN_CHUNK_SIZE)) {
+              const placeholders = buildPlaceholders(chunk.length);
+              await connection.query<ResultSetHeader>(
+                `DELETE FROM \`mt_coordinator_handled\` WHERE teacher_id IN (${placeholders})`,
+                chunk,
+              );
+            }
+          }
+        }
+
+        if (teacherReferencingMap.size > 0 && teacherRowByLookup.size > 0) {
+          const teacherRows = Array.from(teacherRowByLookup.values());
+          for (const [tableName, entries] of teacherReferencingMap) {
+            if (!entries.length) {
+              continue;
+            }
+            if (teacherTable && tableName.toLowerCase() === teacherTable.toLowerCase()) {
+              continue;
+            }
+
+            for (const { column, referencedColumn } of entries) {
+              if (!column || !referencedColumn) {
+                continue;
+              }
+              const values = new Set<any>();
+              for (const teacherRow of teacherRows) {
+                const value = getColumnValue(teacherRow, referencedColumn);
+                if (value !== null && value !== undefined) {
+                  values.add(value);
+                }
+              }
+
+              const valueList = Array.from(values);
+              for (const chunk of chunkArray(valueList, IN_CHUNK_SIZE)) {
+                const placeholders = buildPlaceholders(chunk.length);
+                await connection.query<ResultSetHeader>(
+                  `DELETE FROM \`${tableName}\` WHERE \`${column}\` IN (${placeholders})`,
+                  chunk,
+                );
+              }
+            }
+          }
+        }
+
+        for (const [tableName, entries] of userReferencingMap) {
+          const normalizedTableName = tableName.toLowerCase();
+          if (normalizedTableName === "users") {
+            continue;
+          }
+          if (normalizedTableName === ARCHIVE_TABLE.toLowerCase()) {
+            continue;
+          }
+          if (normalizedTableName === "account_logs") {
+            continue;
+          }
+          if (teacherTable && normalizedTableName === teacherTable.toLowerCase()) {
+            continue;
+          }
+
+          for (const { column } of entries) {
+            if (!column) {
+              continue;
+            }
+            for (const chunk of chunkArray(foundUserIds, IN_CHUNK_SIZE)) {
+              const placeholders = buildPlaceholders(chunk.length);
+              await connection.query<ResultSetHeader>(
+                `DELETE FROM \`${tableName}\` WHERE \`${column}\` IN (${placeholders})`,
+                chunk,
+              );
+            }
+          }
+        }
+
+        if (canDeleteAccountLogs) {
+          for (const chunk of chunkArray(foundUserIds, IN_CHUNK_SIZE)) {
+            const placeholders = buildPlaceholders(chunk.length);
+            await connection.query<ResultSetHeader>(
+              `DELETE FROM \`account_logs\` WHERE user_id IN (${placeholders})`,
+              chunk,
+            );
+          }
+        }
+
+        for (const chunk of chunkArray(foundUserIds, IN_CHUNK_SIZE)) {
+          const placeholders = buildPlaceholders(chunk.length);
+          await connection.query<ResultSetHeader>(
+            `DELETE FROM users WHERE user_id IN (${placeholders})`,
+            chunk,
+          );
         }
 
         await connection.commit();

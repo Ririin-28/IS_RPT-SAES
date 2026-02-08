@@ -222,6 +222,24 @@ export interface CreateTeacherResult {
   temporaryPassword: string;
 }
 
+export interface BulkCreateTeacherItem extends CreateTeacherInput {
+  index: number;
+}
+
+export interface BulkCreateTeacherResult {
+  inserted: Array<{
+    index: number;
+    userId: number;
+    record: CreateTeacherResult["record"];
+    temporaryPassword: string;
+  }>;
+  failures: Array<{
+    index: number;
+    email: string | null;
+    error: string;
+  }>;
+}
+
 const TEACHER_TABLE_CANDIDATES = [
   "teacher",
   "teachers",
@@ -252,6 +270,32 @@ const REMEDIAL_TEACHER_TABLE_CANDIDATES = [
   "remedial_teacher_info",
   "remedial_teacher_tbl",
 ] as const;
+
+const BULK_INSERT_CHUNK_SIZE = 100;
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  if (items.length === 0) {
+    return [];
+  }
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
+
+function buildPlaceholders(count: number): string {
+  return new Array(count).fill("?").join(", ");
+}
+
+function parseTeacherIdSequence(teacherId: string): number | null {
+  const match = teacherId.match(TEACHER_ID_PATTERN);
+  if (!match) {
+    return null;
+  }
+  const seq = Number.parseInt(match[2], 10);
+  return Number.isFinite(seq) ? seq : null;
+}
 
 async function resolveRemedialTeacherTable(connection: PoolConnection): Promise<{ table: string | null; columns: Set<string> }> {
   for (const candidate of REMEDIAL_TEACHER_TABLE_CANDIDATES) {
@@ -688,4 +732,413 @@ export async function createTeacher(input: CreateTeacherInput): Promise<CreateTe
     record: result.record,
     temporaryPassword,
   };
+}
+
+export async function createTeachersBulk(items: BulkCreateTeacherItem[]): Promise<BulkCreateTeacherResult> {
+  if (items.length === 0) {
+    return { inserted: [], failures: [] };
+  }
+
+  return runWithConnection(async (connection) => {
+    const failures: BulkCreateTeacherResult["failures"] = [];
+    const inserted: BulkCreateTeacherResult["inserted"] = [];
+
+    const userColumns = await getColumnsForTable(connection, "users");
+    const teacherInfo = await resolveTeacherTable(connection);
+    const remedialTeacherInfo = await resolveRemedialTeacherTable(connection);
+    const teacherHandledColumns = await getColumnsForTable(connection, "teacher_handled").catch(() => new Set<string>());
+
+    const teacherIdSources: Array<{ table: string; column: string }> = [];
+    if (userColumns.has("teacher_id")) {
+      teacherIdSources.push({ table: "users", column: "teacher_id" });
+    }
+    if (teacherInfo.table) {
+      for (const column of ["teacher_id", "teacherid", "employee_id", "faculty_id"]) {
+        if (teacherInfo.columns.has(column)) {
+          teacherIdSources.push({ table: teacherInfo.table, column });
+        }
+      }
+    }
+    if (remedialTeacherInfo.table) {
+      for (const column of ["teacher_id", "teacherid", "faculty_id", "master_teacher_id"]) {
+        if (remedialTeacherInfo.columns.has(column)) {
+          teacherIdSources.push({ table: remedialTeacherInfo.table, column });
+        }
+      }
+    }
+    try {
+      const archivedColumns = await getColumnsForTable(connection, "archived_users");
+      if (archivedColumns.has("teacher_id")) {
+        teacherIdSources.push({ table: "archived_users", column: "teacher_id" });
+      } else if (archivedColumns.has("user_code")) {
+        teacherIdSources.push({ table: "archived_users", column: "user_code" });
+      }
+    } catch {
+      // ignore archived_users absence
+    }
+
+    let teacherRoleId: number | null = null;
+    try {
+      const roleColumns = await getColumnsForTable(connection, "role");
+      if (roleColumns.has("role_id") && roleColumns.has("role_name")) {
+        const [roleRows] = await connection.query<RowDataPacket[]>(
+          "SELECT role_id FROM role WHERE LOWER(role_name) IN ('teacher','faculty','instructor') LIMIT 1",
+        );
+        if (Array.isArray(roleRows) && roleRows.length > 0) {
+          const parsed = Number(roleRows[0].role_id);
+          teacherRoleId = Number.isFinite(parsed) ? parsed : null;
+        }
+      }
+    } catch {
+      teacherRoleId = null;
+    }
+
+    const requestTime = new Date();
+    const currentYear = requestTime.getFullYear();
+    const generatedTeacherId = await generateTeacherId(connection, teacherIdSources, currentYear);
+    let nextTeacherSequence = parseTeacherIdSequence(generatedTeacherId) ?? 1;
+    const yearSuffix = String(currentYear).slice(-2);
+
+    const prepared = items.map((item) => {
+      const fullName = buildFullName(item.firstName, item.middleName, item.lastName, item.suffix ?? null);
+      const temporaryPassword = generateTemporaryPassword();
+      const teacherIdValue = item.teacherId
+        ? formatTeacherIdentifier(item.teacherId, undefined, currentYear)
+        : `TE-${yearSuffix}${String(nextTeacherSequence++).padStart(4, "0")}`;
+      return {
+        ...item,
+        fullName,
+        temporaryPassword,
+        teacherIdValue,
+      };
+    });
+
+    const emailList = prepared.map((entry) => entry.email);
+    const existingEmails = new Set<string>();
+    for (const chunk of chunkArray(emailList, BULK_INSERT_CHUNK_SIZE)) {
+      const placeholders = buildPlaceholders(chunk.length);
+      const [rows] = await connection.query<RowDataPacket[]>(
+        `SELECT email FROM users WHERE email IN (${placeholders})`,
+        chunk,
+      );
+      for (const row of rows) {
+        if (typeof row.email === "string") {
+          existingEmails.add(row.email.toLowerCase());
+        }
+      }
+    }
+
+    const pending = prepared.filter((entry) => {
+      if (existingEmails.has(entry.email.toLowerCase())) {
+        failures.push({ index: entry.index, email: entry.email, error: "Email already exists." });
+        return false;
+      }
+      return true;
+    });
+
+    const userInsertColumns: string[] = [];
+    if (userColumns.has("first_name")) userInsertColumns.push("first_name");
+    if (userColumns.has("middle_name")) userInsertColumns.push("middle_name");
+    if (userColumns.has("last_name")) userInsertColumns.push("last_name");
+    if (userColumns.has("suffix")) userInsertColumns.push("suffix");
+    if (userColumns.has("name")) userInsertColumns.push("name");
+    if (userColumns.has("email")) userInsertColumns.push("email");
+    if (userColumns.has("username")) userInsertColumns.push("username");
+    if (userColumns.has("contact_number")) userInsertColumns.push("contact_number");
+    if (userColumns.has("phone_number")) userInsertColumns.push("phone_number");
+    if (userColumns.has("role")) userInsertColumns.push("role");
+    if (userColumns.has("role_id") && teacherRoleId !== null) userInsertColumns.push("role_id");
+    for (const column of ["teacher_id", "teacherid", "employee_id", "faculty_id"]) {
+      if (userColumns.has(column)) userInsertColumns.push(column);
+    }
+    if (userColumns.has("user_code")) userInsertColumns.push("user_code");
+    if (userColumns.has("status")) userInsertColumns.push("status");
+    if (userColumns.has("password")) userInsertColumns.push("password");
+    if (userColumns.has("created_at")) userInsertColumns.push("created_at");
+    if (userColumns.has("updated_at")) userInsertColumns.push("updated_at");
+
+    if (userInsertColumns.length === 0) {
+      throw new HttpError(500, "Unable to determine columns for users table.");
+    }
+
+    const userColumnsSql = userInsertColumns.map((column) => `\`${column}\``).join(", ");
+    const userRowPlaceholder = `(${buildPlaceholders(userInsertColumns.length)})`;
+
+    const buildUserRowValues = (entry: typeof pending[number]): any[] => {
+      const values: any[] = [];
+      for (const column of userInsertColumns) {
+        if (column === "first_name") values.push(entry.firstName);
+        else if (column === "middle_name") values.push(entry.middleName);
+        else if (column === "last_name") values.push(entry.lastName);
+        else if (column === "suffix") values.push(entry.suffix ?? null);
+        else if (column === "name") values.push(entry.fullName);
+        else if (column === "email") values.push(entry.email);
+        else if (column === "username") values.push(entry.email);
+        else if (column === "contact_number") values.push(entry.phoneNumber);
+        else if (column === "phone_number") values.push(entry.phoneNumber);
+        else if (column === "role") values.push("teacher");
+        else if (column === "role_id") values.push(teacherRoleId);
+        else if (["teacher_id", "teacherid", "employee_id", "faculty_id"].includes(column)) values.push(entry.teacherIdValue);
+        else if (column === "user_code") values.push(entry.teacherIdValue);
+        else if (column === "status") values.push("Active");
+        else if (column === "password") values.push(entry.temporaryPassword);
+        else if (column === "created_at") values.push(requestTime);
+        else if (column === "updated_at") values.push(requestTime);
+        else values.push(null);
+      }
+      return values;
+    };
+
+    const teacherInsertColumns: string[] = [];
+    if (teacherInfo.table) {
+      if (teacherInfo.columns.has("user_id")) teacherInsertColumns.push("user_id");
+      for (const candidate of ["teacher_id", "teacherid", "employee_id", "faculty_id"]) {
+        if (teacherInfo.columns.has(candidate)) teacherInsertColumns.push(candidate);
+      }
+      if (teacherInfo.columns.has("first_name")) teacherInsertColumns.push("first_name");
+      if (teacherInfo.columns.has("middle_name")) teacherInsertColumns.push("middle_name");
+      if (teacherInfo.columns.has("last_name")) teacherInsertColumns.push("last_name");
+      if (teacherInfo.columns.has("suffix")) teacherInsertColumns.push("suffix");
+      if (teacherInfo.columns.has("name")) teacherInsertColumns.push("name");
+      if (teacherInfo.columns.has("email")) teacherInsertColumns.push("email");
+      if (teacherInfo.columns.has("contact_number")) teacherInsertColumns.push("contact_number");
+      if (teacherInfo.columns.has("phone_number")) teacherInsertColumns.push("phone_number");
+      for (const column of ["grade", "grade_level", "year_level", "handled_grade"]) {
+        if (teacherInfo.columns.has(column)) teacherInsertColumns.push(column);
+      }
+      for (const column of ["section", "section_name", "class_section"]) {
+        if (teacherInfo.columns.has(column)) teacherInsertColumns.push(column);
+      }
+      for (const column of ["subjects", "handled_subjects", "subject"]) {
+        if (teacherInfo.columns.has(column)) teacherInsertColumns.push(column);
+      }
+      if (teacherInfo.columns.has("status")) teacherInsertColumns.push("status");
+      if (teacherInfo.columns.has("role")) teacherInsertColumns.push("role");
+      if (teacherInfo.columns.has("created_at")) teacherInsertColumns.push("created_at");
+      if (teacherInfo.columns.has("updated_at")) teacherInsertColumns.push("updated_at");
+    }
+
+    const remedialInsertColumns: string[] = [];
+    if (remedialTeacherInfo.table && remedialTeacherInfo.table !== teacherInfo.table) {
+      if (remedialTeacherInfo.columns.has("user_id")) remedialInsertColumns.push("user_id");
+      for (const candidate of ["teacher_id", "teacherid", "faculty_id", "master_teacher_id"]) {
+        if (remedialTeacherInfo.columns.has(candidate)) remedialInsertColumns.push(candidate);
+      }
+      if (remedialTeacherInfo.columns.has("first_name")) remedialInsertColumns.push("first_name");
+      if (remedialTeacherInfo.columns.has("middle_name")) remedialInsertColumns.push("middle_name");
+      if (remedialTeacherInfo.columns.has("last_name")) remedialInsertColumns.push("last_name");
+      if (remedialTeacherInfo.columns.has("suffix")) remedialInsertColumns.push("suffix");
+      if (remedialTeacherInfo.columns.has("name")) remedialInsertColumns.push("name");
+      if (remedialTeacherInfo.columns.has("email")) remedialInsertColumns.push("email");
+      if (remedialTeacherInfo.columns.has("contact_number")) remedialInsertColumns.push("contact_number");
+      if (remedialTeacherInfo.columns.has("phone_number")) remedialInsertColumns.push("phone_number");
+      for (const column of [
+        "grade",
+        "grade_level",
+        "gradeLevel",
+        "year_level",
+        "handled_grade",
+        "remedial_grade",
+        "remedial_teacher_grade",
+      ]) {
+        if (remedialTeacherInfo.columns.has(column)) remedialInsertColumns.push(column);
+      }
+      for (const column of ["subjects", "handled_subjects", "subject"]) {
+        if (remedialTeacherInfo.columns.has(column)) remedialInsertColumns.push(column);
+      }
+      if (remedialTeacherInfo.columns.has("status")) remedialInsertColumns.push("status");
+      if (remedialTeacherInfo.columns.has("created_at")) remedialInsertColumns.push("created_at");
+      if (remedialTeacherInfo.columns.has("updated_at")) remedialInsertColumns.push("updated_at");
+    }
+
+    for (const chunk of chunkArray(pending, BULK_INSERT_CHUNK_SIZE)) {
+      await connection.beginTransaction();
+      try {
+        const userValues: any[] = [];
+        const userPlaceholders: string[] = [];
+        for (const entry of chunk) {
+          userValues.push(...buildUserRowValues(entry));
+          userPlaceholders.push(userRowPlaceholder);
+        }
+
+        await connection.query<ResultSetHeader>(
+          `INSERT INTO users (${userColumnsSql}) VALUES ${userPlaceholders.join(", ")}`,
+          userValues,
+        );
+
+        const userIdByEmail = new Map<string, number>();
+        const chunkEmails = chunk.map((entry) => entry.email);
+        for (const emailChunk of chunkArray(chunkEmails, BULK_INSERT_CHUNK_SIZE)) {
+          const placeholders = buildPlaceholders(emailChunk.length);
+          const [rows] = await connection.query<RowDataPacket[]>(
+            `SELECT user_id, email FROM users WHERE email IN (${placeholders})`,
+            emailChunk,
+          );
+          for (const row of rows) {
+            if (typeof row.email === "string") {
+              const id = Number(row.user_id);
+              if (Number.isInteger(id)) {
+                userIdByEmail.set(row.email.toLowerCase(), id);
+              }
+            }
+          }
+        }
+
+        if (teacherInfo.table && teacherInsertColumns.length > 0) {
+          const teacherColumnSql = teacherInsertColumns.map((column) => `\`${column}\``).join(", ");
+          const teacherRowPlaceholder = `(${buildPlaceholders(teacherInsertColumns.length)})`;
+          const teacherValues: any[] = [];
+          const teacherPlaceholders: string[] = [];
+          for (const entry of chunk) {
+            const userId = userIdByEmail.get(entry.email.toLowerCase());
+            if (!userId) {
+              continue;
+            }
+            for (const column of teacherInsertColumns) {
+              if (column === "user_id") teacherValues.push(userId);
+              else if (["teacher_id", "teacherid", "employee_id", "faculty_id"].includes(column)) teacherValues.push(entry.teacherIdValue);
+              else if (column === "first_name") teacherValues.push(entry.firstName);
+              else if (column === "middle_name") teacherValues.push(entry.middleName);
+              else if (column === "last_name") teacherValues.push(entry.lastName);
+              else if (column === "suffix") teacherValues.push(entry.suffix ?? null);
+              else if (column === "name") teacherValues.push(entry.fullName);
+              else if (column === "email") teacherValues.push(entry.email);
+              else if (column === "contact_number") teacherValues.push(entry.phoneNumber);
+              else if (column === "phone_number") teacherValues.push(entry.phoneNumber);
+              else if (["grade", "grade_level", "year_level", "handled_grade"].includes(column)) teacherValues.push(entry.grade);
+              else if (["section", "section_name", "class_section"].includes(column)) teacherValues.push(entry.section ?? null);
+              else if (["subjects", "handled_subjects", "subject"].includes(column)) teacherValues.push(entry.subjects ?? null);
+              else if (column === "status") teacherValues.push("Active");
+              else if (column === "role") teacherValues.push("teacher");
+              else if (column === "created_at") teacherValues.push(requestTime);
+              else if (column === "updated_at") teacherValues.push(requestTime);
+              else teacherValues.push(null);
+            }
+            teacherPlaceholders.push(teacherRowPlaceholder);
+          }
+          if (teacherPlaceholders.length > 0) {
+            await connection.query<ResultSetHeader>(
+              `INSERT INTO \`${teacherInfo.table}\` (${teacherColumnSql}) VALUES ${teacherPlaceholders.join(", ")}`,
+              teacherValues,
+            );
+          }
+        }
+
+        if (teacherHandledColumns.has("teacher_id") && teacherHandledColumns.has("grade_id")) {
+          const handledValues: any[] = [];
+          const handledPlaceholders: string[] = [];
+          for (const entry of chunk) {
+            const gradeIdNumeric = Number.parseInt(entry.grade, 10);
+            if (Number.isFinite(gradeIdNumeric) && gradeIdNumeric > 0) {
+              handledValues.push(entry.teacherIdValue, gradeIdNumeric);
+              handledPlaceholders.push("(?, ?)");
+            }
+          }
+          if (handledPlaceholders.length > 0) {
+            await connection.query<ResultSetHeader>(
+              `INSERT INTO \`teacher_handled\` (teacher_id, grade_id) VALUES ${handledPlaceholders.join(", ")}`,
+              handledValues,
+            );
+          }
+        }
+
+        if (remedialTeacherInfo.table && remedialInsertColumns.length > 0) {
+          const remedialColumnSql = remedialInsertColumns.map((column) => `\`${column}\``).join(", ");
+          const remedialRowPlaceholder = `(${buildPlaceholders(remedialInsertColumns.length)})`;
+          const remedialValues: any[] = [];
+          const remedialPlaceholders: string[] = [];
+          for (const entry of chunk) {
+            const userId = userIdByEmail.get(entry.email.toLowerCase());
+            if (!userId) {
+              continue;
+            }
+            for (const column of remedialInsertColumns) {
+              if (column === "user_id") remedialValues.push(userId);
+              else if (["teacher_id", "teacherid", "faculty_id", "master_teacher_id"].includes(column)) remedialValues.push(entry.teacherIdValue);
+              else if (column === "first_name") remedialValues.push(entry.firstName);
+              else if (column === "middle_name") remedialValues.push(entry.middleName);
+              else if (column === "last_name") remedialValues.push(entry.lastName);
+              else if (column === "suffix") remedialValues.push(entry.suffix ?? null);
+              else if (column === "name") remedialValues.push(entry.fullName);
+              else if (column === "email") remedialValues.push(entry.email);
+              else if (column === "contact_number") remedialValues.push(entry.phoneNumber);
+              else if (column === "phone_number") remedialValues.push(entry.phoneNumber);
+              else if ([
+                "grade",
+                "grade_level",
+                "gradeLevel",
+                "year_level",
+                "handled_grade",
+                "remedial_grade",
+                "remedial_teacher_grade",
+              ].includes(column)) remedialValues.push(entry.grade);
+              else if (["subjects", "handled_subjects", "subject"].includes(column)) remedialValues.push(entry.subjects ?? null);
+              else if (column === "status") remedialValues.push("Active");
+              else if (column === "created_at") remedialValues.push(requestTime);
+              else if (column === "updated_at") remedialValues.push(requestTime);
+              else remedialValues.push(null);
+            }
+            remedialPlaceholders.push(remedialRowPlaceholder);
+          }
+          if (remedialPlaceholders.length > 0) {
+            await connection.query<ResultSetHeader>(
+              `INSERT INTO \`${remedialTeacherInfo.table}\` (${remedialColumnSql}) VALUES ${remedialPlaceholders.join(", ")}`,
+              remedialValues,
+            );
+          }
+        }
+
+        await connection.commit();
+
+        for (const entry of chunk) {
+          const userId = userIdByEmail.get(entry.email.toLowerCase());
+          if (!userId) {
+            failures.push({ index: entry.index, email: entry.email, error: "Failed to resolve user ID." });
+            continue;
+          }
+          inserted.push({
+            index: entry.index,
+            userId,
+            temporaryPassword: entry.temporaryPassword,
+            record: {
+              userId,
+              teacherId: entry.teacherIdValue,
+              firstName: entry.firstName,
+              middleName: entry.middleName,
+              lastName: entry.lastName,
+              name: entry.fullName,
+              email: entry.email,
+              contactNumber: entry.phoneNumber,
+              grade: entry.grade,
+              section: entry.section ?? null,
+              subjects: entry.subjects ?? null,
+              status: "Active",
+              lastLogin: null,
+              suffix: entry.suffix ?? null,
+            },
+          });
+        }
+      } catch (error) {
+        await connection.rollback();
+        for (const entry of chunk) {
+          try {
+            const singleResult = await createTeacher(entry);
+            inserted.push({
+              index: entry.index,
+              userId: singleResult.userId,
+              record: singleResult.record,
+              temporaryPassword: singleResult.temporaryPassword,
+            });
+          } catch (singleError) {
+            const errorMessage = singleError instanceof HttpError
+              ? singleError.message
+              : "Unexpected error while importing.";
+            failures.push({ index: entry.index, email: entry.email, error: errorMessage });
+          }
+        }
+      }
+    }
+
+    return { inserted, failures };
+  });
 }

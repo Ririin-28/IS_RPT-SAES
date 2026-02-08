@@ -581,20 +581,21 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
       setSaving(true);
       setError(null);
       try {
-        await Promise.all(
-          ids.map(async (id) => {
-            const response = await fetch(
-              `/api/master_teacher/coordinator/students/${id}?userId=${encodeURIComponent(String(userId))}&subject=${encodeURIComponent(subject)}`,
-              {
-                method: "DELETE",
-              },
-            );
-            if (!response.ok) {
-              const payload = await response.json().catch(() => null);
-              throw new Error(payload?.error ?? "Failed to delete student");
-            }
+        const response = await fetch("/api/master_teacher/coordinator/students", {
+          method: "DELETE",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            userId,
+            subject,
+            ids,
           }),
-        );
+        });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          throw new Error(payload?.error ?? "Failed to delete students");
+        }
         await fetchStudents();
       } catch (err) {
         console.error("Failed to delete students", err);
@@ -665,6 +666,7 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
     if (existingWithSameLrn) {
       setDuplicateLrn(normalizedNewLrn);
       setDuplicateStudent(existingWithSameLrn);
+      setShowModal(false);
       setShowDuplicateModal(true);
       return;
     }
@@ -690,6 +692,7 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
             const name = formatStudentDisplayName(transformApiRecord(record));
             setCrossGradeLrn(normalizedNewLrn);
             setCrossGradeStudentName(name || "Existing student");
+            setShowModal(false);
             setShowCrossGradeModal(true);
             return;
           }

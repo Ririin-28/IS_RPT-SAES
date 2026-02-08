@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  deleteStudents,
   fetchStudents as fetchStudentRecords,
   fetchStudentByLrnAcrossSubjects,
   insertStudents,
@@ -173,6 +174,42 @@ export async function POST(request: NextRequest) {
     console.error("Failed to insert student records", error);
     return NextResponse.json(
       { success: false, error: "Unable to save student records." },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  let payload: Record<string, unknown> | null = null;
+  try {
+    payload = (await request.json()) as Record<string, unknown>;
+  } catch (error) {
+    console.error("Invalid bulk delete payload", error);
+    return respondWithError("Invalid JSON payload.");
+  }
+
+  const userId = Number(payload?.userId);
+  if (!Number.isFinite(userId) || userId <= 0) {
+    return respondWithError("userId must be provided for deletions.");
+  }
+
+  const subject = resolveStudentSubject(payload?.subject, SUBJECT_FALLBACK);
+  const rawIds = Array.isArray(payload?.ids) ? payload?.ids : [];
+  const ids = rawIds
+    .map((value) => String(value).trim())
+    .filter((value) => value.length > 0);
+
+  if (ids.length === 0) {
+    return respondWithError("ids array is required.");
+  }
+
+  try {
+    const deleted = await deleteStudents(userId, subject, ids);
+    return NextResponse.json({ success: true, deleted });
+  } catch (error) {
+    console.error("Failed to bulk delete students", error);
+    return NextResponse.json(
+      { success: false, error: "Unable to delete students." },
       { status: 500 },
     );
   }
