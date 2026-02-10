@@ -12,7 +12,6 @@ const ATTENDANCE_RECORD_TABLE = "attendance_record";
 const PARENT_NOTIFICATIONS_TABLE = "parent_notifications";
 const SUBJECT_TABLE_CANDIDATES = ["subject", "subjects"] as const;
 const MT_REMEDIAL_HANDLED_TABLE = "mt_remedialteacher_handled";
-const MASTER_TEACHER_TABLE = "master_teacher";
 const STUDENT_TEACHER_ASSIGNMENT_TABLE = "student_teacher_assignment";
 
 const ISO_DATE_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -75,17 +74,6 @@ const resolveSubjectId = async (subjectLabel: string): Promise<number | null> =>
   return Number.isFinite(id) ? id : null;
 };
 
-const resolveMasterTeacherId = async (userId: number): Promise<string | null> => {
-  if (!Number.isFinite(userId) || userId <= 0) return null;
-  const [rows] = await query<RowDataPacket[]>(
-    `SELECT master_teacher_id FROM ${MASTER_TEACHER_TABLE} WHERE user_id = ? LIMIT 1`,
-    [userId],
-  );
-  const value = rows[0]?.master_teacher_id;
-  if (value === null || value === undefined) return null;
-  const text = String(value).trim();
-  return text.length ? text : null;
-};
 
 // const resolveRemedialGradeId = async (
 //   masterTeacherId: string | null,
@@ -915,7 +903,7 @@ export async function PUT(request: NextRequest) {
   });
 }
 
-export async function POST(request: NextRequest) {
+export async function POST() {
   try {
     console.log("=== DEBUG ENDPOINT CALLED ===");
 

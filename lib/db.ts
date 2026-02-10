@@ -104,7 +104,7 @@ export async function query<T extends mysql.RowDataPacket[] | mysql.ResultSetHea
         if (pool) {
           try {
             await pool.end();
-          } catch (e) {
+          } catch {
             // Ignore errors during pool cleanup
           }
           pool = null;
@@ -150,7 +150,7 @@ export async function withRetry<T>(
           if (pool) {
             try {
               await pool.end();
-            } catch (e) {
+            } catch {
               // Ignore cleanup errors
             }
             pool = null;
@@ -236,7 +236,7 @@ export async function runWithConnection<T>(
         if (pool) {
           try {
             await pool.end();
-          } catch (e) {
+          } catch {
             // Ignore cleanup errors
           }
           pool = null;

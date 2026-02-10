@@ -211,7 +211,7 @@ async function resolveSubjectIdByName(name: string, subjectColumns: Set<string>)
   return null;
 }
 
-function subjectSubjectId(subject: string, subjectColumns: Set<string>): number | null {
+function subjectSubjectId(subject: string): number | null {
   const parsed = Number.parseInt(subject, 10);
   if (Number.isFinite(parsed)) return parsed;
   return null;
@@ -426,7 +426,7 @@ export async function insertStudents(
 
   const resolveSubjectId = async (name: string | null | undefined): Promise<number | null> => {
     if (!name) return null;
-    let id = subjectSubjectId(name, subjectColumns);
+    let id = subjectSubjectId(name);
     if (!id && subjectColumns.size) {
       id = await resolveSubjectIdByName(name, subjectColumns);
     }
@@ -1480,8 +1480,8 @@ export async function fetchStudents({
   const parentStudentColumns = await safeGetColumns("parent_student");
   const userColumns = await safeGetColumns("users");
   const assessmentColumns = await safeGetColumns("student_subject_assessment");
-  const subjectColumns = await safeGetColumns("subject");
   const phonemicLevelColumns = await safeGetColumns("phonemic_level");
+  const subjectColumns = await safeGetColumns("subject");
 
   const hasParentJoin = parentColumns.size > 0 && studentColumns.has("parent_id");
   const canJoinParentStudent = parentStudentColumns.size > 0;
@@ -1666,7 +1666,7 @@ export async function fetchStudents({
   }
 
   let subjectFilter: string | null = null;
-  let subjectId: number | null = subjectSubjectId(subject, subjectColumns);
+  let subjectId: number | null = subjectSubjectId(subject);
   if (!subjectId && subjectColumns.size) {
     subjectId = await resolveSubjectIdByName(subject, subjectColumns);
   }
@@ -1860,7 +1860,6 @@ export async function updateStudent(
   await ensureStudentSchema();
   const studentColumns = await safeGetColumns(STUDENT_TABLE);
   const assessmentColumns = await safeGetColumns("student_subject_assessment");
-  const phonemicLevelColumns = await safeGetColumns("phonemic_level");
   const subjectColumns = await safeGetColumns("subject");
   const parentColumns = await safeGetColumns("parent");
   const parentStudentColumns = await safeGetColumns("parent_student");
@@ -2056,7 +2055,7 @@ export async function updateStudent(
   }
 
   if (assessmentColumns.has("student_id") && assessmentColumns.has("subject_id")) {
-    let subjectId = subjectSubjectId(subject, subjectColumns);
+    let subjectId = subjectSubjectId(subject);
     if (!subjectId && subjectColumns.size) {
       subjectId = await resolveSubjectIdByName(subject, subjectColumns);
     }

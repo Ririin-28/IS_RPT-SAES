@@ -76,7 +76,7 @@ export default function ITAdminSessionGuard({ children }: ITAdminSessionGuardPro
     const shouldRedirectImmediately = () => {
       try {
         return sessionStorage.getItem("wasLoggedOut") === "true";
-      } catch (error) {
+      } catch {
         return false;
       }
     };
@@ -132,7 +132,7 @@ export default function ITAdminSessionGuard({ children }: ITAdminSessionGuardPro
             console.warn("Unable to persist logout marker", storageError);
           }
         }
-      } catch (error) {
+      } catch {
         if (!active) {
           return;
         }
@@ -164,7 +164,7 @@ export default function ITAdminSessionGuard({ children }: ITAdminSessionGuardPro
         redirectingRef.current = true;
         redirectAdminToLogin(router);
       }
-    } catch (error) {
+    } catch {
       // Ignore storage errors
     }
   }, [router]);

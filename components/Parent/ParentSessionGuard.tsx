@@ -49,7 +49,7 @@ export default function ParentSessionGuard({ children }: ParentSessionGuardProps
     const shouldRedirectImmediately = () => {
       try {
         return sessionStorage.getItem("wasLoggedOut") === "true";
-      } catch (error) {
+      } catch {
         return false;
       }
     };
@@ -119,7 +119,7 @@ export default function ParentSessionGuard({ children }: ParentSessionGuardProps
             console.warn("Unable to persist logout marker", storageError);
           }
         }
-      } catch (error) {
+      } catch {
         if (!active) {
           return;
         }
@@ -150,7 +150,7 @@ export default function ParentSessionGuard({ children }: ParentSessionGuardProps
         redirectingRef.current = true;
         redirectParentToLogin(router);
       }
-    } catch (error) {
+    } catch {
       // Ignore storage access issues to avoid blocking render.
     }
   }, [pathname, router]);

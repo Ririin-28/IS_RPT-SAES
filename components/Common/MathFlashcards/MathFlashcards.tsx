@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect, useMemo, useCallback, type CSSProperties } from "react";
+import { useState, useEffect, useMemo, useCallback, type CSSProperties } from "react";
 import { FiArrowLeft, FiArrowRight } from "react-icons/fi";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";

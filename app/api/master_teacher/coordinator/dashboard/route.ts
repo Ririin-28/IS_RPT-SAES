@@ -241,43 +241,6 @@ function applyTextColumnClauses(
   }
 }
 
-async function countStudentsByGrade(context: GradeContext): Promise<number> {
-  const columns = await safeGetColumns("student");
-  if (!columns.size) {
-    return 0;
-  }
-
-  const clauses: string[] = [];
-  const params: Array<string | number> = [];
-
-  if (columns.has("grade_id")) {
-    if (context.gradeIds.length) {
-      clauses.push(`s.grade_id IN (${context.gradeIds.map(() => "?").join(", ")})`);
-      params.push(...context.gradeIds);
-    } else if (context.gradeNumber !== null) {
-      clauses.push("s.grade_id = ?");
-      params.push(context.gradeNumber);
-    }
-  }
-
-  STUDENT_TEXT_GRADE_COLUMNS.forEach((column) => {
-    if (!columns.has(column)) {
-      return;
-    }
-    applyTextColumnClauses(clauses, params, `s.${column}`, context);
-  });
-
-  if (!clauses.length) {
-    return 0;
-  }
-
-  const whereClause = clauses.map((clause) => `(${clause})`).join(" OR ");
-  const sql = `SELECT COUNT(DISTINCT s.student_id) AS total FROM \`student\` s WHERE ${whereClause}`;
-  const [rows] = await query<RowDataPacket[]>(sql, params);
-  const totalRaw = rows?.[0]?.total ?? 0;
-  return Number.isFinite(Number(totalRaw)) ? Number(totalRaw) : 0;
-}
-
 async function resolveSubjectIdsByName(subjectRaw: string): Promise<number[]> {
   const trimmed = subjectRaw.trim();
   if (!trimmed) {

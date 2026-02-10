@@ -14,8 +14,6 @@ const SUBJECT_LABELS: Record<string, string> = {
 const ASSIGNMENT_TABLE = "student_teacher_assignment";
 const REMEDIAL_HANDLED_TABLE = "mt_remedialteacher_handled";
 
-type SupportedSubject = "English" | "Filipino" | "Math";
-
 type RawStudentRow = RowDataPacket & {
   student_id: string | null;
   lrn: string | null;

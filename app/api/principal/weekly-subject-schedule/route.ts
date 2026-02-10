@@ -101,7 +101,7 @@ async function getSubjectIdByName(name: string): Promise<number | null> {
 
 /* -------------------------------- GET -------------------------------- */
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     await ensureWeeklyTable();
 
@@ -192,7 +192,7 @@ export async function PUT(request: NextRequest) {
 
 /* ------------------------------- DELETE ------------------------------- */
 
-export async function DELETE(request: NextRequest) {
+export async function DELETE() {
   try {
     await ensureWeeklyTable();
     await query(`DELETE FROM \`${WEEKLY_TABLE}\``);

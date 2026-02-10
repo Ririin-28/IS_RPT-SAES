@@ -1,5 +1,4 @@
 "use client";
-import RPTLogoTitle from "../Common/RPTLogoTitle";
 import React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import ProfileDropdown from "../Common/ProfileDropdown";
@@ -10,8 +9,7 @@ interface HeaderProps {
   onSearch?: (query: string) => void;
 }
 
-export default function MasterTeacherHeader({ title, onSearch }: HeaderProps) {
-  const [searchQuery, setSearchQuery] = React.useState("");
+export default function MasterTeacherHeader({ title }: HeaderProps) {
   const [showDropdown, setShowDropdown] = React.useState(false);
   const [showNotifications, setShowNotifications] = React.useState(false);
   const profileBtnRef = React.useRef<HTMLButtonElement>(null);
@@ -173,7 +171,7 @@ export default function MasterTeacherHeader({ title, onSearch }: HeaderProps) {
                       <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" />
                     </svg>
                     <p className="text-gray-500">No notifications at this time</p>
-                    <p className="text-sm text-gray-400 mt-1">You'll see notifications here when you get them</p>
+                    <p className="text-sm text-gray-400 mt-1">You&apos;ll see notifications here when you get them</p>
                   </div>
                   
                   {/* Footer removed since there are no notifications to mark as read */}

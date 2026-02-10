@@ -131,7 +131,7 @@ export async function GET(): Promise<NextResponse<SubjectScheduleResponse | { su
 
 export async function PUT(request: NextRequest): Promise<NextResponse<SubjectScheduleResponse | { success: false; error: string }>> {
   try {
-    const { columns, idColumn } = await ensureDayColumns();
+    const { idColumn } = await ensureDayColumns();
     const payload = await request.json();
     const scheduleInput = payload?.schedule ?? payload;
     if (!scheduleInput || typeof scheduleInput !== "object") {

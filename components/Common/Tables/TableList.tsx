@@ -1,8 +1,6 @@
 "use client";
 import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
-import DangerButton from "@/components/Common/Buttons/DangerButton";
-import Link from "next/link";
 import { useEffect, useState } from "react";
 
 interface TableColumn {

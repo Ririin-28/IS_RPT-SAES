@@ -6,7 +6,6 @@ export const dynamic = "force-dynamic";
 
 const SUBJECT_TABLE = "subject" as const;
 const STUDENT_TABLE = "student" as const;
-const STUDENT_SUBJECT_ASSESSMENT_TABLE = "student_subject_assessment" as const;
 const ASSIGNMENT_TABLE = "student_teacher_assignment" as const;
 const TEACHER_TABLE = "teacher" as const;
 const TEACHER_HANDLED_TABLE = "teacher_handled" as const;
@@ -18,11 +17,6 @@ const SUBJECT_NAMES = ["English", "Filipino", "Math"] as const;
 type SubjectName = (typeof SUBJECT_NAMES)[number];
 type SubjectCounts = Record<SubjectName, number>;
 
-type SubjectCountSource = {
-  table: string;
-  studentColumn: string;
-  subjectColumn: string;
-};
 
 type TrendSubjectData = {
   weekly: number[];
@@ -510,90 +504,6 @@ async function loadTeacherTrends(
   };
 }
 
-async function resolveSubjectCountSource(): Promise<SubjectCountSource | null> {
-  const assessmentColumns = await safeGetColumns(STUDENT_SUBJECT_ASSESSMENT_TABLE);
-  if (assessmentColumns.size) {
-    const studentColumn = pickColumn(assessmentColumns, STUDENT_ID_COLUMNS);
-    const subjectColumn = pickColumn(assessmentColumns, SUBJECT_ID_COLUMNS);
-    if (studentColumn && subjectColumn) {
-      return {
-        table: STUDENT_SUBJECT_ASSESSMENT_TABLE,
-        studentColumn,
-        subjectColumn,
-      } satisfies SubjectCountSource;
-    }
-  }
-
-  return null;
-}
-
-async function countStudentsBySubject(
-  gradeIds: number[],
-  subjectMap: Map<string, number>,
-  countSource: SubjectCountSource | null,
-  studentColumns: Set<string>,
-): Promise<SubjectCounts> {
-  const counts: SubjectCounts = { ...DEFAULT_COUNTS };
-  if (!gradeIds.length || !countSource || !studentColumns.size) {
-    return counts;
-  }
-
-  if (!studentColumns.has("grade_id")) {
-    return counts;
-  }
-
-  const studentIdColumn = pickColumn(studentColumns, STUDENT_ID_COLUMNS);
-  if (!studentIdColumn) {
-    return counts;
-  }
-
-  const resolvedSubjects = SUBJECT_NAMES.map((name) => {
-    const id = subjectMap.get(name.toLowerCase());
-    return Number.isFinite(id) ? Number(id) : null;
-  });
-
-  const activeSubjectIds = resolvedSubjects.filter((value): value is number => Number.isFinite(value));
-  if (!activeSubjectIds.length) {
-    return counts;
-  }
-
-  const gradePlaceholders = gradeIds.map(() => "?").join(", ");
-  const subjectPlaceholders = activeSubjectIds.map(() => "?").join(", ");
-
-  const sql = `
-    SELECT ss.${countSource.subjectColumn} AS subject_id,
-           COUNT(DISTINCT s.${studentIdColumn}) AS total
-    FROM \`${countSource.table}\` AS ss
-    JOIN \`${STUDENT_TABLE}\` AS s ON s.${studentIdColumn} = ss.${countSource.studentColumn}
-    WHERE s.grade_id IN (${gradePlaceholders})
-      AND ss.${countSource.subjectColumn} IN (${subjectPlaceholders})
-    GROUP BY ss.${countSource.subjectColumn}
-  `;
-
-  const params = [...gradeIds, ...activeSubjectIds];
-  const [rows] = await query<RowDataPacket[]>(sql, params);
-
-  const inverted = new Map<number, SubjectName>();
-  resolvedSubjects.forEach((id, index) => {
-    if (id !== null) {
-      inverted.set(id, SUBJECT_NAMES[index]);
-    }
-  });
-
-  rows.forEach((row) => {
-    const subjectId = Number(row.subject_id);
-    const total = Number(row.total);
-    if (!Number.isFinite(subjectId) || !Number.isFinite(total)) {
-      return;
-    }
-    const label = inverted.get(subjectId);
-    if (label) {
-      counts[label] = total;
-    }
-  });
-
-  return counts;
-}
 
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);

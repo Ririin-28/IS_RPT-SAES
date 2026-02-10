@@ -59,24 +59,6 @@ const InstallPWAButton: React.FC = () => {
     }
   };
 
-  const HelpPanel = () => (
-    <div className="mt-3 w-full max-w-sm bg-white/90 backdrop-blur-sm rounded-lg p-4 shadow-md text-left">
-      <h4 className="font-semibold text-green-900 mb-2 text-sm">How to Install</h4>
-      <ul className="text-green-800 text-xs list-disc list-inside space-y-1">
-        <li><span className="font-medium">Desktop Chrome / Edge:</span> Menu (⋮) → Cast, Save, and Share → Install.</li>
-        <li><span className="font-medium">Android Chrome:</span> Menu (⋮) → Add to Home Screen / Install app.</li>
-        <li><span className="font-medium">iOS Safari:</span> Share button → Add to Home Screen.</li>
-      </ul>
-      <button
-        onClick={() => setShowHelp(false)}
-        className="mt-3 text-xs font-semibold text-green-700 hover:text-green-900"
-        aria-label="Close installation help"
-      >
-        Close
-      </button>
-    </div>
-  );
-
   if (installed) {
     return (
       <div className="flex items-center gap-2 text-green-700 font-semibold mt-2" aria-live="polite">

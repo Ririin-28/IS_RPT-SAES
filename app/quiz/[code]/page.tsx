@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Image from "next/image";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 
 interface Choice {
     id: number;
@@ -31,8 +31,6 @@ interface StudentInfo {
 export default function StudentQuizPage() {
     const params = useParams();
     const quizCode = params?.code as string;
-    const router = useRouter();
-
     // App State
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -146,7 +144,7 @@ export default function StudentQuizPage() {
             } else {
                 setError(data.error);
             }
-        } catch (err) {
+        } catch {
             setError("Failed to submit quiz.");
         } finally {
             setLoading(false);

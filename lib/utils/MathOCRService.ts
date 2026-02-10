@@ -29,7 +29,7 @@ export class MathOCRService {
     
     // Iterate over all matches
     while ((match = regex.exec(normalizedText)) !== null) {
-      const [fullMatch, leftOp, operator, rightOp] = match;
+      const [, leftOp, operator, rightOp] = match;
       
       const left = parseInt(leftOp, 10);
       const right = parseInt(rightOp, 10);

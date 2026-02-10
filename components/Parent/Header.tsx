@@ -14,12 +14,10 @@ interface ParentHeaderProps {
 
 export default function ParentHeader({
   title,
-  onSearch,
   childOptions,
   selectedChildId,
   onChildSelect,
 }: ParentHeaderProps) {
-  const [searchQuery, setSearchQuery] = React.useState("");
   const [showDropdown, setShowDropdown] = React.useState(false);
   const router = useRouter();
   const profileBtnRef = React.useRef<HTMLButtonElement>(null);

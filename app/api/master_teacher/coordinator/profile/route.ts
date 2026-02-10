@@ -86,11 +86,7 @@ const ACTIVITY_GRADE_COLUMNS = ["grade_level", "grade", "grade_id"] as const;
 const ACTIVITY_SUBJECT_COLUMNS = ["subject_name", "subject", "subject_id"] as const;
 const ACTIVITY_STATUS_COLUMNS = ["status", "activity_status", "approval_status"] as const;
 const ACTIVITY_DATE_COLUMNS = ["date", "activity_date", "schedule_date"] as const;
-const ACTIVITY_START_COLUMNS = ["start_time", "start", "start_date", "start_datetime", "start_at"] as const;
-const ACTIVITY_END_COLUMNS = ["end_time", "end", "end_date", "end_datetime", "end_at"] as const;
-const ACTIVITY_DESCRIPTION_COLUMNS = ["description", "activity_description", "remarks", "notes"] as const;
 const ACTIVITY_DAY_COLUMNS = ["day", "day_of_week"] as const;
-const ACTIVITY_REQUESTER_COLUMNS = ["requested_by", "requester", "requested_by_name"] as const;
 const ACTIVITY_REQUESTER_ID_COLUMNS = [
   "requested_by_id",
   "requester_id",
@@ -100,38 +96,12 @@ const ACTIVITY_REQUESTER_ID_COLUMNS = [
 ] as const;
 const ACTIVITY_MT_ID_COLUMNS = ["master_teacher_id", "mt_id", "teacher_id"] as const;
 const ACTIVITY_REQUESTED_AT_COLUMNS = ["requested_at", "submitted_at", "created_at"] as const;
-const ACTIVITY_UPDATED_AT_COLUMNS = ["updated_at", "modified_at"] as const;
-const ACTIVITY_APPROVED_AT_COLUMNS = ["approved_at", "approved_date"] as const;
-const ACTIVITY_APPROVED_BY_COLUMNS = ["approved_by", "approved_by_id", "approver"] as const;
-const ACTIVITY_PLAN_COLUMNS = ["plan", "activity_plan", "plan_json"] as const;
-const ACTIVITY_WEEK_REF_COLUMNS = ["week_ref", "week_id", "week_reference"] as const;
 
 interface MasterTeacherTableInfo {
   table: string | null;
   columns: Set<string>;
 }
 
-type CoordinatorActivityColumnMap = {
-  id: string;
-  title: string | null;
-  grade: string | null;
-  subject: string | null;
-  status: string | null;
-  date: string | null;
-  start: string | null;
-  end: string | null;
-  description: string | null;
-  day: string | null;
-  requester: string | null;
-  requesterId: string | null;
-  mtId: string | null;
-  requestedAt: string | null;
-  updatedAt: string | null;
-  approvedAt: string | null;
-  approvedBy: string | null;
-  plan: string | null;
-  weekRef: string | null;
-};
 
 type CoordinatorActivity = {
   id: string;
@@ -208,41 +178,6 @@ async function loadCoordinatorHandled(
   }
 }
 
-const normalizeStatusValue = (value: string | null): string | null => {
-  if (!value) {
-    return null;
-  }
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-  const normalized = trimmed.toLowerCase();
-  if (
-    ["1", "approved", "accept", "accepted", "granted", "true", "yes", "ok"].includes(normalized) ||
-    normalized.includes("approve")
-  ) {
-    return "Approved";
-  }
-  if (
-    ["0", "pending", "awaiting", "waiting", "submitted", "for approval"].includes(normalized) ||
-    normalized.includes("pending") ||
-    normalized.includes("await") ||
-    normalized.includes("for approval")
-  ) {
-    return "Pending";
-  }
-  if (
-    ["rejected", "declined", "denied", "cancelled", "canceled", "void"].includes(normalized) ||
-    normalized.includes("reject") ||
-    normalized.includes("declin") ||
-    normalized.includes("denied") ||
-    normalized.includes("cancel") ||
-    normalized.includes("void")
-  ) {
-    return "Declined";
-  }
-  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-};
 
 const GRADE_WORD_TO_NUMBER: Record<string, number> = {
   one: 1,
@@ -392,36 +327,6 @@ const pickColumn = (columns: Set<string>, candidates: readonly string[]): string
   return null;
 };
 
-const parseDateOnly = (value: string | null): Date | null => {
-  if (!value) {
-    return null;
-  }
-  const candidate = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(candidate.getTime())) {
-    return null;
-  }
-  return candidate;
-};
-
-const parseDateTimeValue = (value: string | null): Date | null => {
-  if (!value) {
-    return null;
-  }
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-  const normalized = trimmed.replace("T", " ");
-  const candidate = new Date(normalized);
-  if (!Number.isNaN(candidate.getTime())) {
-    return candidate;
-  }
-  const fallback = new Date(`${trimmed}T00:00:00`);
-  if (!Number.isNaN(fallback.getTime())) {
-    return fallback;
-  }
-  return null;
-};
 
 const ensureTimeFormat = (value: string | null): string | null => {
   if (!value) {
@@ -440,18 +345,6 @@ const ensureTimeFormat = (value: string | null): string | null => {
   return trimmed;
 };
 
-const combineDateAndTime = (dateValue: string | null, timeValue: string | null): Date | null => {
-  const date = toNullableString(dateValue);
-  if (!date) {
-    return null;
-  }
-  const time = ensureTimeFormat(timeValue) ?? "08:00:00";
-  const candidate = new Date(`${date}T${time}`);
-  if (Number.isNaN(candidate.getTime())) {
-    return null;
-  }
-  return candidate;
-};
 
 const normalizeSubjectLabel = (value: string | null): string | null => {
   if (!value) {
@@ -556,180 +449,12 @@ async function safeGetColumns(tableName: string): Promise<Set<string>> {
   }
 }
 
-const buildCoordinatorActivityColumnMap = (columns: Set<string>): CoordinatorActivityColumnMap | null => {
-  const id = pickColumn(columns, ACTIVITY_ID_COLUMNS);
-  if (!id) {
-    return null;
-  }
-
-  return {
-    id,
-    title: pickColumn(columns, ACTIVITY_TITLE_COLUMNS),
-    grade: pickColumn(columns, ACTIVITY_GRADE_COLUMNS),
-    subject: pickColumn(columns, ACTIVITY_SUBJECT_COLUMNS),
-    status: pickColumn(columns, ACTIVITY_STATUS_COLUMNS),
-    date: pickColumn(columns, ACTIVITY_DATE_COLUMNS),
-    start: pickColumn(columns, ACTIVITY_START_COLUMNS),
-    end: pickColumn(columns, ACTIVITY_END_COLUMNS),
-    description: pickColumn(columns, ACTIVITY_DESCRIPTION_COLUMNS),
-    day: pickColumn(columns, ACTIVITY_DAY_COLUMNS),
-    requester: pickColumn(columns, ACTIVITY_REQUESTER_COLUMNS),
-    requesterId: pickColumn(columns, ACTIVITY_REQUESTER_ID_COLUMNS),
-    mtId: pickColumn(columns, ACTIVITY_MT_ID_COLUMNS),
-    requestedAt: pickColumn(columns, ACTIVITY_REQUESTED_AT_COLUMNS),
-    updatedAt: pickColumn(columns, ACTIVITY_UPDATED_AT_COLUMNS),
-    approvedAt: pickColumn(columns, ACTIVITY_APPROVED_AT_COLUMNS),
-    approvedBy: pickColumn(columns, ACTIVITY_APPROVED_BY_COLUMNS),
-    plan: pickColumn(columns, ACTIVITY_PLAN_COLUMNS),
-    weekRef: pickColumn(columns, ACTIVITY_WEEK_REF_COLUMNS),
-  } satisfies CoordinatorActivityColumnMap;
-};
-
-const buildActivitySelectClause = (map: CoordinatorActivityColumnMap) => {
-  const selectParts: string[] = [`\`${map.id}\` AS id_value`];
-
-  const push = (column: string | null, alias: string) => {
-    if (column) {
-      selectParts.push(`\`${column}\` AS ${alias}`);
-    } else {
-      selectParts.push(`NULL AS ${alias}`);
-    }
-  };
-
-  push(map.title, "title_value");
-  push(map.grade, "grade_value");
-  push(map.subject, "subject_value");
-  push(map.status, "status_value");
-  push(map.date, "date_value");
-  push(map.start, "start_value");
-  push(map.end, "end_value");
-  push(map.description, "description_value");
-  push(map.day, "day_value");
-  push(map.requester, "requester_value");
-  push(map.requesterId, "requester_id_value");
-  push(map.mtId, "mt_id_value");
-  push(map.requestedAt, "requested_at_value");
-  push(map.updatedAt, "updated_at_value");
-  push(map.approvedAt, "approved_at_value");
-  push(map.approvedBy, "approved_by_value");
-  push(map.plan, "plan_value");
-  push(map.weekRef, "week_ref_value");
-
-  return selectParts;
-};
-
-const resolveActivityOrderColumn = (map: CoordinatorActivityColumnMap): string =>
-  map.updatedAt ?? map.requestedAt ?? map.start ?? map.date ?? map.id;
-
-const parsePlanBatchId = (planRaw: string | null): { batchId: string | null } => {
-  if (!planRaw) {
-    return { batchId: null };
-  }
-
-  try {
-    const parsed = JSON.parse(planRaw) as { batchId?: string | null } | null;
-    if (parsed && typeof parsed.batchId === "string") {
-      const trimmed = parsed.batchId.trim();
-      if (trimmed.length > 0) {
-        return { batchId: trimmed };
-      }
-    }
-  } catch (error) {
-    console.warn("Unable to parse activity plan JSON for coordinator schedule", error);
-  }
-
-  return { batchId: null };
-};
-
-const toISO = (value: Date | null): string | null => {
-  if (!value) {
-    return null;
-  }
-  const timestamp = value.getTime();
-  if (Number.isNaN(timestamp)) {
-    return null;
-  }
-  return value.toISOString();
-};
-
-const mapCoordinatorActivityRow = (
-  row: RowDataPacket,
-  map: CoordinatorActivityColumnMap,
-  table: { table: string; subject: string },
-  gradeFallback: string | null,
-): CoordinatorActivity | null => {
-  const id = toNullableString(row.id_value);
-  if (!id) {
-    return null;
-  }
-
-  const status = normalizeStatusValue(toNullableString(row.status_value));
-  const gradeRaw = toNullableString(row.grade_value) ?? gradeFallback;
-  const gradeLevel = normalizeGradeValue(gradeRaw);
-  const subjectRaw = toNullableString(row.subject_value) ?? table.subject;
-  const subject = subjectRaw ? subjectRaw.trim() : null;
-  const description = toNullableString(row.description_value);
-  const day = toNullableString(row.day_value);
-  const requester = toNullableString(row.requester_value);
-
-  const startCandidate = parseDateTimeValue(toNullableString(row.start_value));
-  const dateCandidate = parseDateOnly(toNullableString(row.date_value));
-  const requestedAt = toNullableString(row.requested_at_value);
-  const approvedAt = toNullableString(row.approved_at_value);
-  const approvedBy = toNullableString(row.approved_by_value);
-  const { batchId } = parsePlanBatchId(toNullableString(row.plan_value));
-  const weekRef = toNullableString(row.week_ref_value);
-
-  const endCandidate = parseDateTimeValue(toNullableString(row.end_value));
-  const derivedStart = startCandidate ?? (dateCandidate ? combineDateAndTime(dateCandidate.toISOString().slice(0, 10), null) : null);
-  const derivedEnd = endCandidate ?? (derivedStart ? new Date(derivedStart.getTime() + 60 * 60 * 1000) : null);
-
-  const fallbackDate = derivedStart ?? dateCandidate;
-  const dateIso = toISO(fallbackDate);
-  const dayLabel = day ?? (fallbackDate ? fallbackDate.toLocaleDateString("en-US", { weekday: "long" }) : null);
-
-  return {
-    id,
-    title: toNullableString(row.title_value),
-    subject,
-    gradeLevel,
-    status,
-    startDate: toISO(derivedStart),
-    endDate: toISO(derivedEnd),
-    date: dateIso,
-    day: dayLabel,
-    description,
-    requestedAt,
-    approvedAt,
-    approvedBy,
-    planBatchId: batchId ?? weekRef,
-    weekRef,
-    requester,
-    sourceTable: table.table,
-    subjectFallback: table.subject,
-  } satisfies CoordinatorActivity;
-};
-
-const DAY_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] as const;
-
 const parseGradeId = (value: string | null | undefined): number | null => {
   if (!value) return null;
   const match = value.match(/(\d+)/);
   if (!match) return null;
   const parsed = Number(match[1]);
   return Number.isFinite(parsed) ? parsed : null;
-};
-
-const buildDateFromWeek = (weekStart: string | null, dayName: string | null): Date | null => {
-  if (!weekStart) return null;
-  const base = new Date(weekStart);
-  if (Number.isNaN(base.getTime())) return null;
-  if (!dayName) return base;
-  const dayIndex = DAY_ORDER.findIndex((day) => day.toLowerCase() === dayName.toLowerCase());
-  if (dayIndex < 0) return base;
-  const result = new Date(base);
-  result.setDate(result.getDate() + dayIndex);
-  return result;
 };
 
 const loadCoordinatorActivities = async (

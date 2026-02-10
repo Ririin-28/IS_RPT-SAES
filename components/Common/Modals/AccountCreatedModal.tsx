@@ -92,6 +92,11 @@ export default function AccountCreatedModal({
         </SecondaryButton>
       }
     >
+      {message && (
+        <div className="mb-4 text-sm text-gray-600">
+          {message}
+        </div>
+      )}
       {bulkAccounts ? (
         <>
           <ModalSection title="Import Summary">

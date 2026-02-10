@@ -919,7 +919,7 @@ export default function EnglishFlashcards({
   };
 
   // ---------- Core: start mic, listen, measure silence + timestamps ----------
-  const startAudioAnalyser = async (stream: MediaStream) => {
+  const startAudioAnalyser = useCallback(async (stream: MediaStream) => {
     audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
     const ctx = audioContextRef.current!;
     const src = ctx.createMediaStreamSource(stream);
@@ -957,7 +957,7 @@ export default function EnglishFlashcards({
     };
     rafId = requestAnimationFrame(check);
     return () => cancelAnimationFrame(rafId);
-  };
+  }, []);
 
   const stopAudioAnalyser = useCallback(() => {
     try {
@@ -969,7 +969,7 @@ export default function EnglishFlashcards({
         mediaStreamRef.current.getTracks().forEach(t => t.stop());
         mediaStreamRef.current = null;
       }
-    } catch (e) { /* ignore */ }
+    } catch { /* ignore */ }
   }, []);
 
   const resetSessionTracking = useCallback(() => {
@@ -1030,43 +1030,6 @@ export default function EnglishFlashcards({
     [readingSpeedBuckets],
   );
 
-  const buildAzureMetrics = useCallback((
-    sentenceText: string,
-    spokenText: string,
-    paResult: SpeechSDK.PronunciationAssessmentResult,
-    result: SpeechSDK.SpeechRecognitionResult,
-    words: WordFeedback[],
-  ) => {
-    const wordCount = Math.max(1, normalizeText(sentenceText).split(/\s+/).filter(Boolean).length);
-    const durationSec = result.duration ? result.duration / 10000000 : 0;
-    const wpmRaw = durationSec > 0 ? Math.round((wordCount / durationSec) * 60) : 0;
-    const speedGrade = gradeReadingSpeed(wpmRaw, wordCount);
-
-    const pronScore = Math.round(paResult.pronunciationScore ?? 0);
-    const accuracyScore = Math.round(paResult.accuracyScore ?? 0);
-    const fluencyScore = Math.round(paResult.fluencyScore ?? 0);
-    const completenessScore = Math.round(paResult.completenessScore ?? 0);
-
-    const averageScore = Math.min(
-      100,
-      Math.max(0, Math.round((pronScore + accuracyScore + speedGrade.score) / 3)),
-    );
-
-    return {
-      pronScore,
-      accuracyScore,
-      fluencyScore,
-      completenessScore,
-      wpm: wpmRaw,
-      readingSpeedScore: speedGrade.score,
-      readingSpeedLabel: speedGrade.label,
-      wordCount,
-      averageScore,
-      transcription: spokenText,
-      wordFeedback: words,
-    };
-  }, [gradeReadingSpeed]);
-
   const upsertSessionScore = useCallback(
     (
       cardIndex: number,
@@ -1103,7 +1066,7 @@ export default function EnglishFlashcards({
   );
 
   // ---------- Scoring logic for English ----------
-  function computeScores(expectedText: string, spokenText: string, resultConfidence: number | null) {
+  const computeScores = useCallback((expectedText: string, spokenText: string, resultConfidence: number | null) => {
     const expected = normalizeText(expectedText);
     const spoken = normalizeText(spokenText || "");
 
@@ -1206,7 +1169,7 @@ export default function EnglishFlashcards({
       remarks: remarkMessages[averageLabel],
       wordFeedback,
     };
-  }
+  }, [gradeReadingSpeed]);
 
   // ---------- Microphone handler ----------
   const handleMicrophoneFallback = useCallback(async () => {
@@ -1292,7 +1255,7 @@ export default function EnglishFlashcards({
       recognition.start();
 
       setTimeout(() => {
-        try { recognition.stop(); } catch (e) {}
+        try { recognition.stop(); } catch {}
       }, 45000);
     } catch (err) {
       console.error(err);
@@ -1507,11 +1470,10 @@ export default function EnglishFlashcards({
       });
     } catch (error) {
       console.error("Azure speech recognition failed", error);
-      setStatusMessage("Azure Speech failed. Please try again.");
-      setFeedback("Azure Speech is required for live transcription.");
-      setIsListening(false);
-      setIsProcessing(false);
+      setStatusMessage("Azure Speech failed. Switching to browser speech.");
+      setFeedback("Using browser speech recognition.");
       didFallback = true;
+      await handleMicrophoneFallback();
       return;
     } finally {
       recognizerRef.current?.close();
@@ -1960,6 +1922,18 @@ export default function EnglishFlashcards({
             </div>
           </div>
         </header>
+
+        {(statusMessage || feedback) && (
+          <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 text-sm text-emerald-900">
+            <div className="flex items-center gap-2">
+              {isProcessing && <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />}
+              <span className="font-semibold">{statusMessage || feedback}</span>
+            </div>
+            {statusMessage && feedback && (
+              <p className="mt-1 text-xs text-emerald-800">{feedback}</p>
+            )}
+          </div>
+        )}
 
         <div className="mt-5 flex flex-1 flex-col gap-5">
           <div className="grid gap-3 xl:grid-cols-12 flex-1 min-h-0">

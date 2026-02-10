@@ -3,7 +3,6 @@
 import React, { useState, useEffect, Suspense } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import { motion } from "framer-motion";
 
 function JoinContent() {
     const router = useRouter();
@@ -41,7 +40,7 @@ function JoinContent() {
             } else {
                 setError(data.error || "Failed to join quiz.");
             }
-        } catch (err) {
+        } catch {
             setError("Something went wrong. Please try again.");
         } finally {
             setIsLoading(false);

@@ -12,7 +12,7 @@ const parseStoredAsset = (value: string | null) => {
       const name = typeof parsed.name === "string" ? parsed.name : null;
       return { dataUrl, name };
     }
-  } catch (_error) {
+  } catch {
     // Treat as plain string
   }
   return { dataUrl: value, name: null };

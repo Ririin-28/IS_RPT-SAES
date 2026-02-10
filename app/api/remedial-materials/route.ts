@@ -265,7 +265,6 @@ export async function GET(request: NextRequest) {
     if (submittedIds.length && (await tableExists("users"))) {
       const userColumns = await getTableColumns("users");
       const hasFirst = userColumns.has("first_name");
-      const hasMiddle = userColumns.has("middle_name");
       const hasLast = userColumns.has("last_name");
       const hasCode = userColumns.has("user_code");
       const hasId = userColumns.has("user_id");

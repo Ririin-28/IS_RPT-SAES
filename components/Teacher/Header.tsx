@@ -1,48 +1,22 @@
 "use client";
-import RPTLogoTitle from "../Common/RPTLogoTitle";
 import React from "react";
 import { useRouter } from "next/navigation";
 import ProfileDropdown from "../Common/ProfileDropdown";
 import { performClientLogout } from "@/lib/utils/logout";
-import { getStoredUserProfile } from "@/lib/utils/user-profile";
 
 interface TeacherHeaderProps {
   title?: string;
   onSearch?: (query: string) => void;
 }
 
-export default function TeacherHeader({ title, onSearch }: TeacherHeaderProps) {
+export default function TeacherHeader({ title }: TeacherHeaderProps) {
   const router = useRouter();
-  const [searchQuery, setSearchQuery] = React.useState("");
   const [showDropdown, setShowDropdown] = React.useState(false);
   const [showNotifications, setShowNotifications] = React.useState(false);
-  const [profileData, setProfileData] = React.useState({ name: "Teacher", email: "" });
   const profileBtnRef = React.useRef<HTMLButtonElement>(null);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const notificationBtnRef = React.useRef<HTMLButtonElement>(null);
   const notificationDropdownRef = React.useRef<HTMLDivElement>(null);
-
-  React.useEffect(() => {
-    async function loadProfile() {
-      try {
-        const storedProfile = getStoredUserProfile();
-        const userId = storedProfile?.userId;
-        if (!userId) return;
-
-        const response = await fetch(`/api/teacher/profile?userId=${userId}`, { cache: "no-store" });
-        const data = await response.json();
-        if (data.success && data.teacher) {
-          setProfileData({
-            name: data.teacher.lastName || data.teacher.name || "Teacher",
-            email: data.teacher.email || "",
-          });
-        }
-      } catch (error) {
-        console.error("Failed to load profile", error);
-      }
-    }
-    loadProfile();
-  }, []);
 
   // Hide dropdowns when clicking outside
   React.useEffect(() => {
@@ -139,7 +113,7 @@ export default function TeacherHeader({ title, onSearch }: TeacherHeaderProps) {
                       <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" />
                     </svg>
                     <p className="text-gray-500">No notifications at this time</p>
-                    <p className="text-sm text-gray-400 mt-1">You'll see notifications here when you get them</p>
+                    <p className="text-sm text-gray-400 mt-1">You&apos;ll see notifications here when you get them</p>
                   </div>
                 </div>
               )}

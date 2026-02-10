@@ -3,7 +3,6 @@ import "server-only";
 import type { RowDataPacket } from "mysql2/promise";
 import { getTableColumns, query } from "@/lib/db";
 import {
-  MATERIAL_SUBJECTS,
   type MaterialSubject,
   type MaterialStatus,
   type MaterialDto,

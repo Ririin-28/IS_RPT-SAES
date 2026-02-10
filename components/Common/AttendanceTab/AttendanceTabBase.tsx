@@ -235,13 +235,6 @@ const toIso = (year: number, month: number, day: number) => {
   return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 };
 
-const isFutureDate = (date: Date): boolean => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  date.setHours(0, 0, 0, 0);
-  return date > today;
-};
-
 const buildMonthDays = (anchor: Date, supportedMonths: Set<number>, allowedWeekdays: Set<string> | null): DayInfo[] => {
   const year = anchor.getFullYear();
   const month = anchor.getMonth();
@@ -819,7 +812,7 @@ export default function AttendanceTabBase({
     } finally {
       setIsSaving(false);
     }
-  }, [attendanceApiBase, baselineMap, isEditing, statusMap, subjectKey, subjectLabel, fetchAttendance]);
+  }, [attendanceApiBase, baselineMap, isEditing, statusMap, subjectKey, fetchAttendance]);
 
   const goToPreviousMonth = () => {
     setCurrentDate((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));

@@ -20,11 +20,7 @@ const CONTACT_COLUMNS = [
 
 const EMAIL_COLUMNS = ["email", "user_email"] as const;
 const NAME_COLUMNS = ["first_name", "middle_name", "last_name"] as const;
-const GRADE_COLUMNS = ["grade", "grade_level", "handled_grade", "year_level"] as const;
-const SECTION_COLUMNS = ["section", "section_name", "class_section", "handled_section", "sections"] as const;
-const SUBJECT_COLUMNS = ["subjects", "handled_subjects", "subject", "subject_list"] as const;
 const IDENTIFIER_COLUMNS = ["teacher_id", "employee_id", "id", "master_teacher_id", "masterteacher_id"] as const;
-const ROLE_COLUMN_CANDIDATES = ["role", "user_role", "userrole", "type", "user_type", "position"] as const;
 
 function extractGradeNumber(value: unknown): number | null {
   if (value === null || value === undefined) return null;

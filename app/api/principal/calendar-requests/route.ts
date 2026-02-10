@@ -217,7 +217,6 @@ export async function PATCH(request: NextRequest) {
     const desiredLabel = ACTION_STATUS_LABEL[normalizedAction];
     const requestIds = Array.from(targetIds);
 
-    const usersColumns = await getTableColumns(USERS_TABLE).catch(() => new Set<string>());
     let approverName = payload?.approverName ? String(payload.approverName).trim() : "";
     if (!approverName) {
       const [userRows] = await query<RowDataPacket[]>(

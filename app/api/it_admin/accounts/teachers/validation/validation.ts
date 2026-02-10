@@ -1118,7 +1118,7 @@ export async function createTeachersBulk(items: BulkCreateTeacherItem[]): Promis
             },
           });
         }
-      } catch (error) {
+      } catch {
         await connection.rollback();
         for (const entry of chunk) {
           try {
