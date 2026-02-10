@@ -137,7 +137,7 @@ export default function GradeFiveTab({ students, setStudents, searchTerm }: Grad
         }))}
         actions={(row: any) => (
           <UtilityButton small onClick={() => handleViewDetails(row)}>
-            View Details
+            View
           </UtilityButton>
         )}
         pageSize={10}

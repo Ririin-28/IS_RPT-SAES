@@ -29,7 +29,7 @@ function CustomDropdown({ value, onChange, options, className = "" }: {
 }) {
   return (
     <div className={`relative ${className}`}>
-      <select 
+      <select
         value={value}
         onChange={onChange}
         className="w-full px-4 py-2.5 bg-white text-green-900 rounded-lg shadow-sm focus:outline-none focus:ring-1 appearance-none pr-10 cursor-pointer transition-colors duration-150 hover:border-[#013300]"
@@ -374,7 +374,7 @@ export default function TeacherDashboard() {
   const monthKey = trendData?.months?.find((item) => item.label === selectedMonth)?.key ?? null;
   const distributionValues = monthKey ? subjectTrend?.levelDistributionByMonth?.[monthKey] : undefined;
   const normalizedDistributionValues = resolvedLevelLabels.map((_, index) => distributionValues?.[index] ?? 0);
-  
+
   const subjectColorMap = {
     Math: { border: 'rgba(79, 70, 229, 1)', fill: 'rgba(79, 70, 229, 0.2)' },
     English: { border: 'rgba(220, 38, 38, 1)', fill: 'rgba(220, 38, 38, 0.2)' },
@@ -425,7 +425,7 @@ export default function TeacherDashboard() {
         max: Math.max(resolvedLevelLabels.length, 1),
         ticks: {
           stepSize: 1,
-          callback: function(value: any) {
+          callback: function (value: any) {
             const index = Number(value) - 1;
             return resolvedLevelLabels[index] || '';
           }
@@ -557,7 +557,7 @@ export default function TeacherDashboard() {
                   label="Date Today"
                   onClick={() => handleNavigate("/Teacher/calendar")}
                 />
-                </div>
+              </div>
 
               <hr className="border-gray-300 mb-4 sm:mb-5 md:mb-6" />
 
@@ -679,4 +679,3 @@ export default function TeacherDashboard() {
     </div>
   );
 }
-  

@@ -137,7 +137,7 @@ export default function GradeOneTab({ students, setStudents, searchTerm }: Grade
         }))}
         actions={(row: any) => (
           <UtilityButton small onClick={() => handleViewDetails(row)}>
-            View Details
+            View
           </UtilityButton>
         )}
         pageSize={10}

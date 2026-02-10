@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import InstallPWAButton from "@/components/Common/Buttons/InstallPWAButton";
@@ -18,6 +18,12 @@ export default function LandingPageAssessment() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [completedScore, setCompletedScore] = useState<number | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const scanFrameRef = useRef<number | null>(null);
+  const detectorRef = useRef<any | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -35,6 +41,107 @@ export default function LandingPageAssessment() {
       setQrToken(token);
     }
   }, []);
+
+  const stopScan = useCallback(() => {
+    if (scanFrameRef.current) {
+      cancelAnimationFrame(scanFrameRef.current);
+      scanFrameRef.current = null;
+    }
+
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+
+    detectorRef.current = null;
+    setIsScanning(false);
+  }, []);
+
+  const applyScanValue = useCallback((value: string) => {
+    if (!value) return;
+    try {
+      const url = new URL(value);
+      const code = url.searchParams.get("code");
+      const token = url.searchParams.get("token");
+      if (code) {
+        setQuizCode(code.toUpperCase());
+      }
+      if (token) {
+        setQrToken(token);
+      }
+      return;
+    } catch {
+      // Not a URL, fallback to code extraction.
+    }
+
+    const match = value.trim().match(/[A-Za-z0-9]{6}/);
+    if (match?.[0]) {
+      setQuizCode(match[0].toUpperCase());
+    }
+  }, []);
+
+  const startScan = useCallback(async () => {
+    if (isScanning) return;
+    setScanError(null);
+
+    if (typeof window === "undefined") return;
+    const BarcodeDetectorCtor = (window as any).BarcodeDetector;
+    if (!BarcodeDetectorCtor) {
+      setScanError("QR scanning is not supported on this device.");
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setScanError("Camera access is not available.");
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false,
+      });
+      streamRef.current = stream;
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+
+      detectorRef.current = new BarcodeDetectorCtor({ formats: ["qr_code"] });
+      setIsScanning(true);
+
+      const scanLoop = async () => {
+        if (!videoRef.current || !detectorRef.current) return;
+        try {
+          const barcodes = await detectorRef.current.detect(videoRef.current);
+          if (Array.isArray(barcodes) && barcodes.length > 0) {
+            const rawValue = barcodes[0]?.rawValue ?? "";
+            applyScanValue(rawValue);
+            stopScan();
+            return;
+          }
+        } catch (error) {
+          console.warn("QR scan error", error);
+        }
+        scanFrameRef.current = requestAnimationFrame(scanLoop);
+      };
+
+      scanFrameRef.current = requestAnimationFrame(scanLoop);
+    } catch (error) {
+      console.error("Unable to start scanner", error);
+      setScanError("Unable to access the camera. Please allow permission.");
+      stopScan();
+    }
+  }, [applyScanValue, isScanning, stopScan]);
+
+  useEffect(() => {
+    return () => stopScan();
+  }, [stopScan]);
 
   const handleStart = async () => {
     if (!quizCode.trim() || !studentId.trim()) {
@@ -136,6 +243,13 @@ export default function LandingPageAssessment() {
                   onChange={(e) => setQuizCode(e.target.value)}
                   className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1b5e20] focus:border-transparent"
                 />
+                <button
+                  type="button"
+                  onClick={startScan}
+                  className="mt-2 w-full rounded-lg border border-[#1b5e20] text-[#1b5e20] py-2 text-sm font-semibold hover:bg-[#1b5e20] hover:text-white transition"
+                >
+                  Scan QR Code
+                </button>
               </div>
 
               <div>
@@ -165,6 +279,10 @@ export default function LandingPageAssessment() {
               <p className="text-sm text-red-600">{errorMessage}</p>
             )}
 
+            {scanError && (
+              <p className="text-sm text-red-600">{scanError}</p>
+            )}
+
             {completedScore !== null && (
               <p className="text-sm text-green-700">Quiz submitted. Score: {completedScore}</p>
             )}
@@ -179,6 +297,25 @@ export default function LandingPageAssessment() {
           </div>
         </div>
       </motion.div>
+
+      {isScanning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl space-y-3">
+            <h2 className="text-center text-base font-semibold text-[#1b5e20]">Scan QR Code</h2>
+            <div className="overflow-hidden rounded-xl bg-black">
+              <video ref={videoRef} className="w-full h-64 object-cover" playsInline muted />
+            </div>
+            <p className="text-xs text-gray-600 text-center">Point your camera at the QR code.</p>
+            <button
+              type="button"
+              onClick={stopScan}
+              className="w-full rounded-lg bg-gray-100 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-200"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

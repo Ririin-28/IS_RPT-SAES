@@ -42,10 +42,23 @@ export async function generateUniqueQuizCode(connection: any): Promise<string> {
 /**
  * Builds the access URL for the assessment.
  */
-export function buildAccessUrl(quizCode: string, qrToken: string): string {
-    // Use the specific network IP provided by the user so the QR code is scannable by other devices
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://192.168.1.7:3000';
-    return `${baseUrl}/join?code=${quizCode}`;
+export function buildAccessUrl(quizCode: string, qrToken?: string | null): string {
+    const rawBaseUrl =
+        process.env.NEXT_PUBLIC_APP_URL ||
+        process.env.NEXT_PUBLIC_BASE_URL ||
+        process.env.NEXT_PUBLIC_VERCEL_URL ||
+        process.env.VERCEL_URL ||
+        "";
+
+    const resolvedBaseUrl = rawBaseUrl
+        ? rawBaseUrl.startsWith("http")
+            ? rawBaseUrl
+            : `https://${rawBaseUrl}`
+        : "http://localhost:3000";
+
+    const normalizedCode = quizCode.trim().toUpperCase();
+    const tokenParam = qrToken ? `&token=${encodeURIComponent(qrToken)}` : "";
+    return `${resolvedBaseUrl}/PWA?code=${encodeURIComponent(normalizedCode)}${tokenParam}`;
 }
 
 

@@ -18,6 +18,8 @@ export default function TeacherDetailModal({ show, onClose, teacher }: TeacherDe
     ? teacher.sections.split(',').map((section: string) => section.trim()) 
     : [];
 
+  const isMasterTeacher = teacher.role === "Master Teacher";
+
   const footer = (
     <button
       onClick={onClose}
@@ -31,7 +33,7 @@ export default function TeacherDetailModal({ show, onClose, teacher }: TeacherDe
     <BaseModal
       show={show}
       onClose={onClose}
-      title="Teacher Details"
+      title={isMasterTeacher ? "Master Teacher Details" : "Teacher Details"}
       maxWidth="2xl"
       footer={footer}
     >
@@ -45,40 +47,25 @@ export default function TeacherDetailModal({ show, onClose, teacher }: TeacherDe
       </ModalSection>
 
       <ModalSection title="Teaching Information">
-        <div className="grid grid-cols-3 gap-4">
+        <div className={isMasterTeacher ? "grid grid-cols-1 md:grid-cols-2 gap-4" : "grid grid-cols-1 md:grid-cols-2 gap-4"}>
           <ModalInfoItem label="Handled Grade" value={teacher.grade} />
-          
-          {/* Handled Sections with consistent formatting */}
-          <div className="space-y-1">
-            <ModalLabel>Handled Sections</ModalLabel>
-            <div className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-md px-3 py-2 text-sm">
-              {sectionsList.length > 0 ? (
-                <ul className="list-disc list-inside">
-                  {sectionsList.map((section: string, index: number) => (
-                    <li key={index}>{section}</li>
-                  ))}
-                </ul>
-              ) : (
-                "-"
-              )}
+
+          {isMasterTeacher && (
+            <div className="space-y-1">
+              <ModalLabel>Handled Subject</ModalLabel>
+              <div className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-md px-3 py-2 text-sm">
+                {subjectsList.length > 0 ? (
+                  <ul className="list-none">
+                    {subjectsList.map((subject: string, index: number) => (
+                      <li key={index}>{subject}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  "-"
+                )}
+              </div>
             </div>
-          </div>
-          
-          {/* Handled Subjects with consistent formatting */}
-          <div className="space-y-1">
-            <ModalLabel>Handled Subjects</ModalLabel>
-            <div className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-md px-3 py-2 text-sm">
-              {subjectsList.length > 0 ? (
-                <ul className="list-disc list-inside">
-                  {subjectsList.map((subject: string, index: number) => (
-                    <li key={index}>{subject}</li>
-                  ))}
-                </ul>
-              ) : (
-                "-"
-              )}
-            </div>
-          </div>
+          )}
         </div>
       </ModalSection>
     </BaseModal>

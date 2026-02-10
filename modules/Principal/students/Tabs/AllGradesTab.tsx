@@ -146,7 +146,7 @@ export default function AllGradesTab({ students, searchTerm, gradeFilter = "All 
         }))}
         actions={(row: any) => (
           <UtilityButton small onClick={() => handleViewDetails(row)}>
-            View Details
+            View
           </UtilityButton>
         )}
         pageSize={10}

@@ -9,6 +9,7 @@ const ASSIGNMENT_TABLE = "student_teacher_assignment";
 const MASTER_TEACHER_TABLE = "master_teacher";
 const MT_REMEDIAL_HANDLED_TABLE = "mt_remedialteacher_handled";
 const SUBJECT_TABLE_CANDIDATES = ["subject", "subjects"] as const;
+const GRADE_TABLE = "grade";
 
 const ensureAssignmentTable = async () => {
   await query(
@@ -62,6 +63,32 @@ const resolveSubjectId = async (subjectLabel: string): Promise<number | null> =>
   const value = rows[0]?.subject_id;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+};
+
+const resolveGradeId = async (gradeLevelRaw: string): Promise<number | null> => {
+  const trimmed = gradeLevelRaw.trim();
+  if (!trimmed) return null;
+  const numericMatch = trimmed.match(/\d+/);
+  const numericValue = numericMatch ? Number(numericMatch[0]) : Number(trimmed);
+
+  try {
+    const gradeColumns = await getTableColumns(GRADE_TABLE);
+    if (gradeColumns.has("grade_id") && gradeColumns.has("grade_level")) {
+      const [rows] = await query<RowDataPacket[]>(
+        `SELECT grade_id FROM ${GRADE_TABLE} WHERE grade_level = ? LIMIT 1`,
+        [trimmed],
+      );
+      const value = rows[0]?.grade_id;
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  } catch {
+    // Ignore and fall back to numeric parsing.
+  }
+
+  return Number.isFinite(numericValue) ? numericValue : null;
 };
 
 const resolveMasterTeacherId = async (userId: number | null, fallback?: string | null) => {
@@ -257,5 +284,109 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Failed to save student assignments", error);
     return NextResponse.json({ success: false, error: "Unable to save student assignments." }, { status: 500 });
+  }
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const subjectParam = searchParams.get("subject") ?? "";
+    const gradeLevelParam = searchParams.get("gradeLevel") ?? "";
+
+    if (!subjectParam.trim()) {
+      return NextResponse.json({ success: false, error: "Subject is required." }, { status: 400 });
+    }
+    if (!gradeLevelParam.trim()) {
+      return NextResponse.json({ success: false, error: "Grade level is required." }, { status: 400 });
+    }
+
+    await ensureAssignmentTable();
+
+    const subjectId = await resolveSubjectId(subjectParam.trim());
+    if (!subjectId) {
+      return NextResponse.json({ success: false, error: "Subject not found." }, { status: 404 });
+    }
+
+    const gradeId = await resolveGradeId(gradeLevelParam);
+    if (!gradeId) {
+      return NextResponse.json({ success: false, error: "Grade level not found." }, { status: 404 });
+    }
+
+    const assignmentColumns = await getTableColumns(ASSIGNMENT_TABLE).catch(() => new Set<string>());
+    const hasIsActive = assignmentColumns.has("is_active");
+    const activeClause = hasIsActive ? "AND sta.is_active = 1" : "";
+
+    const [assignedRows] = await query<RowDataPacket[]>(
+      `SELECT DISTINCT sta.student_id AS student_id
+       FROM ${ASSIGNMENT_TABLE} sta
+       WHERE sta.grade_id = ? AND sta.subject_id = ? ${activeClause}`,
+      [gradeId, subjectId],
+    );
+
+    const assignedStudentIds = Array.isArray(assignedRows)
+      ? assignedRows
+          .map((row) => (row.student_id != null ? String(row.student_id).trim() : ""))
+          .filter((value) => value.length > 0)
+      : [];
+
+    const [regularRows] = assignmentColumns.has("teacher_id")
+      ? await query<RowDataPacket[]>(
+          `SELECT sta.teacher_id AS teacher_id, COUNT(*) AS total
+           FROM ${ASSIGNMENT_TABLE} sta
+           WHERE sta.grade_id = ? AND sta.subject_id = ? ${activeClause} AND sta.teacher_id IS NOT NULL
+           GROUP BY sta.teacher_id`,
+          [gradeId, subjectId],
+        )
+      : [[] as RowDataPacket[]];
+
+    const regularCounts: Record<string, number> = {};
+    if (Array.isArray(regularRows)) {
+      regularRows.forEach((row) => {
+        const teacherId = row.teacher_id != null ? String(row.teacher_id).trim() : "";
+        const count = Number(row.total);
+        if (teacherId) {
+          regularCounts[teacherId] = Number.isFinite(count) ? count : 0;
+        }
+      });
+    }
+
+    const remedialColumns = await getTableColumns(MT_REMEDIAL_HANDLED_TABLE).catch(() => new Set<string>());
+    const masterTeacherColumns = await getTableColumns(MASTER_TEACHER_TABLE).catch(() => new Set<string>());
+    const canJoinMasterTeacher = masterTeacherColumns.has("master_teacher_id") && masterTeacherColumns.has("user_id");
+    const canJoinRemedial = remedialColumns.has("remedial_role_id") && remedialColumns.has("master_teacher_id");
+
+    const [masterRows] = canJoinRemedial && assignmentColumns.has("remedial_role_id")
+      ? await query<RowDataPacket[]>(
+          `SELECT mrh.master_teacher_id AS master_teacher_id,
+                  ${canJoinMasterTeacher ? "mt.user_id" : "NULL"} AS user_id,
+                  COUNT(*) AS total
+           FROM ${ASSIGNMENT_TABLE} sta
+           JOIN ${MT_REMEDIAL_HANDLED_TABLE} mrh ON mrh.remedial_role_id = sta.remedial_role_id
+           ${canJoinMasterTeacher ? `LEFT JOIN ${MASTER_TEACHER_TABLE} mt ON mt.master_teacher_id = mrh.master_teacher_id` : ""}
+           WHERE sta.grade_id = ? AND sta.subject_id = ? ${activeClause} AND sta.remedial_role_id IS NOT NULL
+           GROUP BY mrh.master_teacher_id${canJoinMasterTeacher ? ", mt.user_id" : ""}`,
+          [gradeId, subjectId],
+        )
+      : [[] as RowDataPacket[]];
+
+    const masterCounts = Array.isArray(masterRows)
+      ? masterRows.map((row) => ({
+          masterTeacherId: row.master_teacher_id != null ? String(row.master_teacher_id).trim() : null,
+          userId: row.user_id != null ? Number(row.user_id) : null,
+          count: Number.isFinite(Number(row.total)) ? Number(row.total) : 0,
+        }))
+      : [];
+
+    return NextResponse.json({
+      success: true,
+      assignedStudentIds,
+      counts: {
+        regular: regularCounts,
+        master: masterCounts,
+      },
+    });
+  } catch (error) {
+    console.error("Failed to load assignment status", error);
+    return NextResponse.json({ success: false, error: "Unable to load assignment status." }, { status: 500 });
   }
 }

@@ -124,11 +124,8 @@ type SubjectProgress = {
   currentLevel: string;
   startingLevel: string;
   improvement: string;
-  strengths: string[];
-  areasForImprovement: string[];
-  recentActivities: string[];
   teacherComments: string;
-  nextGoals: string;
+  aiRecommendation: string;
   teacher: string;
 };
 
@@ -142,6 +139,8 @@ type ChildProfile = {
   section: string | null;
   relationship: string | null;
   subjects: string[];
+  currentLevel?: Record<SupportedSubject, string>;
+  progressDetails?: Record<SupportedSubject, SubjectProgress>;
 };
 
 type ChildView = ChildProfile & {
@@ -387,6 +386,7 @@ function AttendanceCalendar({ attendanceRecords, attendanceRate }: AttendanceCal
 function NotificationCard() {
   const [isTranslated, setIsTranslated] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
+  const profile = useMemo(() => getStoredUserProfile(), []);
 
   const formatChildName = (fullName: string) => {
     const parts = fullName.trim().split(/\s+/).filter(Boolean);
@@ -419,6 +419,41 @@ function NotificationCard() {
     childName: formatChildName("Alon Luan Nadura Ruedas"),
   };
 
+  const storageKey = useMemo(() => {
+    const userId = profile?.userId ?? "unknown";
+    return `parentNotificationDismissed:${userId}`;
+  }, [profile?.userId]);
+
+  const notificationSignature = useMemo(() => {
+    return [notification.childName, notification.message, notification.date].map(String).join("|");
+  }, [notification.childName, notification.message, notification.date]);
+
+  useEffect(() => {
+    if (notification.isRead) {
+      setIsClosed(true);
+      return;
+    }
+    if (typeof window === "undefined") return;
+    try {
+      const stored = window.localStorage.getItem(storageKey);
+      if (stored === notificationSignature) {
+        setIsClosed(true);
+      }
+    } catch {
+      // Ignore storage access errors (e.g., private mode)
+    }
+  }, [notification.isRead, notificationSignature, storageKey]);
+
+  const handleClose = useCallback(() => {
+    setIsClosed(true);
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(storageKey, notificationSignature);
+    } catch {
+      // Ignore storage access errors (e.g., private mode)
+    }
+  }, [notificationSignature, storageKey]);
+
   const englishText = {
     close: "Close",
     title: "Notifications",
@@ -443,7 +478,7 @@ function NotificationCard() {
         <div className="flex justify-between items-center p-4 bg-gradient-to-r from-red-50 to-red-100 border-b border-red-200">
           <h3 className="font-bold text-red-800">{text.title}</h3>
           <button
-            onClick={() => setIsClosed(true)}
+            onClick={handleClose}
             className="text-gray-500 hover:text-gray-700 font-bold text-lg"
             aria-label={text.close}
           >
@@ -488,7 +523,7 @@ function NotificationCard() {
               {isTranslated ? "Translate to English" : "Isalin sa Tagalog"}
             </button>
             <button
-              onClick={() => setIsClosed(true)}
+              onClick={handleClose}
               className="px-4 py-1.5 text-sm bg-gray-100 text-gray-700 font-medium rounded-lg hover:bg-gray-200 transition-colors duration-200"
             >
               {text.close}
@@ -552,33 +587,24 @@ const FALLBACK_CHILD_VIEW: ChildView = {
       currentLevel: "—",
       startingLevel: "—",
       improvement: "—",
-      strengths: [],
-      areasForImprovement: [],
-      recentActivities: [],
       teacherComments: "—",
-      nextGoals: "—",
+      aiRecommendation: "—",
       teacher: "—",
     },
     Filipino: {
       currentLevel: "—",
       startingLevel: "—",
       improvement: "—",
-      strengths: [],
-      areasForImprovement: [],
-      recentActivities: [],
       teacherComments: "—",
-      nextGoals: "—",
+      aiRecommendation: "—",
       teacher: "—",
     },
     Math: {
       currentLevel: "—",
       startingLevel: "—",
       improvement: "—",
-      strengths: [],
-      areasForImprovement: [],
-      recentActivities: [],
       teacherComments: "—",
-      nextGoals: "—",
+      aiRecommendation: "—",
       teacher: "—",
     },
   },
@@ -738,8 +764,16 @@ export default function ParentDashboard() {
       return FALLBACK_CHILD_VIEW;
     }
 
-  const supportedSubjects = (state.child.subjects ?? []).filter(isSupportedSubject);
-  const subjectsFromApi = supportedSubjects.length > 0 ? supportedSubjects : FALLBACK_CHILD_VIEW.subjects;
+    const supportedSubjects = (state.child.subjects ?? []).filter(isSupportedSubject);
+    const subjectsFromApi = supportedSubjects.length > 0 ? supportedSubjects : FALLBACK_CHILD_VIEW.subjects;
+    const currentLevel = {
+      ...FALLBACK_CHILD_VIEW.currentLevel,
+      ...(state.child.currentLevel ?? {}),
+    };
+    const progressDetails = {
+      ...FALLBACK_CHILD_VIEW.progressDetails,
+      ...(state.child.progressDetails ?? {}),
+    };
 
     return {
       ...FALLBACK_CHILD_VIEW,
@@ -753,6 +787,8 @@ export default function ParentDashboard() {
       relationship: state.child.relationship ?? FALLBACK_CHILD_VIEW.relationship,
       subjects: subjectsFromApi,
       attendance: attendanceSummary.attendanceRate ?? FALLBACK_CHILD_VIEW.attendance,
+      currentLevel,
+      progressDetails,
     };
   }, [state.child, attendanceSummary.attendanceRate]);
 
@@ -936,34 +972,13 @@ export default function ParentDashboard() {
                       />
                     </div>
 
-                    {/* Strengths & Areas for Improvement */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* AI Recommendation */}
+                    <div className="grid grid-cols-1 gap-6">
                       <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
                         <h4 className="font-bold text-green-800 mb-3 flex items-center">
-                          What's Going Well
+                          AI Recommendation
                         </h4>
-                        <div className="space-y-2">
-                          {currentProgress.strengths.map((strength, index) => (
-                            <div key={index} className="flex items-start">
-                              <span className="mr-2 mt-2 inline-block h-2 w-2 rounded-full bg-green-500" aria-hidden="true"></span>
-                              <span className="text-gray-700">{strength}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-                        <h4 className="font-bold text-blue-800 mb-3 flex items-center">
-                          Areas to Focus On
-                        </h4>
-                        <div className="space-y-2">
-                          {currentProgress.areasForImprovement.map((area, index) => (
-                            <div key={index} className="flex items-start">
-                              <span className="mr-2 mt-2 inline-block h-2 w-2 rounded-full bg-blue-500" aria-hidden="true"></span>
-                              <span className="text-gray-700">{area}</span>
-                            </div>
-                          ))}
-                        </div>
+                        <p className="text-gray-700">{currentProgress.aiRecommendation}</p>
                       </div>
                     </div>
 
@@ -978,13 +993,6 @@ export default function ParentDashboard() {
                       </p>
                     </div>
 
-                    {/* Next Goals */}
-                    <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-                      <h4 className="font-bold text-gray-800 mb-2 flex items-center">
-                        Next Learning Goals
-                      </h4>
-                      <p className="text-gray-700">{currentProgress.nextGoals}</p>
-                    </div>
                   </div>
                 </div>
 

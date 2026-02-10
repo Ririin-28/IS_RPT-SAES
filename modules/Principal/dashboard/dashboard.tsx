@@ -498,7 +498,7 @@ export default function PrincipalDashboard() {
 
   // Get current subject progress data based on selection
   const getSubjectProgressData = () => {
-    switch(selectedSubject) {
+    switch (selectedSubject) {
       case 'English': return englishProgressData;
       case 'Filipino': return filipinoProgressData;
       case 'Math': return mathProgressData;
@@ -507,7 +507,7 @@ export default function PrincipalDashboard() {
   };
 
   const getSubjectData = () => {
-    switch(selectedSubject) {
+    switch (selectedSubject) {
       case 'English': return englishData;
       case 'Filipino': return englishData; // Using English as placeholder
       case 'Math': return englishData; // Using English as placeholder
@@ -516,7 +516,7 @@ export default function PrincipalDashboard() {
   };
 
   const getLineData = () => {
-    switch(selectedSubject) {
+    switch (selectedSubject) {
       case 'English': return englishLineData;
       case 'Filipino': return englishLineData; // Using English as placeholder
       case 'Math': return englishLineData; // Using English as placeholder
@@ -525,7 +525,7 @@ export default function PrincipalDashboard() {
   };
 
   const getMonthlyData = () => {
-    switch(selectedSubject) {
+    switch (selectedSubject) {
       case 'English': return monthlyEnglishData;
       case 'Filipino': return monthlyEnglishData; // Using English as placeholder
       case 'Math': return monthlyEnglishData; // Using English as placeholder
@@ -534,7 +534,7 @@ export default function PrincipalDashboard() {
   };
 
   const getLevelOptions = () => {
-    switch(selectedSubject) {
+    switch (selectedSubject) {
       case 'English':
       case 'Filipino':
         return [
@@ -603,7 +603,7 @@ export default function PrincipalDashboard() {
       },
       tooltip: {
         callbacks: {
-          label: function(context: any) {
+          label: function (context: any) {
             const label = context.dataset.label || '';
             const rawData = Array.isArray(context.dataset.data) ? context.dataset.data[context.dataIndex] : undefined;
             const numericValue = typeof rawData === 'number'
@@ -643,7 +643,7 @@ export default function PrincipalDashboard() {
         beginAtZero: true,
         max: 100,
         ticks: {
-          callback: function(value: any) {
+          callback: function (value: any) {
             return value + '%';
           }
         }
@@ -822,7 +822,7 @@ export default function PrincipalDashboard() {
                       <TertiaryHeader title={`${selectedSubject} Student Progress by Grade Level`} />
                       <div className="flex space-x-2">
                         <div className="relative">
-                          <select 
+                          <select
                             value={selectedSubject}
                             onChange={(e) => setSelectedSubject(e.target.value)}
                             className="w-full px-4 py-2.5 bg-white text-green-900 rounded-lg shadow-sm focus:outline-none focus:ring-1 appearance-none pr-10 cursor-pointer transition-colors duration-150 hover:border-[#013300]"
@@ -840,9 +840,9 @@ export default function PrincipalDashboard() {
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className="h-96 mt-4">
-                    <Bar 
+                    <Bar
                       options={{
                         ...studentProgressOptions,
                         plugins: {
@@ -856,8 +856,8 @@ export default function PrincipalDashboard() {
                             }
                           },
                         }
-                      }} 
-                      data={getSubjectProgressData()} 
+                      }}
+                      data={getSubjectProgressData()}
                     />
                   </div>
                   <div className="mt-4 text-sm text-gray-600">
@@ -881,7 +881,7 @@ export default function PrincipalDashboard() {
                         </div>
                       </div>
                     </div>
-                    
+
                     {/* Enhanced Metrics Section */}
                     <div className="md:col-span-2">
                       <div className="grid grid-cols-2 gap-4">
@@ -901,7 +901,7 @@ export default function PrincipalDashboard() {
                             <div className="bg-green-500 h-2 rounded-full" style={{ width: submittedProgressWidth }}></div>
                           </div>
                         </div>
-                        
+
                         {/* Pending Reports */}
                         <div className="bg-white rounded-2xl shadow-lg border border-red-100 p-5 transition-all duration-300 hover:shadow-xl hover:scale-105">
                           <div className="flex items-center justify-between">
@@ -918,7 +918,7 @@ export default function PrincipalDashboard() {
                             <div className="bg-red-500 h-2 rounded-full" style={{ width: pendingProgressWidth }}></div>
                           </div>
                         </div>
-                        
+
                         {/* Total Teachers */}
                         <div className="bg-white rounded-2xl shadow-lg border border-blue-100 p-5 transition-all duration-300 hover:shadow-xl hover:scale-105">
                           <div className="flex items-center justify-between">
@@ -937,7 +937,7 @@ export default function PrincipalDashboard() {
                             </div>
                           </div>
                         </div>
-                        
+
                         {/* Deadline */}
                         <div className="bg-white rounded-2xl shadow-lg border border-purple-100 p-5 transition-all duration-300 hover:shadow-xl hover:scale-105">
                           <div className="flex items-center justify-between">

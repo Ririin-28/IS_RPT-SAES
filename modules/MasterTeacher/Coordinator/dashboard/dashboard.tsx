@@ -223,7 +223,7 @@ function CustomDropdown({ value, onChange, options, className = "" }: {
 }) {
   return (
     <div className={`relative ${className}`}>
-      <select 
+      <select
         value={value}
         onChange={onChange}
         className="w-full px-4 py-2.5 bg-white text-green-900 rounded-lg shadow-sm focus:outline-none focus:ring-1 appearance-none pr-10 cursor-pointer transition-colors duration-150 hover:border-[#013300]"
@@ -829,8 +829,8 @@ export default function MasterTeacherDashboard() {
                     </p>
                   </div>
                   <div className="mt-3">
-                    <UtilityButton 
-                      onClick={() => {}} 
+                    <UtilityButton
+                      onClick={() => { }}
                       className="w-full text-center justify-center"
                     >
                       Review Approvals
@@ -860,7 +860,7 @@ export default function MasterTeacherDashboard() {
                     ) : levelDistribution.data.length === 0 ? (
                       <div className="flex h-full items-center justify-center text-sm text-gray-500">No progress data available yet.</div>
                     ) : (
-                      <Bar 
+                      <Bar
                         options={levelBarOptions}
                         data={{
                           labels: levelDistribution.labels,
@@ -871,7 +871,7 @@ export default function MasterTeacherDashboard() {
                               backgroundColor: levelDistribution.colors,
                             },
                           ],
-                        }} 
+                        }}
                       />
                     )}
                   </div>

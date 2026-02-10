@@ -26,6 +26,14 @@ type AssignmentGroup = {
 
 type AssignmentTeacherType = "master_coordinator" | "master_remedial" | "regular_teacher";
 
+type AssignmentStatus = {
+  assignedStudentIds: string[];
+  regularCounts: Record<string, number>;
+  masterCounts: Array<{ masterTeacherId: string | null; userId: number | null; count: number }>;
+  loading: boolean;
+  error: string | null;
+};
+
 const normalizeGradeKey = (value?: string | null): string | null => {
   if (!value) return null;
   const trimmed = String(value).trim();
@@ -60,6 +68,13 @@ export default function MasterTeacherStudents() {
   const [assignmentSaving, setAssignmentSaving] = useState(false);
   const [assignmentError, setAssignmentError] = useState<string | null>(null);
   const [assignmentSuccess, setAssignmentSuccess] = useState<string | null>(null);
+  const [assignmentStatus, setAssignmentStatus] = useState<AssignmentStatus>({
+    assignedStudentIds: [],
+    regularCounts: {},
+    masterCounts: [],
+    loading: false,
+    error: null,
+  });
 
   const { teachers, loading: teachersLoading } = useCoordinatorTeachers();
   const coordinatorProfile = useMemo(() => getStoredUserProfile(), []);
@@ -176,19 +191,79 @@ export default function MasterTeacherStudents() {
   }, [remedialTeachers]);
 
   const totalTeachers = assignmentTeachers.length;
-  const totalStudents = studentMeta.students.length;
+  const assignedStudentIdSet = useMemo(() => (
+    new Set(assignmentStatus.assignedStudentIds.map((id) => String(id)))
+  ), [assignmentStatus.assignedStudentIds]);
+
+  const unassignedStudents = useMemo(() => (
+    studentMeta.students.filter((student) => {
+      const studentKey = student.id ?? student.studentId;
+      if (!studentKey) return false;
+      return !assignedStudentIdSet.has(String(studentKey));
+    })
+  ), [studentMeta.students, assignedStudentIdSet]);
+
+  const totalStudents = unassignedStudents.length;
+
+  const regularCountMap = useMemo(() => new Map(
+    Object.entries(assignmentStatus.regularCounts || {}).map(([key, value]) => [String(key), value])
+  ), [assignmentStatus.regularCounts]);
+
+  const masterCountById = useMemo(() => new Map(
+    assignmentStatus.masterCounts
+      .filter((entry) => entry.masterTeacherId)
+      .map((entry) => [String(entry.masterTeacherId), entry.count])
+  ), [assignmentStatus.masterCounts]);
+
+  const masterCountByUserId = useMemo(() => new Map(
+    assignmentStatus.masterCounts
+      .filter((entry) => entry.userId !== null && entry.userId !== undefined)
+      .map((entry) => [String(entry.userId), entry.count])
+  ), [assignmentStatus.masterCounts]);
+
+  const isMasterTeacherType = useCallback((teacher: CoordinatorTeacher) => {
+    const key = teacher.userId ? `u:${teacher.userId}` : `t:${teacher.teacherId}`;
+    const isCoordinator = coordinatorTeacher?.userId
+      ? coordinatorTeacher.userId === teacher.userId
+      : coordinatorTeacher?.teacherId === teacher.teacherId;
+    return remedialTeacherKeys.has(key) || Boolean(teacher.masterTeacherId) || Boolean(isCoordinator);
+  }, [coordinatorTeacher, remedialTeacherKeys]);
+
+  const getExistingAssignmentCount = useCallback((teacher: CoordinatorTeacher) => {
+    if (isMasterTeacherType(teacher)) {
+      if (teacher.masterTeacherId) {
+        return masterCountById.get(String(teacher.masterTeacherId)) ?? 0;
+      }
+      if (teacher.userId) {
+        return masterCountByUserId.get(String(teacher.userId)) ?? 0;
+      }
+      return 0;
+    }
+
+    return regularCountMap.get(String(teacher.teacherId)) ?? 0;
+  }, [isMasterTeacherType, masterCountById, masterCountByUserId, regularCountMap]);
 
   const buildAssignmentPreview = useCallback((): AssignmentGroup[] => {
-    if (!assignmentTeachers.length || !studentMeta.students.length) {
+    if (!assignmentTeachers.length || !unassignedStudents.length) {
       return [];
     }
-    const shuffled = shuffleStudents(studentMeta.students);
-    const groups = assignmentTeachers.map((teacher) => ({ teacher, students: [] as CoordinatorStudent[] }));
-    shuffled.forEach((student, index) => {
-      groups[index % groups.length].students.push(student);
+
+    const groups = assignmentTeachers.map((teacher) => ({
+      teacher,
+      students: [] as CoordinatorStudent[],
+      totalAssigned: getExistingAssignmentCount(teacher),
+    }));
+
+    const shuffled = shuffleStudents(unassignedStudents);
+    shuffled.forEach((student) => {
+      groups.sort((a, b) => a.totalAssigned - b.totalAssigned);
+      const target = groups[0];
+      target.students.push(student);
+      target.totalAssigned += 1;
     });
-    return groups;
-  }, [studentMeta.students, assignmentTeachers]);
+
+    return groups.map(({ teacher, students }) => ({ teacher, students }));
+  }, [assignmentTeachers, unassignedStudents, getExistingAssignmentCount]);
 
   const handleMetaChange = useCallback((meta: StudentMeta) => {
     setSubject(meta.subject);
@@ -272,6 +347,8 @@ export default function MasterTeacherStudents() {
       }
 
       setAssignmentSuccess("Assignments saved successfully.");
+      setAssignmentStatus((prev) => ({ ...prev, loading: true }));
+      await fetchAssignmentStatus();
       setShowAssignConfirm(false);
       setShowAssignmentModal(false);
     } catch (error) {
@@ -281,6 +358,52 @@ export default function MasterTeacherStudents() {
       setAssignmentSaving(false);
     }
   };
+
+  const fetchAssignmentStatus = useCallback(async () => {
+    if (!studentMeta.gradeLevel || !studentMeta.gradeLevel.trim()) {
+      setAssignmentStatus({
+        assignedStudentIds: [],
+        regularCounts: {},
+        masterCounts: [],
+        loading: false,
+        error: null,
+      });
+      return;
+    }
+
+    setAssignmentStatus((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const params = new URLSearchParams({
+        subject: studentMeta.subject,
+        gradeLevel: studentMeta.gradeLevel.trim(),
+      });
+      const response = await fetch(`/api/master_teacher/coordinator/student-assignments?${params.toString()}`, {
+        cache: "no-store",
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error ?? "Unable to load assignment status.");
+      }
+
+      setAssignmentStatus({
+        assignedStudentIds: Array.isArray(payload?.assignedStudentIds) ? payload.assignedStudentIds : [],
+        regularCounts: payload?.counts?.regular ?? {},
+        masterCounts: Array.isArray(payload?.counts?.master) ? payload.counts.master : [],
+        loading: false,
+        error: null,
+      });
+    } catch (error) {
+      setAssignmentStatus((prev) => ({
+        ...prev,
+        loading: false,
+        error: error instanceof Error ? error.message : "Unable to load assignment status.",
+      }));
+    }
+  }, [studentMeta.gradeLevel, studentMeta.subject]);
+
+  useEffect(() => {
+    void fetchAssignmentStatus();
+  }, [fetchAssignmentStatus, studentMeta.students.length]);
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
@@ -329,7 +452,12 @@ export default function MasterTeacherStudents() {
                     type="button"
                     small
                     onClick={handleOpenAssignmentModal}
-                    disabled={teachersLoading || totalTeachers === 0 || totalStudents === 0}
+                    disabled={
+                      teachersLoading
+                      || assignmentStatus.loading
+                      || totalTeachers === 0
+                      || totalStudents === 0
+                    }
                   >
                     Auto-Assign Students
                   </PrimaryButton>

@@ -147,7 +147,7 @@ async function fetchRoleRecords(role: "teacher" | "master_teacher") {
   baseSelect.push(`u.${userEmailColumn} AS user_email`);
 
   baseSelect.push("NULL AS section_value");
-  baseSelect.push("NULL AS subjects_value");
+  let subjectsSelect = "NULL AS subjects_value";
 
   const joinClauses: string[] = ["JOIN users AS u ON u.user_id = t.user_id"];
 
@@ -169,8 +169,10 @@ async function fetchRoleRecords(role: "teacher" | "master_teacher") {
       baseSelect.push("NULL AS grade_levels");
     }
   } else {
+    const masterTeacherIdColumn = identifierColumn;
     const coordinatorHandledExists = await tableExists("mt_coordinator_handled");
     const remedialHandledExists = await tableExists("mt_remedialteacher_handled");
+    const subjectTableExists = await tableExists("subject");
     if (coordinatorHandledExists && gradeTableExists) {
       joinClauses.push(
         "LEFT JOIN (",
@@ -179,11 +181,24 @@ async function fetchRoleRecords(role: "teacher" | "master_teacher") {
         "  FROM mt_coordinator_handled AS mch",
         "  LEFT JOIN grade AS gc ON gc.grade_id = mch.grade_id",
         "  GROUP BY mch.master_teacher_id",
-        ") AS mtc ON mtc.master_teacher_id = t.master_teacher_id",
+        `) AS mtc ON mtc.master_teacher_id = t.${masterTeacherIdColumn}`,
       );
       baseSelect.push("mtc.coordinator_grade_levels AS coordinator_grade_levels");
     } else {
       baseSelect.push("NULL AS coordinator_grade_levels");
+    }
+
+    if (coordinatorHandledExists && subjectTableExists) {
+      joinClauses.push(
+        "LEFT JOIN (",
+        "  SELECT mch.master_teacher_id,",
+        "    GROUP_CONCAT(DISTINCT s.subject_name ORDER BY s.subject_name) AS subject_names",
+        "  FROM mt_coordinator_handled AS mch",
+        "  LEFT JOIN subject AS s ON s.subject_id = mch.subject_id",
+        "  GROUP BY mch.master_teacher_id",
+        `) AS mts ON mts.master_teacher_id = t.${masterTeacherIdColumn}`,
+      );
+      subjectsSelect = "mts.subject_names AS subjects_value";
     }
 
     if (remedialHandledExists && gradeTableExists) {
@@ -194,7 +209,7 @@ async function fetchRoleRecords(role: "teacher" | "master_teacher") {
         "  FROM mt_remedialteacher_handled AS mrh",
         "  LEFT JOIN grade AS gr ON gr.grade_id = mrh.grade_id",
         "  GROUP BY mrh.master_teacher_id",
-        ") AS mtr ON mtr.master_teacher_id = t.master_teacher_id",
+        `) AS mtr ON mtr.master_teacher_id = t.${masterTeacherIdColumn}`,
       );
       baseSelect.push("mtr.remedial_grade_levels AS remedial_grade_levels");
     } else {
@@ -216,6 +231,8 @@ async function fetchRoleRecords(role: "teacher" | "master_teacher") {
   if (!orderClauses.length) {
     orderClauses.push(hasUserUsername ? "u.username ASC" : "u.user_id ASC");
   }
+
+  baseSelect.push(subjectsSelect);
 
   const sql = `
     SELECT ${baseSelect.join(", ")}
@@ -252,7 +269,7 @@ async function fetchRoleRecords(role: "teacher" | "master_teacher") {
       gradeLevels,
       section: null,
       sections: null,
-      subjects: null,
+      subjects: row.subjects_value ?? null,
       role: role === "teacher" ? "Teacher" : "Master Teacher",
     };
   });

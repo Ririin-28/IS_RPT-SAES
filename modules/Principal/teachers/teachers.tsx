@@ -80,11 +80,16 @@ export default function PrincipalTeachers() {
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
                 <div className="flex items-center gap-0">
                   <HeaderDropdown
-                    options={["Master Teachers", "Teachers"]}
+                    options={[("Master Teachers"), ("Teachers")]}
                     value={teacherType}
                     onChange={setTeacherType}
                   />
                   <SecondaryHeader title="in" />
+                  {activeTab !== "All Grades" && (
+                    <div className="ml-2">
+                      <SecondaryHeader title="Grade" />
+                    </div>
+                  )}
                   <HeaderDropdown
                     options={gradeOptions as string[]}
                     value={activeTab}

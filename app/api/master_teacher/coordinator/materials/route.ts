@@ -4,37 +4,15 @@ import type { RowDataPacket } from "mysql2/promise";
 
 export const dynamic = "force-dynamic";
 
-const SUBJECT_TABLE_MAP = {
-  english: {
-    pending: "pending_english_materials",
-    approved: "english_materials",
-  },
-  filipino: {
-    pending: "pending_filipino_materials",
-    approved: "filipino_materials",
-  },
-  math: {
-    pending: "pending_math_materials",
-    approved: "math_materials",
-  },
-} as const;
-
-const GRADE_COLUMN_CANDIDATES = [
-  "grade_level",
-  "grade",
-  "handled_grade",
-  "year_level",
-  "gradeLevel",
-  "gradelevel",
-  "grade_section",
-] as const;
+const MATERIALS_TABLE = "remedial_materials";
+const REQUEST_TABLE = "request_remedial_schedule";
+const SUBJECT_TABLE = "subject";
+const GRADE_TABLE = "grade";
 
 const DATE_COLUMN_CANDIDATES = [
-  "created_at",
-  "createdAt",
-  "date_created",
   "submitted_at",
-  "submittedAt",
+  "created_at",
+  "updated_at",
 ] as const;
 
 const GRADE_WORD_TO_NUMBER: Record<string, number> = {
@@ -63,7 +41,7 @@ const ROMAN_NUMERAL_TO_NUMBER: Record<string, number> = {
   x: 10,
 };
 
-function normalizeSubject(raw?: string | null): keyof typeof SUBJECT_TABLE_MAP | null {
+function normalizeSubject(raw?: string | null): "english" | "filipino" | "math" | null {
   if (!raw) return null;
   const text = raw.trim().toLowerCase();
   if (!text) return null;
@@ -77,15 +55,6 @@ function normalizeStatus(raw?: string | null): "pending" | "approved" {
   const text = raw?.trim().toLowerCase();
   if (text === "approved") return "approved";
   return "pending";
-}
-
-function pickGradeColumn(columns: Set<string>): string | null {
-  for (const candidate of GRADE_COLUMN_CANDIDATES) {
-    if (columns.has(candidate)) {
-      return candidate;
-    }
-  }
-  return null;
 }
 
 function pickDateColumn(columns: Set<string>): string | null {
@@ -155,6 +124,40 @@ function buildGradeTerms(raw: string): string[] {
   return Array.from(terms).filter(Boolean);
 }
 
+async function safeGetColumns(tableName: string): Promise<Set<string>> {
+  try {
+    return await getTableColumns(tableName);
+  } catch {
+    return new Set<string>();
+  }
+}
+
+async function resolveSubjectId(subjectKey: "english" | "filipino" | "math"): Promise<number | null> {
+  const columns = await safeGetColumns(SUBJECT_TABLE);
+  if (!columns.size || !columns.has("subject_id")) {
+    return null;
+  }
+
+  const nameColumn = columns.has("subject_name")
+    ? "subject_name"
+    : columns.has("name")
+      ? "name"
+      : null;
+
+  if (!nameColumn) {
+    return null;
+  }
+
+  const [rows] = await query<RowDataPacket[]>(
+    `SELECT subject_id FROM ${SUBJECT_TABLE} WHERE LOWER(${nameColumn}) = ? LIMIT 1`,
+    [subjectKey.toLowerCase()],
+  );
+
+  const subjectId = rows?.[0]?.subject_id;
+  const parsed = Number(subjectId);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -170,79 +173,124 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Subject is required (English, Filipino, or Math)." }, { status: 400 });
     }
 
-    const tableName = SUBJECT_TABLE_MAP[subjectParam][statusParam];
-    if (!(await tableExists(tableName))) {
-      return NextResponse.json({ success: true, data: [], pagination: { total: 0, page, pageSize, totalPages: 0 }, metadata: { table: tableName, gradeColumn: null } });
+    const [materialsExists, requestExists] = await Promise.all([
+      tableExists(MATERIALS_TABLE),
+      tableExists(REQUEST_TABLE),
+    ]);
+
+    if (!materialsExists || !requestExists) {
+      return NextResponse.json({
+        success: true,
+        data: [],
+        pagination: { total: 0, page, pageSize, totalPages: 0 },
+        metadata: { table: MATERIALS_TABLE, reason: "materials_or_request_table_missing" },
+      });
     }
 
-    const columns = await getTableColumns(tableName);
-    const gradeColumn = gradeParam ? pickGradeColumn(columns) : null;
-    const dateColumn = pickDateColumn(columns);
+    const [materialColumns, requestColumns] = await Promise.all([
+      safeGetColumns(MATERIALS_TABLE),
+      safeGetColumns(REQUEST_TABLE),
+    ]);
 
-    const gradeClauses: string[] = [];
-    const dateClauses: string[] = [];
+    if (!materialColumns.has("request_id") || !materialColumns.has("status")) {
+      return NextResponse.json({ success: false, error: "Remedial materials table is missing required columns." }, { status: 500 });
+    }
+
+    if (!requestColumns.has("request_id")) {
+      return NextResponse.json({ success: false, error: "Request schedule table is missing required columns." }, { status: 500 });
+    }
+
+    const subjectId = await resolveSubjectId(subjectParam);
+    if (subjectId === null) {
+      return NextResponse.json({ success: false, error: "Unable to resolve subject." }, { status: 400 });
+    }
+
+    const dateColumn = pickDateColumn(materialColumns);
+    const statusValue = statusParam === "approved" ? "approved" : "pending";
+    const gradeNumber = gradeParam ? extractGradeNumber(gradeParam) : null;
+    const gradeTerms = gradeParam ? buildGradeTerms(gradeParam) : [];
+    const gradeTableColumns = gradeParam ? await safeGetColumns(GRADE_TABLE) : new Set<string>();
+    const hasGradeTable = gradeTableColumns.size > 0 && gradeTableColumns.has("grade_id");
+
+    const whereParts: string[] = [];
     const params: Array<string | number> = [];
 
-    if (gradeParam && gradeColumn) {
-      const gradeTerms = buildGradeTerms(gradeParam);
-      const gradeNumber = extractGradeNumber(gradeParam);
-      const gradeExpr = `LOWER(CAST(\`${gradeColumn}\` AS CHAR))`;
+    whereParts.push("LOWER(rm.status) = ?");
+    params.push(statusValue);
 
+    if (requestColumns.has("subject_id")) {
+      whereParts.push("rrs.subject_id = ?");
+      params.push(subjectId);
+    }
+
+    if (gradeParam && requestColumns.has("grade_id")) {
+      const gradeClauses: string[] = [];
       if (gradeNumber !== null) {
-        gradeClauses.push(`CAST(\`${gradeColumn}\` AS SIGNED) = ?`);
+        gradeClauses.push("rrs.grade_id = ?");
         params.push(gradeNumber);
       }
 
-      for (const term of gradeTerms) {
-        gradeClauses.push(`${gradeExpr} LIKE ?`);
-        params.push(`%${term}%`);
+      if (hasGradeTable && gradeTerms.length) {
+        const labelColumn = gradeTableColumns.has("grade_level")
+          ? "grade_level"
+          : gradeTableColumns.has("grade")
+            ? "grade"
+            : null;
+
+        if (labelColumn) {
+          gradeTerms.forEach((term) => {
+            gradeClauses.push(`LOWER(CAST(g.${labelColumn} AS CHAR)) LIKE ?`);
+            params.push(`%${term}%`);
+          });
+        }
+      }
+
+      if (gradeClauses.length) {
+        whereParts.push(`(${gradeClauses.join(" OR ")})`);
       }
     }
 
     if (dateColumn && (fromParam || toParam)) {
       if (fromParam) {
-        dateClauses.push(`DATE(\`${dateColumn}\`) >= ?`);
+        whereParts.push(`DATE(rm.${dateColumn}) >= ?`);
         params.push(fromParam);
       }
       if (toParam) {
-        dateClauses.push(`DATE(\`${dateColumn}\`) <= ?`);
+        whereParts.push(`DATE(rm.${dateColumn}) <= ?`);
         params.push(toParam);
       }
     }
 
-    const whereParts: string[] = [];
-    if (gradeClauses.length) {
-      whereParts.push(`(${gradeClauses.map((p) => `(${p})`).join(" OR ")})`);
-    }
-    if (dateClauses.length) {
-      whereParts.push(dateClauses.map((p) => `(${p})`).join(" AND "));
-    }
-
     const whereClause = whereParts.length ? `WHERE ${whereParts.join(" AND ")}` : "";
 
+    const joins = [
+      `FROM ${MATERIALS_TABLE} rm`,
+      `INNER JOIN ${REQUEST_TABLE} rrs ON rrs.request_id = rm.request_id`,
+      hasGradeTable ? `LEFT JOIN ${GRADE_TABLE} g ON g.grade_id = rrs.grade_id` : "",
+    ].filter(Boolean).join(" ");
+
     const [countRows] = await query<RowDataPacket[]>(
-      `SELECT COUNT(*) AS total FROM \`${tableName}\` ${whereClause}`,
+      `SELECT COUNT(*) AS total ${joins} ${whereClause}`,
       params,
     );
-    const total = Number(countRows?.[0]?.total ?? 0);
 
+    const total = Number(countRows?.[0]?.total ?? 0);
     const offset = (page - 1) * pageSize;
 
-    let orderClause = "";
-    if (columns.has("created_at")) {
-      orderClause = "ORDER BY created_at DESC";
-    } else if (columns.has("id")) {
-      orderClause = "ORDER BY id DESC";
-    }
+    const orderClause = dateColumn
+      ? `ORDER BY rm.${dateColumn} DESC`
+      : materialColumns.has("material_id")
+        ? "ORDER BY rm.material_id DESC"
+        : "";
 
     const [rows] = await query<RowDataPacket[]>(
-      `SELECT * FROM \`${tableName}\` ${whereClause} ${orderClause} LIMIT ? OFFSET ?`,
+      `SELECT rm.material_id, rm.status, rm.submitted_at, rrs.grade_id, rrs.subject_id ${joins} ${whereClause} ${orderClause} LIMIT ? OFFSET ?`,
       [...params, pageSize, offset],
     );
 
     return NextResponse.json({
       success: true,
-      data: rows,
+      data: rows ?? [],
       pagination: {
         total,
         page,
@@ -250,12 +298,12 @@ export async function GET(request: NextRequest) {
         totalPages: Math.ceil(total / pageSize),
       },
       metadata: {
-        table: tableName,
+        table: MATERIALS_TABLE,
         status: statusParam,
-        gradeColumn,
-        gradeFilterApplied: Boolean(gradeParam && gradeColumn),
         dateColumn,
         dateFilterApplied: Boolean(dateColumn && (fromParam || toParam)),
+        gradeFilterApplied: Boolean(gradeParam),
+        subjectId,
       },
     });
   } catch (error) {

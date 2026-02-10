@@ -20,10 +20,7 @@ export default function QrCodeModal({
 
     useEffect(() => {
         if (isOpen && quizCode) {
-            // We use a dummy token because the new flow just needs the code, 
-            // but buildAccessUrl might expect two args. 
-            // actually buildAccessUrl(quizCode, qrToken) was updated to ignore token in the last step.
-            const url = buildAccessUrl(quizCode, "dummy-token");
+            const url = buildAccessUrl(quizCode);
             generateQrCodeDataUrl(url).then(setQrDataUrl);
         }
     }, [isOpen, quizCode]);
@@ -89,7 +86,7 @@ export default function QrCodeModal({
                     </div>
 
                     <div className="text-sm text-gray-500 max-w-xs">
-                        Students can scan this code or go to <span className="text-[#013300] font-semibold">/join</span> and enter the code above.
+                        Students can scan this code or go to <span className="text-[#013300] font-semibold">/PWA</span> and enter the code above.
                     </div>
                 </div>
 
