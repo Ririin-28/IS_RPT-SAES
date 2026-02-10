@@ -156,9 +156,9 @@ export default function StudentQuizPage() {
     // Shared Background for consistency
     const Background = () => (
         <>
-            <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,_rgba(209,255,222,0.45),_transparent_20%),radial-gradient(circle_at_bottom_right,_rgba(188,240,214,0.35),_transparent_30%),linear-gradient(180deg,_rgba(255,255,255,0.98),_rgba(242,249,245,0.95))]" />
-            <div className="pointer-events-none absolute left-[12%] right-[46%] top-40 -z-10 h-56 rounded-3xl bg-gradient-to-br from-green-200/50 via-white/40 to-transparent blur-4xl" />
-            <div className="pointer-events-none absolute left-[52%] right-[12%] bottom-16 -z-10 h-56 rounded-[40px] bg-gradient-to-t from-green-200/60 via-white/35 to-transparent blur-4xl" />
+            <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(214,255,229,0.45),transparent_35%),radial-gradient(circle_at_bottom_right,rgba(198,242,222,0.4),transparent_40%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(244,251,246,0.96))]" />
+            <div className="pointer-events-none absolute left-[10%] right-[48%] top-36 -z-10 h-56 rounded-3xl bg-linear-to-br from-green-200/45 via-white/40 to-transparent blur-4xl" />
+            <div className="pointer-events-none absolute left-[54%] right-[10%] bottom-16 -z-10 h-56 rounded-[40px] bg-linear-to-t from-green-200/55 via-white/35 to-transparent blur-4xl" />
         </>
     );
 
@@ -175,7 +175,7 @@ export default function StudentQuizPage() {
                         height={80}
                         className="h-20 w-20 object-contain drop-shadow-md mb-4"
                     />
-                    <h1 className="text-4xl font-bold bg-gradient-to-r from-green-800 to-[#013300] bg-clip-text text-transparent">RPT-SAES</h1>
+                    <h1 className="text-4xl font-bold bg-linear-to-r from-green-800 to-[#013300] bg-clip-text text-transparent">RPT-SAES</h1>
                     <p className="text-[#013300]/70 font-medium mt-1">Assessment Portal</p>
                 </div>
 
@@ -216,7 +216,7 @@ export default function StudentQuizPage() {
                         <button
                             type="submit"
                             disabled={loading}
-                            className="w-full bg-gradient-to-r from-green-600 to-[#133000] text-white font-bold py-4 px-4 rounded-xl shadow-lg shadow-green-900/10 transform transition hover:-translate-y-0.5 hover:shadow-xl disabled:opacity-70 disabled:cursor-not-allowed mt-4"
+                            className="w-full bg-linear-to-r from-green-600 to-[#133000] text-white font-bold py-4 px-4 rounded-xl shadow-lg shadow-green-900/10 transform transition hover:-translate-y-0.5 hover:shadow-xl disabled:opacity-70 disabled:cursor-not-allowed mt-4"
                         >
                             {loading ? "Verifying..." : "Start Quiz"}
                         </button>
@@ -251,7 +251,7 @@ export default function StudentQuizPage() {
                     {/* Progress Bar */}
                     <div className="h-1.5 bg-green-100 w-full">
                         <div
-                            className="h-full bg-gradient-to-r from-green-500 to-[#013300] transition-all duration-500 ease-out rounded-r-full"
+                            className="h-full bg-linear-to-r from-green-500 to-[#013300] transition-all duration-500 ease-out rounded-r-full"
                             style={{ width: `${progress}%` }}
                         />
                     </div>
@@ -287,7 +287,7 @@ export default function StudentQuizPage() {
                                             key={choice.id}
                                             onClick={() => handleAnswer(choice.id)}
                                             disabled={submittingAnswer}
-                                            className={`${colorClass} text-white p-6 sm:p-8 rounded-2xl text-lg sm:text-xl font-bold shadow-xl transition-all disabled:opacity-50 flex items-center justify-center min-h-[120px] h-auto break-words leading-snug`}
+                                            className={`${colorClass} text-white p-6 sm:p-8 rounded-2xl text-lg sm:text-xl font-bold shadow-xl transition-all disabled:opacity-50 flex items-center justify-center min-h-30 h-auto break-word leading-snug`}
                                         >
                                             {choice.text}
                                         </button>
@@ -313,7 +313,7 @@ export default function StudentQuizPage() {
                                     <button
                                         type="submit"
                                         disabled={submittingAnswer}
-                                        className="w-full bg-gradient-to-r from-green-600 to-[#133000] hover:opacity-90 text-white font-bold py-4 rounded-xl shadow-lg transform transition active:scale-95"
+                                        className="w-full bg-linear-to-r from-green-600 to-[#133000] hover:opacity-90 text-white font-bold py-4 rounded-xl shadow-lg transform transition active:scale-95"
                                     >
                                         Submit Answer
                                     </button>

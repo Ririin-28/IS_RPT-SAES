@@ -273,9 +273,9 @@ export default function Home() {
   };
   return (
     <div className="min-h-screen text-[#013300] relative overflow-hidden scroll-smooth">
-      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,_rgba(209,255,222,0.45),_transparent_16%),radial-gradient(circle_at_bottom_right,_rgba(188,240,214,0.35),_transparent_22%),linear-gradient(180deg,_rgba(255,255,255,0.98),_rgba(242,249,245,0.95))]" />
-      <div className="pointer-events-none absolute left-[12%] right-[46%] top-40 -z-10 h-56 rounded-3xl bg-gradient-to-br from-green-200/30 via-white/40 to-transparent blur-4xl" />
-      <div className="pointer-events-none absolute left-[52%] right-[12%] bottom-16 -z-10 h-56 rounded-[40px] bg-gradient-to-t from-green-100/45 via-white/35 to-transparent blur-4xl" />
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(209,255,222,0.45),transparent_16%),radial-gradient(circle_at_bottom_right,rgba(188,240,214,0.35),transparent_22%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(242,249,245,0.95))]" />
+      <div className="pointer-events-none absolute left-[12%] right-[46%] top-40 -z-10 h-56 rounded-3xl bg-linear-to-br from-green-200/30 via-white/40 to-transparent blur-4xl" />
+      <div className="pointer-events-none absolute left-[52%] right-[12%] bottom-16 -z-10 h-56 rounded-[40px] bg-linear-to-t from-green-100/45 via-white/35 to-transparent blur-4xl" />
       
       {/* Navbar - Responsive Organization */}
       <header className={`fixed top-0 left-0 w-full z-30 bg-white shadow-md scroll-smooth transition-all duration-500 ${
@@ -312,8 +312,8 @@ export default function Home() {
         className="relative pt-24 px-6 py-8 overflow-hidden md:pt-28 md:px-8 md:py-12 lg:pt-20 lg:px-12"
       >
         {/* Soft gradients behind the hero */}
-        <div className="absolute inset-x-0 top-12 h-[420px] bg-gradient-to-br from-green-100 via-white to-green-50 blur-3xl opacity-70" />
-        <div className="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-gradient-to-br from-green-500/20 to-green-300/10 blur-2xl" />
+        <div className="absolute inset-x-0 top-12 h-105 bg-linear-to-br from-green-100 via-white to-green-50 blur-3xl opacity-70" />
+        <div className="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-linear-to-br from-green-500/20 to-green-300/10 blur-2xl" />
         <div className="absolute bottom-0 -left-20 h-64 w-64 rounded-full bg-green-200/30 blur-2xl" />
 
         <div className="relative max-w-7xl mx-auto py-8 grid md:gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:items-center lg:py-16 lg:gap-15">
@@ -391,8 +391,8 @@ export default function Home() {
           `}
           >
             <div className="relative isolate">
-              <div className="relative overflow-hidden rounded-[32px] border border-green-100/60 bg-white/70 shadow-[0_25px_50px_rgba(1,51,0,0.12)] backdrop-blur">
-                <div className="relative h-[400px] md:h-[480px] lg:h-[500px]">
+              <div className="relative overflow-hidden rounded-4xl border border-green-100/60 bg-white/70 shadow-[0_25px_50px_rgba(1,51,0,0.12)] backdrop-blur">
+                <div className="relative h-100 md:h-120 lg:h-125">
                   {HERO_IMAGES.map((src, index) => (
                     <div
                       key={src}
@@ -435,7 +435,7 @@ export default function Home() {
                   </button>
                 </div>
 
-                <div className="absolute bottom-0 left-0 right-0 px-6 py-5 bg-gradient-to-t from-[#013300]/90 via-[#013300]/50 to-transparent rounded-b-[32px]">
+                <div className="absolute bottom-0 left-0 right-0 px-6 py-5 bg-linear-to-t from-[#013300]/90 via-[#013300]/50 to-transparent rounded-b-4xl">
                 <h3 className="text-2xl font-bold text-white md:text-2xl lg:text-2xl">
                   {"San Agustin Elementary School"}
                 </h3>
@@ -492,21 +492,21 @@ export default function Home() {
             
             <div className={`
               absolute -left-20 top-1/2 -translate-y-1/2 w-40 h-40 rounded-full
-              bg-gradient-to-br from-green-500/20 to-green-300/10 blur-2xl
+              bg-linear-to-br from-green-500/20 to-green-300/10 blur-2xl
               transition-all duration-1000 delay-300
               ${isSectionVisible('mission') ? 'translate-x-0 opacity-100 scale-100' : '-translate-x-20 opacity-0 scale-50'}
             `}></div>
             
             <div className={`
               absolute -right-20 top-1/2 -translate-y-1/2 w-40 h-40 rounded-full
-              bg-gradient-to-br from-green-300/15 to-green-100/25 blur-2xl
+              bg-linear-to-br from-green-300/15 to-green-100/25 blur-2xl
               transition-all duration-1000 delay-500
               ${isSectionVisible('mission') ? 'translate-x-0 opacity-100 scale-100' : 'translate-x-20 opacity-0 scale-50'}
             `}></div>
 
             <div className="relative z-10">
               <div className={`
-                bg-gradient-to-r from-green-50/60 to-green-100/40 
+                bg-linear-to-r from-green-50/60 to-green-100/40 
                 border border-green-100/40 rounded-3xl
                 backdrop-blur-sm
                 transition-all duration-800 delay-700
@@ -571,9 +571,9 @@ export default function Home() {
                   shadow-[0_8px_32px_rgba(1,51,0,0.08)] hover:shadow-[0_20px_50px_rgba(1,51,0,0.15)]
                   transition-all duration-300 ease-out cursor-pointer
                   flex flex-col items-center text-center
-                  hover:bg-gradient-to-br hover:from-green-50 hover:to-white
+                  hover:bg-linear-to-br hover:from-green-50 hover:to-white
                   hover:border-green-200/80
-                  min-h-[280px] md:min-h-[300px] lg:min-h-[320px]
+                  min-h-70 md:min-h-75 lg:min-h-80
                   transform
                   ${isSectionVisible('features') ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}
                 `}
@@ -652,11 +652,11 @@ export default function Home() {
       >
         <div className="mb-12 md:mb-16">
           <div className="flex flex-col items-center justify-center gap-8 md:flex-row md:gap-12 lg:gap-16">
-            <div className="flex-shrink-0 relative">
+            <div className="shrink-0 relative">
               <div className={`
                 absolute -top-12 -left-12 w-64 h-64 rounded-full bg-green-700/10 z-0
                 md:-top-16 md:-left-16 md:w-96 md:h-96
-                lg:-top-5 lg:-left-20 lg:w-[23rem] lg:h-[23rem]
+                lg:-top-5 lg:-left-20 lg:w-92 lg:h-92
                 transition-all duration-1000 delay-300
                 ${isSectionVisible('mobile') ? 'scale-100 opacity-100' : 'scale-50 opacity-0'}
               `}></div>
@@ -664,7 +664,7 @@ export default function Home() {
               <div className={`
                 absolute -bottom-12 -right-12 w-60 h-60 rounded-full bg-green-500/15 z-0
                 md:-bottom-16 md:-right-16 md:w-80 md:h-80
-                lg:-bottom-2 lg:-right-12 lg:w-[24rem] lg:h-[24rem]
+                lg:-bottom-2 lg:-right-12 lg:w-96 lg:h-96
                 transition-all duration-1000 delay-500
                 ${isSectionVisible('mobile') ? 'scale-100 opacity-100' : 'scale-50 opacity-0'}
               `}></div>
@@ -765,7 +765,7 @@ export default function Home() {
       </section>
 
       {/* Gradient Transition Section */}
-      <div className={`w-full h-32 bg-gradient-to-b from-transparent to-white pointer-events-none transition-opacity duration-1000 ${
+      <div className={`w-full h-32 bg-linear-to-b from-transparent to-white pointer-events-none transition-opacity duration-1000 ${
         mounted ? 'opacity-100' : 'opacity-0'
       }`} />
       

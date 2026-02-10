@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { motion } from "framer-motion";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import InstallPWAButton from "@/components/Common/Buttons/InstallPWAButton";
@@ -9,7 +10,7 @@ import RemedialAssessment from "../RemedialAssessment/RemedialAssessment";
 export default function LandingPageAssessment() {
   const [quizCode, setQuizCode] = useState("");
   const [studentId, setStudentId] = useState("");
-  const [surname, setSurname] = useState("");
+  const [isStandalone, setIsStandalone] = useState(false);
   const [showAssessment, setShowAssessment] = useState(false);
   const [assessment, setAssessment] = useState<any | null>(null);
   const [attemptId, setAttemptId] = useState<number | null>(null);
@@ -27,6 +28,39 @@ export default function LandingPageAssessment() {
 
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const evaluateStandalone = () => {
+      const standaloneMatch = window.matchMedia("(display-mode: standalone)").matches;
+      const fullscreenMatch = window.matchMedia("(display-mode: fullscreen)").matches;
+      const minimalUiMatch = window.matchMedia("(display-mode: minimal-ui)").matches;
+      const iosStandalone = (window.navigator as { standalone?: boolean }).standalone === true;
+      setIsStandalone(standaloneMatch || fullscreenMatch || minimalUiMatch || iosStandalone);
+    };
+
+    evaluateStandalone();
+    const media = window.matchMedia("(display-mode: standalone)");
+    const handler = () => evaluateStandalone();
+
+    try {
+      media.addEventListener("change", handler);
+    } catch (e) {
+      (media as any).addListener(handler);
+    }
+
+    window.addEventListener("appinstalled", evaluateStandalone);
+
+    return () => {
+      try {
+        media.removeEventListener("change", handler);
+      } catch (e) {
+        (media as any).removeListener(handler);
+      }
+      window.removeEventListener("appinstalled", evaluateStandalone);
+    };
   }, []);
 
   useEffect(() => {
@@ -189,31 +223,84 @@ export default function LandingPageAssessment() {
     );
   }
 
+  const Background = () => (
+    <>
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(209,255,222,0.45),transparent_20%),radial-gradient(circle_at_bottom_right,rgba(188,240,214,0.35),transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(242,249,245,0.95))]" />
+      <div className="pointer-events-none absolute left-[10%] right-[50%] top-32 -z-10 h-56 rounded-3xl bg-linear-to-br from-green-200/50 via-white/40 to-transparent blur-4xl" />
+      <div className="pointer-events-none absolute left-[55%] right-[10%] bottom-16 -z-10 h-56 rounded-[40px] bg-linear-to-t from-green-200/60 via-white/35 to-transparent blur-4xl" />
+    </>
+  );
+
   return (
-    <div className="min-h-screen w-full bg-gradient-to-b from-[#e8f5e9] to-white flex items-center justify-center p-4 relative">
-      {/* Floating install button - bottom right */}
-      <div className="fixed bottom-6 right-6 z-50">
-        <InstallPWAButton />
-      </div>
+    <div className="min-h-screen w-full flex items-center justify-center p-4 text-[#013300] relative overflow-hidden">
+      <Background />
 
       <motion.div
         initial={mounted ? { opacity: 0, y: 20 } : false}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="w-full max-w-sm"
+        className="w-full max-w-md"
       >
-        <div className="rounded-2xl shadow-lg p-2">
-          <div className="p-4 space-y-4">
-            {/* Quiz Icon Section */}
-            <div className="flex justify-center mb-2">
-              <motion.div
-                initial={mounted ? { scale: 0.8, rotate: -10 } : false}
-                animate={{ scale: 1, rotate: 0 }}
-                transition={{ type: "spring", stiffness: 200 }}
-                className="w-20 h-20 rounded-full bg-gradient-to-r from-[#1b5e20] to-[#2e7d32] flex items-center justify-center shadow-md"
-              >
+        {!isStandalone ? (
+          <div className="bg-white/85 backdrop-blur-sm rounded-3xl shadow-xl w-full border border-green-100/60 p-8 space-y-6">
+            <div className="flex flex-col items-center">
+              <Image
+                src="/RPT-SAES/RPTLogo.png"
+                alt="RPT-SAES Logo"
+                width={72}
+                height={72}
+                className="h-16 w-16 object-contain drop-shadow-md"
+              />
+              <h1 className="text-3xl font-bold bg-linear-to-r from-green-800 to-[#013300] bg-clip-text text-transparent mt-3">RPT Quiz</h1>
+              <p className="text-[#013300]/70 font-medium mt-1">Assessment Portal</p>
+            </div>
+
+            <div className="text-center">
+              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[#013300]/50">Before You Install</p>
+              <h2 className="text-2xl font-bold text-[#013300] mt-2">Get Ready for Your Quiz</h2>
+              <p className="text-sm text-[#013300]/60 mt-2">
+                Install the app so you can access quizzes quickly and work smoothly even with a weak connection.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-green-100/80 bg-white/70 p-4 space-y-3 text-sm text-[#013300]/80">
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 h-6 w-6 rounded-full bg-green-100 text-[#013300] flex items-center justify-center text-xs font-bold">1</span>
+                <p>Tap the install button to add RPT Quiz to your home screen.</p>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 h-6 w-6 rounded-full bg-green-100 text-[#013300] flex items-center justify-center text-xs font-bold">2</span>
+                <p>Open the app from your home screen after it installs.</p>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 h-6 w-6 rounded-full bg-green-100 text-[#013300] flex items-center justify-center text-xs font-bold">3</span>
+                <p>Enter the quiz code and your LRN to begin.</p>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <InstallPWAButton />
+              <p className="text-xs text-center text-[#013300]/50">Already installed? Open the app and start your quiz.</p>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-white/85 backdrop-blur-sm rounded-3xl shadow-xl w-full border border-green-100/60 p-8">
+            <div className="flex flex-col items-center mb-6">
+              <Image
+                src="/RPT-SAES/RPTLogo.png"
+                alt="RPT-SAES Logo"
+                width={72}
+                height={72}
+                className="h-16 w-16 object-contain drop-shadow-md"
+              />
+              <h1 className="text-3xl font-bold bg-linear-to-r from-green-800 to-[#013300] bg-clip-text text-transparent mt-3">RPT Quiz</h1>
+              <p className="text-[#013300]/70 font-medium mt-1">Assessment Portal</p>
+            </div>
+
+            <div className="flex flex-col items-center mb-6">
+              <div className="w-16 h-16 rounded-full bg-linear-to-r from-[#1b5e20] to-[#2e7d32] flex items-center justify-center shadow-md">
                 <svg
-                  className="w-10 h-10 text-white"
+                  className="w-8 h-8 text-white"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -226,76 +313,68 @@ export default function LandingPageAssessment() {
                     d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
                   />
                 </svg>
-              </motion.div>
+              </div>
+              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[#013300]/50 mt-4">Quiz Title</p>
+              <h2 className="text-2xl font-bold text-[#013300] mt-1">Quiz Time!</h2>
             </div>
 
-            <h1 className="text-center text-2xl font-bold text-[#1b5e20]">
-              Quiz Time!
-            </h1>
-
-            <div className="space-y-3 mt-4">
+            <div className="space-y-4">
               <div>
-                <label className="text-sm font-medium text-gray-700">Quiz Code</label>
+                <label className="block text-sm font-semibold text-[#013300]/80 mb-2">Quiz Code</label>
+                <button
+                  type="button"
+                  onClick={startScan}
+                  className="w-full mb-3 rounded-xl border-2 border-[#013300]/20 bg-white/70 py-3 text-sm font-semibold text-[#013300] shadow-sm transition hover:border-[#013300]/40"
+                >
+                  Scan QR Code
+                </button>
+                <div className="flex items-center justify-center gap-3 text-xs uppercase tracking-[0.25em] text-[#013300]/40 mb-3">
+                  <span className="h-px flex-1 bg-[#013300]/10" />
+                  or
+                  <span className="h-px flex-1 bg-[#013300]/10" />
+                </div>
                 <input
                   type="text"
                   placeholder="Enter Quiz Code"
                   value={quizCode}
-                  onChange={(e) => setQuizCode(e.target.value)}
-                  className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1b5e20] focus:border-transparent"
+                  onChange={(e) => setQuizCode(e.target.value.toUpperCase())}
+                  className="w-full px-4 py-3.5 rounded-xl border-2 border-green-200/50 focus:border-[#013300] focus:ring-0 outline-none transition-all bg-white text-[#013300] placeholder-green-800/20 text-center font-mono tracking-widest uppercase font-bold text-lg"
                 />
-                <button
-                  type="button"
-                  onClick={startScan}
-                  className="mt-2 w-full rounded-lg border border-[#1b5e20] text-[#1b5e20] py-2 text-sm font-semibold hover:bg-[#1b5e20] hover:text-white transition"
-                >
-                  Scan QR Code
-                </button>
               </div>
 
               <div>
-                <label className="text-sm font-medium text-gray-700">Student ID</label>
+                <label className="block text-sm font-semibold text-[#013300]/80 mb-2">Student LRN</label>
                 <input
                   type="text"
-                  placeholder="Enter Student ID"
+                  placeholder="Enter LRN"
                   value={studentId}
                   onChange={(e) => setStudentId(e.target.value)}
-                  className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1b5e20] focus:border-transparent"
-                />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium text-gray-700">Surname</label>
-                <input
-                  type="text"
-                  placeholder="Enter Surname"
-                  value={surname}
-                  onChange={(e) => setSurname(e.target.value)}
-                  className="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1b5e20] focus:border-transparent"
+                  className="w-full px-4 py-3.5 rounded-xl border-2 border-green-200/50 focus:border-[#013300] focus:ring-0 outline-none transition-all bg-white text-[#013300] placeholder-green-800/20 text-center text-lg"
                 />
               </div>
             </div>
 
             {errorMessage && (
-              <p className="text-sm text-red-600">{errorMessage}</p>
+              <p className="text-sm text-red-600 mt-4 text-center">{errorMessage}</p>
             )}
 
             {scanError && (
-              <p className="text-sm text-red-600">{scanError}</p>
+              <p className="text-sm text-red-600 mt-2 text-center">{scanError}</p>
             )}
 
             {completedScore !== null && (
-              <p className="text-sm text-green-700">Quiz submitted. Score: {completedScore}</p>
+              <p className="text-sm text-green-700 mt-2 text-center">Quiz submitted. Score: {completedScore}</p>
             )}
 
             <PrimaryButton
               onClick={handleStart}
-              className="w-full mt-4 py-3 rounded-xl text-base font-semibold"
+              className="w-full mt-6 py-3.5 rounded-xl text-base font-semibold"
               disabled={isLoading}
             >
               {isLoading ? "Starting..." : "Start Quiz"}
             </PrimaryButton>
           </div>
-        </div>
+        )}
       </motion.div>
 
       {isScanning && (

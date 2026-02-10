@@ -71,51 +71,44 @@ const InstallPWAButton: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col items-center md:items-start">
-      {canInstall ? (
-        <button
-          onClick={triggerInstall}
-          className="group flex items-center justify-center w-14 h-14 bg-green-900 text-white rounded-full shadow-lg hover:bg-green-800 transition-all duration-300 hover:scale-110"
-          aria-label="Install RPT-SAES Application"
+    <div className="flex w-full flex-col items-stretch">
+      <button
+        onClick={() => {
+          if (canInstall && deferredPrompt) {
+            void triggerInstall();
+          }
+        }}
+        className="flex w-full items-center justify-center rounded-lg bg-green-900 px-6 py-3 text-base font-bold text-white border-0 transition hover:bg-green-800 disabled:opacity-60 disabled:cursor-not-allowed"
+        aria-label="Download RPT-Quiz"
+        disabled={!canInstall}
+      >
+        <svg
+          className="mr-2 h-5 w-5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2.5}
+          viewBox="0 0 24 24"
         >
-          <svg
-            className="w-6 h-6"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2.5}
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4"
-            />
-          </svg>
-        </button>
-      ) : (
-        <PrimaryButton
-          onClick={() => setShowHelp(h => !h)}
-          aria-expanded={showHelp}
-          aria-controls="pwa-install-help"
-          className="group flex items-center justify-center w-14 h-14 bg-green-900 text-white rounded-full shadow-lg hover:bg-green-800 transition-all duration-300 hover:scale-110"
-        >
-          <svg
-            className="w-6 h-6"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2.5}
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4"
-            />
-          </svg>
-        </PrimaryButton>
-      )}
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4"
+          />
+        </svg>
+        <span>Download RPT-Quiz</span>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => setShowHelp((h) => !h)}
+        aria-expanded={showHelp}
+        aria-controls="pwa-install-help"
+        className="mt-2 text-xs font-semibold text-green-700 hover:text-green-900 self-center"
+      >
+        {showHelp ? "Hide install instructions" : "How to install?"}
+      </button>
       {showHelp && (
-        <div className="absolute bottom-full right-0 mb-2 w-72 bg-white/95 backdrop-blur-sm rounded-lg p-3 shadow-lg border border-green-100">
+        <div className="mt-3 w-full rounded-2xl bg-white/95 p-4 text-left shadow-lg border border-green-100">
           <h4 className="font-semibold text-green-900 mb-2 text-sm">How to Install</h4>
           <ul className="text-green-800 text-xs list-disc list-inside space-y-1">
             <li><span className="font-medium">Desktop Chrome / Edge:</span> Menu (⋮) → Install.</li>
