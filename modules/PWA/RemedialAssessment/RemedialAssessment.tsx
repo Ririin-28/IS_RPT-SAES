@@ -27,7 +27,7 @@ type Assessment = {
 interface RemedialAssessmentProps {
   assessment: Assessment;
   attemptId: number;
-  onComplete: (score: number) => void;
+  onComplete: (summary: { score: number; correct: number; incorrect: number; total: number }) => void;
 }
 
 export default function RemedialAssessment({ assessment, attemptId, onComplete }: RemedialAssessmentProps) {
@@ -35,10 +35,12 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
   const [shortAnswer, setShortAnswer] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedChoiceId, setSelectedChoiceId] = useState<number | null>(null);
   const questions = useMemo(() => assessment.questions ?? [], [assessment.questions]);
 
   const item = questions[current];
   const isLast = current === questions.length - 1;
+  const progress = questions.length > 0 ? ((current + 1) / questions.length) * 100 : 0;
 
   const saveAnswer = async (payload: { questionId: number; selectedChoiceId?: number; answerText?: string }) => {
     const response = await fetch(`/api/assessments/attempts/${attemptId}/answer`, {
@@ -55,11 +57,13 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
   const handleChoiceSelect = async (choiceId: number) => {
     if (!item || isSaving) return;
     setIsSaving(true);
+    setSelectedChoiceId(choiceId);
     try {
       await saveAnswer({ questionId: item.id, selectedChoiceId: choiceId });
       if (isLast) {
         await handleSubmit();
       } else {
+        setSelectedChoiceId(null);
         setCurrent((prev) => Math.min(prev + 1, questions.length - 1));
       }
     } catch (error) {
@@ -98,7 +102,12 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
       if (!response.ok || !data?.success) {
         throw new Error(data?.error ?? "Unable to submit quiz.");
       }
-      onComplete(Number(data.totalScore ?? 0));
+      onComplete({
+        score: Number(data.totalScore ?? 0),
+        correct: Number(data.correctCount ?? 0),
+        incorrect: Number(data.incorrectCount ?? 0),
+        total: Number(data.totalQuestions ?? questions.length),
+      });
     } catch (error) {
       console.error(error);
     } finally {
@@ -116,9 +125,19 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
       >
         <div className="rounded-2xl shadow-lg">
           <div className="p-5 space-y-5">
-            <h2 className="text-xl font-bold text-center text-[#1b5e20]">
-              Question {current + 1} / {questions.length}
-            </h2>
+            <div className="space-y-3 text-center">
+              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[#013300]/50">Section</p>
+              <h2 className="text-xl font-bold text-[#1b5e20]">
+                {assessment.title}
+              </h2>
+              <div className="h-1.5 w-full bg-green-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-linear-to-r from-green-600 to-[#133000] transition-all duration-500"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <p className="text-xs text-[#013300]/60">Question {current + 1} of {questions.length}</p>
+            </div>
 
             <p className="text-md font-medium text-gray-700 text-center">
               {item?.questionText}
@@ -130,7 +149,12 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
                   <UtilityButton
                     key={choice.id}
                     onClick={() => handleChoiceSelect(choice.id)}
-                    className="w-full py-4 rounded-xl text-base font-semibold"
+                    aria-pressed={selectedChoiceId === choice.id}
+                    className={`w-full py-4 rounded-xl text-base font-semibold border transition-all focus:outline-none focus:ring-2 focus:ring-green-200 ${
+                      selectedChoiceId === choice.id
+                        ? "bg-linear-to-r from-green-600 to-[#133000] text-white border-[#0f3b1a]"
+                        : "bg-white text-[#013300] border-green-200 hover:bg-green-50"
+                    }`}
                     disabled={isSaving || isSubmitting}
                   >
                     {choice.text}

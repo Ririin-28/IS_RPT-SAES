@@ -46,6 +46,8 @@ export default function StudentQuizPage() {
     const [currentIndex, setCurrentIndex] = useState(0);
     const [submittingAnswer, setSubmittingAnswer] = useState(false);
     const [score, setScore] = useState<number | null>(null);
+    const [summary, setSummary] = useState<{ correct: number; incorrect: number; total: number } | null>(null);
+    const [selectedChoiceId, setSelectedChoiceId] = useState<number | null>(null);
 
     const currentQuestion = quiz?.questions[currentIndex];
     const isLastQuestion = quiz && currentIndex === quiz.questions.length - 1;
@@ -96,6 +98,9 @@ export default function StudentQuizPage() {
         if (!attemptId || !currentQuestion || submittingAnswer) return;
 
         setSubmittingAnswer(true);
+        if (choiceId) {
+            setSelectedChoiceId(choiceId);
+        }
 
         try {
             const payload = {
@@ -120,6 +125,7 @@ export default function StudentQuizPage() {
             if (isLastQuestion) {
                 finishQuiz();
             } else {
+                setSelectedChoiceId(null);
                 setCurrentIndex((prev) => prev + 1);
             }
         } catch (err) {
@@ -140,6 +146,17 @@ export default function StudentQuizPage() {
             const data = await res.json();
             if (data.success) {
                 setScore(data.totalScore);
+                setSummary({
+                    correct: Number(data.correctCount ?? 0),
+                    incorrect: Number(data.incorrectCount ?? 0),
+                    total: Number(data.totalQuestions ?? quiz?.questions.length ?? 0),
+                });
+                if (data.student?.name) {
+                    setStudent({
+                        name: data.student.name,
+                        lrn: data.student.lrn ?? lrn,
+                    });
+                }
                 setStage("completed");
             } else {
                 setError(data.error);
@@ -259,9 +276,13 @@ export default function StudentQuizPage() {
 
                 <main className="flex-1 max-w-4xl mx-auto w-full p-4 sm:p-6 flex flex-col justify-center">
                     <div className="mb-10 text-center">
-                        <span className="inline-block px-4 py-1.5 bg-green-100 text-green-800 rounded-full text-xs font-bold tracking-wider uppercase mb-5">
+                        <span className="inline-block px-4 py-1.5 bg-green-100 text-green-800 rounded-full text-xs font-bold tracking-wider uppercase mb-4">
                             Question {currentIndex + 1} of {quiz.questions.length}
                         </span>
+                        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[#013300]/50 mb-2">Section</p>
+                        <h3 className="text-lg sm:text-xl font-semibold text-[#013300] mb-3">
+                            {quiz.title}
+                        </h3>
                         <h2 className="text-2xl sm:text-4xl font-extrabold text-[#013300] leading-tight">
                             {currentQuestion.text}
                         </h2>
@@ -273,21 +294,20 @@ export default function StudentQuizPage() {
                     <div className="w-full">
                         {isMultipleChoice ? (
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                {currentQuestion.choices.map((choice, idx) => {
-                                    const colors = [
-                                        "bg-red-500 hover:bg-red-600 border-b-4 border-red-700 active:border-b-0 active:translate-y-1",
-                                        "bg-blue-500 hover:bg-blue-600 border-b-4 border-blue-700 active:border-b-0 active:translate-y-1",
-                                        "bg-yellow-500 hover:bg-yellow-600 border-b-4 border-yellow-700 active:border-b-0 active:translate-y-1",
-                                        "bg-green-500 hover:bg-green-600 border-b-4 border-green-700 active:border-b-0 active:translate-y-1",
-                                    ];
-                                    const colorClass = colors[idx % 4];
+                                {currentQuestion.choices.map((choice) => {
+                                    const isSelected = selectedChoiceId === choice.id;
 
                                     return (
                                         <button
                                             key={choice.id}
                                             onClick={() => handleAnswer(choice.id)}
                                             disabled={submittingAnswer}
-                                            className={`${colorClass} text-white p-6 sm:p-8 rounded-2xl text-lg sm:text-xl font-bold shadow-xl transition-all disabled:opacity-50 flex items-center justify-center min-h-30 h-auto break-word leading-snug`}
+                                            aria-pressed={isSelected}
+                                            className={`p-6 sm:p-8 rounded-2xl text-lg sm:text-xl font-bold shadow-lg transition-all disabled:opacity-50 flex items-center justify-center min-h-30 h-auto break-word leading-snug border ${
+                                                isSelected
+                                                    ? "bg-linear-to-r from-green-600 to-[#133000] text-white border-[#0f3b1a]"
+                                                    : "bg-white text-[#013300] border-green-200 hover:bg-green-50"
+                                            }`}
                                         >
                                             {choice.text}
                                         </button>
@@ -338,16 +358,40 @@ export default function StudentQuizPage() {
                     </div>
 
                     <h1 className="text-3xl font-extrabold text-[#013300] mb-3">Quiz Completed!</h1>
-                    <p className="text-[#013300]/70 mb-8 text-lg">
-                        Thank you, {student?.name?.split(' ')[0]}.<br />Your answers have been recorded.
+                    <p className="text-[#013300]/70 mb-4 text-lg">
+                        Thank you, {student?.name ?? "Student"}.<br />Your answers have been recorded.
                     </p>
-
-                    {score !== null && (
-                        <div className="bg-green-50 rounded-2xl p-8 border border-green-100 shadow-sm">
-                            <p className="text-green-800 font-bold uppercase text-xs tracking-widest mb-2">Your Score</p>
-                            <p className="text-6xl font-black text-[#013300]">{score}</p>
-                        </div>
+                    {student?.lrn && (
+                        <p className="text-sm text-[#013300]/60 mb-6">LRN: {student.lrn}</p>
                     )}
+
+                    <div className="bg-green-50 rounded-2xl p-8 border border-green-100 shadow-sm">
+                        <p className="text-green-800 font-bold uppercase text-xs tracking-widest mb-2">Your Score</p>
+                        <p className="text-6xl font-black text-[#013300]">{score ?? 0}</p>
+                        {summary && (
+                            <div className="mt-4 grid grid-cols-2 gap-3 text-sm text-[#013300]">
+                                <div className="rounded-xl bg-white p-3 border border-green-100">
+                                    <p className="text-xs uppercase tracking-[0.2em] text-[#013300]/50">Correct</p>
+                                    <p className="text-xl font-bold mt-1">{summary.correct}</p>
+                                </div>
+                                <div className="rounded-xl bg-white p-3 border border-green-100">
+                                    <p className="text-xs uppercase tracking-[0.2em] text-[#013300]/50">Incorrect</p>
+                                    <p className="text-xl font-bold mt-1">{summary.incorrect}</p>
+                                </div>
+                                <div className="col-span-2 text-xs text-[#013300]/60">Out of {summary.total} questions</div>
+                            </div>
+                        )}
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={() => {
+                            window.location.href = "/PWA";
+                        }}
+                        className="w-full mt-6 bg-linear-to-r from-green-600 to-[#133000] text-white font-bold py-3.5 rounded-xl shadow-lg transition hover:opacity-90"
+                    >
+                        Back to Assessment Landing Page
+                    </button>
                 </div>
             </div>
         );

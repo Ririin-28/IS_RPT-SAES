@@ -15,13 +15,17 @@ export async function POST(request: NextRequest) {
         return await runWithConnection(async (connection) => {
             // 1. Verify Student
             const [students] = await connection.query<RowDataPacket[]>(
-                "SELECT student_id, lrn, first_name, last_name FROM student WHERE lrn = ? LIMIT 1",
+                "SELECT student_id, lrn, first_name, middle_name, last_name FROM student WHERE lrn = ? LIMIT 2",
                 [lrn]
             );
             const student = students[0];
 
             if (!student) {
                 return NextResponse.json({ success: false, error: "Student not found." }, { status: 404 });
+            }
+
+            if (students.length > 1) {
+                return NextResponse.json({ success: false, error: "Duplicate LRN detected. Please contact your teacher." }, { status: 409 });
             }
 
             // 2. Verify Assessment
@@ -41,8 +45,8 @@ export async function POST(request: NextRequest) {
 
             // 3. Check for existing attempts
             const [attempts] = await connection.query<RowDataPacket[]>(
-                "SELECT attempt_id, status FROM assessment_attempts WHERE assessment_id = ? AND student_id = ? ORDER BY attempt_id DESC LIMIT 1",
-                [assessment.assessment_id, student.student_id]
+                "SELECT attempt_id, status FROM assessment_attempts WHERE assessment_id = ? AND (student_id = ? OR lrn = ?) ORDER BY attempt_id DESC LIMIT 1",
+                [assessment.assessment_id, student.student_id, student.lrn]
             );
             const existingAttempt = attempts[0];
 
@@ -99,7 +103,9 @@ export async function POST(request: NextRequest) {
                 success: true,
                 attemptId,
                 student: {
-                    name: `${student.first_name} ${student.last_name}`,
+                    name: [student.first_name, student.middle_name, student.last_name]
+                        .filter((part: string | null) => typeof part === "string" && part.trim().length > 0)
+                        .join(" "),
                     lrn: student.lrn
                 },
                 quiz: {

@@ -250,11 +250,13 @@ export async function GET(request: NextRequest) {
         ? `(
             SELECT COUNT(DISTINCT aa.attempt_id)
             FROM assessment_attempts aa
-            JOIN student_teacher_assignment sta ON aa.student_id = sta.student_id
+            JOIN student_teacher_assignment sta ON sta.student_id = aa.student_id
+            JOIN student s ON s.student_id = sta.student_id
             WHERE aa.assessment_id = a.assessment_id
               AND aa.status IN ('submitted','graded')
               AND sta.teacher_id = ${escapedTeacherId}
               AND sta.is_active = 1
+              AND (aa.student_id = sta.student_id OR (aa.lrn IS NOT NULL AND aa.lrn = s.lrn))
            )`
         : `(
             SELECT COUNT(*)

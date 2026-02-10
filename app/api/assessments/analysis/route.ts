@@ -60,13 +60,15 @@ export async function GET(request: Request) {
         // 2. Get Assigned Students (Active only)
         // We only care about students assigned to THIS teacher / remedial teacher
         const [assignedStudents] = await pool.query<RowDataPacket[]>(
-            `SELECT student_id, grade_id 
-             FROM student_teacher_assignment 
-             WHERE ${assignmentColumn} = ? AND is_active = 1`,
+            `SELECT sta.student_id, s.lrn
+             FROM student_teacher_assignment sta
+             JOIN student s ON s.student_id = sta.student_id
+             WHERE sta.${assignmentColumn} = ? AND sta.is_active = 1`,
             [resolvedId]
         );
 
-        const assignedStudentIds = assignedStudents.map((s: any) => s.student_id);
+        const assignedStudentIds = assignedStudents.map((s: any) => s.student_id).filter(Boolean);
+        const assignedStudentLrns = assignedStudents.map((s: any) => s.lrn).filter(Boolean);
 
         // If no students are assigned, we return empty stats but valid success
         if (assignedStudentIds.length === 0) {
@@ -87,13 +89,30 @@ export async function GET(request: Request) {
         // We include student ID and LRN. 
         // Note: Use '?' for IN clause placeholder expansion in mysql2 if configured, or map it manually.
         // mysql2 usually supports 'IN (?)' with an array.
+        const attemptFilters: string[] = [];
+        const attemptParams: Array<number | string | string[]> = [assessmentId];
+
+        if (assignedStudentIds.length > 0) {
+            attemptFilters.push("a.student_id IN (?)");
+            attemptParams.push(assignedStudentIds);
+        }
+
+        if (assignedStudentLrns.length > 0) {
+            attemptFilters.push("a.lrn IN (?)");
+            attemptParams.push(assignedStudentLrns);
+        }
+
+        const attemptsFilterSql = attemptFilters.length > 0
+            ? `AND (${attemptFilters.join(" OR ")})`
+            : "";
+
         const [attempts] = await pool.query<RowDataPacket[]>(
             `SELECT a.attempt_id, a.student_id, a.lrn, a.total_score, a.submitted_at 
              FROM assessment_attempts a
              WHERE a.assessment_id = ? 
-             AND a.student_id IN (?)
+             ${attemptsFilterSql}
              AND a.status = 'submitted'`,
-            [assessmentId, assignedStudentIds]
+            attemptParams
         );
 
         // 4. Calculate Summary Metrics
@@ -156,14 +175,21 @@ export async function GET(request: Request) {
         // Fetch names from 'student' table
 
         const studentMap = new Map<string, string>(); // ID -> Name
+        const studentLrnMap = new Map<string, string>(); // LRN -> Name
         try {
             if (assignedStudentIds.length > 0) {
                 const [students] = await pool.query<RowDataPacket[]>(
-                    `SELECT student_id, first_name, last_name FROM student WHERE student_id IN (?)`,
+                    `SELECT student_id, lrn, first_name, middle_name, last_name FROM student WHERE student_id IN (?)`,
                     [assignedStudentIds]
                 );
                 students.forEach((s: any) => {
-                    studentMap.set(String(s.student_id), `${s.first_name} ${s.last_name}`);
+                    const fullName = [s.first_name, s.middle_name, s.last_name]
+                        .filter((part: string | null) => typeof part === "string" && part.trim().length > 0)
+                        .join(" ");
+                    studentMap.set(String(s.student_id), fullName);
+                    if (s.lrn) {
+                        studentLrnMap.set(String(s.lrn), fullName);
+                    }
                 });
             }
         } catch (e) {
@@ -173,7 +199,10 @@ export async function GET(request: Request) {
         const responses = attempts.map((a: any) => ({
             id: a.attempt_id,
             studentId: a.student_id,
-            studentName: studentMap.get(String(a.student_id)) || a.lrn || `Student ${a.student_id}`,
+            studentName: studentMap.get(String(a.student_id))
+                || studentLrnMap.get(String(a.lrn))
+                || a.lrn
+                || `Student ${a.student_id}`,
             score: a.total_score,
             submittedAt: a.submitted_at
         }));

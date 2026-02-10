@@ -17,10 +17,18 @@ export default function LandingPageAssessment() {
   const [qrToken, setQrToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [completedScore, setCompletedScore] = useState<number | null>(null);
+  const [completedSummary, setCompletedSummary] = useState<{
+    score: number;
+    correct: number;
+    incorrect: number;
+    total: number;
+  } | null>(null);
   const [mounted, setMounted] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [scanStatus, setScanStatus] = useState<string | null>(null);
+  const [studentName, setStudentName] = useState<string | null>(null);
+  const [studentLrn, setStudentLrn] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanFrameRef = useRef<number | null>(null);
@@ -93,6 +101,7 @@ export default function LandingPageAssessment() {
 
     detectorRef.current = null;
     setIsScanning(false);
+    setScanStatus(null);
   }, []);
 
   const applyScanValue = useCallback((value: string) => {
@@ -107,6 +116,7 @@ export default function LandingPageAssessment() {
       if (token) {
         setQrToken(token);
       }
+      setScanStatus("QR code detected.");
       return;
     } catch {
       // Not a URL, fallback to code extraction.
@@ -115,26 +125,44 @@ export default function LandingPageAssessment() {
     const match = value.trim().match(/[A-Za-z0-9]{6}/);
     if (match?.[0]) {
       setQuizCode(match[0].toUpperCase());
+      setScanStatus("QR code detected.");
     }
   }, []);
 
   const startScan = useCallback(async () => {
     if (isScanning) return;
     setScanError(null);
+    setScanStatus("Starting camera...");
 
     if (typeof window === "undefined") return;
+    if (!window.isSecureContext) {
+      setScanError("Camera requires a secure connection (HTTPS) or localhost.");
+      setScanStatus(null);
+      return;
+    }
     const BarcodeDetectorCtor = (window as any).BarcodeDetector;
     if (!BarcodeDetectorCtor) {
       setScanError("QR scanning is not supported on this device.");
+      setScanStatus(null);
       return;
     }
 
     if (!navigator.mediaDevices?.getUserMedia) {
       setScanError("Camera access is not available.");
+      setScanStatus(null);
       return;
     }
 
     try {
+      if (typeof BarcodeDetectorCtor.getSupportedFormats === "function") {
+        const supported = await BarcodeDetectorCtor.getSupportedFormats();
+        if (!supported.includes("qr_code")) {
+          setScanError("QR scanning is not supported on this device.");
+          setScanStatus(null);
+          return;
+        }
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: "environment" } },
         audio: false,
@@ -143,11 +171,13 @@ export default function LandingPageAssessment() {
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        videoRef.current.playsInline = true;
         await videoRef.current.play();
       }
 
       detectorRef.current = new BarcodeDetectorCtor({ formats: ["qr_code"] });
       setIsScanning(true);
+      setScanStatus("Scanning...");
 
       const scanLoop = async () => {
         if (!videoRef.current || !detectorRef.current) return;
@@ -168,7 +198,20 @@ export default function LandingPageAssessment() {
       scanFrameRef.current = requestAnimationFrame(scanLoop);
     } catch (error) {
       console.error("Unable to start scanner", error);
-      setScanError("Unable to access the camera. Please allow permission.");
+      if (error instanceof DOMException) {
+        if (error.name === "NotAllowedError" || error.name === "PermissionDeniedError") {
+          setScanError("Camera permission denied. Please allow access and try again.");
+        } else if (error.name === "NotFoundError") {
+          setScanError("No camera found on this device.");
+        } else if (error.name === "NotReadableError") {
+          setScanError("Camera is already in use by another app.");
+        } else {
+          setScanError("Unable to access the camera. Please try again.");
+        }
+      } else {
+        setScanError("Unable to access the camera. Please try again.");
+      }
+      setScanStatus(null);
       stopScan();
     }
   }, [applyScanValue, isScanning, stopScan]);
@@ -201,6 +244,9 @@ export default function LandingPageAssessment() {
       }
       setAssessment(data.assessment);
       setAttemptId(Number(data.attemptId));
+      setStudentName(data?.student?.name ?? null);
+      setStudentLrn(data?.student?.lrn ?? studentId.trim());
+      setCompletedSummary(null);
       setShowAssessment(true);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to access quiz.";
@@ -215,8 +261,8 @@ export default function LandingPageAssessment() {
       <RemedialAssessment
         assessment={assessment}
         attemptId={attemptId}
-        onComplete={(score) => {
-          setCompletedScore(score);
+        onComplete={(summary) => {
+          setCompletedSummary(summary);
           setShowAssessment(false);
         }}
       />
@@ -282,6 +328,58 @@ export default function LandingPageAssessment() {
               <InstallPWAButton />
               <p className="text-xs text-center text-[#013300]/50">Already installed? Open the app and start your quiz.</p>
             </div>
+          </div>
+        ) : completedSummary ? (
+          <div className="bg-white/85 backdrop-blur-sm rounded-3xl shadow-xl w-full border border-green-100/60 p-8">
+            <div className="flex flex-col items-center mb-6">
+              <Image
+                src="/RPT-SAES/RPTLogo.png"
+                alt="RPT-SAES Logo"
+                width={72}
+                height={72}
+                className="h-16 w-16 object-contain drop-shadow-md"
+              />
+              <h1 className="text-3xl font-bold bg-linear-to-r from-green-800 to-[#013300] bg-clip-text text-transparent mt-3">RPT Quiz</h1>
+              <p className="text-[#013300]/70 font-medium mt-1">Assessment Portal</p>
+            </div>
+
+            <div className="text-center">
+              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[#013300]/50">Completion</p>
+              <h2 className="text-2xl font-bold text-[#013300] mt-2">Quiz Submitted</h2>
+              <p className="text-sm text-[#013300]/60 mt-2">Your answers have been recorded.</p>
+            </div>
+
+            <div className="mt-6 rounded-2xl border border-green-100/80 bg-white/70 p-4 text-center">
+              <p className="text-sm font-semibold text-[#013300]">{studentName ?? "Student"}</p>
+              {studentLrn && (
+                <p className="text-xs text-[#013300]/60 mt-1">LRN: {studentLrn}</p>
+              )}
+            </div>
+
+            <div className="mt-6 grid grid-cols-2 gap-3 text-center">
+              <div className="rounded-2xl bg-green-50 border border-green-100 p-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-[#013300]/50">Score</p>
+                <p className="text-3xl font-bold text-[#013300] mt-2">{completedSummary.score}</p>
+              </div>
+              <div className="rounded-2xl bg-green-50 border border-green-100 p-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-[#013300]/50">Correct</p>
+                <p className="text-3xl font-bold text-[#013300] mt-2">{completedSummary.correct}</p>
+              </div>
+              <div className="rounded-2xl bg-white border border-green-100 p-4 col-span-2">
+                <p className="text-xs uppercase tracking-[0.2em] text-[#013300]/50">Incorrect</p>
+                <p className="text-2xl font-semibold text-[#013300] mt-2">{completedSummary.incorrect}</p>
+                <p className="text-xs text-[#013300]/60 mt-1">Out of {completedSummary.total} questions</p>
+              </div>
+            </div>
+
+            <PrimaryButton
+              onClick={() => {
+                window.location.href = "/PWA";
+              }}
+              className="w-full mt-6 py-3.5 rounded-xl text-base font-semibold"
+            >
+              Back to Assessment Landing Page
+            </PrimaryButton>
           </div>
         ) : (
           <div className="bg-white/85 backdrop-blur-sm rounded-3xl shadow-xl w-full border border-green-100/60 p-8">
@@ -362,10 +460,6 @@ export default function LandingPageAssessment() {
               <p className="text-sm text-red-600 mt-2 text-center">{scanError}</p>
             )}
 
-            {completedScore !== null && (
-              <p className="text-sm text-green-700 mt-2 text-center">Quiz submitted. Score: {completedScore}</p>
-            )}
-
             <PrimaryButton
               onClick={handleStart}
               className="w-full mt-6 py-3.5 rounded-xl text-base font-semibold"
@@ -385,6 +479,12 @@ export default function LandingPageAssessment() {
               <video ref={videoRef} className="w-full h-64 object-cover" playsInline muted />
             </div>
             <p className="text-xs text-gray-600 text-center">Point your camera at the QR code.</p>
+            {scanStatus && (
+              <p className="text-xs text-[#1b5e20] text-center">{scanStatus}</p>
+            )}
+            {scanError && (
+              <p className="text-xs text-red-600 text-center">{scanError}</p>
+            )}
             <button
               type="button"
               onClick={stopScan}

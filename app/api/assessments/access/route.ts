@@ -51,8 +51,9 @@ export async function POST(request: NextRequest) {
   try {
     const payload = (await request.json()) as AccessPayload;
     const quizCode = payload.quizCode?.trim().toUpperCase();
+    const lrn = payload.studentId?.trim();
 
-    if (!quizCode || !payload.studentId?.trim()) {
+    if (!quizCode || !lrn) {
       return NextResponse.json({ success: false, error: "Quiz code and student id are required." }, { status: 400 });
     }
 
@@ -96,17 +97,38 @@ export async function POST(request: NextRequest) {
       }
 
       const now = new Date();
-      const startTime = new Date(assessmentRow.start_time);
-      const endTime = new Date(assessmentRow.end_time);
-      if (now < startTime || now > endTime) {
-        return NextResponse.json({ success: false, error: "Quiz is not available at this time." }, { status: 403 });
+      if (assessmentRow.start_time && assessmentRow.end_time) {
+        const startTime = new Date(assessmentRow.start_time);
+        const endTime = new Date(assessmentRow.end_time);
+        if (now < startTime || now > endTime) {
+          return NextResponse.json({ success: false, error: "Quiz is not available at this time." }, { status: 403 });
+        }
       }
 
       const assessmentId = Number(assessmentRow.assessment_id);
 
+      const [studentRows] = await connection.query<RowDataPacket[]>(
+        "SELECT student_id, lrn, first_name, middle_name, last_name FROM student WHERE lrn = ? LIMIT 2",
+        [lrn],
+      );
+
+      if (studentRows.length === 0) {
+        return NextResponse.json({ success: false, error: "Student LRN not found." }, { status: 404 });
+      }
+
+      if (studentRows.length > 1) {
+        return NextResponse.json({ success: false, error: "Duplicate LRN detected. Please contact your teacher." }, { status: 409 });
+      }
+
+      const student = studentRows[0];
+      const studentId = Number(student.student_id);
+      const studentName = [student.first_name, student.middle_name, student.last_name]
+        .filter((part) => typeof part === "string" && part.trim().length > 0)
+        .join(" ");
+
       const [attemptRows] = await connection.query<RowDataPacket[]>(
-        "SELECT attempt_id, status FROM assessment_attempts WHERE assessment_id = ? AND student_id = ? LIMIT 1",
-        [assessmentId, payload.studentId.trim()],
+        "SELECT attempt_id, status FROM assessment_attempts WHERE assessment_id = ? AND (student_id = ? OR lrn = ?) ORDER BY attempt_id DESC LIMIT 1",
+        [assessmentId, studentId, lrn],
       );
 
       if (attemptRows.length > 0) {
@@ -121,12 +143,16 @@ export async function POST(request: NextRequest) {
           assessment,
           attemptId: existing.attempt_id,
           status: existing.status,
+          student: {
+            name: studentName,
+            lrn: student.lrn,
+          },
         });
       }
 
       const [result] = await connection.query<ResultSetHeader>(
-        "INSERT INTO assessment_attempts (assessment_id, student_id, started_at, status) VALUES (?, ?, NOW(), 'in_progress')",
-        [assessmentId, payload.studentId.trim()],
+        "INSERT INTO assessment_attempts (assessment_id, student_id, lrn, started_at, status) VALUES (?, ?, ?, NOW(), 'in_progress')",
+        [assessmentId, studentId, lrn],
       );
 
       const assessment = mapAssessmentRows(rows as RowDataPacket[]);
@@ -136,6 +162,10 @@ export async function POST(request: NextRequest) {
         assessment,
         attemptId: result.insertId,
         status: "in_progress",
+        student: {
+          name: studentName,
+          lrn: student.lrn,
+        },
       });
     });
   } catch (error) {
