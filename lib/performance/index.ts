@@ -139,7 +139,9 @@ export type RemedialSessionSlide = {
   expected_text?: string | null;
   transcription?: string | null;
   pronunciation_score?: number | null;
-  correctness_score?: number | null;
+  accuracy_score?: number | null;
+  fluency_score?: number | null;
+  completeness_score?: number | null;
   reading_speed_wpm?: number | null;
   slide_average?: number | null;
   created_at?: string | Date | null;
@@ -361,18 +363,34 @@ export async function getRemedialSessionTimeline(
   }
 
   const placeholders = sessionIds.map(() => "?").join(", ");
+  const remedialColumns = await getTableColumns("student_remedial_flashcard_performance");
+  const columnOrNull = (column: string, alias?: string) => {
+    const resolvedAlias = alias ?? column;
+    if (remedialColumns.has(column)) {
+      return column === resolvedAlias ? `\`${column}\`` : `\`${column}\` AS ${resolvedAlias}`;
+    }
+    return `NULL AS ${resolvedAlias}`;
+  };
+  const accuracySelect = remedialColumns.has("accuracy_score")
+    ? "`accuracy_score`"
+    : remedialColumns.has("correctness_score")
+      ? "`correctness_score` AS accuracy_score"
+      : "NULL AS accuracy_score";
+
   const [slideRows] = await query<RowDataPacket[]>(
     `SELECT
-      performance_id,
-      session_id,
-      flashcard_index,
-      expected_text,
-      transcription,
-      pronunciation_score,
-      correctness_score,
-      reading_speed_wpm,
-      slide_average,
-      created_at
+      ${columnOrNull("performance_id")},
+      ${columnOrNull("session_id")},
+      ${columnOrNull("flashcard_index")},
+      ${columnOrNull("expected_text")},
+      ${columnOrNull("transcription")},
+      ${columnOrNull("pronunciation_score")},
+      ${accuracySelect},
+      ${columnOrNull("fluency_score")},
+      ${columnOrNull("completeness_score")},
+      ${columnOrNull("reading_speed_wpm")},
+      ${columnOrNull("slide_average")},
+      ${columnOrNull("created_at")}
      FROM student_remedial_flashcard_performance
      WHERE session_id IN (${placeholders})
      ORDER BY session_id DESC, flashcard_index ASC, created_at ASC`,
@@ -390,7 +408,9 @@ export async function getRemedialSessionTimeline(
       expected_text: row.expected_text ?? null,
       transcription: row.transcription ?? null,
       pronunciation_score: toNumberValue(row.pronunciation_score),
-      correctness_score: toNumberValue(row.correctness_score),
+      accuracy_score: toNumberValue(row.accuracy_score),
+      fluency_score: toNumberValue(row.fluency_score),
+      completeness_score: toNumberValue(row.completeness_score),
       reading_speed_wpm: toNumberValue(row.reading_speed_wpm),
       slide_average: toNumberValue(row.slide_average),
       created_at: row.created_at ?? null,

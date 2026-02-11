@@ -5,6 +5,7 @@ import DangerButton from "@/components/Common/Buttons/DangerButton";
 import TableList from "@/components/Common/Tables/TableList";
 import KebabMenu from "@/components/Common/Menus/KebabMenu";
 import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
+import BaseModal from "@/components/Common/Modals/BaseModal";
 import { useTeacherMaterials } from "@/modules/Teacher/materials/useTeacherMaterials";
 import type { MaterialStatus } from "@/lib/materials/shared";
 
@@ -33,16 +34,25 @@ const formatDate = (value: Date) =>
     year: "numeric",
   });
 
-const buildStatusBadge = (status: MaterialStatus, rejectionReason: string | null) => {
+const buildStatusBadge = (
+  status: MaterialStatus,
+  rejectionReason: string | null,
+  onRejectedClick?: () => void,
+) => {
   const baseClass = "inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold";
   switch (status) {
     case "approved":
       return <span className={`${baseClass} bg-green-100 text-green-700`}>{STATUS_LABELS[status]}</span>;
     case "rejected":
       return (
-        <span className={`${baseClass} bg-red-100 text-red-700`} title={rejectionReason ?? undefined}>
+        <button
+          type="button"
+          onClick={onRejectedClick}
+          className={`${baseClass} bg-red-100 text-red-700 ${onRejectedClick ? "cursor-pointer" : "cursor-default"}`}
+          title={rejectionReason ?? undefined}
+        >
           {STATUS_LABELS[status]}
-        </span>
+        </button>
       );
     default:
       return <span className={`${baseClass} bg-yellow-100 text-yellow-700`}>{STATUS_LABELS[status]}</span>;
@@ -64,6 +74,8 @@ export default function MathTab({ level, searchTerm = "" }: MathTabProps) {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [showUploadConfirm, setShowUploadConfirm] = useState(false);
+  const [showRejectionModal, setShowRejectionModal] = useState(false);
+  const [rejectionDetails, setRejectionDetails] = useState<{ title: string; reason: string | null } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -188,10 +200,21 @@ export default function MathTab({ level, searchTerm = "" }: MathTabProps) {
     window.open(url, "_blank", "noopener");
   };
 
+  const handleRejectedClick = (row: any) => {
+    const reason = row.rejectionReason ?? null;
+    setRejectionDetails({ title: row.title ?? "Material", reason });
+    setShowRejectionModal(true);
+  };
+
   const statusColumn = {
     key: "status",
     title: "Status",
-    render: (row: any) => buildStatusBadge(row.status as MaterialStatus, row.rejectionReason ?? null),
+    render: (row: any) =>
+      buildStatusBadge(
+        row.status as MaterialStatus,
+        row.rejectionReason ?? null,
+        row.status === "rejected" ? () => handleRejectedClick(row) : undefined,
+      ),
   };
 
   return (
@@ -265,7 +288,7 @@ export default function MathTab({ level, searchTerm = "" }: MathTabProps) {
       </div>
       <p className="mb-3 flex items-center gap-2 text-xs text-gray-500">
         <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-gray-300 text-[10px] italic font-semibold">i</span>
-        <span>Max file size: 10MB per file.</span>
+        <span>Max file size: 10MB per file. Supported file type: .pptx</span>
       </p>
       <TableList
         columns={[
@@ -292,6 +315,7 @@ export default function MathTab({ level, searchTerm = "" }: MathTabProps) {
         ref={fileInputRef}
         type="file"
         multiple
+        accept=".pptx"
         onChange={handleUploadFiles}
         className="hidden"
       />
@@ -305,6 +329,17 @@ export default function MathTab({ level, searchTerm = "" }: MathTabProps) {
         message="Upload the selected file(s) to this materials list?"
         fileName={pendingFileNames || undefined}
       />
+      <BaseModal
+        show={showRejectionModal}
+        onClose={() => setShowRejectionModal(false)}
+        title="Rejection Reason"
+        maxWidth="md"
+      >
+        <div className="space-y-3 text-sm text-gray-700">
+          <p className="font-semibold text-gray-900">{rejectionDetails?.title ?? "Material"}</p>
+          <p>{rejectionDetails?.reason ?? "No reason provided."}</p>
+        </div>
+      </BaseModal>
     </div>
   );
 }

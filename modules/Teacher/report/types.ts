@@ -2,36 +2,33 @@ export type SubjectKey = "english" | "filipino" | "math";
 
 export type RemedialReportRow = {
   id: string;
+  studentId: string | null;
   learner: string;
   section: string;
   gradeLevel: string;
-  preAssessment: string;
-  october: string;
-  december: string;
-  midYear: string;
-  postAssessment: string;
-  endingProfile: string;
+  monthValues: Record<string, string>;
 };
 
-export type RemedialReportField = keyof Pick<
-  RemedialReportRow,
-  "preAssessment" | "october" | "december" | "midYear" | "postAssessment" | "endingProfile"
->;
+export type RemedialReportField = string;
+
+export type RemedialMonthColumn = {
+  key: string;
+  label: string;
+  quarterLabel: string;
+};
+
+export type RemedialQuarterGroup = {
+  label: string;
+  span: number;
+};
 
 export type RemedialReportComponentProps = {
   rows: RemedialReportRow[];
   editable: boolean;
   onCellChange: (index: number, field: RemedialReportField, value: string) => void;
+  monthColumns: RemedialMonthColumn[];
+  quarterGroups: RemedialQuarterGroup[];
 };
-
-export const REMEDIAL_REPORT_FIELDS: RemedialReportField[] = [
-  "preAssessment",
-  "october",
-  "december",
-  "midYear",
-  "postAssessment",
-  "endingProfile",
-];
 
 export type RemedialStudentRecord = {
   studentId: number | null;

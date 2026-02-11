@@ -12,6 +12,8 @@ import {
 } from "@/app/api/auth/teacher/report/subject-config";
 import type {
   RemedialReportField,
+  RemedialMonthColumn,
+  RemedialQuarterGroup,
   RemedialReportRow,
   RemedialStudentRecord,
   RemedialStudentResponse,
@@ -25,6 +27,58 @@ const createEmptyRows = (): Record<SubjectKey, RemedialReportRow[]> => ({
   math: [],
 });
 
+type RemedialQuarterSchedule = {
+  quarters?: Record<string, { startMonth?: number | null; endMonth?: number | null }>;
+};
+
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+const DEFAULT_QUARTERS: Array<{ label: string; months: number[] }> = [
+  { label: "1st Quarter", months: [8, 9, 10] },
+  { label: "2nd Quarter", months: [1, 2, 3] },
+];
+
+const makeMonthKey = (month: number) => `m${month}`;
+
+const buildQuarterHeaders = (schedule?: RemedialQuarterSchedule | null) => {
+  const quarterGroups: RemedialQuarterGroup[] = [];
+  const monthColumns: RemedialMonthColumn[] = [];
+
+  const resolveMonths = (label: string, fallback: number[]) => {
+    const raw = schedule?.quarters?.[label];
+    const start = raw?.startMonth ?? null;
+    const end = raw?.endMonth ?? null;
+    if (typeof start === "number" && typeof end === "number" && start >= 1 && start <= 12 && end >= 1 && end <= 12 && start <= end) {
+      return Array.from({ length: end - start + 1 }, (_, index) => start + index);
+    }
+    return fallback;
+  };
+
+  for (const quarter of DEFAULT_QUARTERS) {
+    const months = resolveMonths(quarter.label, quarter.months);
+    quarterGroups.push({ label: quarter.label, span: months.length });
+    months.forEach((month) => {
+      const label = MONTH_NAMES[month - 1] ?? `Month ${month}`;
+      monthColumns.push({ key: makeMonthKey(month), label, quarterLabel: quarter.label });
+    });
+  }
+
+  return { quarterGroups, monthColumns };
+};
+
 const sanitize = (value: unknown): string => {
   if (value === null || value === undefined) {
     return "";
@@ -34,17 +88,16 @@ const sanitize = (value: unknown): string => {
 };
 
 const composeStudentName = (student: RemedialStudentRecord): string => {
+  const last = sanitize(student.lastName);
+  const first = sanitize(student.firstName);
+  const middle = sanitize(student.middleName);
+  const middleInitial = middle ? `${middle.charAt(0).toUpperCase()}.` : "";
+  if (last || first) {
+    const rightSide = [first, middleInitial].filter(Boolean).join(" ").trim();
+    return [last, rightSide].filter(Boolean).join(", ");
+  }
   const explicit = sanitize(student.fullName);
-  if (explicit.length) {
-    return explicit;
-  }
-  const parts = [student.firstName, student.middleName, student.lastName]
-    .map((part) => sanitize(part))
-    .filter((part) => part.length > 0);
-  if (parts.length) {
-    return parts.join(" ");
-  }
-  return "Unnamed Student";
+  return explicit || "Unnamed Student";
 };
 
 const toReportRow = (
@@ -58,15 +111,11 @@ const toReportRow = (
   const gradeLevel = sanitize(student.grade) || fallbackGrade;
   const baseRow: RemedialReportRow = {
     id: rowId,
+    studentId: sanitize(student.studentId),
     learner: composeStudentName(student),
     section: sanitize(student.section),
     gradeLevel,
-    preAssessment: "",
-    october: "",
-    december: "",
-    midYear: "",
-    postAssessment: "",
-    endingProfile: "",
+    monthValues: {},
   };
   return { ...baseRow, ...overrides };
 };
@@ -77,6 +126,12 @@ const buildRowsForStudents = (
   mapper?: (student: RemedialStudentRecord, index: number) => Partial<RemedialReportRow>,
 ): RemedialReportRow[] =>
   students.map((student, index) => toReportRow(student, index, fallbackGrade, mapper?.(student, index)));
+
+const SUBJECT_LABELS: Record<SubjectKey, string> = {
+  english: "English",
+  filipino: "Filipino",
+  math: "Math",
+};
 
 type MasterTeacherReportProps = {
   subjectSlug?: string;
@@ -137,6 +192,14 @@ export default function MasterTeacherReport({ subjectSlug }: MasterTeacherReport
   const [isEditing, setIsEditing] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [sendStatus, setSendStatus] = useState<SendStatus | null>(null);
+  const defaultHeaders = useMemo(() => buildQuarterHeaders(null), []);
+  const [monthColumns, setMonthColumns] = useState<RemedialMonthColumn[]>(defaultHeaders.monthColumns);
+  const [quarterGroups, setQuarterGroups] = useState<RemedialQuarterGroup[]>(defaultHeaders.quarterGroups);
+  const monthlyLoadedRef = useRef<Record<SubjectKey, string>>({
+    english: "",
+    filipino: "",
+    math: "",
+  });
 
   const activeRows = rowsBySubject[subject] ?? [];
   const displayGradeLevel = useMemo(() => {
@@ -154,6 +217,33 @@ export default function MasterTeacherReport({ subjectSlug }: MasterTeacherReport
     () => `Progress Report for ${formatGradeLabel(displayGradeLevel)} - ${subjectLabel}`,
     [displayGradeLevel, subjectLabel],
   );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const loadSchedule = async () => {
+      try {
+        const response = await fetch("/api/master_teacher/coordinator/calendar/remedial-schedule", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const payload = (await response.json().catch(() => null)) as { success?: boolean; schedule?: RemedialQuarterSchedule | null } | null;
+        if (!response.ok || !payload?.success) {
+          return;
+        }
+        const nextHeaders = buildQuarterHeaders(payload.schedule ?? null);
+        setMonthColumns(nextHeaders.monthColumns);
+        setQuarterGroups(nextHeaders.quarterGroups);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+      }
+    };
+
+    loadSchedule();
+
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     if (userId === null) {
@@ -178,24 +268,9 @@ export default function MasterTeacherReport({ subjectSlug }: MasterTeacherReport
           throw new Error(payload.error ?? "Failed to load students.");
         }
 
-        const englishRows = buildRowsForStudents(payload.students, fallbackGrade, (student) => ({
-          preAssessment: sanitize(student.englishStartingLevel),
-          october: sanitize(student.englishOctLevel),
-          december: sanitize(student.englishDecLevel),
-          midYear: sanitize(student.englishFebLevel),
-        }));
-        const filipinoRows = buildRowsForStudents(payload.students, fallbackGrade, (student) => ({
-          preAssessment: sanitize(student.filipinoStartingLevel),
-          october: sanitize(student.filipinoOctLevel),
-          december: sanitize(student.filipinoDecLevel),
-          midYear: sanitize(student.filipinoFebLevel),
-        }));
-        const mathRows = buildRowsForStudents(payload.students, fallbackGrade, (student) => ({
-          preAssessment: sanitize(student.mathStartingLevel),
-          october: sanitize(student.mathOctLevel),
-          december: sanitize(student.mathDecLevel),
-          midYear: sanitize(student.mathFebLevel),
-        }));
+        const englishRows = buildRowsForStudents(payload.students, fallbackGrade);
+        const filipinoRows = buildRowsForStudents(payload.students, fallbackGrade);
+        const mathRows = buildRowsForStudents(payload.students, fallbackGrade);
         setRowsBySubject({
           english: englishRows,
           filipino: filipinoRows,
@@ -222,6 +297,67 @@ export default function MasterTeacherReport({ subjectSlug }: MasterTeacherReport
     };
   }, [fallbackGrade, userId]);
 
+  useEffect(() => {
+    if (!monthColumns.length) return;
+    const months = monthColumns
+      .map((column) => Number.parseInt(column.key.replace("m", ""), 10))
+      .filter((value) => Number.isFinite(value));
+    if (!months.length) return;
+
+    const monthKey = monthColumns.map((column) => column.key).join("|");
+    const loadForSubject = async (subjectKey: SubjectKey) => {
+      if (monthlyLoadedRef.current[subjectKey] === monthKey) return;
+      const rows = rowsBySubject[subjectKey] ?? [];
+      if (!rows.length) return;
+      const studentIds = rows
+        .map((row) => row.studentId)
+        .filter((value): value is string => Boolean(value));
+      if (!studentIds.length) return;
+
+      try {
+        const response = await fetch("/api/remedial/assessment/monthly", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            subject: SUBJECT_LABELS[subjectKey],
+            studentIds,
+            months,
+          }),
+        });
+        const payload = (await response.json().catch(() => null)) as
+          | { success?: boolean; levelsByStudent?: Record<string, Record<string, string>> }
+          | null;
+        if (!response.ok || !payload?.success) {
+          return;
+        }
+        const levelsByStudent = payload.levelsByStudent ?? {};
+        setRowsBySubject((prev) => {
+          const current = prev[subjectKey] ?? [];
+          const updated = current.map((row) => {
+            const studentId = row.studentId ?? "";
+            const monthValues = levelsByStudent[studentId];
+            if (!monthValues) return row;
+            return {
+              ...row,
+              monthValues: {
+                ...row.monthValues,
+                ...monthValues,
+              },
+            };
+          });
+          return { ...prev, [subjectKey]: updated };
+        });
+        monthlyLoadedRef.current[subjectKey] = monthKey;
+      } catch (error) {
+        console.warn("Failed to load monthly assessment levels", error);
+      }
+    };
+
+    void loadForSubject("english");
+    void loadForSubject("filipino");
+    void loadForSubject("math");
+  }, [monthColumns, rowsBySubject]);
+
   const handleCellChange = useCallback(
     (subjectKey: SubjectKey, index: number, field: RemedialReportField, value: string) => {
       setRowsBySubject((prev) => {
@@ -230,7 +366,14 @@ export default function MasterTeacherReport({ subjectSlug }: MasterTeacherReport
           return prev;
         }
         const updatedRows = [...currentRows];
-        updatedRows[index] = { ...updatedRows[index], [field]: value };
+        const currentValues = updatedRows[index].monthValues ?? {};
+        updatedRows[index] = {
+          ...updatedRows[index],
+          monthValues: {
+            ...currentValues,
+            [field]: value,
+          },
+        };
         return {
           ...prev,
           [subjectKey]: updatedRows,
@@ -457,6 +600,8 @@ export default function MasterTeacherReport({ subjectSlug }: MasterTeacherReport
                     rows={activeRows}
                     editable={isEditing}
                     onCellChange={handleSubjectCellChange}
+                    monthColumns={monthColumns}
+                    quarterGroups={quarterGroups}
                   />
                 )}
               </div>

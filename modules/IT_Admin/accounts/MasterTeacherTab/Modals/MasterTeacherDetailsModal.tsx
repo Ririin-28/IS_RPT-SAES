@@ -70,15 +70,8 @@ export default function MasterTeacherDetailsModal({ show, onClose, masterTeacher
             }
           />
           <ModalInfoItem
-            label="Remedial Teacher Handled"
-            value={
-              Array.isArray(masterTeacher.remedialHandledSubjects) && masterTeacher.remedialHandledSubjects.length > 0
-                ? masterTeacher.remedialHandledSubjects.join(", ")
-                : (Array.isArray(masterTeacher.subjects)
-                    ? masterTeacher.subjects.join(", ")
-                    : (masterTeacher.subjects || masterTeacher.handledSubjects || masterTeacher.handled_subjects || "—")
-                  )
-            }
+            label="Remedial Teacher Subject"
+            value="English, Filipino, Math"
           />
         </div>
       </ModalSection>

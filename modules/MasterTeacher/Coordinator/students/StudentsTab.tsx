@@ -14,8 +14,15 @@ import KebabMenu from "@/components/Common/Menus/KebabMenu";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 import { normalizeMaterialSubject, type MaterialSubject } from "@/lib/materials/shared";
 
-const sections = ["All Sections", "A", "B", "C"];
 const SUBJECT_FALLBACK: MaterialSubject = "English";
+
+const PHONEMIC_LEVELS_BY_SUBJECT: Record<MaterialSubject, string[]> = {
+  English: ["Non-Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"],
+  Filipino: ["Non-Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"],
+  Math: ["Not Proficient", "Low Proficient", "Nearly Proficient", "Proficient", "Highly Proficient"],
+};
+
+const ALL_PHONEMIC = "All Levels";
 
 // Normalize grade values to numeric strings ("1"-"6")
 const normalizeGradeLabel = (value?: string | null): string | undefined => {
@@ -62,6 +69,22 @@ const resolveStudentPhonemic = (
     default:
       return student.englishPhonemic || student.filipinoPhonemic || student.mathProficiency || "";
   }
+};
+
+const normalizePhonemicLabel = (value: string): string => value.trim().toLowerCase();
+
+const getPhonemicLevels = (subjectLabel?: MaterialSubject | null): string[] => {
+  const normalized = normalizeMaterialSubject(subjectLabel ?? SUBJECT_FALLBACK) ?? SUBJECT_FALLBACK;
+  return PHONEMIC_LEVELS_BY_SUBJECT[normalized] ?? PHONEMIC_LEVELS_BY_SUBJECT[SUBJECT_FALLBACK];
+};
+
+const buildPhonemicOrder = (subjectLabel?: MaterialSubject | null): Map<string, number> => {
+  const levels = getPhonemicLevels(subjectLabel);
+  const order = new Map<string, number>();
+  levels.forEach((level, index) => {
+    order.set(normalizePhonemicLabel(level), index);
+  });
+  return order;
 };
 
 const formatStudentDisplayName = (student: any): string => {
@@ -267,10 +290,10 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
   };
 
   return (
-    <div className={`relative ${className}`} ref={dropdownRef}>
+    <div className={`relative inline-block ${className}`} ref={dropdownRef}>
       <button
         type="button"
-        className="flex items-center justify-between px-3 py-1.5 text-sm font-medium text-gray-700 cursor-pointer focus:outline-none border border-gray-300 rounded bg-white"
+        className="flex items-center justify-between px-3 py-1.5 text-sm font-medium text-gray-700 cursor-pointer focus:outline-none border border-gray-300 rounded bg-white whitespace-nowrap"
         onClick={() => setIsOpen(!isOpen)}
       >
         {value}
@@ -284,7 +307,7 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
       </button>
       
       {isOpen && (
-        <div className="absolute z-50 mt-1 left-0 bg-white border border-gray-300 rounded-md shadow-lg w-full overflow-hidden">
+        <div className="absolute z-50 mt-1 right-0 left-auto bg-white border border-gray-300 rounded-md shadow-lg min-w-full w-max overflow-hidden">
           {options.map((option) => (
             <div
               key={option}
@@ -328,7 +351,7 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedStudents, setSelectedStudents] = useState<Set<string>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
-  const [filter, setFilter] = useState({ section: "All Sections" });
+  const [filter, setFilter] = useState({ phonemic: ALL_PHONEMIC });
   const [duplicateLrn, setDuplicateLrn] = useState<string | null>(null);
   const [duplicateStudent, setDuplicateStudent] = useState<CoordinatorStudent | null>(null);
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
@@ -756,27 +779,44 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
     setSelectedStudents(newSelected);
   };
 
-  // Filter students based on search term and section
+  // Filter students based on search term and phonemic level
   const filteredStudents = students.filter((student) => {
-    const matchSection = filter.section === "All Sections" || student.section === filter.section;
+    const studentPhonemic = resolveStudentPhonemic(student, subject);
+    const matchPhonemic =
+      filter.phonemic === ALL_PHONEMIC ||
+      normalizePhonemicLabel(studentPhonemic) === normalizePhonemicLabel(filter.phonemic);
     const matchSearch = searchTerm === "" || 
       student.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       student.studentId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       student.grade?.toString().includes(searchTerm.toLowerCase()) ||
       student.section?.toLowerCase().includes(searchTerm.toLowerCase());
       
-    return matchSection && matchSearch;
+    return matchPhonemic && matchSearch;
   });
 
+  const phonemicOrder = useMemo(() => buildPhonemicOrder(subject), [subject]);
+
+  const sortedStudents = useMemo(() => {
+    const fallbackIndex = phonemicOrder.size + 1;
+    return [...filteredStudents].sort((a, b) => {
+      const aLabel = normalizePhonemicLabel(resolveStudentPhonemic(a, subject));
+      const bLabel = normalizePhonemicLabel(resolveStudentPhonemic(b, subject));
+      const aIndex = phonemicOrder.get(aLabel) ?? fallbackIndex;
+      const bIndex = phonemicOrder.get(bLabel) ?? fallbackIndex;
+      if (aIndex !== bIndex) return aIndex - bIndex;
+      return formatStudentDisplayName(a).localeCompare(formatStudentDisplayName(b));
+    });
+  }, [filteredStudents, phonemicOrder, subject]);
+
   const tableRows = useMemo(() => (
-    filteredStudents.map((student, idx) => ({
+    sortedStudents.map((student, idx) => ({
       ...student,
       no: idx + 1,
       name: formatStudentDisplayName(student),
       hashedLrn: hashLrnForDisplay(student.lrn),
       phonemic: resolveStudentPhonemic(student, subject),
     }))
-  ), [filteredStudents, subject]);
+  ), [sortedStudents, subject]);
 
   const handleExport = () => {
     if (tableRows.length === 0) {
@@ -1078,13 +1118,13 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
         {error && <span className="text-sm text-red-600">{error}</span>}
         
         <div className="flex flex-row sm:flex-row sm:items-center gap-3 ">
-          <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
-            <span className="text-sm text-gray-700 whitespace-nowrap">Section:</span>
+          <div className="inline-flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5 w-fit">
+            <span className="text-sm text-gray-700 whitespace-nowrap">Phonemic:</span>
             <CustomDropdown 
-              options={sections}
-              value={filter.section}
-              onChange={(value) => setFilter({ section: value })}
-              className="min-w-[120px]"
+              options={[ALL_PHONEMIC, ...getPhonemicLevels(subject)]}
+              value={filter.phonemic}
+              onChange={(value) => setFilter({ phonemic: value })}
+              className="w-auto"
             />
           </div>
           

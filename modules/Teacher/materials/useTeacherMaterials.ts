@@ -19,6 +19,8 @@ export type TeacherMaterialListItem = {
 
 const MAX_UPLOAD_BATCH = 5;
 
+const isPptxFile = (file: File): boolean => file.name.toLowerCase().endsWith(".pptx");
+
 type UploadedFileDescriptor = {
   fileName: string;
   storedFileName: string;
@@ -146,6 +148,12 @@ export function useTeacherMaterials({ subject, level }: UseTeacherMaterialsOptio
       if (!files.length) return;
       if (files.length > MAX_UPLOAD_BATCH) {
         setError(`Please upload at most ${MAX_UPLOAD_BATCH} files at a time.`);
+        return;
+      }
+
+      const invalidFile = files.find((file) => !isPptxFile(file));
+      if (invalidFile) {
+        setError(`Only .pptx files are supported. "${invalidFile.name}" is not a PPTX file.`);
         return;
       }
 

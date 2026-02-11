@@ -160,6 +160,16 @@ function uniqueNumbers(values: number[]): number[] {
   return Array.from(new Set(values));
 }
 
+function uniqueStrings(values: Array<string | null | undefined>): string[] {
+  const result = new Set<string>();
+  for (const value of values) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      result.add(value.trim());
+    }
+  }
+  return Array.from(result);
+}
+
 function buildPlaceholders(count: number): string {
   return new Array(count).fill("?").join(", ");
 }
@@ -280,8 +290,8 @@ export async function POST(request: NextRequest) {
         const archiveReason = reason && reason.length > 0 ? reason : "Archived by IT Administrator";
 
         const archivedIdByUserId = new Map<number, number>();
-        const archivedIdByTeacherId = new Map<number, number>();
-        const resolvedTeacherIdByUserId = new Map<number, number>();
+        const archivedIdByTeacherId = new Map<string, number>();
+        const resolvedTeacherIdByUserId = new Map<number, string>();
 
         for (const userId of foundUserIds) {
           const userRow = userRowById.get(userId);
@@ -318,9 +328,11 @@ export async function POST(request: NextRequest) {
             getColumnValue(teacherRow, "teacher_code") ??
             getColumnValue(teacherRow, "user_id") ??
             userId;
-          const resolvedTeacherNumeric = Number(resolvedTeacherId);
-          if (Number.isInteger(resolvedTeacherNumeric) && resolvedTeacherNumeric > 0) {
-            resolvedTeacherIdByUserId.set(userId, resolvedTeacherNumeric);
+          if (resolvedTeacherId !== null && resolvedTeacherId !== undefined) {
+            const resolvedTeacherText = String(resolvedTeacherId).trim();
+            if (resolvedTeacherText.length > 0) {
+              resolvedTeacherIdByUserId.set(userId, resolvedTeacherText);
+            }
           }
 
           const existingArchiveId = existingArchiveByUserId.get(resolvedUserId);
@@ -417,9 +429,9 @@ export async function POST(request: NextRequest) {
 
           if (archivedIdForRelations !== null) {
             archivedIdByUserId.set(resolvedUserId, archivedIdForRelations);
-            const resolvedTeacherNumericId = resolvedTeacherIdByUserId.get(userId);
-            if (resolvedTeacherNumericId) {
-              archivedIdByTeacherId.set(resolvedTeacherNumericId, archivedIdForRelations);
+            const resolvedTeacherValue = resolvedTeacherIdByUserId.get(userId);
+            if (resolvedTeacherValue) {
+              archivedIdByTeacherId.set(resolvedTeacherValue, archivedIdForRelations);
             }
           }
 
@@ -439,7 +451,7 @@ export async function POST(request: NextRequest) {
           const handledRows: RowDataPacket[] = [];
           const handledUsesUserId = teacherHandledColumns.has("user_id") && !teacherHandledColumns.has("teacher_id");
           if (teacherHandledColumns.has("teacher_id")) {
-            const teacherIds = uniqueNumbers(Array.from(resolvedTeacherIdByUserId.values()));
+            const teacherIds = uniqueStrings(Array.from(resolvedTeacherIdByUserId.values()));
             for (const chunk of chunkArray(teacherIds, IN_CHUNK_SIZE)) {
               const placeholders = buildPlaceholders(chunk.length);
               const [rows] = await connection.query<RowDataPacket[]>(
@@ -480,13 +492,28 @@ export async function POST(request: NextRequest) {
 
             const insertValues: any[][] = [];
             for (const row of handledRows) {
-              const teacherIdValue = Number(row.teacher_id ?? row.user_id ?? 0);
-              if (!Number.isInteger(teacherIdValue) || teacherIdValue <= 0) {
-                continue;
+              let archivedId: number | undefined;
+              let teacherIdValue: string | null = null;
+
+              if (handledUsesUserId) {
+                const userIdValue = Number(row.user_id ?? 0);
+                if (!Number.isInteger(userIdValue) || userIdValue <= 0) {
+                  continue;
+                }
+                archivedId = archivedIdByUserId.get(userIdValue);
+                teacherIdValue = resolvedTeacherIdByUserId.get(userIdValue) ?? String(userIdValue);
+              } else {
+                const rawTeacherId = row.teacher_id;
+                const teacherIdText = rawTeacherId !== null && rawTeacherId !== undefined
+                  ? String(rawTeacherId).trim()
+                  : "";
+                if (!teacherIdText) {
+                  continue;
+                }
+                archivedId = archivedIdByTeacherId.get(teacherIdText);
+                teacherIdValue = teacherIdText;
               }
-              const archivedId = handledUsesUserId
-                ? archivedIdByUserId.get(teacherIdValue) ?? archivedIdByTeacherId.get(teacherIdValue)
-                : archivedIdByTeacherId.get(teacherIdValue);
+
               if (!archivedId) {
                 continue;
               }
@@ -543,7 +570,7 @@ export async function POST(request: NextRequest) {
 
         if (teacherHandledColumns && teacherHandledColumns.size > 0) {
           if (teacherHandledColumns.has("teacher_id")) {
-            const teacherIds = uniqueNumbers(Array.from(resolvedTeacherIdByUserId.values()));
+            const teacherIds = uniqueStrings(Array.from(resolvedTeacherIdByUserId.values()));
             for (const chunk of chunkArray(teacherIds, IN_CHUNK_SIZE)) {
               const placeholders = buildPlaceholders(chunk.length);
               await connection.query<ResultSetHeader>(
@@ -563,7 +590,7 @@ export async function POST(request: NextRequest) {
         }
 
         if (mtCoordinatorHandledColumns && mtCoordinatorHandledColumns.size > 0) {
-          const teacherIds = uniqueNumbers(Array.from(resolvedTeacherIdByUserId.values()));
+          const teacherIds = uniqueStrings(Array.from(resolvedTeacherIdByUserId.values()));
           if (mtCoordinatorHandledColumns.has("master_teacher_id")) {
             for (const chunk of chunkArray(teacherIds, IN_CHUNK_SIZE)) {
               const placeholders = buildPlaceholders(chunk.length);

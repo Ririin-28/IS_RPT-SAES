@@ -187,7 +187,9 @@ export default function PerformanceTab({ student, sessions, subjectLabel, backHr
                                         <tr>
                                           <th className="px-3 py-2 font-semibold">Slide</th>
                                           <th className="px-3 py-2 font-semibold">Pronunciation</th>
-                                          <th className="px-3 py-2 font-semibold">Correctness</th>
+                                          <th className="px-3 py-2 font-semibold">Accuracy</th>
+                                          <th className="px-3 py-2 font-semibold">Fluency</th>
+                                          <th className="px-3 py-2 font-semibold">Completeness</th>
                                           <th className="px-3 py-2 font-semibold">WPM</th>
                                           <th className="px-3 py-2 font-semibold">Average</th>
                                         </tr>
@@ -195,7 +197,7 @@ export default function PerformanceTab({ student, sessions, subjectLabel, backHr
                                       <tbody className="divide-y divide-green-50">
                                         {session.slides.length === 0 ? (
                                           <tr>
-                                            <td className="px-3 py-3 text-slate-500" colSpan={5}>
+                                            <td className="px-3 py-3 text-slate-500" colSpan={7}>
                                               No slides recorded for this session.
                                             </td>
                                           </tr>
@@ -206,7 +208,9 @@ export default function PerformanceTab({ student, sessions, subjectLabel, backHr
                                                 {typeof slide.flashcard_index === "number" ? slide.flashcard_index + 1 : "—"}
                                               </td>
                                               <td className="px-3 py-2">{formatScore(slide.pronunciation_score)}</td>
-                                              <td className="px-3 py-2">{formatScore(slide.correctness_score)}</td>
+                                              <td className="px-3 py-2">{formatScore(slide.accuracy_score)}</td>
+                                              <td className="px-3 py-2">{formatScore(slide.fluency_score)}</td>
+                                              <td className="px-3 py-2">{formatScore(slide.completeness_score)}</td>
                                               <td className="px-3 py-2">{typeof slide.reading_speed_wpm === "number" ? slide.reading_speed_wpm : "—"}</td>
                                               <td className="px-3 py-2 font-semibold text-[#013300]">{formatSlideAverage(slide)}</td>
                                             </tr>

@@ -23,7 +23,7 @@ const renderCell = (value: string, editable: boolean, onChange: (nextValue: stri
   );
 };
 
-export default function MathReportTab({ rows, editable, onCellChange }: RemedialReportComponentProps) {
+export default function MathReportTab({ rows, editable, onCellChange, monthColumns, quarterGroups }: RemedialReportComponentProps) {
   return (
     <div className="space-y-6 text-black">
       <div className="overflow-x-auto border border-gray-300">
@@ -32,21 +32,24 @@ export default function MathReportTab({ rows, editable, onCellChange }: Remedial
             <tr className="bg-gray-50">
               <th rowSpan={2} className="border border-gray-300 p-3 text-left font-semibold">Name of Learners</th>
               <th rowSpan={2} className="border border-gray-300 p-3 text-left font-semibold">Section</th>
-              <th rowSpan={2} className="border border-gray-300 p-3 text-center font-semibold">Diagnostic<br />Assessment</th>
-              <th colSpan={3} className="border border-gray-300 p-3 text-center font-semibold">School-Based Numeracy Assessment</th>
-              <th rowSpan={2} className="border border-gray-300 p-3 text-center font-semibold">Post-Assessment<br />March</th>
-              <th rowSpan={2} className="border border-gray-300 p-3 text-center font-semibold">Ending<br />Numeracy Profile</th>
+              {quarterGroups.map((group) => (
+                <th key={group.label} colSpan={group.span} className="border border-gray-300 p-3 text-center font-semibold">
+                  {group.label}
+                </th>
+              ))}
             </tr>
             <tr className="bg-gray-50">
-              <th className="border border-gray-300 p-3 text-center font-semibold">October</th>
-              <th className="border border-gray-300 p-3 text-center font-semibold">December</th>
-              <th className="border border-gray-300 p-3 text-center font-semibold">Mid-Year<br />Assessment<br />February</th>
+              {monthColumns.map((column) => (
+                <th key={column.key} className="border border-gray-300 p-3 text-center font-semibold">
+                  {column.label}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td className="border border-gray-300 p-6 text-center text-sm text-gray-500" colSpan={8}>
+                <td className="border border-gray-300 p-6 text-center text-sm text-gray-500" colSpan={2 + monthColumns.length}>
                   No students found for this subject.
                 </td>
               </tr>
@@ -55,24 +58,15 @@ export default function MathReportTab({ rows, editable, onCellChange }: Remedial
                 <tr key={row.id} className="hover:bg-gray-50">
                   <td className="border border-gray-300 p-3">{row.learner}</td>
                   <td className="border border-gray-300 p-3 text-center">{row.section || "—"}</td>
-                  <td className="border border-gray-300 p-3 text-center">
-                    {renderCell(row.preAssessment, editable, (value) => onCellChange(index, "preAssessment", value))}
-                  </td>
-                  <td className="border border-gray-300 p-3 text-center">
-                    {renderCell(row.october, editable, (value) => onCellChange(index, "october", value))}
-                  </td>
-                  <td className="border border-gray-300 p-3 text-center">
-                    {renderCell(row.december, editable, (value) => onCellChange(index, "december", value))}
-                  </td>
-                  <td className="border border-gray-300 p-3 text-center">
-                    {renderCell(row.midYear, editable, (value) => onCellChange(index, "midYear", value))}
-                  </td>
-                  <td className="border border-gray-300 p-3 text-center">
-                    {renderCell(row.postAssessment, editable, (value) => onCellChange(index, "postAssessment", value))}
-                  </td>
-                  <td className="border border-gray-300 p-3 text-center">
-                    {renderCell(row.endingProfile, editable, (value) => onCellChange(index, "endingProfile", value))}
-                  </td>
+                  {monthColumns.map((column) => (
+                    <td key={column.key} className="border border-gray-300 p-3 text-center">
+                      {renderCell(
+                        row.monthValues?.[column.key] ?? "",
+                        editable,
+                        (value) => onCellChange(index, column.key, value),
+                      )}
+                    </td>
+                  ))}
                 </tr>
               ))
             )}

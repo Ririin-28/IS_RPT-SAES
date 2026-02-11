@@ -13,6 +13,7 @@ type StudentRecord = {
 	name: string;
 	grade?: string;
 	section?: string;
+	phonemicLevel?: string;
 };
 
 type StudentPerformanceEntry = {
@@ -45,11 +46,27 @@ type RemedialStudent = {
 	fullName: string | null;
 };
 
+const normalizeLevelLabel = (value?: string | null): string => {
+	if (!value) return "";
+	return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+};
+
 export default function MasterTeacherFilipinoFlashcards() {
 	const router = useRouter();
 	const searchParams = useSearchParams();
 	const selectedStudentId = searchParams?.get("studentId") || null;
+	const phonemicNameParam = searchParams?.get("phonemicName") ?? "";
 	const [students, setStudents] = useState<StudentRecord[]>([]);
+	const expectedPhonemicLevel = useMemo(
+		() => normalizeLevelLabel(phonemicNameParam),
+		[phonemicNameParam],
+	);
+	const filteredStudents = useMemo(() => {
+		if (!expectedPhonemicLevel) return students;
+		return students.filter((student) =>
+			normalizeLevelLabel(student.phonemicLevel) === expectedPhonemicLevel,
+		);
+	}, [expectedPhonemicLevel, students]);
 	const [performances, setPerformances] = useState<StudentPerformanceEntry[]>([]);
 	const userProfile = useMemo(() => getStoredUserProfile(), []);
 	const userId = useMemo(() => {
@@ -110,6 +127,7 @@ export default function MasterTeacherFilipinoFlashcards() {
 			name: student.fullName ?? composeDisplayName(student),
 			grade: student.grade ?? "",
 			section: student.section ?? "",
+			phonemicLevel: student.filipino ?? "",
 		};
 	};
 
@@ -191,7 +209,7 @@ export default function MasterTeacherFilipinoFlashcards() {
 
 	return (
 		<FilipinoFlashcards
-			students={students}
+			students={filteredStudents}
 			performances={performances}
 			onSavePerformance={handleSavePerformance}
 			initialView={selectedStudentId ? "session" : undefined}

@@ -6,6 +6,7 @@ import EnglishFlashcards from "@/components/Common/EnglishFlashcards/EnglishFlas
 import FilipinoFlashcards from "@/components/Common/FilipinoFlashcards/FilipinoFlashcards";
 import MathFlashcards from "@/components/Common/MathFlashcards/MathFlashcards";
 import { normalizeMaterialSubject, type MaterialSubject } from "@/lib/materials/shared";
+import { buildFlashcardContentKey } from "@/lib/utils/flashcards-storage";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 
 const SUBJECT_FALLBACK: MaterialSubject = "English";
@@ -106,9 +107,15 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 			if (!subject) return;
 
 			if (!activityId || !phonemicId) {
-				const storageKey = SUBJECT_FLASHCARD_KEYS[subject];
-				if (storageKey) {
-					window.localStorage.removeItem(storageKey);
+				const baseKey = SUBJECT_FLASHCARD_KEYS[subject];
+				if (baseKey) {
+					window.localStorage.removeItem(baseKey);
+					const scopedKey = buildFlashcardContentKey(baseKey, {
+						activityId,
+						phonemicId,
+						userId,
+					});
+					window.localStorage.removeItem(scopedKey);
 				}
 				if (!cancelled) {
 					setContentError("Missing activity or phonemic level.");
@@ -138,7 +145,14 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 					return;
 				}
 
-				const storageKey = SUBJECT_FLASHCARD_KEYS[subject];
+				const baseKey = SUBJECT_FLASHCARD_KEYS[subject];
+				const storageKey = baseKey
+					? buildFlashcardContentKey(baseKey, {
+							activityId,
+							phonemicId,
+							userId,
+					  })
+					: null;
 				
 				// Transform data for Math subject to match MathFlashcards expectation
 				let contentToStore = cards;
@@ -167,7 +181,7 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 		return () => {
 			cancelled = true;
 		};
-	}, [activityId, phonemicId, subject]);
+	}, [activityId, phonemicId, subject, userId]);
 
 
 	// Compose the header label with phonemicName if present

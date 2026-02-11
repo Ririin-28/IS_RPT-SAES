@@ -7,6 +7,8 @@ import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import ScheduledActivitiesList, { type CalendarActivity } from "./ScheduledActivitiesList";
 import NoContentModal from "./NoContentModal";
+import { buildFlashcardContentKey } from "@/lib/utils/flashcards-storage";
+import { getStoredUserProfile } from "@/lib/utils/user-profile";
 
 // Tabs
 // English Tabs
@@ -22,6 +24,16 @@ const ASSESSMENT_LEVELS = ENGLISH_LEVELS;
 export default function MasterTeacherRemedial() {
   const pathname = usePathname();
   const router = useRouter();
+  const userProfile = useMemo(() => getStoredUserProfile(), []);
+  const userId = useMemo(() => {
+    const raw = userProfile?.userId;
+    if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+    if (typeof raw === "string") {
+      const parsed = Number.parseInt(raw, 10);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return null;
+  }, [userProfile]);
 
   // Determine subject from URL path
   const getSubjectFromPath = () => {
@@ -191,6 +203,30 @@ export default function MasterTeacherRemedial() {
           const materialIdParam = materialId ? `&materialId=${encodeURIComponent(String(materialId))}` : "";
           const phonemicParam = phonemicId ? `&phonemicId=${encodeURIComponent(String(phonemicId))}` : "";
           const phonemicNameParam = phonemicLevelName ? `&phonemicName=${encodeURIComponent(phonemicLevelName)}` : "";
+
+          const cards = payload?.content?.flashcardsOverride ?? payload?.content?.flashcards;
+          const baseKey = subject === "English"
+            ? "MASTER_TEACHER_ENGLISH_FLASHCARDS"
+            : subject === "Filipino"
+              ? "MASTER_TEACHER_FILIPINO_FLASHCARDS"
+              : subject === "Math"
+                ? "MASTER_TEACHER_MATH_FLASHCARDS"
+                : null;
+          if (baseKey && Array.isArray(cards) && cards.length > 0) {
+            let contentToStore = cards;
+            if (subject === "Math") {
+              contentToStore = cards.map((card: any) => ({
+                question: card.sentence ?? "",
+                correctAnswer: card.answer ?? "",
+              }));
+            }
+            const storageKey = buildFlashcardContentKey(baseKey, {
+              activityId: activity.id,
+              phonemicId,
+              userId,
+            });
+            window.localStorage.setItem(storageKey, JSON.stringify(contentToStore));
+          }
           
           // Determine Flashcards path based on subject
           let flashcardsPath = "Flashcards"; // Fallback

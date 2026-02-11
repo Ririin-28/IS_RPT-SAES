@@ -16,6 +16,8 @@ import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
 import BodyText from "@/components/Common/Texts/BodyText";
 import BodyLabel from "@/components/Common/Texts/BodyLabel";
+import { getStoredUserProfile } from "@/lib/utils/user-profile";
+import { resolveRemedialPlayTarget } from "@/lib/utils/remedial-play";
 
 const sections = ["All Sections", "A", "B", "C"];
 
@@ -223,6 +225,18 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
   const [selectMode, setSelectMode] = useState(false);
   const [filter, setFilter] = useState({ section: "All Sections" });
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [playLoadingId, setPlayLoadingId] = useState<string | null>(null);
+
+  const userProfile = useMemo(() => getStoredUserProfile(), []);
+  const userId = useMemo(() => {
+    const raw = userProfile?.userId;
+    if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+    if (typeof raw === "string") {
+      const parsed = Number.parseInt(raw, 10);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return null;
+  }, [userProfile]);
   
 
   // React Hook Form setup
@@ -439,12 +453,45 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
   };
 
   const handlePlayClick = (student: any) => {
-    const studentId = student?.studentId ?? student?.id ?? "";
-    const params = new URLSearchParams({ start: "0" });
-    if (studentId) {
-      params.set("studentId", String(studentId));
-    }
-    router.push(`/Teacher/remedial/EnglishFlashcards?${params.toString()}`);
+    const run = async () => {
+      const studentId = student?.studentId ?? student?.id ?? "";
+      if (!studentId) {
+        alert("Student ID is missing.");
+        return;
+      }
+
+      const phonemicLevel = String(student?.englishPhonemic ?? student?.english ?? "").trim();
+      if (!phonemicLevel) {
+        alert("Student phonemic level is missing.");
+        return;
+      }
+
+      setPlayLoadingId(String(studentId));
+      try {
+        const result = await resolveRemedialPlayTarget({
+          subject: "English",
+          basePath: "/Teacher/remedial",
+          studentId: String(studentId),
+          studentPhonemicLevel: phonemicLevel,
+          studentGrade: student?.grade ?? null,
+          userId,
+        });
+
+        if ("error" in result) {
+          alert(result.error);
+          return;
+        }
+
+        router.push(result.playPath);
+      } catch (error) {
+        console.error("Failed to start remedial session", error);
+        alert("Unable to start remedial session.");
+      } finally {
+        setPlayLoadingId(null);
+      }
+    };
+
+    void run();
   };
 
   return (
@@ -506,7 +553,13 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
             <UtilityButton small onClick={() => handleViewDetails(row)} title="View student details">
               View
             </UtilityButton>
-            <UtilityButton small type="button" onClick={() => handlePlayClick(row)} title="Click to play remedial session">
+            <UtilityButton
+              small
+              type="button"
+              onClick={() => handlePlayClick(row)}
+              title="Click to play remedial session"
+              disabled={playLoadingId === String(row?.studentId ?? row?.id ?? "")}
+            >
               Play
             </UtilityButton>
           </div>

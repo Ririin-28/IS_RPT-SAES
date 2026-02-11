@@ -1,12 +1,15 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { type RowDataPacket } from "mysql2/promise";
 import { runWithConnection } from "@/lib/db";
+import { ensurePerformanceSchema } from "@/lib/performance/schema";
 
 type SlidePerformance = {
   flashcardIndex: number;
   expectedText?: string | null;
   pronunciationScore: number;
-  correctnessScore: number;
+  accuracyScore: number;
+  fluencyScore: number;
+  completenessScore: number;
   readingSpeedWpm: number;
   slideAverage: number;
   transcription?: string | null;
@@ -22,6 +25,7 @@ type SaveRemedialSessionPayload = {
   masteryThreshold?: number | null;
   completed?: boolean | null;
   slides: SlidePerformance[];
+  teacherFeedback?: string | null;
 };
 
 const DEFAULT_MASTERY_THRESHOLD = 80;
@@ -38,6 +42,11 @@ function toStringId(value: number | string | null | undefined): string | null {
   return text.length ? text : null;
 }
 
+function normalizeText(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.trim();
+}
+
 function average(values: number[]): number {
   if (!values.length) return 0;
   const sum = values.reduce((acc, item) => acc + item, 0);
@@ -47,7 +56,7 @@ function average(values: number[]): number {
 function buildAiRemarks(args: {
   studentName?: string | null;
   pronunciationAvg: number;
-  correctnessAvg: number;
+  accuracyAvg: number;
   readingSpeedAvg: number;
 }): string {
   const name = args.studentName?.trim() || "The student";
@@ -55,11 +64,11 @@ function buildAiRemarks(args: {
   const strengths: string[] = [];
 
   if (args.pronunciationAvg < 75) weaknesses.push("pronouncing words clearly");
-  if (args.correctnessAvg < 75) weaknesses.push("getting words right");
+  if (args.accuracyAvg < 75) weaknesses.push("getting words right");
   if (args.readingSpeedAvg < 60) weaknesses.push("reading pace");
 
   if (args.pronunciationAvg >= 85) strengths.push("clear pronunciation");
-  if (args.correctnessAvg >= 85) strengths.push("good accuracy");
+  if (args.accuracyAvg >= 85) strengths.push("good accuracy");
   if (args.readingSpeedAvg >= 85) strengths.push("fast reading pace");
 
   const recommendations: string[] = [];
@@ -90,6 +99,7 @@ function buildAiRemarks(args: {
 
 export async function POST(request: NextRequest) {
   try {
+    await ensurePerformanceSchema();
     const payload = (await request.json().catch(() => null)) as SaveRemedialSessionPayload | null;
     if (!payload) {
       return NextResponse.json({ success: false, error: "Invalid request body." }, { status: 400 });
@@ -104,12 +114,16 @@ export async function POST(request: NextRequest) {
     const masteryThreshold = toNumber(payload.masteryThreshold ?? null) ?? DEFAULT_MASTERY_THRESHOLD;
     const completed = Boolean(payload.completed);
     const slides = Array.isArray(payload.slides) ? payload.slides : [];
+    const teacherFeedback = normalizeText(payload.teacherFeedback);
 
     if (!studentId || !approvedScheduleId || !subjectId || !gradeId) {
       return NextResponse.json({ success: false, error: "Missing required identifiers." }, { status: 400 });
     }
     if (!slides.length) {
       return NextResponse.json({ success: false, error: "At least one slide performance is required." }, { status: 400 });
+    }
+    if (completed && !teacherFeedback) {
+      return NextResponse.json({ success: false, error: "Teacher feedback is required." }, { status: 400 });
     }
 
     const validatedSlides = slides
@@ -118,7 +132,9 @@ export async function POST(request: NextRequest) {
         flashcardIndex: toNumber(slide.flashcardIndex),
         expectedText: typeof slide.expectedText === "string" ? slide.expectedText : null,
         pronunciationScore: toNumber(slide.pronunciationScore),
-        correctnessScore: toNumber(slide.correctnessScore),
+        accuracyScore: toNumber(slide.accuracyScore),
+        fluencyScore: toNumber(slide.fluencyScore),
+        completenessScore: toNumber(slide.completenessScore),
         readingSpeedWpm: toNumber(slide.readingSpeedWpm),
         slideAverage: toNumber(slide.slideAverage),
         transcription: typeof slide.transcription === "string" ? slide.transcription : null,
@@ -126,7 +142,9 @@ export async function POST(request: NextRequest) {
       .filter((slide) =>
         slide.flashcardIndex !== null &&
         slide.pronunciationScore !== null &&
-        slide.correctnessScore !== null &&
+        slide.accuracyScore !== null &&
+        slide.fluencyScore !== null &&
+        slide.completenessScore !== null &&
         slide.readingSpeedWpm !== null &&
         slide.slideAverage !== null,
       );
@@ -137,14 +155,14 @@ export async function POST(request: NextRequest) {
 
     const overallAverage = average(validatedSlides.map((slide) => slide.slideAverage as number));
     const pronunciationAvg = average(validatedSlides.map((slide) => slide.pronunciationScore as number));
-    const correctnessAvg = average(validatedSlides.map((slide) => slide.correctnessScore as number));
+    const accuracyAvg = average(validatedSlides.map((slide) => slide.accuracyScore as number));
     const readingSpeedAvg = average(validatedSlides.map((slide) => slide.readingSpeedWpm as number));
 
     const result = await runWithConnection(async (connection) => {
       await connection.beginTransaction();
       try {
         const [scheduleRows] = await connection.query<RowDataPacket[]>(
-          "SELECT request_id FROM approved_remedial_schedule WHERE request_id = ? LIMIT 1",
+          "SELECT request_id, title, schedule_date FROM approved_remedial_schedule WHERE request_id = ? LIMIT 1",
           [approvedScheduleId],
         );
         if (!scheduleRows.length) {
@@ -178,29 +196,31 @@ export async function POST(request: NextRequest) {
         );
 
         const performanceValues: Array<
-          [number, number, string | null, number, number, number, number, string | null]
+          [number, number, string | null, number, number, number, number, number, number, string | null]
         > = validatedSlides.map((slide) => [
           sessionId,
           slide.flashcardIndex as number,
           slide.expectedText ?? null,
           slide.pronunciationScore as number,
-          slide.correctnessScore as number,
+          slide.accuracyScore as number,
+          slide.fluencyScore as number,
+          slide.completenessScore as number,
           slide.readingSpeedWpm as number,
           slide.slideAverage as number,
           slide.transcription,
         ]);
 
-        const placeholders = performanceValues.map(() => "(?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
+        const placeholders = performanceValues.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
         await connection.query(
           `INSERT INTO student_remedial_flashcard_performance
-           (session_id, flashcard_index, expected_text, pronunciation_score, correctness_score, reading_speed_wpm, slide_average, transcription)
+           (session_id, flashcard_index, expected_text, pronunciation_score, accuracy_score, fluency_score, completeness_score, reading_speed_wpm, slide_average, transcription)
            VALUES ${placeholders}`,
           performanceValues.flat(),
         );
 
         const aiRemarks = buildAiRemarks({
           pronunciationAvg,
-          correctnessAvg,
+          accuracyAvg,
           readingSpeedAvg,
         });
 
@@ -225,6 +245,109 @@ export async function POST(request: NextRequest) {
             sessionId,
           ],
         );
+
+        const [subjectRows] = await connection.query<RowDataPacket[]>(
+          "SELECT subject_name FROM subject WHERE subject_id = ? LIMIT 1",
+          [subjectId],
+        );
+        const subjectName = typeof subjectRows[0]?.subject_name === "string"
+          ? subjectRows[0].subject_name
+          : "Remedial";
+        const scheduleTitle = typeof scheduleRows[0]?.title === "string"
+          ? scheduleRows[0].title
+          : "Remedial Session";
+        const scheduleDate = scheduleRows[0]?.schedule_date ?? new Date();
+
+        const [activityRows] = await connection.query<RowDataPacket[]>(
+          `SELECT activity_id FROM activities
+           WHERE type = ? AND subject = ? AND title = ? AND DATE(date) = DATE(?)
+           LIMIT 1`,
+          ["remedial", subjectName, scheduleTitle, scheduleDate],
+        );
+        let activityId = activityRows.length ? Number(activityRows[0].activity_id) : null;
+
+        if (!activityId) {
+          const [activityInsert] = await connection.query<RowDataPacket[]>(
+            `INSERT INTO activities (type, subject, title, description, date)
+             VALUES (?, ?, ?, ?, ?)` ,
+            [
+              "remedial",
+              subjectName,
+              scheduleTitle,
+              `Remedial flashcards session for ${subjectName}.`,
+              scheduleDate,
+            ],
+          );
+          activityId = Number((activityInsert as unknown as { insertId?: number }).insertId);
+        }
+
+        if (Number.isFinite(activityId) && (activityId as number) > 0) {
+          const metadata = {
+            approvedScheduleId,
+            subjectId,
+            gradeId,
+            phonemicId,
+            materialId,
+            sessionId,
+          };
+          const [recordRows] = await connection.query<RowDataPacket[]>(
+            `SELECT record_id FROM performance_records WHERE student_id = ? AND activity_id = ?
+             ORDER BY record_id DESC LIMIT 1`,
+            [studentId, activityId],
+          );
+          let recordId = recordRows.length ? Number(recordRows[0].record_id) : null;
+
+          if (!recordId) {
+            const [recordInsert] = await connection.query<RowDataPacket[]>(
+              `INSERT INTO performance_records (student_id, activity_id, score, total_items, grade, metadata, completed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)` ,
+              [
+                studentId,
+                activityId,
+                overallAverage,
+                validatedSlides.length,
+                null,
+                JSON.stringify(metadata),
+                completed ? new Date() : null,
+              ],
+            );
+            recordId = Number((recordInsert as unknown as { insertId?: number }).insertId);
+          } else {
+            await connection.query(
+              `UPDATE performance_records
+               SET score = ?, total_items = ?, grade = ?, metadata = ?, completed_at = ?
+               WHERE record_id = ?`,
+              [
+                overallAverage,
+                validatedSlides.length,
+                null,
+                JSON.stringify(metadata),
+                completed ? new Date() : null,
+                recordId,
+              ],
+            );
+          }
+
+          if (recordId && teacherFeedback) {
+            const [remarkRows] = await connection.query<RowDataPacket[]>(
+              `SELECT remark_id FROM remarks WHERE performance_record_id = ? LIMIT 1`,
+              [recordId],
+            );
+
+            if (remarkRows.length) {
+              await connection.query(
+                `UPDATE remarks SET content = ?, teacher_notes = ? WHERE performance_record_id = ?`,
+                [aiRemarks, teacherFeedback, recordId],
+              );
+            } else {
+              await connection.query(
+                `INSERT INTO remarks (performance_record_id, content, teacher_notes)
+                 VALUES (?, ?, ?)` ,
+                [recordId, aiRemarks, teacherFeedback],
+              );
+            }
+          }
+        }
 
         if (completed && overallAverage >= masteryThreshold && phonemicId) {
           const [historyRows] = await connection.query<RowDataPacket[]>(
@@ -294,8 +417,8 @@ export async function GET(request: NextRequest) {
       const sessionId = Number(session.session_id);
 
       const [slideRows] = await connection.query<RowDataPacket[]>(
-        `SELECT flashcard_index, expected_text, pronunciation_score, correctness_score,
-                reading_speed_wpm, slide_average, transcription
+        `SELECT flashcard_index, expected_text, pronunciation_score, accuracy_score, fluency_score,
+                completeness_score, reading_speed_wpm, slide_average, transcription
          FROM student_remedial_flashcard_performance
          WHERE session_id = ?
          ORDER BY flashcard_index ASC`,
@@ -317,7 +440,9 @@ export async function GET(request: NextRequest) {
             flashcardIndex: Number(row.flashcard_index),
             expectedText: row.expected_text ?? null,
             pronunciationScore: Number(row.pronunciation_score) || 0,
-            correctnessScore: Number(row.correctness_score) || 0,
+            accuracyScore: Number(row.accuracy_score) || 0,
+            fluencyScore: Number(row.fluency_score) || 0,
+            completenessScore: Number(row.completeness_score) || 0,
             readingSpeedWpm: Number(row.reading_speed_wpm) || 0,
             slideAverage: Number(row.slide_average) || 0,
             transcription: row.transcription ?? null,

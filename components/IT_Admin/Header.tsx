@@ -11,28 +11,22 @@ interface AdminHeaderProps {
 
 export default function AdminHeader({ title }: AdminHeaderProps) {
   const [showDropdown, setShowDropdown] = React.useState(false);
-  const [showNotifications, setShowNotifications] = React.useState(false);
   const router = useRouter();
   const profileBtnRef = React.useRef<HTMLButtonElement>(null);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
-  const notificationBtnRef = React.useRef<HTMLButtonElement>(null);
-  const notificationDropdownRef = React.useRef<HTMLDivElement>(null);
 
-  // Hide dropdowns when clicking outside
+  // Hide dropdown when clicking outside
   React.useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (!profileBtnRef.current?.contains(e.target as Node) && !dropdownRef.current?.contains(e.target as Node)) {
         setShowDropdown(false);
       }
-      if (!notificationBtnRef.current?.contains(e.target as Node) && !notificationDropdownRef.current?.contains(e.target as Node)) {
-        setShowNotifications(false);
-      }
     }
-    if (showDropdown || showNotifications) {
+    if (showDropdown) {
       document.addEventListener("mousedown", handleClick);
     }
     return () => document.removeEventListener("mousedown", handleClick);
-  }, [showDropdown, showNotifications]);
+  }, [showDropdown]);
 
   return (
     <>
@@ -49,6 +43,7 @@ export default function AdminHeader({ title }: AdminHeaderProps) {
           <span className="text-base font-semibold text-[#013300] tracking-wide md:text-lg">{title}</span>
           {/* Profile Icon */}
           <div className="relative flex items-center">
+<<<<<<< Updated upstream
             {/* Notification Button */}
             <div className="relative">
               <button 
@@ -121,6 +116,8 @@ export default function AdminHeader({ title }: AdminHeaderProps) {
                 </div>
               )}
             </div>
+=======
+>>>>>>> Stashed changes
             <button
               ref={profileBtnRef}
               className="w-10 h-10 flex items-center justify-center rounded-full border border-[#013300] 

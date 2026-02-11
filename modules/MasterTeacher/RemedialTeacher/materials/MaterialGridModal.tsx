@@ -34,6 +34,8 @@ export default function MaterialGridModal({ isOpen, onClose, activity, subject }
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [targetLevelId, setTargetLevelId] = useState<number | null>(null);
+  const [showRejectionModal, setShowRejectionModal] = useState(false);
+  const [rejectionDetails, setRejectionDetails] = useState<{ levelName: string; reason: string | null } | null>(null);
 
   // Memoized load function to handle both initial load and quiet refreshes
   const loadData = useCallback(async (isInitial = false) => {
@@ -82,6 +84,15 @@ export default function MaterialGridModal({ isOpen, onClose, activity, subject }
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || targetLevelId === null) return;
+
+    if (!file.name.toLowerCase().endsWith(".pptx")) {
+      alert(`Only .pptx files are supported. "${file.name}" is not a PPTX file.`);
+      setTargetLevelId(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      return;
+    }
 
     // Set ONLY the specific item to uploading state
     setLevels(prev => prev.map(l => l.level.phonemic_id === targetLevelId ? { ...l, uploading: true } : l));
@@ -146,23 +157,30 @@ export default function MaterialGridModal({ isOpen, onClose, activity, subject }
     </div>
   );
 
+  const handleRejectedClick = (levelName: string, material: any) => {
+    const reason = material?.rejection_reason ?? material?.rejectionReason ?? null;
+    setRejectionDetails({ levelName, reason });
+    setShowRejectionModal(true);
+  };
+
   return (
-    <BaseModal
-      show={isOpen}
-      onClose={onClose}
-      title="Upload Materials"
-      maxWidth="2xl"
-      footer={modalFooter}
-    >
-      <div className="space-y-6">
+    <>
+      <BaseModal
+        show={isOpen}
+        onClose={onClose}
+        title="Upload Materials"
+        maxWidth="2xl"
+        footer={modalFooter}
+      >
+        <div className="space-y-6">
         {/* Activity Details Header */}
         <div className="flex justify-between items-center text-sm text-[#013300]/90 font-bold uppercase tracking-wider border-b border-gray-100 pb-3">
             <span>Title: <span className="text-[#013300]">{activity.title}</span></span>
             <span>Subject: <span className="text-[#013300]">{subject}</span></span>
         </div>
         <p className="flex items-center gap-2 text-xs text-gray-500">
-          <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-gray-300 text-[10px] italic font-semibold">i</span>
-          <span>Max file size: 10MB per file.</span>
+<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-info-icon lucide-info"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+          <span>Max file size: 10MB per file. Supported file type: .pptx</span>
         </p>
 
         {/* Level List Table */}
@@ -202,11 +220,23 @@ export default function MaterialGridModal({ isOpen, onClose, activity, subject }
                         <span className="text-[10px] uppercase font-bold text-[#013300]">Saving</span>
                       </div>
                     ) : material ? (
-                      <span className={`inline-block px-3 py-1 rounded text-[10px] font-black uppercase tracking-wider
-                        ${material.status === 'Approved' ? 'bg-green-100 text-green-700' : 
-                          material.status === 'Rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                        {material.status}
-                      </span>
+                      material.status === "Rejected" ? (
+                        <button
+                          type="button"
+                          onClick={() => handleRejectedClick(level.level_name, material)}
+                          className="inline-flex items-center gap-1 px-3 py-1 rounded text-[10px] font-black uppercase tracking-wider bg-red-100 text-red-700 cursor-pointer"
+                          title={material.rejection_reason ?? material.rejectionReason ?? undefined}
+                        >
+<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-info-icon lucide-info"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                          {material.status}
+                        </button>
+                      ) : (
+                        <span className={`inline-block px-3 py-1 rounded text-[10px] font-black uppercase tracking-wider ${
+                          material.status === "Approved" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
+                        }`}>
+                          {material.status}
+                        </span>
+                      )
                     ) : (
                       <span className="inline-block px-3 py-1 bg-gray-100 text-gray-600 border border-gray-200 rounded text-[10px] font-black uppercase tracking-wider">
                         Missing
@@ -254,9 +284,21 @@ export default function MaterialGridModal({ isOpen, onClose, activity, subject }
           type="file"
           className="hidden"
           onChange={handleFileChange}
-          accept=".pdf,.doc,.docx,.ppt,.pptx,.jpg,.png"
+          accept=".pptx"
         />
-      </div>
-    </BaseModal>
+        </div>
+      </BaseModal>
+      <BaseModal
+        show={showRejectionModal}
+        onClose={() => setShowRejectionModal(false)}
+        title="Rejection Reason"
+        maxWidth="md"
+      >
+        <div className="space-y-3 text-sm text-gray-700">
+          <p className="font-semibold text-gray-900">{rejectionDetails?.levelName ?? "Material"}</p>
+          <p>{rejectionDetails?.reason ?? "No reason provided."}</p>
+        </div>
+      </BaseModal>
+    </>
   );
 }

@@ -53,6 +53,8 @@ export async function POST(request: NextRequest) {
     const result = await runWithConnection(async (connection) => {
       const legacyColumns = await tryFetchTableColumns(connection, LEGACY_ARCHIVE_TABLE);
       const newColumns = await tryFetchTableColumns(connection, NEW_ARCHIVE_TABLE);
+      const archivedTeacherHandledColumns = await tryFetchTableColumns(connection, "archived_teacher_handled");
+      const teacherHandledColumns = await tryFetchTableColumns(connection, "teacher_handled");
 
       const legacyExists = !!legacyColumns && legacyColumns.size > 0;
       const newExists = !!newColumns && newColumns.size > 0;
@@ -97,6 +99,34 @@ export async function POST(request: NextRequest) {
 
       const deletePlaceholders = archiveIdsToDelete.map(() => "?").join(", ");
       let affectedRows = 0;
+
+      if (archivedTeacherHandledColumns && archivedTeacherHandledColumns.size > 0) {
+        const [archivedTeacherRows] = await connection.query<RowDataPacket[]>(
+          `SELECT teacher_id FROM archived_teacher_handled WHERE archived_id IN (${deletePlaceholders})`,
+          archiveIdsToDelete,
+        );
+
+        const teacherIds = Array.from(
+          new Set(
+            archivedTeacherRows
+              .map((row) => (row.teacher_id != null ? String(row.teacher_id).trim() : ""))
+              .filter((value) => value.length > 0),
+          ),
+        );
+
+        if (teacherIds.length > 0 && teacherHandledColumns && teacherHandledColumns.size > 0) {
+          const teacherPlaceholders = teacherIds.map(() => "?").join(", ");
+          await connection.query<ResultSetHeader>(
+            `DELETE FROM teacher_handled WHERE teacher_id IN (${teacherPlaceholders})`,
+            teacherIds,
+          );
+        }
+
+        await connection.query<ResultSetHeader>(
+          `DELETE FROM archived_teacher_handled WHERE archived_id IN (${deletePlaceholders})`,
+          archiveIdsToDelete,
+        );
+      }
 
       if (legacyExists) {
         const [deleteLegacy] = await connection.query<ResultSetHeader>(

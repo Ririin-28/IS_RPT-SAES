@@ -218,6 +218,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const roleParam = searchParams.get("role");
     const userIdParam = searchParams.get("userId");
+    const limitParam = searchParams.get("limit");
 
     const filters: string[] = [];
     const params: Array<string | number> = [];
@@ -263,6 +264,11 @@ export async function GET(request: NextRequest) {
 
     const whereClause = filters.length > 0 ? `WHERE ${filters.join(" AND ")}` : "";
 
+    const parsedLimit = limitParam ? Number.parseInt(limitParam, 10) : 100;
+    const effectiveLimit = Number.isFinite(parsedLimit)
+      ? Math.min(Math.max(parsedLimit, 1), 100)
+      : 100;
+
     const [rows] = await query<LogRow[]>(
       `SELECT
         ${selectFragments.join(",\n        ")}
@@ -273,8 +279,9 @@ export async function GET(request: NextRequest) {
       ${hasMasterTeacherTable ? `LEFT JOIN master_teacher mt ON mt.user_id = al.\`${accountLogColumns.userId}\`` : ""}
       ${hasTeacherTable ? `LEFT JOIN teacher t ON t.user_id = al.\`${accountLogColumns.userId}\`` : ""}
       ${whereClause}
-      ${orderByClause}`
-      , params
+      ${orderByClause}
+      LIMIT ?`
+      , [...params, effectiveLimit]
     );
 
     const logIdColumn = accountLogColumns.logId;

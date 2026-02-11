@@ -57,6 +57,22 @@ export type UpdateOptions = {
   skipRefresh?: boolean;
 };
 
+const PHONEMIC_LEVEL_ORDER = ["nonreader", "syllable", "word", "phrase", "sentence", "paragraph"] as const;
+const MATH_LEVEL_ORDER = ["notproficient", "lowproficient", "nearlyproficient", "proficient", "highlyproficient"] as const;
+
+const normalizeLevelLabel = (value?: string | null): string => {
+  if (!value) return "";
+  const normalized = value.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (normalized === "syllabe") return "syllable";
+  return normalized;
+};
+
+const getLevelSortIndex = (value?: string | null, order: readonly string[] = PHONEMIC_LEVEL_ORDER): number => {
+  const normalized = normalizeLevelLabel(value);
+  const index = order.indexOf(normalized);
+  return index === -1 ? Number.MAX_SAFE_INTEGER : index;
+};
+
 export function useCoordinatorMaterials({ subject, level, requestId }: UseCoordinatorMaterialsOptions): UseCoordinatorMaterialsResult {
   const [reviewerUserId, setReviewerUserId] = useState<number | null>(null);
   const [materials, setMaterials] = useState<CoordinatorMaterialRow[]>([]);
@@ -186,10 +202,15 @@ export function useCoordinatorMaterials({ subject, level, requestId }: UseCoordi
       const combined = [...teacherRows, ...remedialRows]
         .filter((row) => row.status !== "rejected")
         .sort((a, b) => {
-        const aDate = new Date(a.createdAt).getTime();
-        const bDate = new Date(b.createdAt).getTime();
-        return bDate - aDate;
-      });
+          const isMath = normalizedSubject.toLowerCase() === "math";
+          const order = isMath ? MATH_LEVEL_ORDER : PHONEMIC_LEVEL_ORDER;
+          const aLevel = getLevelSortIndex(a.level, order);
+          const bLevel = getLevelSortIndex(b.level, order);
+          if (aLevel !== bLevel) return aLevel - bLevel;
+          const aDate = new Date(a.createdAt).getTime();
+          const bDate = new Date(b.createdAt).getTime();
+          return bDate - aDate;
+        });
 
       setMaterials(combined);
     } catch (err) {

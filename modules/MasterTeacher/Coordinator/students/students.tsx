@@ -281,6 +281,11 @@ export default function MasterTeacherStudents() {
     setShowAssignmentModal(false);
   };
 
+  const handleOpenAssignConfirm = () => {
+    setShowAssignmentModal(false);
+    setShowAssignConfirm(true);
+  };
+
   const handleConfirmAssign = async () => {
     if (!studentMeta.gradeLevel) {
       setAssignmentError("Grade assignment is required before saving assignments.");
@@ -505,7 +510,7 @@ export default function MasterTeacherStudents() {
             </SecondaryButton>
             <PrimaryButton
               type="button"
-              onClick={() => setShowAssignConfirm(true)}
+              onClick={handleOpenAssignConfirm}
               disabled={totalTeachers === 0 || totalStudents === 0 || assignmentSaving}
             >
               {assignmentSaving ? "Assigning..." : "Assign"}

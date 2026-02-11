@@ -120,7 +120,7 @@ export default function ScheduledActivitiesList({ activities, subject, loading, 
             <h3 className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm py-2 text-xs font-bold text-gray-400 uppercase tracking-widest px-1 border-b border-gray-100">
               {group.label}
             </h3>
-            <div className="grid grid-cols-1 lg:grid-flow-col lg:auto-cols-fr gap-3">
+            <div className="grid grid-cols-1 gap-3">
               {group.activities.map((activity) => {
                 const normalizedSubject = normalizeCalendarSubject(activity.subject);
                 const timeLabel = formatTimeRange(activity.startTime, activity.endTime);

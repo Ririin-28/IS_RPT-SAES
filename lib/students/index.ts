@@ -173,6 +173,34 @@ function resolvePhonemicLevelId(
   return subjectLookup.get(key) ?? null;
 }
 
+async function resolveDefaultPhonemicId(
+  subjectId: number | null,
+  lookup: PhonemicLevelLookup,
+): Promise<number | null> {
+  if (!subjectId) {
+    return null;
+  }
+
+  const subjectLookup = lookup.get(subjectId);
+  if (subjectLookup && subjectLookup.size > 0) {
+    const iterator = subjectLookup.values().next();
+    const fallback = iterator.done ? null : iterator.value;
+    return typeof fallback === "number" && Number.isFinite(fallback) ? fallback : null;
+  }
+
+  try {
+    const [rows] = await query<RowDataPacket[]>(
+      "SELECT phonemic_id FROM phonemic_level WHERE subject_id = ? ORDER BY phonemic_id LIMIT 1",
+      [subjectId],
+    );
+    const candidate = Number(rows?.[0]?.phonemic_id);
+    return Number.isFinite(candidate) ? candidate : null;
+  } catch (error) {
+    console.warn("Failed to resolve default phonemic id", error);
+    return null;
+  }
+}
+
 const safeGetColumns = async (table: string): Promise<Set<string>> => {
   try {
     return await getTableColumns(table);
@@ -438,6 +466,17 @@ export async function insertStudents(
   const filipinoSubjectId = await resolveSubjectId("Filipino");
   const mathSubjectId = await resolveSubjectId("Math");
   const phonemicLookup = await getPhonemicLevelLookup();
+
+  const defaultPhonemicBySubject = new Map<number, number | null>();
+  const getDefaultPhonemicId = async (subjectId: number | null): Promise<number | null> => {
+    if (!subjectId) return null;
+    if (defaultPhonemicBySubject.has(subjectId)) {
+      return defaultPhonemicBySubject.get(subjectId) ?? null;
+    }
+    const resolved = await resolveDefaultPhonemicId(subjectId, phonemicLookup);
+    defaultPhonemicBySubject.set(subjectId, resolved ?? null);
+    return resolved ?? null;
+  };
 
   return runWithConnection(async (connection) => {
     await connection.beginTransaction();
@@ -896,6 +935,8 @@ export async function insertStudents(
           if (effectiveUserColumns.size) {
             const userInsertColumns: string[] = [];
             const userInsertValues: Array<string | number | null> = [];
+            let userCodeIndex: number | null = null;
+            let userCodeValue: string | null = null;
             const pushUser = (column: string, value: any) => {
               userInsertColumns.push(column);
               userInsertValues.push(value);
@@ -941,7 +982,9 @@ export async function insertStudents(
             if (effectiveUserColumns.has("role")) pushUser("role", "parent");
             if (effectiveUserColumns.has("role_id") && parentRoleId !== null) pushUser("role_id", parentRoleId);
             if (effectiveUserColumns.has("user_code") && (parentId || normalizedParentIdentifier)) {
-              pushUser("user_code", parentId ?? normalizedParentIdentifier);
+              userCodeValue = String(parentId ?? normalizedParentIdentifier);
+              userCodeIndex = userInsertColumns.length;
+              pushUser("user_code", userCodeValue);
             }
             if (effectiveUserColumns.has("password")) pushUser("password", parentPassword);
             if (effectiveUserColumns.has("status")) pushUser("status", "Active");
@@ -949,6 +992,30 @@ export async function insertStudents(
             if (effectiveUserColumns.has("updated_at")) pushUser("updated_at", requestTime as any);
 
             if (parentUserId === null && userInsertColumns.length) {
+              if (userCodeIndex !== null && userCodeValue) {
+                const isUserCodeTaken = async (code: string): Promise<boolean> => {
+                  if (userByUserCode.has(code)) return true;
+                  const [rows] = await connection.query<RowDataPacket[]>(
+                    "SELECT user_id FROM users WHERE user_code = ? LIMIT 1",
+                    [code],
+                  );
+                  return Array.isArray(rows) && rows.length > 0;
+                };
+
+                const candidate = userCodeValue.trim();
+                if (candidate && await isUserCodeTaken(candidate)) {
+                  let suffix = 1;
+                  while (suffix <= 50 && await isUserCodeTaken(`${candidate}-${suffix}`)) {
+                    suffix += 1;
+                  }
+                  if (suffix > 50) {
+                    throw new Error("Unable to allocate unique parent user code");
+                  }
+                  userCodeValue = `${candidate}-${suffix}`;
+                  userInsertValues[userCodeIndex] = userCodeValue;
+                }
+              }
+
               const columnsSql = userInsertColumns.map((c) => `\`${c}\``).join(", ");
               const placeholders = userInsertColumns.map(() => "?").join(", ");
               const [userResult] = await connection.query<ResultSetHeader>(
@@ -966,7 +1033,7 @@ export async function insertStudents(
               if (parentEmail) userByEmail.set(parentEmail, parentUserId);
               if (parentPhone) userByPhone.set(parentPhone, parentUserId);
               if (parentUsername) userByUsername.set(parentUsername, parentUserId);
-              if (normalizedParentIdentifier) userByUserCode.set(normalizedParentIdentifier, parentUserId);
+              if (userCodeValue) userByUserCode.set(userCodeValue, parentUserId);
             }
           }
 
@@ -1197,12 +1264,40 @@ export async function insertStudents(
           const mathId = resolvePhonemicLevelId(entry.student.mathProficiency, mathSubjectId, phonemicLookup);
           if (mathId && mathSubjectId) phonemicInserts.push([mathSubjectId, mathId]);
 
+          const mainSubjectId = resolvedMainSubjectId;
+          let mainSubjectPhonemicId: number | null = null;
+          if (mainSubjectId) {
+            if (subject === "English") {
+              mainSubjectPhonemicId = englishId;
+            } else if (subject === "Filipino") {
+              mainSubjectPhonemicId = filipinoId;
+            } else if (subject === "Math") {
+              mainSubjectPhonemicId = mathId;
+            }
+            if (!mainSubjectPhonemicId) {
+              mainSubjectPhonemicId = await getDefaultPhonemicId(mainSubjectId);
+            }
+          }
+
           for (const [subId, phonId] of phonemicInserts) {
             await connection.query(
               `INSERT INTO student_subject_assessment (student_id, subject_id, phonemic_id, assessed_at)
                VALUES (?, ?, ?, ?)
                ON DUPLICATE KEY UPDATE phonemic_id = VALUES(phonemic_id), assessed_at = VALUES(assessed_at)`,
               [studentId, subId, phonId, requestTime],
+            );
+          }
+
+          const hasMainSubject =
+            mainSubjectId != null &&
+            phonemicInserts.some(([subId]) => subId === mainSubjectId);
+
+          if (mainSubjectId && !hasMainSubject && mainSubjectPhonemicId) {
+            await connection.query(
+              `INSERT INTO student_subject_assessment (student_id, subject_id, phonemic_id, assessed_at)
+               VALUES (?, ?, ?, ?)
+               ON DUPLICATE KEY UPDATE phonemic_id = VALUES(phonemic_id), assessed_at = VALUES(assessed_at)`,
+              [studentId, mainSubjectId, mainSubjectPhonemicId, requestTime],
             );
           }
         }

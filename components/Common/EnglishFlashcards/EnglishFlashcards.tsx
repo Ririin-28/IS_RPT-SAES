@@ -6,6 +6,8 @@ import { FiArrowLeft, FiArrowRight } from "react-icons/fi";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import TableList from "@/components/Common/Tables/TableList";
+import { buildFlashcardContentKey } from "@/lib/utils/flashcards-storage";
+import { getStoredUserProfile } from "@/lib/utils/user-profile";
 
 /* ---------- Icons ---------- */
 const Volume2Icon = () => (
@@ -105,9 +107,24 @@ function comparePhonemeArrays(expectedArr: string[], actualArr: string[]) {
   return (matches / expectedArr.length) * 100;
 }
 
+const normalizeLevelLabel = (value?: string | null): string => {
+  if (!value) return "";
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+};
+
+const toDisplaySubject = (value: string | null | undefined, fallback: string): string => {
+  const trimmed = (value ?? "").trim();
+  if (!trimmed) return fallback;
+  const lower = trimmed.toLowerCase();
+  if (lower === "math" || lower === "mathematics") return "Mathematics";
+  if (lower === "english") return "English";
+  if (lower === "filipino") return "Filipino";
+  return trimmed.replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
 /* ---------- Student roster & performance storage ---------- */
 
-const FLASHCARD_CONTENT_KEY = "MASTER_TEACHER_ENGLISH_FLASHCARDS";
+const BASE_FLASHCARD_CONTENT_KEY = "MASTER_TEACHER_ENGLISH_FLASHCARDS";
 
 type StudentRecord = {
   id: string;
@@ -115,6 +132,7 @@ type StudentRecord = {
   name: string;
   grade?: string;
   section?: string;
+  phonemicLevel?: string;
 };
 
 type StudentPerformanceEntry = {
@@ -218,7 +236,25 @@ export default function EnglishFlashcards({
   const subjectIdParam = searchParams?.get("subjectId");
   const gradeIdParam = searchParams?.get("gradeId");
   const phonemicIdParam = searchParams?.get("phonemicId");
+  const phonemicNameParam = searchParams?.get("phonemicName") ?? "";
   const materialIdParam = searchParams?.get("materialId");
+  const userProfile = useMemo(() => getStoredUserProfile(), []);
+  const userId = useMemo(() => {
+    const raw = userProfile?.userId;
+    if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+    if (typeof raw === "string") {
+      const parsed = Number.parseInt(raw, 10);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return null;
+  }, [userProfile]);
+  const flashcardContentKey = useMemo(() => {
+    return buildFlashcardContentKey(BASE_FLASHCARD_CONTENT_KEY, {
+      activityId: activityParam || null,
+      phonemicId: phonemicIdParam || null,
+      userId,
+    });
+  }, [activityParam, phonemicIdParam, userId]);
   const startIndex = useMemo(() => {
     if (!startParam) return 0;
     const parsed = Number.parseInt(startParam, 10);
@@ -238,6 +274,15 @@ export default function EnglishFlashcards({
   const gradeId = useMemo(() => toNumberParam(gradeIdParam), [gradeIdParam]);
   const phonemicId = useMemo(() => toNumberParam(phonemicIdParam), [phonemicIdParam]);
   const materialId = useMemo(() => toNumberParam(materialIdParam), [materialIdParam]);
+  const expectedPhonemicLevel = useMemo(
+    () => normalizeLevelLabel(phonemicNameParam),
+    [phonemicNameParam],
+  );
+  const headerLevelLabel = useMemo(() => {
+    const subjectLabel = toDisplaySubject(subjectParam, "English");
+    const levelLabel = phonemicNameParam.trim();
+    return levelLabel ? `${subjectLabel} ${levelLabel}` : subjectLabel;
+  }, [phonemicNameParam, subjectParam]);
 
   type SessionLockState = { completed: boolean; lastIndex: number; updatedAt: string };
   const sessionLockEnabled = useMemo(() => {
@@ -294,6 +339,8 @@ export default function EnglishFlashcards({
   const [completedByStudent, setCompletedByStudent] = useState<Record<string, boolean>>({});
   const [dbCompletionByStudent, setDbCompletionByStudent] = useState<Record<string, boolean>>({});
   const [blockedSessionMessage, setBlockedSessionMessage] = useState<string | null>(null);
+  const [teacherFeedback, setTeacherFeedback] = useState("");
+  const [teacherFeedbackError, setTeacherFeedbackError] = useState<string | null>(null);
 
   useEffect(() => {
     if (forceSessionOnly) {
@@ -311,7 +358,7 @@ export default function EnglishFlashcards({
     if (typeof window === "undefined") return;
 
     try {
-      const stored = window.localStorage.getItem(FLASHCARD_CONTENT_KEY);
+      const stored = window.localStorage.getItem(flashcardContentKey);
       if (stored) {
         const parsed = JSON.parse(stored);
         if (isValidFlashcardContent(parsed)) {
@@ -320,13 +367,13 @@ export default function EnglishFlashcards({
         }
       }
 
-      window.localStorage.setItem(FLASHCARD_CONTENT_KEY, JSON.stringify(INITIAL_FLASHCARDS));
+      window.localStorage.setItem(flashcardContentKey, JSON.stringify(INITIAL_FLASHCARDS));
       setFlashcardsData(INITIAL_FLASHCARDS);
     } catch (error) {
       console.warn("Failed to load English flashcard content", error);
       setFlashcardsData(INITIAL_FLASHCARDS);
     }
-  }, []);
+  }, [flashcardContentKey]);
 
   useEffect(() => {
     if (lastSavedStudentId) {
@@ -479,6 +526,9 @@ export default function EnglishFlashcards({
 
   const currentCard = flashcardsData[current] ?? flashcardsData[0] ?? INITIAL_FLASHCARDS[0];
   const sentence = currentCard?.sentence ?? "";
+  const isParagraphLevel = expectedPhonemicLevel === "paragraph" || sentence.length > 280;
+  const contentContainerClass =
+    `flex-1 px-6 sm:px-8 lg:px-12 py-10 via-white flex flex-col items-center ${isParagraphLevel ? "justify-start" : "justify-center"} text-center gap-4 overflow-y-auto max-h-[48vh]`;
 
   // recognition + metrics state
   const [isListening, setIsListening] = useState(false);
@@ -505,8 +555,11 @@ export default function EnglishFlashcards({
   const speechEndRef = useRef<number | null>(null);
   const cumulativeSilentMsRef = useRef<number>(0);
   const recognizerRef = useRef<SpeechSDK.SpeechRecognizer | null>(null);
+  const recognizerSessionRef = useRef(0);
+  const recognizerClosedRef = useRef(false);
   const synthesizerRef = useRef<SpeechSDK.SpeechSynthesizer | null>(null);
   const speechTokenRef = useRef<{ token: string; region: string; expiresAt: number } | null>(null);
+  const autoStartRef = useRef(false);
 
   const updateSessionProgress = useCallback(
     (nextIndex: number) => {
@@ -552,6 +605,14 @@ export default function EnglishFlashcards({
   };
 
   const handleStartSession = async (studentId: string) => {
+    const selectedStudent = students.find((student) => student.id === studentId);
+    const studentLevel = normalizeLevelLabel(selectedStudent?.phonemicLevel ?? "");
+    if (expectedPhonemicLevel && studentLevel && expectedPhonemicLevel !== studentLevel) {
+      setBlockedSessionMessage(
+        `This student is assigned to ${selectedStudent?.phonemicLevel ?? "their level"} and cannot take ${phonemicNameParam} level.`,
+      );
+      return;
+    }
     if (sessionLockEnabled) {
       if (dbCompletionByStudent[studentId]) {
         setBlockedSessionMessage("This remedial session was already completed for this student.");
@@ -583,7 +644,9 @@ export default function EnglishFlashcards({
               slides?: Array<{
                 flashcardIndex: number;
                 pronunciationScore: number;
-                correctnessScore: number;
+                accuracyScore: number;
+                fluencyScore: number;
+                completenessScore: number;
                 readingSpeedWpm: number;
                 slideAverage: number;
                 expectedText?: string | null;
@@ -597,9 +660,9 @@ export default function EnglishFlashcards({
             cardIndex: slide.flashcardIndex,
             sentence: slide.expectedText ?? flashcardsData[slide.flashcardIndex]?.sentence ?? "",
             pronScore: slide.pronunciationScore,
-            correctness: slide.correctnessScore,
-            fluencyScore: undefined,
-            completenessScore: undefined,
+            correctness: slide.accuracyScore,
+            fluencyScore: slide.fluencyScore,
+            completenessScore: slide.completenessScore,
             readingSpeedWpm: slide.readingSpeedWpm,
             readingSpeedScore: gradeReadingSpeed(
               slide.readingSpeedWpm,
@@ -646,7 +709,17 @@ export default function EnglishFlashcards({
     setView("session");
   };
 
+  useEffect(() => {
+    if (!forceSessionOnly || !initialStudentId || autoStartRef.current) return;
+    autoStartRef.current = true;
+    void handleStartSession(initialStudentId);
+  }, [forceSessionOnly, handleStartSession, initialStudentId]);
+
   const handleStopSession = async () => {
+    if (showSummary && sessionLockEnabled && !teacherFeedback.trim()) {
+      setTeacherFeedbackError("Teacher feedback is required before saving this session.");
+      return;
+    }
     const activeSentence = flashcardsData[current]?.sentence ?? "";
     const sentenceWordCount = Math.max(1, normalizeText(activeSentence).split(/\s+/).filter(Boolean).length);
     const latestScore = sessionScores[sessionScores.length - 1];
@@ -709,7 +782,9 @@ export default function EnglishFlashcards({
         flashcardIndex: item.cardIndex,
         expectedText: item.sentence,
         pronunciationScore: item.pronScore,
-        correctnessScore: item.correctness,
+        accuracyScore: item.correctness,
+        fluencyScore: item.fluencyScore ?? 0,
+        completenessScore: item.completenessScore ?? 0,
         readingSpeedWpm: item.readingSpeedWpm,
         slideAverage: item.averageScore,
         transcription: item.transcription ?? null,
@@ -728,6 +803,7 @@ export default function EnglishFlashcards({
             materialId: materialId ?? null,
             completed: showSummary,
             slides,
+            teacherFeedback: teacherFeedback.trim() || null,
           }),
         });
 
@@ -747,7 +823,11 @@ export default function EnglishFlashcards({
         updatedAt: new Date().toISOString(),
       };
       const lastIndexReached = Math.max(existing.lastIndex ?? 0, current);
-      const completed = lastIndexReached >= Math.max(0, flashcardsData.length - 1) && (showSummary || current >= flashcardsData.length - 1);
+      const hasScores = sessionScores.length > 0;
+      const completed =
+        hasScores &&
+        lastIndexReached >= Math.max(0, flashcardsData.length - 1) &&
+        (showSummary || current >= flashcardsData.length - 1);
       const updated: SessionLockState = {
         ...existing,
         completed,
@@ -772,6 +852,8 @@ export default function EnglishFlashcards({
     setSessionScores([]);
     setShowSummary(false);
     setCurrent(startIndex);
+    setTeacherFeedback("");
+    setTeacherFeedbackError(null);
     if (forceSessionOnly) {
       if (onExit) {
         onExit();
@@ -1268,8 +1350,10 @@ export default function EnglishFlashcards({
 
   const handleMicrophone = async () => {
     if (!sentence.trim()) return;
+    if (isListening || isProcessing) return;
     if (recognizerRef.current) {
       try {
+        recognizerClosedRef.current = true;
         recognizerRef.current.close();
       } catch {
         // ignore
@@ -1277,6 +1361,10 @@ export default function EnglishFlashcards({
       recognizerRef.current = null;
     }
     let didFallback = false;
+    const sessionId = (recognizerSessionRef.current += 1);
+    recognizerClosedRef.current = false;
+    const isActiveSession = () =>
+      sessionId === recognizerSessionRef.current && !recognizerClosedRef.current;
     setIsListening(true);
     setIsProcessing(true);
     setFeedback("");
@@ -1333,6 +1421,10 @@ export default function EnglishFlashcards({
           settled = true;
           if (silenceTimer) window.clearTimeout(silenceTimer);
           if (maxTimer) window.clearTimeout(maxTimer);
+          if (!isActiveSession()) {
+            resolve(null);
+            return;
+          }
           recognizer.stopContinuousRecognitionAsync(
             () => {
               if (!totalWords) {
@@ -1352,7 +1444,13 @@ export default function EnglishFlashcards({
                 words: applyOmissionsToWordFeedback(allWords, sentence),
               });
             },
-            (error) => reject(error),
+            (error) => {
+              if (!isActiveSession()) {
+                resolve(null);
+                return;
+              }
+              reject(error);
+            },
           );
         };
 
@@ -1362,6 +1460,7 @@ export default function EnglishFlashcards({
         };
 
         recognizer.recognized = (_sender, event) => {
+          if (!isActiveSession()) return;
           if (event.result?.reason !== SpeechSDK.ResultReason.RecognizedSpeech) return;
           const result = event.result;
           const segmentText = result.text ?? "";
@@ -1387,6 +1486,7 @@ export default function EnglishFlashcards({
         };
 
         recognizer.recognizing = (_sender, event) => {
+          if (!isActiveSession()) return;
           const interimText = event.result?.text ?? "";
           if (interimText) {
             setLiveTranscription(interimText);
@@ -1399,8 +1499,18 @@ export default function EnglishFlashcards({
         recognizer.canceled = () => finish();
 
         recognizer.startContinuousRecognitionAsync(
-          () => setStatusMessage("Listening... 🎧"),
-          (error) => reject(error),
+          () => {
+            if (isActiveSession()) {
+              setStatusMessage("Listening... 🎧");
+            }
+          },
+          (error) => {
+            if (!isActiveSession()) {
+              resolve(null);
+              return;
+            }
+            reject(error);
+          },
         );
       });
 
@@ -1476,8 +1586,15 @@ export default function EnglishFlashcards({
       await handleMicrophoneFallback();
       return;
     } finally {
-      recognizerRef.current?.close();
-      recognizerRef.current = null;
+      if (isActiveSession()) {
+        recognizerClosedRef.current = true;
+        try {
+          recognizerRef.current?.close();
+        } catch {
+          // ignore
+        }
+        recognizerRef.current = null;
+      }
       if (!didFallback) {
         setIsListening(false);
         setIsProcessing(false);
@@ -1527,7 +1644,7 @@ export default function EnglishFlashcards({
         <div className="w-full max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex min-h-dvh flex-col">
           <header className="rounded-3xl border border-gray-300 bg-white/70 backdrop-blur px-8 py-5 sm:py-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between shadow-md shadow-gray-200">
             <div className="space-y-3 text-center sm:text-left">
-              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">English Non-Reader</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">{headerLevelLabel}</p>
               <h1 className="text-3xl sm:text-4xl font-bold text-[#0d1b16]">Remedial Flashcards</h1>
             </div>
             <button
@@ -1640,7 +1757,7 @@ export default function EnglishFlashcards({
 
   // --- Get previewHeaderLabel from student name for main title, and subtitle from student name or a new prop ---
   // If the student name contains 'Preview', extract the subject and level for the subtitle
-  let subtitle = "";
+  let subtitle = phonemicNameParam || subjectParam ? headerLevelLabel : "";
   let mainTitle = selectedStudent.name;
   const previewRegex = /^(English|Filipino|Math) Preview$/i;
   const headerLabelRegex = /^(English|Filipino|Math) • (.+) Level$/i;
@@ -1657,6 +1774,8 @@ export default function EnglishFlashcards({
     mainTitle = selectedStudent.name;
     subtitle = "";
   }
+
+  
 
   const buildEnglishInsights = (scores: SessionScore[]) => {
     if (!scores.length) return null;
@@ -1863,6 +1982,28 @@ export default function EnglishFlashcards({
 
           </div>
 
+          {sessionLockEnabled && (
+            <div className="rounded-3xl border border-emerald-200 bg-white shadow-md shadow-emerald-100 p-6">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">Teacher Feedback</p>
+                <h2 className="text-2xl font-bold text-black">Required Notes</h2>
+              </div>
+              <textarea
+                value={teacherFeedback}
+                onChange={(event) => {
+                  setTeacherFeedback(event.target.value);
+                  if (teacherFeedbackError) setTeacherFeedbackError(null);
+                }}
+                className="mt-3 w-full min-h-[120px] rounded-2xl border border-emerald-200 px-4 py-3 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"
+                placeholder="Write your feedback on the student's performance."
+                required
+              />
+              {teacherFeedbackError && (
+                <p className="mt-2 text-sm font-medium text-rose-600">{teacherFeedbackError}</p>
+              )}
+            </div>
+          )}
+
           <div className="flex flex-col sm:flex-row sm:flex-wrap items-center justify-center gap-3 mt-auto">
             {!sessionLockEnabled && (
               <button
@@ -1939,7 +2080,7 @@ export default function EnglishFlashcards({
           <div className="grid gap-3 xl:grid-cols-12 flex-1 min-h-0">
             <section className="xl:col-span-8 flex flex-col min-h-0">
               <div className="h-full rounded-3xl border border-gray-300 bg-white shadow-md shadow-gray-200 overflow-hidden flex flex-col">
-              <div className="flex-1 px-6 sm:px-8 lg:px-12 py-10 via-white flex flex-col items-center justify-center text-center gap-4 overflow-y-auto max-h-[52vh]">
+              <div className={contentContainerClass}>
                 <p className="text-3xl sm:text-4xl lg:text-5xl font-semibold text-[#013300] leading-tight">
                   {sentence}
                 </p>

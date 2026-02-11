@@ -15,7 +15,6 @@ const ROLE_OPTIONS = [
   "Master Teacher",
   "Teacher",
   "Parent",
-  "Student",
 ] as const;
 
 const ROLE_LABEL_TO_KEY: Record<(typeof ROLE_OPTIONS)[number], string | null> = {
@@ -25,7 +24,6 @@ const ROLE_LABEL_TO_KEY: Record<(typeof ROLE_OPTIONS)[number], string | null> = 
   "Master Teacher": "master_teacher",
   "Teacher": "teacher",
   "Parent": "parent",
-  "Student": "student",
 };
 
 const ROLE_KEY_TO_LABEL: Record<string, string> = {
@@ -34,7 +32,6 @@ const ROLE_KEY_TO_LABEL: Record<string, string> = {
   master_teacher: "Master Teacher",
   teacher: "Teacher",
   parent: "Parent",
-  student: "Student",
 };
 
 function normalizeRoleIdentifier(value: string): string {

@@ -16,8 +16,8 @@ import ITAdminArchiveTab from "./ITAdminTab/ITAdminTab";
 // Student Tab
 import StudentArchiveTab from "./StudentTab/StudentTab";
 
-const GRADE_OPTIONS = ["All Grades", "1", "2", "3", "4", "5", "6"] as const;
-const ACCOUNT_OPTIONS = ["IT Admin", "Principal", "Master Teachers", "Teachers", "Students"] as const;
+const GRADE_OPTIONS = ["All Grades", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"] as const;
+const ACCOUNT_OPTIONS = ["IT Admin", "Principal", "Master Teachers", "Teachers"] as const;
 
 type AccountOption = (typeof ACCOUNT_OPTIONS)[number];
 
@@ -28,7 +28,6 @@ const ACCOUNT_TYPE_TO_ROLE: Record<AccountOption, ArchiveRoleKey> = {
   Principal: "principal",
   "Master Teachers": "master_teacher",
   Teachers: "teacher",
-  Students: "student",
 };
 
 interface ArchiveEntry {
@@ -227,7 +226,7 @@ export default function ITAdminArchive() {
   }, []);
 
   const showGradeDropdown = useMemo(() => {
-    return accountType === "Master Teachers" || accountType === "Teachers" || accountType === "Students";
+    return accountType === "Master Teachers" || accountType === "Teachers";
   }, [accountType]);
 
   useEffect(() => {
@@ -274,7 +273,7 @@ export default function ITAdminArchive() {
   const handleAccountTypeChange = (next: string) => {
     const selected = ACCOUNT_OPTIONS.find((option) => option === next) ?? ACCOUNT_OPTIONS[0];
     setAccountType(selected);
-    if (!(selected === "Master Teachers" || selected === "Teachers" || selected === "Students")) {
+    if (!(selected === "Master Teachers" || selected === "Teachers")) {
       setActiveTab("All Grades");
     }
   };
@@ -311,11 +310,12 @@ export default function ITAdminArchive() {
                   />
                   {showGradeDropdown ? (
                     <>
-                      <SecondaryHeader title="" />
+                      <SecondaryHeader title="in" />
                       <HeaderDropdown
                         options={[...GRADE_OPTIONS]}
                         value={activeTab}
                         onChange={handleGradeChange}
+                        className="pl-2"
                       />
                     </>
                   ) : (
@@ -389,10 +389,6 @@ export default function ITAdminArchive() {
                     gradeLabel={activeTab}
                     onEntriesRemoved={handleArchiveRemoval}
                   />
-                )}
-
-                {accountType === "Students" && (
-                  <StudentArchiveTab students={accounts} searchTerm={searchTerm} selectedGrade={activeTab} />
                 )}
               </div>
 			</div>

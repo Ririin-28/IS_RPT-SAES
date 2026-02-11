@@ -8,6 +8,7 @@ import KebabMenu from "@/components/Common/Menus/KebabMenu";
 import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
 import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
 import AccountRestoredModal, { type RestoredAccountInfo } from "@/components/Common/Modals/AccountRestoredModal";
+import AccountDeletedModal from "@/components/Common/Modals/AccountDeletedModal";
 import { useArchiveRestoreDelete } from "../Common/useArchiveRestoreDelete";
 import { ensureArchiveRowKey } from "../Common/archiveRowKey";
 import { exportArchiveRows } from "../utils/export-columns";
@@ -55,6 +56,10 @@ const matchesGrade = (teacher: any, gradeFilter?: number) => {
     return true;
   }
 
+  if (Array.isArray(teacher.handledGrades) && teacher.handledGrades.length > 0) {
+    return teacher.handledGrades.some((grade: unknown) => extractGradeNumber(grade) === gradeFilter);
+  }
+
   const gradeCandidate =
     teacher.grade ??
     teacher.grade_level ??
@@ -80,6 +85,8 @@ export default function TeacherArchiveTab({
   const [selectedTeacher, setSelectedTeacher] = useState<any>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [restoredAccounts, setRestoredAccounts] = useState<RestoredAccountInfo[]>([]);
+  const [deletedCount, setDeletedCount] = useState(0);
+  const [showDeletedModal, setShowDeletedModal] = useState(false);
   const normalizedLabel = gradeLabel ?? (gradeFilter ? `Grade ${gradeFilter}` : "All Grades");
 
   const keySelector = useCallback((item: any) => {
@@ -264,10 +271,9 @@ export default function TeacherArchiveTab({
           onEntriesRemoved?.(deletedArchiveIds);
         }
 
-        if (deletedArchiveIds.length > 0 && typeof window !== "undefined") {
-          window.alert(
-            `Deleted ${deletedArchiveIds.length} archived account${deletedArchiveIds.length === 1 ? "" : "s"}.`,
-          );
+        if (deletedArchiveIds.length > 0) {
+          setDeletedCount(deletedArchiveIds.length);
+          setShowDeletedModal(true);
         }
 
         resetSelection();
@@ -572,6 +578,12 @@ export default function TeacherArchiveTab({
         onClose={() => setRestoredAccounts([])}
         accounts={restoredAccounts}
         roleLabel="Teacher"
+      />
+      <AccountDeletedModal
+        show={showDeletedModal}
+        onClose={() => setShowDeletedModal(false)}
+        roleLabel="Teacher"
+        count={deletedCount}
       />
     </div>
   );

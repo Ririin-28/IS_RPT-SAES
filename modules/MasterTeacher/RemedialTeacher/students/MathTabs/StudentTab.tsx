@@ -16,8 +16,13 @@ import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
 import BodyText from "@/components/Common/Texts/BodyText";
 import BodyLabel from "@/components/Common/Texts/BodyLabel";
+import { getStoredUserProfile } from "@/lib/utils/user-profile";
+import { resolveRemedialPlayTarget } from "@/lib/utils/remedial-play";
 
-const sections = ["All Sections", "A", "B", "C"];
+const ALL_PHONEMIC = "All Levels";
+const PHONEMIC_LEVELS = ["Not Proficient", "Low Proficient", "Nearly Proficient", "Proficient", "Highly Proficient"];
+
+const normalizePhonemic = (value: string) => value.trim().toLowerCase();
 
 // Define types for name parts
 type NameParts = {
@@ -183,10 +188,10 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
   };
 
   return (
-    <div className={`relative ${className}`} ref={dropdownRef}>
+    <div className={`relative inline-block ${className}`} ref={dropdownRef}>
       <button
         type="button"
-        className="flex items-center justify-between px-3 py-1.5 text-sm font-medium text-gray-700 cursor-pointer focus:outline-none border border-gray-300 rounded bg-white"
+        className="flex items-center justify-between px-3 py-1.5 text-sm font-medium text-gray-700 cursor-pointer focus:outline-none border border-gray-300 rounded bg-white whitespace-nowrap"
         onClick={() => setIsOpen(!isOpen)}
       >
         {value}
@@ -200,7 +205,7 @@ const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDrop
       </button>
       
       {isOpen && (
-        <div className="absolute z-50 mt-1 left-0 bg-white border border-gray-300 rounded-md shadow-lg w-full overflow-hidden">
+        <div className="absolute z-50 mt-1 right-0 left-auto bg-white border border-gray-300 rounded-md shadow-lg min-w-full w-max overflow-hidden">
           {options.map((option) => (
             <div
               key={option}
@@ -236,8 +241,20 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedStudents, setSelectedStudents] = useState<Set<number>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
-  const [filter, setFilter] = useState({ section: "All Sections" });
+  const [filter, setFilter] = useState({ phonemic: ALL_PHONEMIC });
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [playLoadingId, setPlayLoadingId] = useState<string | null>(null);
+
+  const userProfile = useMemo(() => getStoredUserProfile(), []);
+  const userId = useMemo(() => {
+    const raw = userProfile?.userId;
+    if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+    if (typeof raw === "string") {
+      const parsed = Number.parseInt(raw, 10);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return null;
+  }, [userProfile]);
   
 
   // React Hook Form setup
@@ -289,11 +306,14 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
     setSelectedStudents(newSelected);
   };
 
-  // Filter students based on search term and section
+  // Filter students based on search term and proficiency level
   const filteredStudents = useMemo(() => {
     const searchValue = searchTerm.trim().toLowerCase();
     return students.filter((student) => {
-      const matchSection = filter.section === "All Sections" || student.section === filter.section;
+      const studentPhonemic = student.mathProficiency ?? "";
+      const matchPhonemic =
+        filter.phonemic === ALL_PHONEMIC ||
+        normalizePhonemic(studentPhonemic) === normalizePhonemic(filter.phonemic);
       
       // Search in formatted name for better matching
       const formattedName = formatStudentDisplayName(student).toLowerCase();
@@ -304,20 +324,34 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
         student.grade?.toString().toLowerCase().includes(searchValue) ||
         student.section?.toLowerCase().includes(searchValue);
       
-      return matchSection && matchSearch;
+      return matchPhonemic && matchSearch;
     });
-  }, [students, filter.section, searchTerm]);
+  }, [students, filter.phonemic, searchTerm]);
 
-  // Sort students A-Z by Surname, FirstName, Middle Initials
+  const phonemicOrder = useMemo(() => {
+    const order = new Map<string, number>();
+    PHONEMIC_LEVELS.forEach((level, index) => {
+      order.set(normalizePhonemic(level), index);
+    });
+    return order;
+  }, []);
+
+  // Sort students by proficiency level, then name
   const sortedStudents = useMemo(() => {
+    const fallbackIndex = phonemicOrder.size + 1;
     const list = [...filteredStudents];
     list.sort((a, b) => {
+      const aLevel = normalizePhonemic(a.mathProficiency ?? "");
+      const bLevel = normalizePhonemic(b.mathProficiency ?? "");
+      const aIndex = phonemicOrder.get(aLevel) ?? fallbackIndex;
+      const bIndex = phonemicOrder.get(bLevel) ?? fallbackIndex;
+      if (aIndex !== bIndex) return aIndex - bIndex;
       const aKey = buildNameSortKey(a);
       const bKey = buildNameSortKey(b);
       return aKey.localeCompare(bKey, undefined, { sensitivity: "base" });
     });
     return list;
-  }, [filteredStudents]);
+  }, [filteredStudents, phonemicOrder]);
 
   const handleExport = () => {
     if (sortedStudents.length === 0) {
@@ -454,12 +488,45 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
   };
 
   const handlePlayClick = (student: any) => {
-    const studentId = student?.studentId ?? student?.id ?? "";
-    const params = new URLSearchParams({ start: "0" });
-    if (studentId) {
-      params.set("studentId", String(studentId));
-    }
-    router.push(`/MasterTeacher/RemedialTeacher/remedial/MathFlashcards?${params.toString()}`);
+    const run = async () => {
+      const studentId = student?.studentId ?? student?.id ?? "";
+      if (!studentId) {
+        alert("Student ID is missing.");
+        return;
+      }
+
+      const phonemicLevel = String(student?.mathProficiency ?? student?.math ?? "").trim();
+      if (!phonemicLevel) {
+        alert("Student phonemic level is missing.");
+        return;
+      }
+
+      setPlayLoadingId(String(studentId));
+      try {
+        const result = await resolveRemedialPlayTarget({
+          subject: "Math",
+          basePath: "/MasterTeacher/RemedialTeacher/remedial",
+          studentId: String(studentId),
+          studentPhonemicLevel: phonemicLevel,
+          studentGrade: student?.grade ?? null,
+          userId,
+        });
+
+        if ("error" in result) {
+          alert(result.error);
+          return;
+        }
+
+        router.push(result.playPath);
+      } catch (error) {
+        console.error("Failed to start remedial session", error);
+        alert("Unable to start remedial session.");
+      } finally {
+        setPlayLoadingId(null);
+      }
+    };
+
+    void run();
   };
 
   return (
@@ -469,14 +536,14 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
           Total: {sortedStudents.length}
         </p>
         
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3 ">
-          <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
-            <span className="text-sm text-gray-700 whitespace-nowrap">Section:</span>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="inline-flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5 w-fit">
+            <span className="text-sm text-gray-700 whitespace-nowrap">Phonemic:</span>
             <CustomDropdown 
-              options={sections}
-              value={filter.section}
-              onChange={(value) => setFilter({ section: value })}
-              className="min-w-[120px]"
+              options={[ALL_PHONEMIC, ...PHONEMIC_LEVELS]}
+              value={filter.phonemic}
+              onChange={(value) => setFilter({ phonemic: value })}
+              className="w-auto"
             />
           </div>
         </div>
@@ -521,7 +588,13 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
             <UtilityButton small onClick={() => handleViewDetails(row)} title="View student details">
               View
             </UtilityButton>
-            <UtilityButton small type="button" onClick={() => handlePlayClick(row)} title="Click to play remedial session">
+            <UtilityButton
+              small
+              type="button"
+              onClick={() => handlePlayClick(row)}
+              title="Click to play remedial session"
+              disabled={playLoadingId === String(row?.studentId ?? row?.id ?? "")}
+            >
               Play
             </UtilityButton>
           </div>

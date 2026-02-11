@@ -8,6 +8,7 @@ import KebabMenu from "@/components/Common/Menus/KebabMenu";
 import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
 import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
 import AccountRestoredModal, { type RestoredAccountInfo } from "@/components/Common/Modals/AccountRestoredModal";
+import AccountDeletedModal from "@/components/Common/Modals/AccountDeletedModal";
 import { useArchiveRestoreDelete } from "../Common/useArchiveRestoreDelete";
 import { ensureArchiveRowKey } from "../Common/archiveRowKey";
 import { exportArchiveRows } from "../utils/export-columns";
@@ -32,7 +33,17 @@ const matchesGrade = (teacher: any, gradeFilter?: number) => {
   if (gradeFilter === undefined) {
     return true;
   }
-  const gradeValue = teacher.grade;
+  
+  // Check coordinatorHandledGrades array first
+  if (Array.isArray(teacher.coordinatorHandledGrades) && teacher.coordinatorHandledGrades.length > 0) {
+    return teacher.coordinatorHandledGrades.some((grade: any) => {
+      const numGrade = typeof grade === 'number' ? grade : parseInt(String(grade), 10);
+      return !isNaN(numGrade) && numGrade === gradeFilter;
+    });
+  }
+  
+  // Fallback to single grade field
+  const gradeValue = teacher.grade ?? teacher.handledGrade ?? teacher.handled_grade;
   if (gradeValue === null || gradeValue === undefined) {
     return false;
   }
@@ -50,6 +61,8 @@ export default function MasterTeacherTab({
   const [selectedTeacher, setSelectedTeacher] = useState<any>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [restoredAccounts, setRestoredAccounts] = useState<RestoredAccountInfo[]>([]);
+  const [deletedCount, setDeletedCount] = useState(0);
+  const [showDeletedModal, setShowDeletedModal] = useState(false);
   const normalizedLabel = gradeLabel ?? (gradeFilter ? `Grade ${gradeFilter}` : "All Grades");
 
   const resolveTeacherId = useCallback((teacher: any) => {
@@ -247,10 +260,9 @@ export default function MasterTeacherTab({
           onEntriesRemoved?.(deletedArchiveIds);
         }
 
-        if (deletedArchiveIds.length > 0 && typeof window !== "undefined") {
-          window.alert(
-            `Deleted ${deletedArchiveIds.length} archived account${deletedArchiveIds.length === 1 ? "" : "s"}.`,
-          );
+        if (deletedArchiveIds.length > 0) {
+          setDeletedCount(deletedArchiveIds.length);
+          setShowDeletedModal(true);
         }
 
         resetSelection();
@@ -540,6 +552,12 @@ export default function MasterTeacherTab({
         onClose={() => setRestoredAccounts([])}
         accounts={restoredAccounts}
         roleLabel="Master Teacher"
+      />
+      <AccountDeletedModal
+        show={showDeletedModal}
+        onClose={() => setShowDeletedModal(false)}
+        roleLabel="Master Teacher"
+        count={deletedCount}
       />
     </div>
   );
