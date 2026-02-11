@@ -73,7 +73,7 @@ function buildAiRemarks(args: {
 
   const recommendations: string[] = [];
   if (args.pronunciationAvg < 75) recommendations.push("practice saying the words out loud with short echo reading");
-  if (args.correctnessAvg < 75) recommendations.push("repeat the target word set three times a week");
+  if (args.accuracyAvg < 75) recommendations.push("repeat the target word set three times a week");
   if (args.readingSpeedAvg < 60) recommendations.push("add short timed reading drills twice a week");
   if (!recommendations.length) {
     recommendations.push("keep a steady practice routine 2–3 times a week");

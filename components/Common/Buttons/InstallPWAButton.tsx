@@ -1,6 +1,5 @@
 "use client";
 import React, { useEffect, useState } from "react";
-import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 
 // Minimal typing for the beforeinstallprompt event
 interface BeforeInstallPromptEvent extends Event {

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useMemo, useCallback, type CSSProperties } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, type CSSProperties } from "react";
 import { FiArrowLeft, FiArrowRight } from "react-icons/fi";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
@@ -525,7 +525,7 @@ export default function MathFlashcards({
     resetFields();
   };
 
-  const handleStartSession = async (studentId: string) => {
+  const handleStartSession = useCallback(async (studentId: string) => {
     const selectedStudent = students.find((student) => student.id === studentId);
     const studentLevel = normalizeLevelLabel(selectedStudent?.phonemicLevel ?? "");
     if (expectedPhonemicLevel && studentLevel && expectedPhonemicLevel !== studentLevel) {
@@ -625,7 +625,19 @@ export default function MathFlashcards({
     const boundedResume = Math.min(Math.max(resumeIndex, 0), Math.max(0, flashcardsData.length - 1));
     setCurrent(boundedResume);
     setView("session");
-  };
+  }, [
+    approvedScheduleId,
+    dbCompletionByStudent,
+    expectedPhonemicLevel,
+    flashcardsData,
+    phonemicNameParam,
+    readSessionState,
+    resetFields,
+    sessionLockEnabled,
+    startIndex,
+    students,
+    writeSessionState,
+  ]);
 
   useEffect(() => {
     if (!forceSessionOnly || !initialStudentId || autoStartRef.current) return;

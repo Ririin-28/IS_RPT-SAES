@@ -124,14 +124,6 @@ type CoordinatorActivity = {
   subjectFallback: string | null;
 };
 
-const toNullableString = (value: unknown): string | null => {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  const text = String(value).trim();
-  return text.length > 0 ? text : null;
-};
-
 async function loadCoordinatorHandled(
   masterTeacherIds: Array<string | number>,
   roleFilter?: { column: string; ids: string[] },
@@ -325,24 +317,6 @@ const pickColumn = (columns: Set<string>, candidates: readonly string[]): string
     }
   }
   return null;
-};
-
-
-const ensureTimeFormat = (value: string | null): string | null => {
-  if (!value) {
-    return null;
-  }
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-  if (/^\d{1,2}:\d{2}$/.test(trimmed)) {
-    return `${trimmed}:00`;
-  }
-  if (/^\d{1,2}:\d{2}:\d{2}$/.test(trimmed)) {
-    return trimmed;
-  }
-  return trimmed;
 };
 
 

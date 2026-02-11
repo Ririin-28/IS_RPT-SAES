@@ -610,117 +610,6 @@ export default function FilipinoFlashcards({
     });
   };
 
-  const handleStartSession = async (studentId: string) => {
-    const selectedStudent = students.find((student) => student.id === studentId);
-    const studentLevel = normalizeLevelLabel(selectedStudent?.phonemicLevel ?? "");
-    if (expectedPhonemicLevel && studentLevel && expectedPhonemicLevel !== studentLevel) {
-      setBlockedSessionMessage(
-        `This student is assigned to ${selectedStudent?.phonemicLevel ?? "their level"} and cannot take ${phonemicNameParam} level.`,
-      );
-      return;
-    }
-    if (sessionLockEnabled) {
-      if (dbCompletionByStudent[studentId]) {
-        setBlockedSessionMessage("This remedial session was already completed for this student.");
-        return;
-      }
-      const state = readSessionState(studentId);
-      if (state?.completed) {
-        setBlockedSessionMessage("This remedial session was already completed for this student.");
-        return;
-      }
-    }
-    setSelectedStudentId(studentId);
-    const localLastIndex = readSessionState(studentId)?.lastIndex ?? startIndex;
-    let resumeIndex = sessionLockEnabled
-      ? Math.max(startIndex, localLastIndex)
-      : startIndex;
-    setSessionScores([]);
-    setShowSummary(false);
-    resetSessionTracking();
-    if (sessionLockEnabled && approvedScheduleId) {
-      try {
-        const response = await fetch(
-          `/api/remedial/session?studentId=${encodeURIComponent(studentId)}&approvedScheduleId=${encodeURIComponent(String(approvedScheduleId))}`,
-        );
-        const payload = (await response.json().catch(() => null)) as
-          | {
-              success?: boolean;
-              found?: boolean;
-              slides?: Array<{
-                flashcardIndex: number;
-                pronunciationScore: number;
-                accuracyScore: number;
-                fluencyScore: number;
-                completenessScore: number;
-                readingSpeedWpm: number;
-                slideAverage: number;
-                expectedText?: string | null;
-                transcription?: string | null;
-              }>;
-            }
-          | null;
-
-        if (response.ok && payload?.success && payload.found && Array.isArray(payload.slides)) {
-          const nextScores: SessionScore[] = payload.slides.map((slide) => ({
-            cardIndex: slide.flashcardIndex,
-            sentence: slide.expectedText ?? flashcardsData[slide.flashcardIndex]?.sentence ?? "",
-            pronScore: slide.pronunciationScore,
-            correctness: slide.accuracyScore,
-            fluencyScore: slide.fluencyScore,
-            completenessScore: slide.completenessScore,
-            readingSpeedWpm: slide.readingSpeedWpm,
-            readingSpeedScore: gradeReadingSpeed(
-              slide.readingSpeedWpm,
-              Math.max(1, normalizeText(slide.expectedText ?? "").split(/\s+/).filter(Boolean).length),
-            ).score,
-            averageScore: slide.slideAverage,
-            transcription: slide.transcription ?? null,
-          }));
-
-          setSessionScores(nextScores);
-          const maxSavedIndex = nextScores.reduce((max, item) => Math.max(max, item.cardIndex), -1);
-          resumeIndex = Math.max(resumeIndex, maxSavedIndex + 1);
-          const lastIndex = Math.max(localLastIndex, maxSavedIndex);
-          writeSessionState(studentId, {
-            completed: false,
-            lastIndex,
-            updatedAt: new Date().toISOString(),
-          });
-        } else if (sessionLockEnabled) {
-          writeSessionState(studentId, {
-            completed: false,
-            lastIndex: resumeIndex,
-            updatedAt: new Date().toISOString(),
-          });
-        }
-      } catch {
-        if (sessionLockEnabled) {
-          writeSessionState(studentId, {
-            completed: false,
-            lastIndex: resumeIndex,
-            updatedAt: new Date().toISOString(),
-          });
-        }
-      }
-    } else if (sessionLockEnabled) {
-      writeSessionState(studentId, {
-        completed: false,
-        lastIndex: resumeIndex,
-        updatedAt: new Date().toISOString(),
-      });
-    }
-    const boundedResume = Math.min(Math.max(resumeIndex, 0), Math.max(0, flashcardsData.length - 1));
-    setCurrent(boundedResume);
-    setView("session");
-  };
-
-  useEffect(() => {
-    if (!forceSessionOnly || !initialStudentId || autoStartRef.current) return;
-    autoStartRef.current = true;
-    void handleStartSession(initialStudentId);
-  }, [forceSessionOnly, handleStartSession, initialStudentId]);
-
   const handleStopSession = async () => {
     if (showSummary && sessionLockEnabled && !teacherFeedback.trim()) {
       setTeacherFeedbackError("Teacher feedback is required before saving this session.");
@@ -1117,6 +1006,130 @@ export default function FilipinoFlashcards({
     },
     [readingSpeedBuckets],
   );
+
+  const handleStartSession = useCallback(async (studentId: string) => {
+    const selectedStudent = students.find((student) => student.id === studentId);
+    const studentLevel = normalizeLevelLabel(selectedStudent?.phonemicLevel ?? "");
+    if (expectedPhonemicLevel && studentLevel && expectedPhonemicLevel !== studentLevel) {
+      setBlockedSessionMessage(
+        `This student is assigned to ${selectedStudent?.phonemicLevel ?? "their level"} and cannot take ${phonemicNameParam} level.`,
+      );
+      return;
+    }
+    if (sessionLockEnabled) {
+      if (dbCompletionByStudent[studentId]) {
+        setBlockedSessionMessage("This remedial session was already completed for this student.");
+        return;
+      }
+      const state = readSessionState(studentId);
+      if (state?.completed) {
+        setBlockedSessionMessage("This remedial session was already completed for this student.");
+        return;
+      }
+    }
+    setSelectedStudentId(studentId);
+    const localLastIndex = readSessionState(studentId)?.lastIndex ?? startIndex;
+    let resumeIndex = sessionLockEnabled
+      ? Math.max(startIndex, localLastIndex)
+      : startIndex;
+    setSessionScores([]);
+    setShowSummary(false);
+    resetSessionTracking();
+    if (sessionLockEnabled && approvedScheduleId) {
+      try {
+        const response = await fetch(
+          `/api/remedial/session?studentId=${encodeURIComponent(studentId)}&approvedScheduleId=${encodeURIComponent(String(approvedScheduleId))}`,
+        );
+        const payload = (await response.json().catch(() => null)) as
+          | {
+              success?: boolean;
+              found?: boolean;
+              slides?: Array<{
+                flashcardIndex: number;
+                pronunciationScore: number;
+                accuracyScore: number;
+                fluencyScore: number;
+                completenessScore: number;
+                readingSpeedWpm: number;
+                slideAverage: number;
+                expectedText?: string | null;
+                transcription?: string | null;
+              }>;
+            }
+          | null;
+
+        if (response.ok && payload?.success && payload.found && Array.isArray(payload.slides)) {
+          const nextScores: SessionScore[] = payload.slides.map((slide) => ({
+            cardIndex: slide.flashcardIndex,
+            sentence: slide.expectedText ?? flashcardsData[slide.flashcardIndex]?.sentence ?? "",
+            pronScore: slide.pronunciationScore,
+            correctness: slide.accuracyScore,
+            fluencyScore: slide.fluencyScore,
+            completenessScore: slide.completenessScore,
+            readingSpeedWpm: slide.readingSpeedWpm,
+            readingSpeedScore: gradeReadingSpeed(
+              slide.readingSpeedWpm,
+              Math.max(1, normalizeText(slide.expectedText ?? "").split(/\s+/).filter(Boolean).length),
+            ).score,
+            averageScore: slide.slideAverage,
+            transcription: slide.transcription ?? null,
+          }));
+
+          setSessionScores(nextScores);
+          const maxSavedIndex = nextScores.reduce((max, item) => Math.max(max, item.cardIndex), -1);
+          resumeIndex = Math.max(resumeIndex, maxSavedIndex + 1);
+          const lastIndex = Math.max(localLastIndex, maxSavedIndex);
+          writeSessionState(studentId, {
+            completed: false,
+            lastIndex,
+            updatedAt: new Date().toISOString(),
+          });
+        } else if (sessionLockEnabled) {
+          writeSessionState(studentId, {
+            completed: false,
+            lastIndex: resumeIndex,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      } catch {
+        if (sessionLockEnabled) {
+          writeSessionState(studentId, {
+            completed: false,
+            lastIndex: resumeIndex,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      }
+    } else if (sessionLockEnabled) {
+      writeSessionState(studentId, {
+        completed: false,
+        lastIndex: resumeIndex,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    const boundedResume = Math.min(Math.max(resumeIndex, 0), Math.max(0, flashcardsData.length - 1));
+    setCurrent(boundedResume);
+    setView("session");
+  }, [
+    approvedScheduleId,
+    dbCompletionByStudent,
+    expectedPhonemicLevel,
+    flashcardsData,
+    gradeReadingSpeed,
+    phonemicNameParam,
+    readSessionState,
+    resetSessionTracking,
+    sessionLockEnabled,
+    startIndex,
+    students,
+    writeSessionState,
+  ]);
+
+  useEffect(() => {
+    if (!forceSessionOnly || !initialStudentId || autoStartRef.current) return;
+    autoStartRef.current = true;
+    void handleStartSession(initialStudentId);
+  }, [forceSessionOnly, handleStartSession, initialStudentId]);
 
   const upsertSessionScore = useCallback(
     (

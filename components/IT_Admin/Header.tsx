@@ -11,22 +11,28 @@ interface AdminHeaderProps {
 
 export default function AdminHeader({ title }: AdminHeaderProps) {
   const [showDropdown, setShowDropdown] = React.useState(false);
+  const [showNotifications, setShowNotifications] = React.useState(false);
   const router = useRouter();
   const profileBtnRef = React.useRef<HTMLButtonElement>(null);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
+  const notificationBtnRef = React.useRef<HTMLButtonElement>(null);
+  const notificationDropdownRef = React.useRef<HTMLDivElement>(null);
 
-  // Hide dropdown when clicking outside
+  // Hide dropdowns when clicking outside
   React.useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (!profileBtnRef.current?.contains(e.target as Node) && !dropdownRef.current?.contains(e.target as Node)) {
         setShowDropdown(false);
       }
+      if (!notificationBtnRef.current?.contains(e.target as Node) && !notificationDropdownRef.current?.contains(e.target as Node)) {
+        setShowNotifications(false);
+      }
     }
-    if (showDropdown) {
+    if (showDropdown || showNotifications) {
       document.addEventListener("mousedown", handleClick);
     }
     return () => document.removeEventListener("mousedown", handleClick);
-  }, [showDropdown]);
+  }, [showDropdown, showNotifications]);
 
   return (
     <>
@@ -43,14 +49,13 @@ export default function AdminHeader({ title }: AdminHeaderProps) {
           <span className="text-base font-semibold text-[#013300] tracking-wide md:text-lg">{title}</span>
           {/* Profile Icon */}
           <div className="relative flex items-center">
-<<<<<<< Updated upstream
             {/* Notification Button */}
             <div className="relative">
               <button 
                 ref={notificationBtnRef}
                 className="relative w-10 h-10 flex items-center justify-center hover:scale-[1.08] transition mr-4" 
                 aria-label="Notifications"
-                onClick={() => setShowNotifications(prev => !prev)}
+                onClick={() => setShowNotifications((prev) => !prev)}
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -77,7 +82,7 @@ export default function AdminHeader({ title }: AdminHeaderProps) {
                     fixed sm:absolute right-0 sm:right-0 mt-2 w-[calc(100vw-3rem)] sm:w-80 max-w-md 
                     bg-white rounded-lg shadow-lg z-50 border border-gray-200 max-h-[70vh] overflow-y-auto
                     transform transition-all duration-200 ease-out
-                    ${showNotifications ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}
+                    ${showNotifications ? "opacity-100 scale-100" : "opacity-0 scale-95"}
                     left-1/2 -translate-x-1/2 sm:left-auto sm:translate-x-0
                   `}
                 >
@@ -116,8 +121,6 @@ export default function AdminHeader({ title }: AdminHeaderProps) {
                 </div>
               )}
             </div>
-=======
->>>>>>> Stashed changes
             <button
               ref={profileBtnRef}
               className="w-10 h-10 flex items-center justify-center rounded-full border border-[#013300] 
