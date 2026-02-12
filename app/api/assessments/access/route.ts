@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
       }
 
       const student = studentRows[0];
-      const studentId = Number(student.student_id);
+      const studentId = String(student.student_id);
       const studentName = [student.first_name, student.middle_name, student.last_name]
         .filter((part) => typeof part === "string" && part.trim().length > 0)
         .join(" ");

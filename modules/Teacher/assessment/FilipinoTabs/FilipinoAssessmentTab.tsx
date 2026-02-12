@@ -73,6 +73,7 @@ export interface FilipinoQuiz {
   quizCode?: string | null;
   qrToken?: string | null;
   submittedCount?: number;
+  assignedCount?: number;
 }
 
 const INITIAL_FILIPINO_QUIZZES: Record<FilipinoAssessmentLevel, FilipinoQuiz[]> = {
@@ -227,6 +228,7 @@ const mapAssessmentToQuiz = (assessment: any): FilipinoQuiz => {
     quizCode: assessment.quizCode ?? assessment.quiz_code ?? null,
     qrToken: assessment.qrToken ?? assessment.qr_token ?? null,
     submittedCount: Number(assessment.submittedCount ?? assessment.submitted_count ?? 0),
+    assignedCount: Number(assessment.assignedCount ?? assessment.assigned_count ?? 0),
   };
 };
 
@@ -457,6 +459,7 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isUpdateConfirmOpen, setIsUpdateConfirmOpen] = useState(false);
   const [pendingUpdateData, setPendingUpdateData] = useState<QuizData | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [qrQuiz, setQrQuiz] = useState<FilipinoQuiz | null>(null);
@@ -467,6 +470,7 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
     const profile = getStoredUserProfile();
     const userId = profile?.userId;
     if (!userId) return;
+    setCurrentUserId(String(userId));
     const assessments = await fetchAssessments({
       creatorId: String(userId),
       creatorRole: "teacher",
@@ -512,7 +516,21 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
     setIsModalOpen(true);
   };
 
+  const getTeacherUserId = () => {
+    const profile = getStoredUserProfile();
+    return profile?.userId ? String(profile.userId) : "";
+  };
+
   const handleViewResponses = (quiz: FilipinoQuiz) => {
+    const teacherUserId = getTeacherUserId();
+    if (!quiz.quizCode) {
+      alert("This quiz has no quiz code yet. Publish it first to view responses.");
+      return;
+    }
+    if (!teacherUserId) {
+      alert("Missing user information. Please log in again.");
+      return;
+    }
     setResponsesQuiz(quiz);
     setIsResponsesOpen(true);
   };
@@ -714,7 +732,11 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
           {
             key: "responses",
             title: "Responses",
-            render: (row: TableRow) => row.responses?.length ?? 0,
+            render: (row: TableRow) => {
+              const submitted = row.submittedCount ?? 0;
+              const assigned = row.assignedCount ?? 0;
+              return assigned > 0 ? `${submitted}/${assigned}` : submitted;
+            },
           },
           {
             key: "status",
@@ -737,7 +759,7 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
               Edit
             </UtilityButton>
             <UtilityButton small onClick={() => handleViewResponses(row)}>
-              Responses ({row.responses?.length ?? 0})
+              Summary
             </UtilityButton>
             {row.isPublished && row.quizCode && (
               <button
@@ -814,7 +836,9 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
             options: question.options,
             correctAnswer: question.correctAnswer,
           }))}
-          totalStudents={responsesQuiz.students?.length ?? 0}
+          totalStudents={responsesQuiz.assignedCount ?? responsesQuiz.students?.length ?? 0}
+          quizCode={responsesQuiz.quizCode ?? undefined}
+          teacherId={currentUserId ?? (getTeacherUserId() || undefined)}
         />
       )}
 

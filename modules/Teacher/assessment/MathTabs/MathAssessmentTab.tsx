@@ -72,6 +72,7 @@ export interface MathQuiz {
   quizCode?: string | null;
   qrToken?: string | null;
   submittedCount?: number;
+  assignedCount?: number;
 }
 
 const INITIAL_MATH_QUIZZES: Record<MathAssessmentLevel, MathQuiz[]> = {
@@ -225,6 +226,7 @@ const mapAssessmentToQuiz = (assessment: any): MathQuiz => {
     quizCode: assessment.quizCode ?? assessment.quiz_code ?? null,
     qrToken: assessment.qrToken ?? assessment.qr_token ?? null,
     submittedCount: Number(assessment.submittedCount ?? assessment.submitted_count ?? 0),
+    assignedCount: Number(assessment.assignedCount ?? assessment.assigned_count ?? 0),
   };
 };
 
@@ -428,6 +430,7 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
   const [isResponsesOpen, setIsResponsesOpen] = useState(false);
   const [responsesQuiz, setResponsesQuiz] = useState<MathQuiz | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [qrQuiz, setQrQuiz] = useState<MathQuiz | null>(null);
@@ -438,6 +441,7 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
     const profile = getStoredUserProfile();
     const userId = profile?.userId;
     if (!userId) return;
+    setCurrentUserId(String(userId));
     const assessments = await fetchAssessments({
       creatorId: String(userId),
       creatorRole: "teacher",
@@ -483,7 +487,21 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
     setIsModalOpen(true);
   };
 
+  const getTeacherUserId = () => {
+    const profile = getStoredUserProfile();
+    return profile?.userId ? String(profile.userId) : "";
+  };
+
   const handleViewResponses = (quiz: MathQuiz) => {
+    const teacherUserId = getTeacherUserId();
+    if (!quiz.quizCode) {
+      alert("This quiz has no quiz code yet. Publish it first to view responses.");
+      return;
+    }
+    if (!teacherUserId) {
+      alert("Missing user information. Please log in again.");
+      return;
+    }
     setResponsesQuiz(quiz);
     setIsResponsesOpen(true);
   };
@@ -669,9 +687,12 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
             title: "Responses",
             render: (row: TableRow) => {
               const submitted = row.submittedCount ?? 0;
+              const assigned = row.assignedCount ?? 0;
               return (
                 <div className="flex flex-col">
-                  <span className="font-semibold text-gray-700">{submitted}</span>
+                  <span className="font-semibold text-gray-700">
+                    {assigned > 0 ? `${submitted}/${assigned}` : submitted}
+                  </span>
                 </div>
               );
             },
@@ -773,7 +794,9 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
             options: question.options,
             correctAnswer: question.correctAnswer,
           }))}
-          totalStudents={responsesQuiz.students?.length ?? 0}
+          totalStudents={responsesQuiz.assignedCount ?? responsesQuiz.students?.length ?? 0}
+          quizCode={responsesQuiz.quizCode ?? undefined}
+          teacherId={currentUserId ?? (getTeacherUserId() || undefined)}
         />
       )}
 

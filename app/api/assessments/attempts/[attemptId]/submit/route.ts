@@ -14,7 +14,7 @@ export async function POST(_: NextRequest, props: { params: Promise<{ attemptId:
   try {
     return await runWithConnection(async (connection) => {
       const [[attemptRow]] = await connection.query<RowDataPacket[]>(
-        "SELECT assessment_id, status, lrn FROM assessment_attempts WHERE attempt_id = ? LIMIT 1",
+        "SELECT assessment_id, status, lrn, student_id FROM assessment_attempts WHERE attempt_id = ? LIMIT 1",
         [attemptId],
       );
       if (!attemptRow) {
@@ -22,6 +22,21 @@ export async function POST(_: NextRequest, props: { params: Promise<{ attemptId:
       }
       if (attemptRow.status !== "in_progress") {
         return NextResponse.json({ success: false, error: "Attempt already submitted." }, { status: 409 });
+      }
+
+      if (attemptRow.lrn) {
+        const [studentRows] = await connection.query<RowDataPacket[]>(
+          "SELECT student_id FROM student WHERE lrn = ? LIMIT 1",
+          [attemptRow.lrn],
+        );
+        const mappedStudentId = studentRows[0]?.student_id ? String(studentRows[0].student_id) : null;
+        const currentStudentId = attemptRow.student_id ? String(attemptRow.student_id) : null;
+        if (mappedStudentId && mappedStudentId !== currentStudentId) {
+          await connection.query(
+            "UPDATE assessment_attempts SET student_id = ? WHERE attempt_id = ?",
+            [mappedStudentId, attemptId],
+          );
+        }
       }
 
       const [[scoreRow]] = await connection.query<RowDataPacket[]>(

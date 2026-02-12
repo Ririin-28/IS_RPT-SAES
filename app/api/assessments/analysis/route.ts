@@ -28,50 +28,28 @@ export async function GET(request: Request) {
         const assessment = assessments[0];
         const assessmentId = assessment.assessment_id;
 
-        // Resolve teacher_id or remedial_role_id from user_id
+        // Resolve teacher_id from user_id
         const [teachers] = await pool.query<RowDataPacket[]>(
             `SELECT teacher_id FROM teacher WHERE user_id = ?`,
             [userId]
         );
 
-        let resolvedId = userId; // Fallback
-        let isRemedial = false;
-
-        if (teachers.length > 0) {
-            resolvedId = teachers[0].teacher_id;
-        } else {
-            // Check if it's a remedial teacher
-            const [remedials] = await pool.query<RowDataPacket[]>(
-                `SELECT rh.remedial_role_id 
-                 FROM mt_remedialteacher_handled rh
-                 JOIN master_teacher mt ON mt.master_teacher_id = rh.master_teacher_id
-                 WHERE mt.user_id = ?
-                 LIMIT 1`,
-                [userId]
-            );
-            if (remedials.length > 0) {
-                resolvedId = remedials[0].remedial_role_id;
-                isRemedial = true;
-            }
+        if (teachers.length === 0) {
+            return NextResponse.json({ success: false, error: 'Teacher not found' }, { status: 404 });
         }
 
-        const assignmentColumn = isRemedial ? 'remedial_role_id' : 'teacher_id';
+        const resolvedTeacherId = teachers[0].teacher_id;
 
-        // 2. Get Assigned Students (Active only)
-        // We only care about students assigned to THIS teacher / remedial teacher
-        const [assignedStudents] = await pool.query<RowDataPacket[]>(
-            `SELECT sta.student_id, s.lrn
+        const [assignedCountRows] = await pool.query<RowDataPacket[]>(
+            `SELECT COUNT(DISTINCT sta.student_id) AS total_assigned
              FROM student_teacher_assignment sta
-             JOIN student s ON s.student_id = sta.student_id
-             WHERE sta.${assignmentColumn} = ? AND sta.is_active = 1`,
-            [resolvedId]
+             WHERE sta.teacher_id = ? AND sta.is_active = 1`,
+            [resolvedTeacherId]
         );
 
-        const assignedStudentIds = assignedStudents.map((s: any) => s.student_id).filter(Boolean);
-        const assignedStudentLrns = assignedStudents.map((s: any) => s.lrn).filter(Boolean);
+        const totalAssigned = Number(assignedCountRows[0]?.total_assigned ?? 0);
 
-        // If no students are assigned, we return empty stats but valid success
-        if (assignedStudentIds.length === 0) {
+        if (totalAssigned === 0) {
             return NextResponse.json({
                 success: true,
                 summary: {
@@ -85,38 +63,25 @@ export async function GET(request: Request) {
             });
         }
 
-        // 3. Get Attempts for this assessment from assigned students only
-        // We include student ID and LRN. 
-        // Note: Use '?' for IN clause placeholder expansion in mysql2 if configured, or map it manually.
-        // mysql2 usually supports 'IN (?)' with an array.
-        const attemptFilters: string[] = [];
-        const attemptParams: Array<number | string | string[]> = [assessmentId];
-
-        if (assignedStudentIds.length > 0) {
-            attemptFilters.push("a.student_id IN (?)");
-            attemptParams.push(assignedStudentIds);
-        }
-
-        if (assignedStudentLrns.length > 0) {
-            attemptFilters.push("a.lrn IN (?)");
-            attemptParams.push(assignedStudentLrns);
-        }
-
-        const attemptsFilterSql = attemptFilters.length > 0
-            ? `AND (${attemptFilters.join(" OR ")})`
-            : "";
-
         const [attempts] = await pool.query<RowDataPacket[]>(
-            `SELECT a.attempt_id, a.student_id, a.lrn, a.total_score, a.submitted_at 
-             FROM assessment_attempts a
-             WHERE a.assessment_id = ? 
-             ${attemptsFilterSql}
-             AND a.status = 'submitted'`,
-            attemptParams
+            `SELECT 
+                aa.attempt_id,
+                aa.student_id,
+                aa.total_score,
+                aa.submitted_at,
+                s.first_name,
+                s.last_name
+             FROM assessment_attempts aa
+             JOIN student s ON s.student_id = aa.student_id
+             JOIN student_teacher_assignment sta ON sta.student_id = aa.student_id
+             WHERE aa.assessment_id = ?
+               AND aa.status IN ('submitted','graded')
+               AND sta.teacher_id = ?
+               AND sta.is_active = 1`,
+            [assessmentId, resolvedTeacherId]
         );
 
         // 4. Calculate Summary Metrics
-        const totalAssigned = assignedStudentIds.length;
         const totalResponses = attempts.length;
         const responseRate = totalAssigned > 0 ? (totalResponses / totalAssigned) * 100 : 0;
         const totalScore = attempts.reduce((sum: number, a: any) => sum + (Number(a.total_score) || 0), 0);
@@ -171,41 +136,60 @@ export async function GET(request: Request) {
             }));
         }
 
-        // 6. Format Individual Responses
-        // Fetch names from 'student' table
+        const answersByAttempt = new Map<string, Record<string, string>>();
+        const answerMetaByAttempt = new Map<string, Record<string, { score: number | null; isCorrect: number | null }>>();
 
-        const studentMap = new Map<string, string>(); // ID -> Name
-        const studentLrnMap = new Map<string, string>(); // LRN -> Name
-        try {
-            if (assignedStudentIds.length > 0) {
-                const [students] = await pool.query<RowDataPacket[]>(
-                    `SELECT student_id, lrn, first_name, middle_name, last_name FROM student WHERE student_id IN (?)`,
-                    [assignedStudentIds]
-                );
-                students.forEach((s: any) => {
-                    const fullName = [s.first_name, s.middle_name, s.last_name]
-                        .filter((part: string | null) => typeof part === "string" && part.trim().length > 0)
-                        .join(" ");
-                    studentMap.set(String(s.student_id), fullName);
-                    if (s.lrn) {
-                        studentLrnMap.set(String(s.lrn), fullName);
-                    }
-                });
-            }
-        } catch (e) {
-            console.warn("Could not fetch student names", e);
+        if (attemptIds.length > 0) {
+            const [answerRows] = await pool.query<RowDataPacket[]>(
+                `SELECT 
+                    sa.attempt_id,
+                    sa.question_id,
+                    sa.answer_text,
+                    sa.is_correct,
+                    sa.score,
+                    q.question_text,
+                    q.question_type,
+                    q.points,
+                    c.choice_text
+                 FROM assessment_student_answers sa
+                 JOIN assessment_questions q ON q.question_id = sa.question_id
+                 LEFT JOIN assessment_question_choices c ON c.choice_id = sa.selected_choice_id
+                 WHERE sa.attempt_id IN (?)`,
+                [attemptIds]
+            );
+
+            answerRows.forEach((row: any) => {
+                const attemptId = String(row.attempt_id);
+                const questionId = String(row.question_id);
+                const answerValue = row.choice_text ?? row.answer_text ?? "";
+                const answers = answersByAttempt.get(attemptId) ?? {};
+                const meta = answerMetaByAttempt.get(attemptId) ?? {};
+
+                answers[questionId] = answerValue;
+                meta[questionId] = {
+                    score: row.score !== null && row.score !== undefined ? Number(row.score) : null,
+                    isCorrect: row.is_correct !== null && row.is_correct !== undefined ? Number(row.is_correct) : null,
+                };
+
+                answersByAttempt.set(attemptId, answers);
+                answerMetaByAttempt.set(attemptId, meta);
+            });
         }
 
-        const responses = attempts.map((a: any) => ({
-            id: a.attempt_id,
-            studentId: a.student_id,
-            studentName: studentMap.get(String(a.student_id))
-                || studentLrnMap.get(String(a.lrn))
-                || a.lrn
-                || `Student ${a.student_id}`,
-            score: a.total_score,
-            submittedAt: a.submitted_at
-        }));
+        const responses = attempts.map((a: any) => {
+            const studentName = [a.first_name, a.last_name]
+                .filter((part: string | null) => typeof part === "string" && part.trim().length > 0)
+                .join(" ");
+            return {
+                id: a.attempt_id,
+                studentId: a.student_id,
+                studentName: studentName || `Student ${a.student_id}`,
+                score: a.total_score,
+                submittedAt: a.submitted_at,
+                answers: answersByAttempt.get(String(a.attempt_id)) ?? {},
+                answerMeta: answerMetaByAttempt.get(String(a.attempt_id)) ?? {},
+            };
+        });
 
         return NextResponse.json({
             success: true,

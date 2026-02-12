@@ -243,10 +243,15 @@ export async function GET(request: NextRequest) {
       console.log(`[AssessmentsAPI] Creator: ${creatorId}, Role: ${creatorRole}, Resolved TeacherId: ${teacherId}`);
 
       const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
-      const escapedTeacherId = teacherId ? connection.escape(teacherId) : "''";
+      const teacherIdCandidates = Array.from(
+        new Set([teacherId, creatorId].filter((value) => typeof value === "string" && value.trim().length > 0)),
+      );
+      const escapedTeacherIdList = teacherIdCandidates.length
+        ? teacherIdCandidates.map((value) => connection.escape(value)).join(", ")
+        : "''";
 
       // We explicitly check if we have a resolved teacherId.
-      const submittedCountQuery = teacherId
+      const submittedCountQuery = teacherIdCandidates.length > 0
         ? `(
             SELECT COUNT(DISTINCT aa.attempt_id)
             FROM assessment_attempts aa
@@ -254,7 +259,7 @@ export async function GET(request: NextRequest) {
             JOIN student s ON s.student_id = sta.student_id
             WHERE aa.assessment_id = a.assessment_id
               AND aa.status IN ('submitted','graded')
-              AND sta.teacher_id = ${escapedTeacherId}
+              AND sta.teacher_id IN (${escapedTeacherIdList})
               AND sta.is_active = 1
               AND (aa.student_id = sta.student_id OR (aa.lrn IS NOT NULL AND aa.lrn = s.lrn))
            )`
@@ -265,8 +270,8 @@ export async function GET(request: NextRequest) {
               AND aa.status IN ('submitted','graded')
            )`;
 
-      const assignedCountQuery = teacherId
-        ? `(SELECT COUNT(*) FROM student_teacher_assignment sta WHERE sta.teacher_id = ${escapedTeacherId} AND sta.is_active = 1)`
+      const assignedCountQuery = teacherIdCandidates.length > 0
+        ? `(SELECT COUNT(*) FROM student_teacher_assignment sta WHERE sta.teacher_id IN (${escapedTeacherIdList}) AND sta.is_active = 1)`
         : `0`;
 
       const [rows] = await connection.query<RowDataPacket[]>(

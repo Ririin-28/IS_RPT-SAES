@@ -598,7 +598,21 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
     setPendingUpdateData(null);
   };
 
+  const getTeacherUserId = () => {
+    const profile = getStoredUserProfile();
+    return profile?.userId ? String(profile.userId) : "";
+  };
+
   const handleViewResponses = (quiz: Quiz) => {
+    const teacherUserId = getTeacherUserId();
+    if (!quiz.quizCode) {
+      alert("This quiz has no quiz code yet. Publish it first to view responses.");
+      return;
+    }
+    if (!teacherUserId) {
+      alert("Missing user information. Please log in again.");
+      return;
+    }
     setResponsesQuiz(quiz);
     setIsResponsesOpen(true);
   };
@@ -707,9 +721,12 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
             title: "Responses",
             render: (row: TableRow) => {
               const submitted = row.submittedCount ?? 0;
+              const assigned = row.assignedCount ?? 0;
               return (
                 <div className="flex flex-col">
-                  <span className="font-semibold text-gray-700">{submitted}</span>
+                  <span className="font-semibold text-gray-700">
+                    {assigned > 0 ? `${submitted}/${assigned}` : submitted}
+                  </span>
                 </div>
               );
             },
@@ -828,9 +845,9 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
             options: question.options,
             correctAnswer: question.correctAnswer,
           }))}
-          totalStudents={responsesQuiz.students?.length ?? 0}
+          totalStudents={responsesQuiz.assignedCount ?? responsesQuiz.students?.length ?? 0}
           quizCode={responsesQuiz.quizCode ?? undefined}
-          teacherId={currentUserId ?? undefined}
+          teacherId={currentUserId ?? (getTeacherUserId() || undefined)}
         />
       )}
 
