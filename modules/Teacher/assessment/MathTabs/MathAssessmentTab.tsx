@@ -798,7 +798,7 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
                 small
                 onClick={() => handleShowQr(row)}
                 title="Show QR Code"
-                className="!p-1.5"
+                className="p-1.5!"
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M4 4H10V10H4V4Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>

@@ -31,7 +31,7 @@ export default function QrCodeModal({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
                 {/* Header */}
-                <div className="bg-[#013300] px-6 py-4 flex justify-between items-center bg-gradient-to-r from-green-900 to-[#013300]">
+                <div className="bg-[#013300] px-6 py-4 flex justify-between items-center bg-linear-to-r from-green-900 to-[#013300]">
                     <h3 className="text-white font-bold text-lg truncate pr-4">
                         {quizTitle}
                     </h3>
@@ -67,7 +67,7 @@ export default function QrCodeModal({
                     </div>
 
                     <div className="relative group">
-                        <div className="absolute -inset-1 bg-gradient-to-r from-green-500 to-[#013300] rounded-lg blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200"></div>
+                        <div className="absolute -inset-1 bg-linear-to-r from-green-500 to-[#013300] rounded-lg blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200"></div>
                         <div className="relative bg-white p-4 rounded-lg border border-gray-100 shadow-sm">
                             {qrDataUrl ? (
                                 <Image
@@ -78,7 +78,7 @@ export default function QrCodeModal({
                                     className="rounded-md"
                                 />
                             ) : (
-                                <div className="w-[200px] h-[200px] bg-gray-100 animate-pulse rounded-md flex items-center justify-center text-gray-400">
+                                <div className="w-50 h-50 bg-gray-100 animate-pulse rounded-md flex items-center justify-center text-gray-400">
                                     Loading QR...
                                 </div>
                             )}
@@ -92,7 +92,7 @@ export default function QrCodeModal({
 
                 {/* Footer */}
                 <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-center">
-                    <UtilityButton onClick={onClose} className="!bg-[#013300] hover:!bg-green-900">Close</UtilityButton>
+                    <UtilityButton onClick={onClose} className="bg-[#013300]! hover:bg-green-900!">Close</UtilityButton>
                 </div>
             </div>
         </div>

@@ -198,7 +198,7 @@ export default function StudentTab({ subject }: StudentTabProps) {
           >
             <div
               className="
-              bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[400px]
+              bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-100
               overflow-hidden flex flex-col
             "
             >

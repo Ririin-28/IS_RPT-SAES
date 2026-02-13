@@ -5,7 +5,7 @@ import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import TableList from "@/components/Common/Tables/TableList";
 import KebabMenu from "@/components/Common/Menus/KebabMenu";
-import QrCodeModal from "../Modals/QrCodeModal";
+import QrCodeModal from "@/modules/Teacher/assessment/Modals/QrCodeModal";
 import AddQuizModal, { type QuizData, type Student as QuizStudent, type Question as ModalQuestion, type Section as ModalSection } from "../Modals/AddQuizModal";
 import ViewResponsesModal from "../Modals/ViewResponsesModal";
 import DeleteConfirmationModal from "../Modals/DeleteConfirmationModal";
