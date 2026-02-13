@@ -12,8 +12,8 @@ import UpdateConfirmationModal from "../Modals/UpdateConfirmationModal";
 import QrCodeModal from "../Modals/QrCodeModal";
 import { cloneResponses, type QuizResponse } from "../types";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
-import { createAssessment, fetchAssessments, mapQuizQuestionsToPayload, updateAssessment } from "@/lib/assessments/client";
 
+// Added comment to verify change
 export const FILIPINO_ASSESSMENT_LEVELS = [
   "Non Reader",
   "Syllable",
@@ -405,6 +405,8 @@ const mapQuizDataToQuiz = (
     students: data.students.map((student) => ({ ...student })),
     sections: data.sections.map((section) => ({ ...section })),
     responses: cloneResponses(existing?.responses),
+    quizCode: data.quizCode ?? existing?.quizCode ?? null,
+    qrToken: data.qrToken ?? existing?.qrToken ?? null,
   };
 };
 
@@ -470,6 +472,8 @@ const mapQuizToModalData = (quiz: FilipinoQuiz): QuizData => {
     questions,
     sections: normalizedSections,
     isPublished: quiz.isPublished,
+    quizCode: quiz.quizCode,
+    qrToken: quiz.qrToken,
   };
 };
 
@@ -497,34 +501,13 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
 
   const reloadAssessments = async () => {
     const profile = getStoredUserProfile();
-    const userId = profile?.userId;
-    if (!userId) return;
-    setCurrentUserId(String(userId));
-    const assessments = await fetchAssessments({
-      creatorId: String(userId),
-      creatorRole: "teacher",
-    });
-    const grouped = groupAssessmentsByLevel(assessments);
-    setQuizzesByLevel(grouped);
+    if (profile?.userId) {
+      setCurrentUserId(String(profile.userId));
+    }
   };
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadAssessments() {
-      try {
-        await reloadAssessments();
-      } catch (error) {
-        if (cancelled) return;
-        console.error(error);
-      }
-    }
-
-    loadAssessments();
-
-    return () => {
-      cancelled = true;
-    };
+    reloadAssessments();
   }, []);
 
   const saveQuizzes = (newQuizzes: FilipinoQuizzesByLevel) => {
@@ -591,42 +574,16 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
   };
 
   const handleSaveQuiz = (quizData: QuizData) => {
-    if (editingQuiz) {
-      setPendingUpdateData(quizData);
-      setIsUpdateConfirmOpen(true);
-      return;
-    }
-
-    (async () => {
-      try {
-        const profile = getStoredUserProfile();
-        const userId = profile?.userId;
-        if (!userId) {
-          alert("Missing user information. Please log in again.");
-          return;
-        }
-
-        await createAssessment({
-          title: quizData.title.trim(),
-          description: quizData.description ?? "",
-          subjectName: "Filipino",
-          phonemicLevel: level,
-          startTime: quizData.startDate,
-          endTime: quizData.endDate,
-          isPublished: quizData.isPublished,
-          createdBy: String(userId),
-          creatorRole: "teacher",
-          questions: mapQuizQuestionsToPayload(quizData.questions),
-        });
-
-        await reloadAssessments();
-        setIsModalOpen(false);
-        setEditingQuiz(null);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to save quiz.";
-        alert(message);
-      }
-    })();
+    const newQuiz = mapQuizDataToQuiz(quizData, level, editingQuiz || undefined);
+    const updatedQuizzes = {
+      ...quizzesByLevel,
+      [level]: editingQuiz 
+        ? quizzesByLevel[level].map(q => q.id === editingQuiz.id ? newQuiz : q)
+        : [...quizzesByLevel[level], newQuiz]
+    };
+    saveQuizzes(updatedQuizzes);
+    setIsModalOpen(false);
+    setEditingQuiz(null);
   };
 
   const confirmUpdateQuiz = () => {
@@ -636,32 +593,16 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
       return;
     }
 
-    (async () => {
-      try {
-        await updateAssessment(editingQuiz.id, {
-          title: pendingUpdateData.title.trim(),
-          description: pendingUpdateData.description ?? "",
-          subjectId: editingQuiz.subjectId ?? null,
-          subjectName: "Filipino",
-          gradeId: null,
-          phonemicId: editingQuiz.phonemicId ?? null,
-          phonemicLevel: level,
-          startTime: pendingUpdateData.startDate,
-          endTime: pendingUpdateData.endDate,
-          isPublished: pendingUpdateData.isPublished,
-          questions: mapQuizQuestionsToPayload(pendingUpdateData.questions),
-        });
-
-        await reloadAssessments();
-        setIsUpdateConfirmOpen(false);
-        setPendingUpdateData(null);
-        setIsModalOpen(false);
-        setEditingQuiz(null);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to update quiz.";
-        alert(message);
-      }
-    })();
+    const newQuiz = mapQuizDataToQuiz(pendingUpdateData, level, editingQuiz);
+    const updatedQuizzes = {
+      ...quizzesByLevel,
+      [level]: quizzesByLevel[level].map(q => q.id === editingQuiz.id ? newQuiz : q)
+    };
+    saveQuizzes(updatedQuizzes);
+    setIsUpdateConfirmOpen(false);
+    setPendingUpdateData(null);
+    setIsModalOpen(false);
+    setEditingQuiz(null);
   };
 
   const cancelUpdateQuiz = () => {
@@ -784,25 +725,34 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
         data={rows}
         actions={(row: TableRow) => (
           <div className="flex gap-2">
-            <UtilityButton small onClick={() => handleEditQuiz(row)}>
+            <UtilityButton
+              small
+              onClick={() => handleEditQuiz(row)}
+              disabled={(row.submittedCount ?? 0) > 0}
+              title={(row.submittedCount ?? 0) > 0 ? "Cannot edit quiz with responses" : "Edit quiz"}
+            >
               Edit
             </UtilityButton>
             <UtilityButton small onClick={() => handleViewResponses(row)}>
               Summary
             </UtilityButton>
-            {row.isPublished && row.quizCode && (
-              <button
+            {row.quizCode && (
+              <UtilityButton
+                small
                 onClick={() => handleShowQr(row)}
-                className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
                 title="Show QR Code"
+                className="!p-1.5"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4h2v-4zM6 16H4m12 0v1m0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h4v4H4V4zm12 0h4v4h-4V4zM4 16h4v4H4v-4z M9 9h6 M15 15h.01" />
-                  {/* Fallback rough icon */}
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h18v18H3z M7 7h3v3H7z M14 7h3v3h-3z M7 14h3v3H7z M14 14h3v3h-3z" />
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M4 4H10V10H4V4Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M14 4H20V10H14V4Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M4 14H10V20H4V14Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M14 14H17V17H14V14Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M17 17H20V20H17V20Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M17 14H20V17H17V14Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M14 17H17V20H14V17Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
-              </button>
+              </UtilityButton>
             )}
           </div>
         )}

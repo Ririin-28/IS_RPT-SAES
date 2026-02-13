@@ -12,7 +12,6 @@ import UpdateConfirmationModal from "../Modals/UpdateConfirmationModal";
 import QrCodeModal from "../Modals/QrCodeModal";
 import { cloneResponses, type QuizResponse } from "../types";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
-import { createAssessment, fetchAssessments, mapQuizQuestionsToPayload, updateAssessment } from "@/lib/assessments/client";
 
 export const ENGLISH_ASSESSMENT_LEVELS = [
   "Non Reader",
@@ -387,72 +386,76 @@ const mapQuizDataToQuiz = (
     students: data.students.map((student) => ({ ...student })),
     sections: data.sections.map((section) => ({ ...section })),
     responses: cloneResponses(existing?.responses),
+    quizCode: data.quizCode ?? existing?.quizCode ?? null,
+    qrToken: data.qrToken ?? existing?.qrToken ?? null,
   };
 };
 
-const mapQuizToModalData = (quiz: Quiz): QuizData => {
-  const normalizedSections: ModalSection[] = (quiz.sections ?? []).map((section, index) => ({
-    id: section.id || generateSectionId(),
-    title: section.title?.trim() || `Section ${index + 1}`,
-    description: section.description ?? "",
-  }));
+  const mapQuizToModalData = (quiz: Quiz): QuizData => {
+    const normalizedSections: ModalSection[] = (quiz.sections ?? []).map((section, index) => ({
+      id: section.id || generateSectionId(),
+      title: section.title?.trim() || `Section ${index + 1}`,
+      description: section.description ?? "",
+    }));
 
-  const sectionLookup = new Map<string, ModalSection>();
-  normalizedSections.forEach((section) => {
-    sectionLookup.set(section.id, section);
-  });
+    const sectionLookup = new Map<string, ModalSection>();
+    normalizedSections.forEach((section) => {
+      sectionLookup.set(section.id, section);
+    });
 
-  const ensureSection = (title: string) => {
-    const normalizedTitle = (title ?? "").trim() || `Section ${sectionLookup.size + 1}`;
-    for (const existing of sectionLookup.values()) {
-      if (existing.title === normalizedTitle) {
-        return existing.id;
+    const ensureSection = (title: string) => {
+      const normalizedTitle = (title ?? "").trim() || `Section ${sectionLookup.size + 1}`;
+      for (const existing of sectionLookup.values()) {
+        if (existing.title === normalizedTitle) {
+          return existing.id;
+        }
       }
+
+      const newSection: ModalSection = {
+        id: generateSectionId(),
+        title: normalizedTitle,
+        description: "",
+      };
+
+      normalizedSections.push(newSection);
+      sectionLookup.set(newSection.id, newSection);
+      return newSection.id;
+    };
+
+    const questions = quiz.questions.map((question, index) => {
+      const fallbackTitle = question.sectionTitle ?? question.testNumber ?? `Section ${index + 1}`;
+      const resolvedSectionId = (question.sectionId && sectionLookup.has(question.sectionId))
+        ? question.sectionId
+        : ensureSection(fallbackTitle);
+      const resolvedSectionTitle = sectionLookup.get(resolvedSectionId)?.title ?? fallbackTitle;
+
+      return toModalQuestion(question, index, resolvedSectionId, resolvedSectionTitle);
+    });
+
+    if (normalizedSections.length === 0) {
+      const defaultSection: ModalSection = {
+        id: generateSectionId(),
+        title: "Section 1",
+        description: "",
+      };
+      normalizedSections.push(defaultSection);
+      sectionLookup.set(defaultSection.id, defaultSection);
     }
 
-    const newSection: ModalSection = {
-      id: generateSectionId(),
-      title: normalizedTitle,
-      description: "",
+    return {
+      title: quiz.title,
+      description: quiz.description ?? "",
+      startDate: quiz.startDate ?? quiz.schedule,
+      endDate: quiz.endDate ?? quiz.schedule,
+      phonemicLevel: quiz.phonemicLevel,
+      students: (quiz.students ?? []).map((student) => ({ ...student })),
+      questions,
+      sections: normalizedSections,
+      isPublished: quiz.isPublished,
+      quizCode: quiz.quizCode,
+      qrToken: quiz.qrToken,
     };
-
-    normalizedSections.push(newSection);
-    sectionLookup.set(newSection.id, newSection);
-    return newSection.id;
   };
-
-  const questions = quiz.questions.map((question, index) => {
-    const fallbackTitle = question.sectionTitle ?? question.testNumber ?? `Section ${index + 1}`;
-    const resolvedSectionId = (question.sectionId && sectionLookup.has(question.sectionId))
-      ? question.sectionId
-      : ensureSection(fallbackTitle);
-    const resolvedSectionTitle = sectionLookup.get(resolvedSectionId)?.title ?? fallbackTitle;
-
-    return toModalQuestion(question, index, resolvedSectionId, resolvedSectionTitle);
-  });
-
-  if (normalizedSections.length === 0) {
-    const defaultSection: ModalSection = {
-      id: generateSectionId(),
-      title: "Section 1",
-      description: "",
-    };
-    normalizedSections.push(defaultSection);
-    sectionLookup.set(defaultSection.id, defaultSection);
-  }
-
-  return {
-    title: quiz.title,
-    description: quiz.description ?? "",
-    startDate: quiz.startDate ?? quiz.schedule,
-    endDate: quiz.endDate ?? quiz.schedule,
-    phonemicLevel: quiz.phonemicLevel,
-    students: (quiz.students ?? []).map((student) => ({ ...student })),
-    questions,
-    sections: normalizedSections,
-    isPublished: quiz.isPublished,
-  };
-};
 
 interface EnglishAssessmentTabProps {
   level: EnglishAssessmentLevel;
@@ -477,36 +480,11 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
 
   const quizzes = quizzesByLevel[level] ?? [];
 
-  const reloadAssessments = async () => {
-    const profile = getStoredUserProfile();
-    const userId = profile?.userId;
-    if (!userId) return;
-    setCurrentUserId(String(userId));
-    const assessments = await fetchAssessments({
-      creatorId: String(userId),
-      creatorRole: "teacher",
-    });
-    const grouped = groupAssessmentsByLevel(assessments);
-    setQuizzesByLevel(grouped);
-  };
-
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadAssessments() {
-      try {
-        await reloadAssessments();
-      } catch (error) {
-        if (cancelled) return;
-        console.error(error);
-      }
+    const profile = getStoredUserProfile();
+    if (profile?.userId) {
+      setCurrentUserId(String(profile.userId));
     }
-
-    loadAssessments();
-
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   const saveQuizzes = (newQuizzes: QuizzesByLevel) => {
@@ -544,42 +522,16 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
   };
 
   const handleSaveQuiz = (quizData: QuizData) => {
-    if (editingQuiz) {
-      setPendingUpdateData(quizData);
-      setIsUpdateConfirmOpen(true);
-      return;
-    }
-
-    (async () => {
-      try {
-        const profile = getStoredUserProfile();
-        const userId = profile?.userId;
-        if (!userId) {
-          alert("Missing user information. Please log in again.");
-          return;
-        }
-
-        await createAssessment({
-          title: quizData.title.trim(),
-          description: quizData.description ?? "",
-          subjectName: "English",
-          phonemicLevel: level,
-          startTime: quizData.startDate,
-          endTime: quizData.endDate,
-          isPublished: quizData.isPublished,
-          createdBy: String(userId),
-          creatorRole: "teacher",
-          questions: mapQuizQuestionsToPayload(quizData.questions),
-        });
-
-        await reloadAssessments();
-        setIsModalOpen(false);
-        setEditingQuiz(null);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to save quiz.";
-        alert(message);
-      }
-    })();
+    const newQuiz = mapQuizDataToQuiz(quizData, level, editingQuiz || undefined);
+    const updatedQuizzes = {
+      ...quizzesByLevel,
+      [level]: editingQuiz 
+        ? quizzesByLevel[level].map(q => q.id === editingQuiz.id ? newQuiz : q)
+        : [...quizzesByLevel[level], newQuiz]
+    };
+    saveQuizzes(updatedQuizzes);
+    setIsModalOpen(false);
+    setEditingQuiz(null);
   };
 
   const confirmUpdateQuiz = () => {
@@ -588,33 +540,9 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
       setPendingUpdateData(null);
       return;
     }
-
-    (async () => {
-      try {
-        await updateAssessment(editingQuiz.id, {
-          title: pendingUpdateData.title.trim(),
-          description: pendingUpdateData.description ?? "",
-          subjectId: editingQuiz.subjectId ?? null,
-          subjectName: "English",
-          gradeId: null,
-          phonemicId: editingQuiz.phonemicId ?? null,
-          phonemicLevel: level,
-          startTime: pendingUpdateData.startDate,
-          endTime: pendingUpdateData.endDate,
-          isPublished: pendingUpdateData.isPublished,
-          questions: mapQuizQuestionsToPayload(pendingUpdateData.questions),
-        });
-
-        await reloadAssessments();
-        setIsUpdateConfirmOpen(false);
-        setPendingUpdateData(null);
-        setIsModalOpen(false);
-        setEditingQuiz(null);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to update quiz.";
-        alert(message);
-      }
-    })();
+    handleSaveQuiz(pendingUpdateData);
+    setIsUpdateConfirmOpen(false);
+    setPendingUpdateData(null);
   };
 
   const cancelUpdateQuiz = () => {
@@ -784,29 +712,23 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
             <UtilityButton small onClick={() => handleViewResponses(row)}>
               Summary
             </UtilityButton>
-            {row.isPublished && row.quizCode && (
-              <button
+            {row.quizCode && (
+              <UtilityButton
+                small
                 onClick={() => handleShowQr(row)}
-                className="p-1.5 text-green-700 hover:bg-green-50 rounded-md transition-colors"
                 title="Show QR Code"
+                className="!p-1.5"
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <g id="SVGRepo_bgCarrier" strokeWidth="0"></g>
-                  <g id="SVGRepo_tracerCarrier" strokeLinecap="round" strokeLinejoin="round"></g>
-                  <g id="SVGRepo_iconCarrier">
-                    <path d="M23 4C23 2.34315 21.6569 1 20 1H16C15.4477 1 15 1.44772 15 2C15 2.55228 15.4477 3 16 3H20C20.5523 3 21 3.44772 21 4V8C21 8.55228 21.4477 9 22 9C22.5523 9 23 8.55228 23 8V4Z" fill="#013300"></path>
-                    <path d="M23 16C23 15.4477 22.5523 15 22 15C21.4477 15 21 15.4477 21 16V20C21 20.5523 20.5523 21 20 21H16C15.4477 21 15 21.4477 15 22C15 22.5523 15.4477 23 16 23H20C21.6569 23 23 21.6569 23 20V16Z" fill="#013300"></path>
-                    <path d="M4 21C3.44772 21 3 20.5523 3 20V16C3 15.4477 2.55228 15 2 15C1.44772 15 1 15.4477 1 16V20C1 21.6569 2.34315 23 4 23H8C8.55228 23 9 22.5523 9 22C9 21.4477 8.55228 21 8 21H4Z" fill="#013300"></path>
-                    <path d="M1 8C1 8.55228 1.44772 9 2 9C2.55228 9 3 8.55228 3 8V4C3 3.44772 3.44772 3 4 3H8C8.55228 3 9 2.55228 9 2C9 1.44772 8.55228 1 8 1H4C2.34315 1 1 2.34315 1 4V8Z" fill="#013300"></path>
-                    <path fillRule="evenodd" clipRule="evenodd" d="M11 6C11 5.44772 10.5523 5 10 5H6C5.44772 5 5 5.44772 5 6V10C5 10.5523 5.44772 11 6 11H10C10.5523 11 11 10.5523 11 10V6ZM9 7.5C9 7.22386 8.77614 7 8.5 7H7.5C7.22386 7 7 7.22386 7 7.5V8.5C7 8.77614 7.22386 9 7.5 9H8.5C8.77614 9 9 8.77614 9 8.5V7.5Z" fill="#013300"></path>
-                    <path fillRule="evenodd" clipRule="evenodd" d="M18 13C18.5523 13 19 13.4477 19 14V18C19 18.5523 18.5523 19 18 19H14C13.4477 19 13 18.5523 13 18V14C13 13.4477 13.4477 13 14 13H18ZM15 15.5C15 15.2239 15.2239 15 15.5 15H16.5C16.7761 15 17 15.2239 17 15.5V16.5C17 16.7761 16.7761 17 16.5 17H15.5C15.2239 17 15 16.7761 15 16.5V15.5Z" fill="#013300"></path>
-                    <path d="M14 5C13.4477 5 13 5.44772 13 6C13 6.55229 13.4477 7 14 7H16.5C16.7761 7 17 7.22386 17 7.5V10C17 10.5523 17.4477 11 18 11C18.5523 11 19 10.5523 19 10V6C19 5.44772 18.5523 5 18 5H14Z" fill="#013300"></path>
-                    <path d="M14 8C13.4477 8 13 8.44771 13 9V10C13 10.5523 13.4477 11 14 11C14.5523 11 15 10.5523 15 10V9C15 8.44772 14.5523 8 14 8Z" fill="#013300"></path>
-                    <path d="M6 13C5.44772 13 5 13.4477 5 14V16C5 16.5523 5.44772 17 6 17C6.55229 17 7 16.5523 7 16V15.5C7 15.2239 7.22386 15 7.5 15H10C10.5523 15 11 14.5523 11 14C11 13.4477 10.5523 13 10 13H6Z" fill="#013300"></path>
-                    <path d="M10 17C9.44771 17 9 17.4477 9 18C9 18.5523 9.44771 19 10 19C10.5523 19 11 18.5523 11 18C11 17.4477 10.5523 17 10 17Z" fill="#013300"></path>
-                  </g>
+                  <path d="M4 4H10V10H4V4Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M14 4H20V10H14V4Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M4 14H10V20H4V14Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M14 14H17V17H14V14Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M17 17H20V20H17V20Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M17 14H20V17H17V14Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M14 17H17V20H14V17Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
-              </button>
+              </UtilityButton>
             )}
           </div>
         )}

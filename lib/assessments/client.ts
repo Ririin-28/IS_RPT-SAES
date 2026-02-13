@@ -43,48 +43,18 @@ export interface AssessmentPayload {
 }
 
 export async function fetchAssessments(params: FetchParams): Promise<any[]> {
-    const query = new URLSearchParams(params as any);
-    const response = await fetch(`/api/assessments?${query.toString()}`);
-    if (!response.ok) {
-        throw new Error("Failed to fetch assessments");
-    }
-    const data = await response.json();
-    if (!data.success) {
-        throw new Error(data.error || "Failed to fetch assessments");
-    }
-    return data.assessments;
+    console.log("fetchAssessments called with params:", params);
+    return [];
 }
 
 export async function createAssessment(payload: AssessmentPayload): Promise<any> {
-    const response = await fetch("/api/assessments", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-    });
-
-    const data = await response.json();
-    if (!response.ok || !data.success) {
-        throw new Error(data.error || "Failed to create assessment");
-    }
-    return data;
+    console.log("createAssessment called with payload:", payload);
+    return { success: true, message: "Backend connection removed." };
 }
 
 export async function updateAssessment(id: number | string, payload: AssessmentPayload): Promise<any> {
-    const response = await fetch(`/api/assessments/${id}`, {
-        method: "PUT",
-        headers: {
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-    });
-
-    const data = await response.json();
-    if (!response.ok || !data.success) {
-        throw new Error(data.error || "Failed to update assessment");
-    }
-    return data;
+    console.log("updateAssessment called for id:", id, "with payload:", payload);
+    return { success: true, message: "Backend connection removed." };
 }
 
 export function mapQuizQuestionsToPayload(questions: ClientQuizQuestion[]): IncomingQuestion[] {

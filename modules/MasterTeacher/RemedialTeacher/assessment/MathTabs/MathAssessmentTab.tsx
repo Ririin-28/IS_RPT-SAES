@@ -5,12 +5,12 @@ import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import TableList from "@/components/Common/Tables/TableList";
 import KebabMenu from "@/components/Common/Menus/KebabMenu";
-import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
+import DeleteConfirmationModal from "../Modals/DeleteConfirmationModal";
+import QrCodeModal from "../Modals/QrCodeModal";
 import AddQuizModal, { type QuizData, type Student as QuizStudent, type Question as ModalQuestion, type Section as ModalSection } from "../Modals/AddQuizModal";
 import ViewResponsesModal from "../Modals/ViewResponsesModal";
 import { cloneResponses, type QuizResponse } from "../types";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
-import { createAssessment, fetchAssessments, mapQuizQuestionsToPayload, updateAssessment } from "@/lib/assessments/client";
 
 export const MATH_ASSESSMENT_LEVELS = [
   "Not Proficient",
@@ -86,6 +86,42 @@ const STORAGE_KEY = "MASTER_TEACHER_ASSESSMENT_MATH";
 type MathQuizzesByLevel = Record<MathAssessmentLevel, MathQuiz[]>;
 
 const generateSectionId = () => `section-${Math.random().toString(36).slice(2, 10)}-${Date.now()}`;
+
+type QuizScheduleStatus = "Pending" | "Active" | "Completed";
+
+const QUIZ_STATUS_STYLES: Record<QuizScheduleStatus, string> = {
+  Pending: "bg-amber-100 text-amber-800",
+  Active: "bg-emerald-100 text-emerald-800",
+  Completed: "bg-slate-200 text-slate-700",
+};
+
+const getQuizScheduleStatus = (quiz: MathQuiz): QuizScheduleStatus => {
+  const now = Date.now();
+  const startRaw = quiz.startDate ?? quiz.schedule;
+  const endRaw = quiz.endDate ?? quiz.schedule;
+
+  const startTime = startRaw ? Date.parse(startRaw) : Number.NaN;
+  const rawEndTime = endRaw ? Date.parse(endRaw) : Number.NaN;
+  const derivedEndTime = Number.isFinite(rawEndTime)
+    ? rawEndTime
+    : Number.isFinite(startTime)
+      ? startTime + Math.max(quiz.duration ?? 0, 0) * 60000
+      : Number.NaN;
+
+  if (!Number.isFinite(startTime)) {
+    return "Pending";
+  }
+
+  if (now < startTime) {
+    return "Pending";
+  }
+
+  if (Number.isFinite(derivedEndTime) && now > derivedEndTime) {
+    return "Completed";
+  }
+
+  return "Active";
+};
 
 const KNOWN_MATH_LEVELS = new Set<MathAssessmentLevel>(MATH_ASSESSMENT_LEVELS);
 
@@ -355,6 +391,8 @@ const mapQuizDataToQuiz = (
     students: data.students.map((student) => ({ ...student })),
     sections: data.sections.map((section) => ({ ...section })),
     responses: cloneResponses(existing?.responses),
+    quizCode: existing?.quizCode ?? data.quizCode,
+    qrToken: existing?.qrToken ?? data.qrToken,
   };
 };
 
@@ -419,6 +457,8 @@ const mapQuizToModalData = (quiz: MathQuiz): QuizData => {
     questions,
     sections: normalizedSections,
     isPublished: quiz.isPublished,
+    quizCode: quiz.quizCode,
+    qrToken: quiz.qrToken,
   };
 };
 
@@ -430,6 +470,14 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
   const [quizzesByLevel, setQuizzesByLevel] = useState<MathQuizzesByLevel>(() => cloneInitialMathQuizzes());
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingQuiz, setEditingQuiz] = useState<MathQuiz | null>(null);
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+  const [qrQuiz, setQrQuiz] = useState<MathQuiz | null>(null);
+
+  const handleShowQr = (quiz: MathQuiz) => {
+    setQrQuiz(quiz);
+    setIsQrModalOpen(true);
+  };
+
   const [selectMode, setSelectMode] = useState(false);
   const [selectedQuizzes, setSelectedQuizzes] = useState<Set<number>>(new Set());
   const [isResponsesOpen, setIsResponsesOpen] = useState(false);
@@ -442,31 +490,11 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
     const profile = getStoredUserProfile();
     const userId = profile?.userId;
     if (!userId) return;
-    const assessments = await fetchAssessments({
-      creatorId: String(userId),
-      creatorRole: "remedial_teacher",
-    });
-    const grouped = groupAssessmentsByLevel(assessments);
-    setQuizzesByLevel(grouped);
+    // Removed backend calls - using frontend state only
   };
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadAssessments() {
-      try {
-        await reloadAssessments();
-      } catch (error) {
-        if (cancelled) return;
-        console.error(error);
-      }
-    }
-
-    loadAssessments();
-
-    return () => {
-      cancelled = true;
-    };
+    reloadAssessments();
   }, []);
 
   const saveQuizzes = (newQuizzes: MathQuizzesByLevel) => {
@@ -514,52 +542,16 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
   };
 
   const handleSaveQuiz = (quizData: QuizData) => {
-    (async () => {
-      try {
-        const profile = getStoredUserProfile();
-        const userId = profile?.userId;
-        if (!userId) {
-          alert("Missing user information. Please log in again.");
-          return;
-        }
-
-        if (editingQuiz) {
-          await updateAssessment(editingQuiz.id, {
-            title: quizData.title.trim(),
-            description: quizData.description ?? "",
-            subjectId: editingQuiz.subjectId ?? null,
-            subjectName: "Math",
-            gradeId: null,
-            phonemicId: editingQuiz.phonemicId ?? null,
-            phonemicLevel: level,
-            startTime: quizData.startDate,
-            endTime: quizData.endDate,
-            isPublished: quizData.isPublished,
-            questions: mapQuizQuestionsToPayload(quizData.questions),
-          });
-        } else {
-          await createAssessment({
-            title: quizData.title.trim(),
-            description: quizData.description ?? "",
-            subjectName: "Math",
-            phonemicLevel: level,
-            startTime: quizData.startDate,
-            endTime: quizData.endDate,
-            isPublished: quizData.isPublished,
-            createdBy: String(userId),
-            creatorRole: "remedial_teacher",
-            questions: mapQuizQuestionsToPayload(quizData.questions),
-          });
-        }
-
-        await reloadAssessments();
-        setIsModalOpen(false);
-        setEditingQuiz(null);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to save quiz.";
-        alert(message);
-      }
-    })();
+    const newQuiz = mapQuizDataToQuiz(quizData, level, editingQuiz || undefined);
+    const updatedQuizzes = {
+      ...quizzesByLevel,
+      [level]: editingQuiz
+        ? quizzesByLevel[level].map(q => q.id === editingQuiz.id ? newQuiz : q)
+        : [...quizzesByLevel[level], newQuiz]
+    };
+    saveQuizzes(updatedQuizzes);
+    setIsModalOpen(false);
+    setEditingQuiz(null);
   };
 
   const togglePublish = (quizId: number) => {
@@ -660,27 +652,51 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
             render: (row: TableRow) => row.responses?.length ?? 0,
           },
           {
-            key: "isPublished",
+            key: "status",
             title: "Status",
-            render: (row: TableRow) => (
-              <span className={`px-2 py-1 rounded-full text-xs font-medium ${row.isPublished
-                  ? "bg-green-100 text-green-800"
-                  : "bg-gray-100 text-gray-800"
-                }`}>
-                {row.isPublished ? "Active" : "Inactive"}
-              </span>
-            ),
+            render: (row: TableRow) => {
+              const status = getQuizScheduleStatus(row);
+              const badgeClass = QUIZ_STATUS_STYLES[status];
+              return (
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${badgeClass}`}>
+                  {status}
+                </span>
+              );
+            },
           },
         ]}
         data={rows}
         actions={(row: TableRow) => (
           <div className="flex gap-2">
-            <UtilityButton small onClick={() => handleEditQuiz(row)}>
+            <UtilityButton
+              small
+              onClick={() => handleEditQuiz(row)}
+              disabled={(row.submittedCount ?? 0) > 0}
+              title={(row.submittedCount ?? 0) > 0 ? "Cannot edit quiz with responses" : "Edit quiz"}
+            >
               Edit
             </UtilityButton>
             <UtilityButton small onClick={() => handleViewResponses(row)}>
               Responses ({row.responses?.length ?? 0})
             </UtilityButton>
+            {row.quizCode && (
+              <UtilityButton
+                small
+                onClick={() => handleShowQr(row)}
+                title="Show QR Code"
+                className="!p-1.5 text-green-700 hover:bg-green-50 rounded-md transition-colors"
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M4 4H10V10H4V4Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M14 4H20V10H14V4Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M4 14H10V20H4V14Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M14 14H17V17H14V14Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M17 17H20V20H17V20Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M17 14H20V17H17V14Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M14 17H17V20H14V17Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </UtilityButton>
+            )}
           </div>
         )}
         selectable={selectMode}
@@ -706,17 +722,15 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
 
       {/* Quiz Creation/Editing Modal */}
       <AddQuizModal
-        {...({
-          isOpen: isModalOpen,
-          onClose: () => {
-            setIsModalOpen(false);
-            setEditingQuiz(null);
-          },
-          onSave: handleSaveQuiz,
-          initialData: editingQuiz ? mapQuizToModalData(editingQuiz) : undefined,
-          level: level,
-          subject: "Math",
-        } as any)}
+        isOpen={isModalOpen}
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingQuiz(null);
+        }}
+        onSave={handleSaveQuiz}
+        initialData={editingQuiz ? mapQuizToModalData(editingQuiz) : undefined}
+        level={level}
+        subject="Math"
       />
 
       {responsesQuiz && (
@@ -737,12 +751,21 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
         />
       )}
 
+      {qrQuiz && qrQuiz.quizCode && (
+        <QrCodeModal
+          isOpen={isQrModalOpen}
+          onClose={() => setIsQrModalOpen(false)}
+          quizTitle={qrQuiz.title}
+          quizCode={qrQuiz.quizCode}
+        />
+      )}
+
       <DeleteConfirmationModal
-        isOpen={showDeleteModal}
+        show={showDeleteModal}
         onClose={() => setShowDeleteModal(false)}
         onConfirm={confirmDelete}
-        title="Confirm Delete"
-        message={`Are you sure you want to delete ${selectedQuizzes.size} selected quiz${selectedQuizzes.size > 1 ? 'zes' : ''}? This action cannot be undone.`}
+        entityLabel={selectedQuizzes.size === 1 ? "quiz" : "quizzes"}
+        description={`Are you sure you want to delete ${selectedQuizzes.size} selected quiz${selectedQuizzes.size === 1 ? '' : 'zes'}? This action cannot be undone.`}
       />
     </div>
   );

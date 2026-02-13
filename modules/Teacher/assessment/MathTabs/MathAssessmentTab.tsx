@@ -5,12 +5,11 @@ import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import TableList from "@/components/Common/Tables/TableList";
 import KebabMenu from "@/components/Common/Menus/KebabMenu";
-import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
+import DeleteConfirmationModal from "../Modals/DeleteConfirmationModal";
 import AddQuizModal, { type QuizData, type Student as QuizStudent, type Question as ModalQuestion, type Section as ModalSection } from "../Modals/AddQuizModal";
 import ViewResponsesModal from "../Modals/ViewResponsesModal";
 import { cloneResponses, type QuizResponse } from "../types";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
-import { createAssessment, fetchAssessments, mapQuizQuestionsToPayload, updateAssessment } from "@/lib/assessments/client";
 import QrCodeModal from "../Modals/QrCodeModal";
 
 export const MATH_ASSESSMENT_LEVELS = [
@@ -88,6 +87,42 @@ const STORAGE_KEY = "MASTER_TEACHER_ASSESSMENT_MATH";
 type MathQuizzesByLevel = Record<MathAssessmentLevel, MathQuiz[]>;
 
 const generateSectionId = () => `section-${Math.random().toString(36).slice(2, 10)}-${Date.now()}`;
+
+type QuizScheduleStatus = "Pending" | "Active" | "Completed";
+
+const QUIZ_STATUS_STYLES: Record<QuizScheduleStatus, string> = {
+  Pending: "bg-amber-100 text-amber-800",
+  Active: "bg-emerald-100 text-emerald-800",
+  Completed: "bg-slate-200 text-slate-700",
+};
+
+const getQuizScheduleStatus = (quiz: MathQuiz): QuizScheduleStatus => {
+  const now = Date.now();
+  const startRaw = quiz.startDate ?? quiz.schedule;
+  const endRaw = quiz.endDate ?? quiz.schedule;
+
+  const startTime = startRaw ? Date.parse(startRaw) : Number.NaN;
+  const rawEndTime = endRaw ? Date.parse(endRaw) : Number.NaN;
+  const derivedEndTime = Number.isFinite(rawEndTime)
+    ? rawEndTime
+    : Number.isFinite(startTime)
+      ? startTime + Math.max(quiz.duration ?? 0, 0) * 60000
+      : Number.NaN;
+
+  if (!Number.isFinite(startTime)) {
+    return "Pending";
+  }
+
+  if (now < startTime) {
+    return "Pending";
+  }
+
+  if (Number.isFinite(derivedEndTime) && now > derivedEndTime) {
+    return "Completed";
+  }
+
+  return "Active";
+};
 
 const KNOWN_MATH_LEVELS = new Set<MathAssessmentLevel>(MATH_ASSESSMENT_LEVELS);
 
@@ -350,6 +385,8 @@ const mapQuizDataToQuiz = (
     students: data.students.map((student) => ({ ...student })),
     sections: data.sections.map((section) => ({ ...section })),
     responses: cloneResponses(existing?.responses),
+    quizCode: data.quizCode ?? existing?.quizCode ?? null,
+    qrToken: data.qrToken ?? existing?.qrToken ?? null,
   };
 };
 
@@ -414,6 +451,8 @@ const mapQuizToModalData = (quiz: MathQuiz): QuizData => {
     questions,
     sections: normalizedSections,
     isPublished: quiz.isPublished,
+    quizCode: quiz.quizCode,
+    qrToken: quiz.qrToken,
   };
 };
 
@@ -439,34 +478,13 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
 
   const reloadAssessments = async () => {
     const profile = getStoredUserProfile();
-    const userId = profile?.userId;
-    if (!userId) return;
-    setCurrentUserId(String(userId));
-    const assessments = await fetchAssessments({
-      creatorId: String(userId),
-      creatorRole: "teacher",
-    });
-    const grouped = groupAssessmentsByLevel(assessments);
-    setQuizzesByLevel(grouped);
+    if (profile?.userId) {
+      setCurrentUserId(String(profile.userId));
+    }
   };
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadAssessments() {
-      try {
-        await reloadAssessments();
-      } catch (error) {
-        if (cancelled) return;
-        console.error(error);
-      }
-    }
-
-    loadAssessments();
-
-    return () => {
-      cancelled = true;
-    };
+    reloadAssessments();
   }, []);
 
   const saveQuizzes = (newQuizzes: MathQuizzesByLevel) => {
@@ -533,52 +551,16 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
   };
 
   const handleSaveQuiz = (quizData: QuizData) => {
-    (async () => {
-      try {
-        const profile = getStoredUserProfile();
-        const userId = profile?.userId;
-        if (!userId) {
-          alert("Missing user information. Please log in again.");
-          return;
-        }
-
-        if (editingQuiz) {
-          await updateAssessment(editingQuiz.id, {
-            title: quizData.title.trim(),
-            description: quizData.description ?? "",
-            subjectId: editingQuiz.subjectId ?? null,
-            subjectName: "Math",
-            gradeId: null,
-            phonemicId: editingQuiz.phonemicId ?? null,
-            phonemicLevel: level,
-            startTime: quizData.startDate,
-            endTime: quizData.endDate,
-            isPublished: quizData.isPublished,
-            questions: mapQuizQuestionsToPayload(quizData.questions),
-          });
-        } else {
-          await createAssessment({
-            title: quizData.title.trim(),
-            description: quizData.description ?? "",
-            subjectName: "Math",
-            phonemicLevel: level,
-            startTime: quizData.startDate,
-            endTime: quizData.endDate,
-            isPublished: quizData.isPublished,
-            createdBy: String(userId),
-            creatorRole: "teacher",
-            questions: mapQuizQuestionsToPayload(quizData.questions),
-          });
-        }
-
-        await reloadAssessments();
-        setIsModalOpen(false);
-        setEditingQuiz(null);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to save quiz.";
-        alert(message);
-      }
-    })();
+    const newQuiz = mapQuizDataToQuiz(quizData, level, editingQuiz || undefined);
+    const updatedQuizzes = {
+      ...quizzesByLevel,
+      [level]: editingQuiz 
+        ? quizzesByLevel[level].map(q => q.id === editingQuiz.id ? newQuiz : q)
+        : [...quizzesByLevel[level], newQuiz]
+    };
+    saveQuizzes(updatedQuizzes);
+    setIsModalOpen(false);
+    setEditingQuiz(null);
   };
 
   const togglePublish = (quizId: number) => {
@@ -598,6 +580,53 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
     ...quiz,
     no: index + 1,
   }));
+
+  const columns = [
+    { key: "no", title: "No." },
+    { key: "title", title: "Quiz Title" },
+    {
+      key: "quizCode",
+      title: "Code",
+      render: (row: TableRow) => (
+        <span className="font-mono font-bold text-gray-700 tracking-wider">
+          {row.quizCode || "-"}
+        </span>
+      )
+    },
+    { key: "mathLevel", title: "Level" },
+    {
+      key: "startDate",
+      title: "Start",
+      render: (row: TableRow) => formatDateTime(row.startDate ?? row.schedule),
+    },
+    {
+      key: "endDate",
+      title: "End",
+      render: (row: TableRow) => formatDateTime(row.endDate ?? row.schedule),
+    },
+    {
+      key: "responses",
+      title: "Responses",
+      render: (row: TableRow) => {
+        const submitted = row.submittedCount ?? 0;
+        const assigned = row.assignedCount ?? 0;
+        return assigned > 0 ? `${submitted}/${assigned}` : submitted;
+      },
+    },
+    {
+        key: "status",
+        title: "Status",
+        render: (row: TableRow) => {
+          const status = getQuizScheduleStatus(row);
+          const badgeClass = QUIZ_STATUS_STYLES[status];
+          return (
+            <span className={`px-2 py-1 rounded-full text-xs font-medium ${badgeClass}`}>
+              {status}
+            </span>
+          );
+        },
+      },
+  ];
 
   return (
     <div>
@@ -649,7 +678,7 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
                       <rect x="3" y="3" width="18" height="18" rx="2" />
                       <path d="M9 12l2 2 4-4" />
                     </svg>
-                    Select
+                    Select Quizzes
                   </button>
                 </div>
               )}
@@ -659,79 +688,38 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
       </div>
 
       <TableList
-        columns={[
-          { key: "no", title: "No#" },
-          { key: "title", title: "Title" },
-          {
-            key: "quizCode",
-            title: "Code",
-            render: (row: TableRow) => (
-              <span className="font-mono font-bold text-gray-700 tracking-wider">
-                {row.quizCode || "-"}
-              </span>
-            )
-          },
-          { key: "mathLevel", title: "Phonemic" },
-          {
-            key: "startDate",
-            title: "Start",
-            render: (row: TableRow) => formatDateTime(row.startDate ?? row.schedule),
-          },
-          {
-            key: "endDate",
-            title: "End",
-            render: (row: TableRow) => formatDateTime(row.endDate ?? row.schedule),
-          },
-          {
-            key: "responses",
-            title: "Responses",
-            render: (row: TableRow) => {
-              const submitted = row.submittedCount ?? 0;
-              const assigned = row.assignedCount ?? 0;
-              return (
-                <div className="flex flex-col">
-                  <span className="font-semibold text-gray-700">
-                    {assigned > 0 ? `${submitted}/${assigned}` : submitted}
-                  </span>
-                </div>
-              );
-            },
-          },
-          {
-            key: "isPublished",
-            title: "Status",
-            render: (row: TableRow) => (
-              <span className={`px-2 py-1 rounded-full text-xs font-medium ${row.isPublished
-                ? "bg-green-100 text-green-800"
-                : "bg-gray-100 text-gray-800"
-                }`}>
-                {row.isPublished ? "Active" : "Inactive"}
-              </span>
-            ),
-          },
-        ]}
+        columns={columns}
         data={rows}
         actions={(row: TableRow) => (
           <div className="flex gap-2">
-            <UtilityButton small onClick={() => handleEditQuiz(row)}>
+            <UtilityButton
+              small
+              onClick={() => handleEditQuiz(row)}
+              disabled={(row.submittedCount ?? 0) > 0}
+              title={(row.submittedCount ?? 0) > 0 ? "Cannot edit quiz with responses" : "Edit quiz"}
+            >
               Edit
             </UtilityButton>
             <UtilityButton small onClick={() => handleViewResponses(row)}>
               Summary
             </UtilityButton>
-            {row.isPublished && row.quizCode && (
-              <button
+            {row.quizCode && (
+              <UtilityButton
+                small
                 onClick={() => handleShowQr(row)}
-                className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
                 title="Show QR Code"
+                className="!p-1.5"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4h2v-4zM6 16H4m12 0v1m0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h4v4H4V4zm12 0h4v4h-4V4zM4 16h4v4H4v-4z M9 9h6 M15 15h.01" />
-                  {/* Fallback rough icon */}
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h18v18H3z M7 7h3v3H7z M14 7h3v3h-3z M7 14h3v3H7z M14 14h3v3h-3z" />
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M4 4H10V10H4V4Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M14 4H20V10H14V4Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M4 14H10V20H4V14Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M14 14H17V17H14V14Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M17 17H20V20H17V20Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M17 14H20V17H17V14Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M14 17H17V20H14V17Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
-              </button>
+              </UtilityButton>
             )}
           </div>
         )}
@@ -758,17 +746,15 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
 
       {/* Quiz Creation/Editing Modal */}
       <AddQuizModal
-        {...({
-          isOpen: isModalOpen,
-          onClose: () => {
-            setIsModalOpen(false);
-            setEditingQuiz(null);
-          },
-          onSave: handleSaveQuiz,
-          initialData: editingQuiz ? mapQuizToModalData(editingQuiz) : undefined,
-          level: level,
-          subject: "Math",
-        } as any)}
+        isOpen={isModalOpen}
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingQuiz(null);
+        }}
+        onSave={handleSaveQuiz}
+        initialData={editingQuiz ? mapQuizToModalData(editingQuiz) : undefined}
+        level={level}
+        subject="Math"
       />
 
       {qrQuiz && qrQuiz.quizCode && (
@@ -801,11 +787,11 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
       )}
 
       <DeleteConfirmationModal
-        isOpen={showDeleteModal}
+        show={showDeleteModal}
         onClose={() => setShowDeleteModal(false)}
         onConfirm={confirmDelete}
-        title="Confirm Delete"
-        message={`Are you sure you want to delete ${selectedQuizzes.size} selected quiz${selectedQuizzes.size > 1 ? 'zes' : ''}? This action cannot be undone.`}
+        entityLabel={selectedQuizzes.size === 1 ? "quiz" : "quizzes"}
+        description={`Are you sure you want to delete ${selectedQuizzes.size} selected quiz${selectedQuizzes.size === 1 ? '' : 'zes'}? This action cannot be undone.`}
       />
     </div>
   );

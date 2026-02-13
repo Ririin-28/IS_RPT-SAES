@@ -40,6 +40,8 @@ export interface QuizData {
   questions: Question[];
   sections: Section[];
   isPublished: boolean;
+  quizCode?: string | null;
+  qrToken?: string | null;
 }
 
 interface AddQuizModalProps {
@@ -168,6 +170,22 @@ const prepareInitialStructure = (initialData?: QuizData) => {
     sections,
     questions: normalizedQuestions,
   };
+};
+
+const generateQuizCode = () => {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+};
+
+const generateQrToken = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID().replace(/-/g, "");
+  }
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 };
 
 export default function AddQuizModal({ isOpen, show, onClose, onSave, initialData, level, subject }: AddQuizModalProps) {
@@ -326,7 +344,7 @@ export default function AddQuizModal({ isOpen, show, onClose, onSave, initialDat
       dateFormat: "Y-m-d\\TH:i",
       altInput: true,
       altFormat: "M j, Y h:i K",
-      allowInput: true,
+      allowInput: false,
       disableMobile: true,
       altInputClass: DATE_TIME_ALT_INPUT_CLASS,
     };
@@ -341,7 +359,7 @@ export default function AddQuizModal({ isOpen, show, onClose, onSave, initialDat
       dateFormat: "Y-m-d\\TH:i",
       altInput: true,
       altFormat: "M j, Y h:i K",
-      allowInput: true,
+      allowInput: false,
       disableMobile: true,
       altInputClass: DATE_TIME_ALT_INPUT_CLASS,
     };
@@ -453,6 +471,8 @@ export default function AddQuizModal({ isOpen, show, onClose, onSave, initialDat
       questions: sanitizedQuestions,
       sections: sanitizedSections,
       isPublished,
+      quizCode: initialData?.quizCode || generateQuizCode(),
+      qrToken: initialData?.qrToken || generateQrToken(),
     };
 
     onSave(quizData);

@@ -5,13 +5,13 @@ import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import TableList from "@/components/Common/Tables/TableList";
 import KebabMenu from "@/components/Common/Menus/KebabMenu";
+import QrCodeModal from "../Modals/QrCodeModal";
 import AddQuizModal, { type QuizData, type Student as QuizStudent, type Question as ModalQuestion, type Section as ModalSection } from "../Modals/AddQuizModal";
 import ViewResponsesModal from "../Modals/ViewResponsesModal";
 import DeleteConfirmationModal from "../Modals/DeleteConfirmationModal";
 import UpdateConfirmationModal from "../Modals/UpdateConfirmationModal";
 import { cloneResponses, type QuizResponse } from "../types";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
-import { createAssessment, fetchAssessments, mapQuizQuestionsToPayload, updateAssessment } from "@/lib/assessments/client";
 
 export const FILIPINO_ASSESSMENT_LEVELS = [
   "Non Reader",
@@ -402,6 +402,8 @@ const mapQuizDataToQuiz = (
     students: data.students.map((student) => ({ ...student })),
     sections: data.sections.map((section) => ({ ...section })),
     responses: cloneResponses(existing?.responses),
+    quizCode: existing?.quizCode ?? data.quizCode,
+    qrToken: existing?.qrToken ?? data.qrToken,
   };
 };
 
@@ -467,6 +469,8 @@ const mapQuizToModalData = (quiz: FilipinoQuiz): QuizData => {
     questions,
     sections: normalizedSections,
     isPublished: quiz.isPublished,
+    quizCode: quiz.quizCode,
+    qrToken: quiz.qrToken,
   };
 };
 
@@ -478,6 +482,14 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
   const [quizzesByLevel, setQuizzesByLevel] = useState<FilipinoQuizzesByLevel>(() => cloneInitialFilipinoQuizzes());
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingQuiz, setEditingQuiz] = useState<FilipinoQuiz | null>(null);
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+  const [qrQuiz, setQrQuiz] = useState<FilipinoQuiz | null>(null);
+
+  const handleShowQr = (quiz: FilipinoQuiz) => {
+    setQrQuiz(quiz);
+    setIsQrModalOpen(true);
+  };
+
   const [selectMode, setSelectMode] = useState(false);
   const [selectedQuizzes, setSelectedQuizzes] = useState<Set<number>>(new Set());
   const [isResponsesOpen, setIsResponsesOpen] = useState(false);
@@ -492,31 +504,11 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
     const profile = getStoredUserProfile();
     const userId = profile?.userId;
     if (!userId) return;
-    const assessments = await fetchAssessments({
-      creatorId: String(userId),
-      creatorRole: "remedial_teacher",
-    });
-    const grouped = groupAssessmentsByLevel(assessments);
-    setQuizzesByLevel(grouped);
+    // Removed backend calls - using frontend state only
   };
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadAssessments() {
-      try {
-        await reloadAssessments();
-      } catch (error) {
-        if (cancelled) return;
-        console.error(error);
-      }
-    }
-
-    loadAssessments();
-
-    return () => {
-      cancelled = true;
-    };
+    reloadAssessments();
   }, []);
 
   const saveQuizzes = (newQuizzes: FilipinoQuizzesByLevel) => {
@@ -564,42 +556,16 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
   };
 
   const handleSaveQuiz = (quizData: QuizData) => {
-    if (editingQuiz) {
-      setPendingUpdateData(quizData);
-      setIsUpdateConfirmOpen(true);
-      return;
-    }
-
-    (async () => {
-      try {
-        const profile = getStoredUserProfile();
-        const userId = profile?.userId;
-        if (!userId) {
-          alert("Missing user information. Please log in again.");
-          return;
-        }
-
-        await createAssessment({
-          title: quizData.title.trim(),
-          description: quizData.description ?? "",
-          subjectName: "Filipino",
-          phonemicLevel: level,
-          startTime: quizData.startDate,
-          endTime: quizData.endDate,
-          isPublished: quizData.isPublished,
-          createdBy: String(userId),
-          creatorRole: "remedial_teacher",
-          questions: mapQuizQuestionsToPayload(quizData.questions),
-        });
-
-        await reloadAssessments();
-        setIsModalOpen(false);
-        setEditingQuiz(null);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to save quiz.";
-        alert(message);
-      }
-    })();
+    const newQuiz = mapQuizDataToQuiz(quizData, level, editingQuiz || undefined);
+    const updatedQuizzes = {
+      ...quizzesByLevel,
+      [level]: editingQuiz
+        ? quizzesByLevel[level].map(q => q.id === editingQuiz.id ? newQuiz : q)
+        : [...quizzesByLevel[level], newQuiz]
+    };
+    saveQuizzes(updatedQuizzes);
+    setIsModalOpen(false);
+    setEditingQuiz(null);
   };
 
   const confirmUpdateQuiz = () => {
@@ -609,32 +575,16 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
       return;
     }
 
-    (async () => {
-      try {
-        await updateAssessment(editingQuiz.id, {
-          title: pendingUpdateData.title.trim(),
-          description: pendingUpdateData.description ?? "",
-          subjectId: editingQuiz.subjectId ?? null,
-          subjectName: "Filipino",
-          gradeId: null,
-          phonemicId: editingQuiz.phonemicId ?? null,
-          phonemicLevel: level,
-          startTime: pendingUpdateData.startDate,
-          endTime: pendingUpdateData.endDate,
-          isPublished: pendingUpdateData.isPublished,
-          questions: mapQuizQuestionsToPayload(pendingUpdateData.questions),
-        });
-
-        await reloadAssessments();
-        setIsUpdateConfirmOpen(false);
-        setPendingUpdateData(null);
-        setIsModalOpen(false);
-        setEditingQuiz(null);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to update quiz.";
-        alert(message);
-      }
-    })();
+    const updatedQuiz = mapQuizDataToQuiz(pendingUpdateData, level, editingQuiz);
+    const updatedQuizzes = {
+      ...quizzesByLevel,
+      [level]: quizzesByLevel[level].map(q => q.id === editingQuiz.id ? updatedQuiz : q)
+    };
+    saveQuizzes(updatedQuizzes);
+    setIsModalOpen(false);
+    setEditingQuiz(null);
+    setIsUpdateConfirmOpen(false);
+    setPendingUpdateData(null);
   };
 
   const cancelUpdateQuiz = () => {
@@ -744,12 +694,35 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
         data={rows}
         actions={(row: TableRow) => (
           <div className="flex gap-2">
-            <UtilityButton small onClick={() => handleEditQuiz(row)}>
+            <UtilityButton
+              small
+              onClick={() => handleEditQuiz(row)}
+              disabled={(row.submittedCount ?? 0) > 0}
+              title={(row.submittedCount ?? 0) > 0 ? "Cannot edit quiz with responses" : "Edit quiz"}
+            >
               Edit
             </UtilityButton>
             <UtilityButton small onClick={() => handleViewResponses(row)}>
               Responses ({row.responses?.length ?? 0})
             </UtilityButton>
+            {row.quizCode && (
+              <UtilityButton
+                small
+                onClick={() => handleShowQr(row)}
+                title="Show QR Code"
+                className="!p-1.5 text-green-700 hover:bg-green-50 rounded-md transition-colors"
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M4 4H10V10H4V4Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M14 4H20V10H14V4Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M4 14H10V20H4V14Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M14 14H17V17H14V14Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M17 17H20V20H17V20Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M17 14H20V17H17V14Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M14 17H17V20H14V17Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </UtilityButton>
+            )}
           </div>
         )}
         selectable={selectMode}
@@ -803,6 +776,15 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
             correctAnswer: question.correctAnswer,
           }))}
           totalStudents={responsesQuiz.students?.length ?? 0}
+        />
+      )}
+
+      {qrQuiz && qrQuiz.quizCode && (
+        <QrCodeModal
+          isOpen={isQrModalOpen}
+          onClose={() => setIsQrModalOpen(false)}
+          quizTitle={qrQuiz.title}
+          quizCode={qrQuiz.quizCode}
         />
       )}
 
