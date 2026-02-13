@@ -388,40 +388,10 @@ export default function ViewResponsesModal({
                           )}
                         </div>
                       </div>
-                      <div className="mt-3 space-y-3">
-                        {questionsDisplay.map((question: any) => {
-                          const answerMap = response.answers ?? {};
-                          const metaMap = response.answerMeta ?? {};
-                          const answerValue = formatAnswer(answerMap[question.id]);
-                          const meta = metaMap[question.id];
-                          const scoreLabel = typeof meta?.score === "number" ? `Score: ${meta.score}` : null;
-                          const correctnessLabel = meta?.isCorrect === 1 ? "Correct" : meta?.isCorrect === 0 ? "Incorrect" : null;
-
-                          return (
-                            <div key={question.id} className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-                              <p className="text-xs font-semibold text-gray-600 uppercase">Question</p>
-                              <p className="text-sm text-gray-800">{question.prompt}</p>
-                              <div className="mt-2 flex flex-col gap-1 text-sm text-gray-700">
-                                <span>
-                                  Answer: <span className="font-medium text-gray-900">{answerValue}</span>
-                                </span>
-                                <div className="flex flex-wrap gap-2 text-xs text-gray-500">
-                                  {scoreLabel && (
-                                    <span className="rounded-full border border-gray-200 bg-white px-2 py-0.5">
-                                      {scoreLabel}
-                                    </span>
-                                  )}
-                                  {correctnessLabel && (
-                                    <span className="rounded-full border border-gray-200 bg-white px-2 py-0.5">
-                                      {correctnessLabel}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                      {/* We hide the full answer detail if using API mode to save space/complexity, or we could expand it if API returned details per attempt 
+                          The configured API route currently returns attempt summaries. If detailed breakdown per question per student is needed, we'd need to fetch that too.
+                          For now, we show the summary card.
+                      */}
                     </div>
                   ))}
                 </div>

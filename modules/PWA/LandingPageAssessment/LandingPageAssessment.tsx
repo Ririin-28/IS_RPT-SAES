@@ -435,7 +435,9 @@ export default function LandingPageAssessment() {
             </div>
 
             {errorMessage && (
-              <p className="text-sm text-red-600 mt-4 text-center">{errorMessage}</p>
+              <div className="mt-4 p-3 rounded-xl bg-red-50 border border-red-100">
+                <p className="text-sm text-red-600 text-center font-medium">{errorMessage}</p>
+              </div>
             )}
 
             {scanError && (

@@ -12,6 +12,13 @@ import DeleteConfirmationModal from "../Modals/DeleteConfirmationModal";
 import UpdateConfirmationModal from "../Modals/UpdateConfirmationModal";
 import { cloneResponses, type QuizResponse } from "../types";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
+import {
+  createAssessment,
+  deleteAssessment,
+  fetchAssessments,
+  mapQuizQuestionsToPayload,
+  updateAssessment,
+} from "@/lib/assessments/client";
 
 export const ENGLISH_ASSESSMENT_LEVELS = [
   "Non Reader",
@@ -199,7 +206,20 @@ const mapAssessmentToQuiz = (assessment: any): Quiz => {
   const startDate = assessment.startDate ?? assessment.start_time ?? assessment.startTime ?? "";
   const endDate = assessment.endDate ?? assessment.end_time ?? assessment.endTime ?? "";
   const duration = calculateDurationMinutes(startDate, endDate, 30);
-  const section = buildDefaultSection();
+  const fallbackSection = buildDefaultSection();
+  const sections: QuizSection[] = Array.isArray(assessment.sections) && assessment.sections.length > 0
+    ? assessment.sections.map((section: any, index: number) => ({
+      id: String(section.id ?? `section-${assessment.assessment_id ?? assessment.id}-${index + 1}`),
+      title: section.title ?? `Section ${index + 1}`,
+      description: section.description ?? "",
+    }))
+    : [fallbackSection];
+
+  const sectionByTitle = new Map<string, QuizSection>();
+  sections.forEach((section) => {
+    sectionByTitle.set(section.title.trim().toLowerCase(), section);
+  });
+
   const normalizedLevel =
     normalizeEnglishLevel(assessment.phonemicLevel ?? assessment.phonemic_level_name) ?? "Non Reader";
   const questions: QuizQuestion[] = (assessment.questions ?? []).map((question: any, index: number) => ({
@@ -207,10 +227,15 @@ const mapAssessmentToQuiz = (assessment: any): Quiz => {
     type: mapApiQuestionType(question.type ?? question.question_type ?? "short_answer"),
     question: question.question ?? question.questionText ?? "",
     options: Array.isArray(question.options) ? [...question.options] : question.choices?.map((choice: any) => choice.text) ?? undefined,
-    correctAnswer: question.correctAnswer ?? "",
+    correctAnswer: question.correctAnswer ?? question.correct_answer_text ?? "",
     points: Number(question.points ?? 1),
-    sectionId: section.id,
-    sectionTitle: section.title,
+    sectionId:
+      sectionByTitle.get((question.sectionTitle ?? question.section_title ?? "").toString().trim().toLowerCase())?.id ??
+      sections[0].id,
+    sectionTitle:
+      question.sectionTitle ??
+      question.section_title ??
+      sections[0].title,
   }));
 
   return {
@@ -226,7 +251,7 @@ const mapAssessmentToQuiz = (assessment: any): Quiz => {
     description: assessment.description ?? "",
     startDate,
     endDate,
-    sections: [section],
+    sections,
     students: [],
     responses: [],
     subjectId: assessment.subjectId ?? assessment.subject_id ?? null,
@@ -363,6 +388,8 @@ const mapQuizDataToQuiz = (
 ): Quiz => {
   const now = new Date().toISOString();
   const duration = calculateDurationMinutes(data.startDate, data.endDate, existing?.duration ?? 30);
+  const quizCode = "quizCode" in data ? (data as { quizCode?: string | null }).quizCode : undefined;
+  const qrToken = "qrToken" in data ? (data as { qrToken?: string | null }).qrToken : undefined;
   const sectionLookup = new Map<string, ModalSection>();
   data.sections.forEach((section) => {
     sectionLookup.set(section.id, section);
@@ -384,8 +411,8 @@ const mapQuizDataToQuiz = (
     students: data.students.map((student) => ({ ...student })),
     sections: data.sections.map((section) => ({ ...section })),
     responses: cloneResponses(existing?.responses),
-    quizCode: data.quizCode ?? existing?.quizCode ?? null,
-    qrToken: data.qrToken ?? existing?.qrToken ?? null,
+    quizCode: quizCode ?? existing?.quizCode ?? null,
+    qrToken: qrToken ?? existing?.qrToken ?? null,
   };
 };
 
@@ -472,15 +499,29 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isUpdateConfirmOpen, setIsUpdateConfirmOpen] = useState(false);
   const [pendingUpdateData, setPendingUpdateData] = useState<QuizData | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const quizzes = quizzesByLevel[level] ?? [];
 
-  const reloadAssessments = async () => {
-    // No backend loading
+  const getRemedialUserId = () => {
+    const profile = getStoredUserProfile();
+    return profile?.userId ? String(profile.userId) : "";
+  };
+
+  const loadAssessments = async (userId: string) => {
+    const assessments = await fetchAssessments({
+      creatorId: userId,
+      creatorRole: "remedial_teacher",
+      subjectName: "English",
+    });
+    setQuizzesByLevel(groupAssessmentsByLevel(assessments));
   };
 
   useEffect(() => {
-    reloadAssessments();
+    const userId = getRemedialUserId();
+    if (userId) {
+      void loadAssessments(userId);
+    }
   }, []);
 
   const saveQuizzes = (newQuizzes: QuizzesByLevel) => {
@@ -506,28 +547,73 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
     setShowDeleteModal(true);
   };
 
-  const confirmDelete = () => {
-    const updatedQuizzes = {
-      ...quizzesByLevel,
-      [level]: quizzesByLevel[level].filter(quiz => !selectedQuizzes.has(quiz.id))
-    };
-    saveQuizzes(updatedQuizzes);
-    setSelectedQuizzes(new Set());
-    setSelectMode(false);
-    setShowDeleteModal(false);
+  const confirmDelete = async () => {
+    const userId = getRemedialUserId();
+    if (!userId) {
+      alert("Missing user information. Please log in again.");
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      await Promise.all(Array.from(selectedQuizzes).map((quizId) => deleteAssessment(quizId)));
+      await loadAssessments(userId);
+      setSelectedQuizzes(new Set());
+      setSelectMode(false);
+      setShowDeleteModal(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to delete quiz.";
+      alert(message);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleSaveQuiz = (quizData: QuizData) => {
-    const newQuiz = mapQuizDataToQuiz(quizData, level, editingQuiz || undefined);
-    const updatedQuizzes = {
-      ...quizzesByLevel,
-      [level]: editingQuiz 
-        ? quizzesByLevel[level].map(q => q.id === editingQuiz.id ? newQuiz : q)
-        : [...quizzesByLevel[level], newQuiz]
-    };
-    saveQuizzes(updatedQuizzes);
-    setIsModalOpen(false);
-    setEditingQuiz(null);
+  const handleSaveQuiz = async (quizData: QuizData) => {
+    const userId = getRemedialUserId();
+    if (!userId) {
+      alert("Missing user information. Please log in again.");
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+
+      const payload = {
+        title: quizData.title,
+        description: quizData.description,
+        subjectId: editingQuiz?.subjectId ?? null,
+        subjectName: "English",
+        phonemicId: editingQuiz?.phonemicId ?? null,
+        phonemicLevel: level,
+        createdBy: userId,
+        creatorRole: "remedial_teacher" as const,
+        startTime: quizData.startDate,
+        endTime: quizData.endDate,
+        isPublished: quizData.isPublished,
+        sections: quizData.sections.map((section) => ({
+          id: section.id,
+          title: section.title,
+          description: section.description ?? "",
+        })),
+        questions: mapQuizQuestionsToPayload(quizData.questions, quizData.sections),
+      };
+
+      if (editingQuiz) {
+        await updateAssessment(editingQuiz.id, payload);
+      } else {
+        await createAssessment(payload);
+      }
+
+      await loadAssessments(userId);
+      setIsModalOpen(false);
+      setEditingQuiz(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to save quiz.";
+      alert(message);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const confirmUpdateQuiz = () => {
@@ -586,7 +672,7 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
                 Cancel
               </SecondaryButton>
               {selectedQuizzes.size > 0 && (
-                <DangerButton small onClick={handleDeleteSelected}>
+                <DangerButton small onClick={handleDeleteSelected} disabled={isSaving}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline mr-1">
                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
                     <path d="M3 6h18" />
@@ -691,7 +777,7 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
             <UtilityButton
               small
               onClick={() => handleEditQuiz(row)}
-              disabled={(row.submittedCount ?? 0) > 0}
+              disabled={isSaving || (row.submittedCount ?? 0) > 0}
               title={(row.submittedCount ?? 0) > 0 ? "Cannot edit quiz with responses" : "Edit quiz"}
             >
               Edit
@@ -704,7 +790,7 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
                 small
                 onClick={() => handleShowQr(row)}
                 title="Show QR Code"
-                className="!p-1.5 text-green-700 hover:bg-green-50 rounded-md transition-colors"
+                className="p-1.5! text-green-700 hover:bg-green-50 rounded-md transition-colors"
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M4 4H10V10H4V4Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -744,6 +830,7 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
       <AddQuizModal
         isOpen={isModalOpen}
         onClose={() => {
+          if (isSaving) return;
           setIsModalOpen(false);
           setEditingQuiz(null);
           setPendingUpdateData(null);

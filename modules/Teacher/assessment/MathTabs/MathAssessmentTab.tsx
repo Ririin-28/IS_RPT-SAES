@@ -11,6 +11,13 @@ import ViewResponsesModal from "../Modals/ViewResponsesModal";
 import { cloneResponses, type QuizResponse } from "../types";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 import QrCodeModal from "../Modals/QrCodeModal";
+import {
+  createAssessment,
+  deleteAssessment,
+  fetchAssessments,
+  mapQuizQuestionsToPayload,
+  updateAssessment,
+} from "@/lib/assessments/client";
 
 export const MATH_ASSESSMENT_LEVELS = [
   "Not Proficient",
@@ -228,16 +235,34 @@ const mapAssessmentToQuiz = (assessment: any): MathQuiz => {
   const startDate = assessment.startDate ?? assessment.start_time ?? assessment.startTime ?? "";
   const endDate = assessment.endDate ?? assessment.end_time ?? assessment.endTime ?? "";
   const duration = calculateDurationMinutes(startDate, endDate, 20);
-  const section = buildDefaultSection();
+  const fallbackSection = buildDefaultSection();
+  const sections: MathQuizSection[] = Array.isArray(assessment.sections) && assessment.sections.length > 0
+    ? assessment.sections.map((section: any, index: number) => ({
+      id: String(section.id ?? `section-${assessment.assessment_id ?? assessment.id}-${index + 1}`),
+      title: section.title ?? `Section ${index + 1}`,
+      description: section.description ?? "",
+    }))
+    : [fallbackSection];
+
+  const sectionByTitle = new Map<string, MathQuizSection>();
+  sections.forEach((section) => {
+    sectionByTitle.set(section.title.trim().toLowerCase(), section);
+  });
+
   const questions: MathQuizQuestion[] = (assessment.questions ?? []).map((question: any, index: number) => ({
     id: String(question.id ?? index + 1),
     type: mapApiQuestionType(question.type ?? question.question_type ?? "short_answer"),
     question: question.question ?? question.questionText ?? "",
     options: Array.isArray(question.options) ? [...question.options] : question.choices?.map((choice: any) => choice.text) ?? undefined,
-    correctAnswer: question.correctAnswer ?? "",
+    correctAnswer: question.correctAnswer ?? question.correct_answer_text ?? "",
     points: Number(question.points ?? 1),
-    sectionId: section.id,
-    sectionTitle: section.title,
+    sectionId:
+      sectionByTitle.get((question.sectionTitle ?? question.section_title ?? "").toString().trim().toLowerCase())?.id ??
+      sections[0].id,
+    sectionTitle:
+      question.sectionTitle ??
+      question.section_title ??
+      sections[0].title,
   }));
 
   return {
@@ -253,7 +278,7 @@ const mapAssessmentToQuiz = (assessment: any): MathQuiz => {
     description: assessment.description ?? "",
     startDate,
     endDate,
-    sections: [section],
+    sections,
     students: [],
     responses: [],
     subjectId: assessment.subjectId ?? assessment.subject_id ?? null,
@@ -385,8 +410,8 @@ const mapQuizDataToQuiz = (
     students: data.students.map((student) => ({ ...student })),
     sections: data.sections.map((section) => ({ ...section })),
     responses: cloneResponses(existing?.responses),
-    quizCode: data.quizCode ?? existing?.quizCode ?? null,
-    qrToken: data.qrToken ?? existing?.qrToken ?? null,
+    quizCode: (data as { quizCode?: string | null }).quizCode ?? existing?.quizCode ?? null,
+    qrToken: (data as { qrToken?: string | null }).qrToken ?? existing?.qrToken ?? null,
   };
 };
 
@@ -451,8 +476,6 @@ const mapQuizToModalData = (quiz: MathQuiz): QuizData => {
     questions,
     sections: normalizedSections,
     isPublished: quiz.isPublished,
-    quizCode: quiz.quizCode,
-    qrToken: quiz.qrToken,
   };
 };
 
@@ -473,18 +496,30 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
 
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [qrQuiz, setQrQuiz] = useState<MathQuiz | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const quizzes = quizzesByLevel[level] ?? [];
 
-  const reloadAssessments = async () => {
+  const getTeacherUserId = () => {
     const profile = getStoredUserProfile();
-    if (profile?.userId) {
-      setCurrentUserId(String(profile.userId));
-    }
+    return profile?.userId ? String(profile.userId) : "";
+  };
+
+  const loadAssessments = async (teacherUserId: string) => {
+    const assessments = await fetchAssessments({
+      creatorId: teacherUserId,
+      creatorRole: "teacher",
+      subjectName: "Math",
+    });
+    setQuizzesByLevel(groupAssessmentsByLevel(assessments));
   };
 
   useEffect(() => {
-    reloadAssessments();
+    const profile = getStoredUserProfile();
+    if (profile?.userId) {
+      setCurrentUserId(String(profile.userId));
+      void loadAssessments(String(profile.userId));
+    }
   }, []);
 
   const saveQuizzes = (newQuizzes: MathQuizzesByLevel) => {
@@ -503,11 +538,6 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
     }
     setEditingQuiz(quiz);
     setIsModalOpen(true);
-  };
-
-  const getTeacherUserId = () => {
-    const profile = getStoredUserProfile();
-    return profile?.userId ? String(profile.userId) : "";
   };
 
   const handleViewResponses = (quiz: MathQuiz) => {
@@ -539,28 +569,73 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
     setShowDeleteModal(true);
   };
 
-  const confirmDelete = () => {
-    const updatedQuizzes = {
-      ...quizzesByLevel,
-      [level]: quizzesByLevel[level].filter(quiz => !selectedQuizzes.has(quiz.id))
-    };
-    saveQuizzes(updatedQuizzes);
-    setSelectedQuizzes(new Set());
-    setSelectMode(false);
-    setShowDeleteModal(false);
+  const confirmDelete = async () => {
+    const teacherUserId = getTeacherUserId();
+    if (!teacherUserId) {
+      alert("Missing user information. Please log in again.");
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      await Promise.all(Array.from(selectedQuizzes).map((quizId) => deleteAssessment(quizId)));
+      await loadAssessments(teacherUserId);
+      setSelectedQuizzes(new Set());
+      setSelectMode(false);
+      setShowDeleteModal(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to delete quiz.";
+      alert(message);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleSaveQuiz = (quizData: QuizData) => {
-    const newQuiz = mapQuizDataToQuiz(quizData, level, editingQuiz || undefined);
-    const updatedQuizzes = {
-      ...quizzesByLevel,
-      [level]: editingQuiz 
-        ? quizzesByLevel[level].map(q => q.id === editingQuiz.id ? newQuiz : q)
-        : [...quizzesByLevel[level], newQuiz]
-    };
-    saveQuizzes(updatedQuizzes);
-    setIsModalOpen(false);
-    setEditingQuiz(null);
+  const handleSaveQuiz = async (quizData: QuizData) => {
+    const teacherUserId = getTeacherUserId();
+    if (!teacherUserId) {
+      alert("Missing user information. Please log in again.");
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+
+      const payload = {
+        title: quizData.title,
+        description: quizData.description,
+        subjectId: editingQuiz?.subjectId ?? null,
+        subjectName: "Math",
+        phonemicId: editingQuiz?.phonemicId ?? null,
+        phonemicLevel: level,
+        createdBy: teacherUserId,
+        creatorRole: "teacher" as const,
+        startTime: quizData.startDate,
+        endTime: quizData.endDate,
+        isPublished: quizData.isPublished,
+        sections: quizData.sections.map((section) => ({
+          id: section.id,
+          title: section.title,
+          description: section.description ?? "",
+        })),
+        questions: mapQuizQuestionsToPayload(quizData.questions, quizData.sections),
+      };
+
+      if (editingQuiz) {
+        await updateAssessment(editingQuiz.id, payload);
+      } else {
+        await createAssessment(payload);
+      }
+
+      await loadAssessments(teacherUserId);
+      setIsModalOpen(false);
+      setEditingQuiz(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to save quiz.";
+      alert(message);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const togglePublish = (quizId: number) => {
@@ -584,6 +659,21 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
   const columns = [
     { key: "no", title: "No." },
     { key: "title", title: "Quiz Title" },
+    {
+      key: "sections",
+      title: "Sections",
+      render: (row: TableRow) => {
+        const sectionTitles = (row.sections ?? [])
+          .map((section) => section.title?.trim())
+          .filter((value): value is string => Boolean(value));
+
+        if (!sectionTitles.length) {
+          return "-";
+        }
+
+        return sectionTitles.join(", ");
+      },
+    },
     {
       key: "quizCode",
       title: "Code",
@@ -695,7 +785,7 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
             <UtilityButton
               small
               onClick={() => handleEditQuiz(row)}
-              disabled={(row.submittedCount ?? 0) > 0}
+              disabled={isSaving || (row.submittedCount ?? 0) > 0}
               title={(row.submittedCount ?? 0) > 0 ? "Cannot edit quiz with responses" : "Edit quiz"}
             >
               Edit
