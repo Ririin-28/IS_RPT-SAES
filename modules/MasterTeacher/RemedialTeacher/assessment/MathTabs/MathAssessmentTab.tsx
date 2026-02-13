@@ -154,7 +154,12 @@ function readStoredMathQuizzes(): MathQuizzesByLevel | null {
 }
 
 const formatDateTime = (value: string) => {
-  const parsed = new Date(value);
+  if (!value) return "";
+  let dateStr = value;
+  if (dateStr.includes("T") && !dateStr.includes("Z") && !/[+-]\d{2}:\d{2}$/.test(dateStr)) {
+    dateStr += "+08:00";
+  }
+  const parsed = new Date(dateStr);
   return Number.isNaN(parsed.getTime())
     ? value
     : parsed.toLocaleDateString("en-PH", {
@@ -167,8 +172,11 @@ const formatDateTime = (value: string) => {
 };
 
 const calculateDurationMinutes = (start?: string, end?: string, fallback = 20) => {
-  const startValue = start ? Date.parse(start) : Number.NaN;
-  const endValue = end ? Date.parse(end) : Number.NaN;
+  const s = start ? (start.includes("T") && !start.includes("Z") && !/[+-]\d{2}:\d{2}$/.test(start) ? start + "+08:00" : start) : "";
+  const e = end ? (end.includes("T") && !end.includes("Z") && !/[+-]\d{2}:\d{2}$/.test(end) ? end + "+08:00" : end) : "";
+  
+  const startValue = s ? Date.parse(s) : Number.NaN;
+  const endValue = e ? Date.parse(e) : Number.NaN;
   if (!Number.isFinite(startValue) || !Number.isFinite(endValue) || endValue <= startValue) {
     return fallback;
   }

@@ -291,7 +291,7 @@ export default function LandingPageAssessment() {
         className="w-full max-w-md"
       >
         {!isStandalone ? (
-          <div className="bg-white/85 backdrop-blur-sm rounded-3xl shadow-xl w-full border border-green-100/60 p-8 space-y-6">
+          <div className="bg-white/85 backdrop-blur-sm rounded-3xl shadow-xl w-full border-4 border-[#013300] p-8 space-y-6">
             <div className="flex flex-col items-center">
               <Image
                 src="/RPT-SAES/RPTLogo.png"
@@ -385,8 +385,8 @@ export default function LandingPageAssessment() {
             </PrimaryButton>
           </div>
         ) : (
-          <div className="bg-white/85 backdrop-blur-sm rounded-3xl shadow-xl w-full border border-green-100/60 p-8">
-            <div className="flex flex-col items-center mb-6">
+          <div className="bg-white/85 backdrop-blur-sm rounded-3xl shadow-xl w-full border-2 border-[#013300] p-8">
+            <div className="flex flex-col items-center mb-10">
               <Image
                 src="/RPT-SAES/RPTLogo.png"
                 alt="RPT-SAES Logo"

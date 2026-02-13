@@ -31,6 +31,22 @@ const FILIPINO_LEVEL_ALIASES: Record<string, FilipinoAssessmentLevel> = {
   Talata: "Paragraph",
 };
 
+const normalizePhonemicKey = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+const FILIPINO_LEVEL_KEY_MAP: Record<string, FilipinoAssessmentLevel> = {
+  nonreader: "Non Reader",
+  syllable: "Syllable",
+  syllables: "Syllable",
+  word: "Word",
+  words: "Word",
+  phrase: "Phrase",
+  phrases: "Phrase",
+  sentence: "Sentence",
+  sentences: "Sentence",
+  paragraph: "Paragraph",
+  paragraphs: "Paragraph",
+};
+
 export type FilipinoAssessmentLevel = (typeof FILIPINO_ASSESSMENT_LEVELS)[number];
 
 export interface FilipinoQuizQuestion {
@@ -90,6 +106,17 @@ type FilipinoQuizzesByLevel = Record<FilipinoAssessmentLevel, FilipinoQuiz[]>;
 const generateSectionId = () => `section-${Math.random().toString(36).slice(2, 10)}-${Date.now()}`;
 
 const KNOWN_FILIPINO_LEVELS = new Set<FilipinoAssessmentLevel>(FILIPINO_ASSESSMENT_LEVELS);
+
+const normalizeFilipinoLevel = (value?: string | null): FilipinoAssessmentLevel | null => {
+  if (!value) return null;
+  if (KNOWN_FILIPINO_LEVELS.has(value as FilipinoAssessmentLevel)) {
+    return value as FilipinoAssessmentLevel;
+  }
+  const alias = FILIPINO_LEVEL_ALIASES[value as keyof typeof FILIPINO_LEVEL_ALIASES];
+  if (alias) return alias;
+  const normalizedKey = normalizePhonemicKey(value);
+  return FILIPINO_LEVEL_KEY_MAP[normalizedKey] ?? null;
+};
 
 const createEmptyFilipinoQuizzes = (): FilipinoQuizzesByLevel =>
   FILIPINO_ASSESSMENT_LEVELS.reduce((acc, level) => {
@@ -194,6 +221,8 @@ const mapAssessmentToQuiz = (assessment: any): FilipinoQuiz => {
   const endDate = assessment.endDate ?? assessment.end_time ?? assessment.endTime ?? "";
   const duration = calculateDurationMinutes(startDate, endDate, 30);
   const section = buildDefaultSection();
+  const normalizedLevel =
+    normalizeFilipinoLevel(assessment.phonemicLevel ?? assessment.phonemic_level_name) ?? "Non Reader";
   const questions: FilipinoQuizQuestion[] = (assessment.questions ?? []).map((question: any, index: number) => ({
     id: String(question.id ?? index + 1),
     type: mapApiQuestionType(question.type ?? question.question_type ?? "short_answer"),
@@ -208,7 +237,7 @@ const mapAssessmentToQuiz = (assessment: any): FilipinoQuiz => {
   return {
     id: Number(assessment.id ?? assessment.assessment_id ?? Date.now()),
     title: assessment.title ?? "",
-    phonemicLevel: (assessment.phonemicLevel ?? assessment.phonemic_level_name ?? "Non Reader") as FilipinoAssessmentLevel,
+    phonemicLevel: normalizedLevel,
     schedule: startDate,
     duration,
     questions,
@@ -233,9 +262,9 @@ const groupAssessmentsByLevel = (assessments: any[]): FilipinoQuizzesByLevel => 
   const grouped = createEmptyFilipinoQuizzes();
 
   assessments.forEach((assessment) => {
-    const level = assessment.phonemicLevel ?? assessment.phonemic_level_name;
-    if (KNOWN_FILIPINO_LEVELS.has(level as FilipinoAssessmentLevel)) {
-      grouped[level as FilipinoAssessmentLevel].push(mapAssessmentToQuiz(assessment));
+    const level = normalizeFilipinoLevel(assessment.phonemicLevel ?? assessment.phonemic_level_name);
+    if (level && KNOWN_FILIPINO_LEVELS.has(level)) {
+      grouped[level].push(mapAssessmentToQuiz({ ...assessment, phonemicLevel: level }));
     }
   });
 

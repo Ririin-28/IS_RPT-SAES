@@ -10,6 +10,34 @@ type AccessPayload = {
   studentId: string;
 };
 
+const pad = (value: number) => value.toString().padStart(2, "0");
+
+const toLocalDateTimeString = (value: unknown): string | null => {
+  if (!value) return null;
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}:${pad(value.getSeconds())}`;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    const normalized = trimmed.replace(" ", "T");
+    const directMatch = normalized.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::(\d{2}))?/);
+    if (directMatch) {
+      return `${directMatch[1]}T${directMatch[2]}:${directMatch[3] ?? "00"}`;
+    }
+
+    const parsed = new Date(trimmed);
+    if (!Number.isNaN(parsed.getTime())) {
+      return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}T${pad(parsed.getHours())}:${pad(parsed.getMinutes())}:${pad(parsed.getSeconds())}`;
+    }
+  }
+
+  return null;
+};
+
 const mapAssessmentRows = (rows: RowDataPacket[]) => {
   if (rows.length === 0) return null;
   const base = rows[0];
@@ -17,8 +45,8 @@ const mapAssessmentRows = (rows: RowDataPacket[]) => {
     id: Number(base.assessment_id),
     title: base.title,
     description: base.description ?? "",
-    startDate: base.start_time,
-    endDate: base.end_time,
+    startDate: toLocalDateTimeString(base.start_time) ?? "",
+    endDate: toLocalDateTimeString(base.end_time) ?? "",
     questions: [] as any[],
   };
 
@@ -63,6 +91,8 @@ export async function POST(request: NextRequest) {
           a.assessment_id,
           a.title,
           a.description,
+          a.subject_id,
+          a.phonemic_id,
           a.start_time,
           a.end_time,
           a.quiz_code,
@@ -98,8 +128,13 @@ export async function POST(request: NextRequest) {
 
       const now = new Date();
       if (assessmentRow.start_time && assessmentRow.end_time) {
-        const startTime = new Date(assessmentRow.start_time);
-        const endTime = new Date(assessmentRow.end_time);
+        const startTimeText = toLocalDateTimeString(assessmentRow.start_time);
+        const endTimeText = toLocalDateTimeString(assessmentRow.end_time);
+        const startTime = startTimeText ? new Date(startTimeText) : null;
+        const endTime = endTimeText ? new Date(endTimeText) : null;
+        if (!startTime || !endTime || Number.isNaN(startTime.getTime()) || Number.isNaN(endTime.getTime())) {
+          return NextResponse.json({ success: false, error: "Quiz schedule is invalid." }, { status: 500 });
+        }
         if (now < startTime || now > endTime) {
           return NextResponse.json({ success: false, error: "Quiz is not available at this time." }, { status: 403 });
         }
@@ -125,6 +160,35 @@ export async function POST(request: NextRequest) {
       const studentName = [student.first_name, student.middle_name, student.last_name]
         .filter((part) => typeof part === "string" && part.trim().length > 0)
         .join(" ");
+
+      const assessmentSubjectId = Number(assessmentRow.subject_id ?? 0);
+      const assessmentPhonemicId = Number(assessmentRow.phonemic_id ?? 0);
+
+      if (assessmentSubjectId > 0 && assessmentPhonemicId > 0) {
+        const [studentAssessmentRows] = await connection.query<RowDataPacket[]>(
+          `SELECT ssa.phonemic_id
+           FROM student_subject_assessment ssa
+           WHERE ssa.student_id = ? AND ssa.subject_id = ?
+           LIMIT 1`,
+          [studentId, assessmentSubjectId],
+        );
+
+        const studentPhonemicId = Number(studentAssessmentRows[0]?.phonemic_id ?? 0);
+
+        if (!studentPhonemicId) {
+          return NextResponse.json(
+            { success: false, error: "Student has no phonemic level record for this subject." },
+            { status: 403 },
+          );
+        }
+
+        if (studentPhonemicId !== assessmentPhonemicId) {
+          return NextResponse.json(
+            { success: false, error: "This assessment is not assigned to your phonemic level." },
+            { status: 403 },
+          );
+        }
+      }
 
       const [attemptRows] = await connection.query<RowDataPacket[]>(
         "SELECT attempt_id, status FROM assessment_attempts WHERE assessment_id = ? AND (student_id = ? OR lrn = ?) ORDER BY attempt_id DESC LIMIT 1",

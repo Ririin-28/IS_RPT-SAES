@@ -126,7 +126,6 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
         <div className="rounded-2xl shadow-lg">
           <div className="p-5 space-y-5">
             <div className="space-y-3 text-center">
-              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[#013300]/50">Section</p>
               <h2 className="text-xl font-bold text-[#1b5e20]">
                 {assessment.title}
               </h2>

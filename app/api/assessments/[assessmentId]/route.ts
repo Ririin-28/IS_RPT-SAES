@@ -54,12 +54,30 @@ const resolvePhonemicId = async (
   phonemicLevel?: string | null,
 ) => {
   if (!subjectId || !phonemicLevel) return null;
+  const normalizeKey = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const baseKey = normalizeKey(phonemicLevel.trim());
+  if (!baseKey) return null;
+
+  const candidateKeys = new Set<string>([baseKey]);
+  candidateKeys.add(`${baseKey}s`);
+  if (baseKey.endsWith("s")) {
+    candidateKeys.add(baseKey.slice(0, -1));
+  }
+
   const [rows] = await connection.query(
-    "SELECT phonemic_id FROM phonemic_level WHERE subject_id = ? AND LOWER(TRIM(level_name)) = ? LIMIT 1",
-    [subjectId, phonemicLevel.trim().toLowerCase()],
+    "SELECT phonemic_id, level_name FROM phonemic_level WHERE subject_id = ?",
+    [subjectId],
   );
-  const row = (rows as RowDataPacket[])[0];
-  return row?.phonemic_id ? Number(row.phonemic_id) : null;
+
+  for (const row of rows as RowDataPacket[]) {
+    const levelName = typeof row.level_name === "string" ? row.level_name : "";
+    const levelKey = normalizeKey(levelName.trim());
+    if (candidateKeys.has(levelKey)) {
+      return row?.phonemic_id ? Number(row.phonemic_id) : null;
+    }
+  }
+
+  return null;
 };
 
 const mapAssessmentRows = (rows: RowDataPacket[]) => {

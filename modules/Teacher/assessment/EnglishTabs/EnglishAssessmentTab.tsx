@@ -84,6 +84,28 @@ const generateSectionId = () => `section-${Math.random().toString(36).slice(2, 1
 
 const ENGLISH_LEVEL_SET = new Set<EnglishAssessmentLevel>(ENGLISH_ASSESSMENT_LEVELS);
 
+const normalizePhonemicKey = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+const ENGLISH_LEVEL_KEY_MAP: Record<string, EnglishAssessmentLevel> = {
+  nonreader: "Non Reader",
+  syllable: "Syllable",
+  syllables: "Syllable",
+  word: "Word",
+  words: "Word",
+  phrase: "Phrase",
+  phrases: "Phrase",
+  sentence: "Sentence",
+  sentences: "Sentence",
+  paragraph: "Paragraph",
+  paragraphs: "Paragraph",
+};
+
+const normalizeEnglishLevel = (value?: string | null): EnglishAssessmentLevel | null => {
+  if (!value) return null;
+  const normalized = normalizePhonemicKey(value);
+  return ENGLISH_LEVEL_KEY_MAP[normalized] ?? null;
+};
+
 const normalizeStoredQuizzes = (raw: Record<string, Quiz[]>): QuizzesByLevel => {
   const normalized = ENGLISH_ASSESSMENT_LEVELS.reduce((acc, level) => {
     acc[level] = [];
@@ -180,6 +202,8 @@ const mapAssessmentToQuiz = (assessment: any): Quiz => {
   const endDate = assessment.endDate ?? assessment.end_time ?? assessment.endTime ?? "";
   const duration = calculateDurationMinutes(startDate, endDate, 30);
   const section = buildDefaultSection();
+  const normalizedLevel =
+    normalizeEnglishLevel(assessment.phonemicLevel ?? assessment.phonemic_level_name) ?? "Non Reader";
   const questions: QuizQuestion[] = (assessment.questions ?? []).map((question: any, index: number) => ({
     id: String(question.id ?? index + 1),
     type: mapApiQuestionType(question.type ?? question.question_type ?? "short_answer"),
@@ -194,7 +218,7 @@ const mapAssessmentToQuiz = (assessment: any): Quiz => {
   return {
     id: Number(assessment.id ?? assessment.assessment_id ?? Date.now()),
     title: assessment.title ?? "",
-    phonemicLevel: (assessment.phonemicLevel ?? assessment.phonemic_level_name ?? "Non Reader") as EnglishAssessmentLevel,
+    phonemicLevel: normalizedLevel,
     schedule: startDate,
     duration,
     questions,
@@ -223,9 +247,9 @@ const groupAssessmentsByLevel = (assessments: any[]): QuizzesByLevel => {
   }, {} as QuizzesByLevel);
 
   assessments.forEach((assessment) => {
-    const level = assessment.phonemicLevel ?? assessment.phonemic_level_name;
-    if (ENGLISH_LEVEL_SET.has(level as EnglishAssessmentLevel)) {
-      grouped[level as EnglishAssessmentLevel].push(mapAssessmentToQuiz(assessment));
+    const level = normalizeEnglishLevel(assessment.phonemicLevel ?? assessment.phonemic_level_name);
+    if (level && ENGLISH_LEVEL_SET.has(level)) {
+      grouped[level].push(mapAssessmentToQuiz({ ...assessment, phonemicLevel: level }));
     }
   });
 

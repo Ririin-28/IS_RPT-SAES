@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Flatpickr from "react-flatpickr";
 import type { Options as FlatpickrOptions } from "flatpickr/dist/types/options";
 import BaseModal, { ModalSection, ModalLabel } from "@/components/Common/Modals/BaseModal";
@@ -172,6 +172,7 @@ const prepareInitialStructure = (initialData?: QuizData) => {
 
 export default function AddQuizModal({ isOpen, show, onClose, onSave, initialData, level, subject }: AddQuizModalProps) {
   const open = isOpen ?? show ?? false;
+  const isAutoSettingStartDateRef = useRef(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -349,13 +350,35 @@ export default function AddQuizModal({ isOpen, show, onClose, onSave, initialDat
     return minDate ? { ...base, minDate } : base;
   }, [startDate]);
 
+  const startPickerValue = useMemo(() => {
+    const parsedStartDate = parsePickerBoundary(startDate);
+    return parsedStartDate ? [parsedStartDate] : [];
+  }, [startDate]);
+
+  const endPickerValue = useMemo(() => {
+    const parsedEndDate = parsePickerBoundary(endDate);
+    return parsedEndDate ? [parsedEndDate] : [];
+  }, [endDate]);
+
   const handleStartDateChange = (selectedDates: Date[], dateStr: string) => {
-    if (selectedDates[0]) {
-      setStartDate(formatDateForPickerValue(selectedDates[0]));
+    const nextStartDate = selectedDates[0]
+      ? formatDateForPickerValue(selectedDates[0])
+      : normalizePickerValue(dateStr);
+
+    if (!nextStartDate) {
       return;
     }
 
-    setStartDate(normalizePickerValue(dateStr));
+    setStartDate(nextStartDate);
+
+    if (isAutoSettingStartDateRef.current) {
+      isAutoSettingStartDateRef.current = false;
+      return;
+    }
+
+    if (isPublished) {
+      setIsPublished(false);
+    }
   };
 
   const handleEndDateChange = (selectedDates: Date[], dateStr: string) => {
@@ -367,16 +390,34 @@ export default function AddQuizModal({ isOpen, show, onClose, onSave, initialDat
     setEndDate(normalizePickerValue(dateStr));
   };
 
+  const handlePublishToggle = (checked: boolean) => {
+    setIsPublished(checked);
+    if (checked) {
+      isAutoSettingStartDateRef.current = true;
+      setStartDate(formatDateForPickerValue(new Date()));
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    const effectiveStartDate = isPublished ? formatDateForPickerValue(new Date()) : startDate;
     
-    if (!title.trim() || !startDate || !endDate || questions.length === 0) {
+    if (!title.trim() || questions.length === 0) {
       alert("Please fill in all required fields and add at least one question.");
       return;
     }
 
-    if (new Date(startDate) >= new Date(endDate)) {
-      alert("End date must be after start date.");
+    const startTimestamp = Date.parse(effectiveStartDate);
+    const endTimestamp = Date.parse(endDate);
+
+    if (!Number.isFinite(startTimestamp) || !Number.isFinite(endTimestamp)) {
+      alert("Please provide valid start and end date/time.");
+      return;
+    }
+
+    if (endTimestamp <= startTimestamp) {
+      alert("End date/time must be later than start date/time.");
       return;
     }
 
@@ -405,7 +446,7 @@ export default function AddQuizModal({ isOpen, show, onClose, onSave, initialDat
     const quizData: QuizData = {
       title,
       description,
-      startDate,
+      startDate: effectiveStartDate,
       endDate,
       phonemicLevel: level,
       students,
@@ -484,11 +525,10 @@ export default function AddQuizModal({ isOpen, show, onClose, onSave, initialDat
             <div className="space-y-1">
               <ModalLabel required>Start Date</ModalLabel>
               <Flatpickr
-                value={startDate}
+                value={startPickerValue}
                 options={startPickerOptions}
                 onChange={handleStartDateChange}
-                onValueUpdate={handleStartDateChange}
-                placeholder="Select date and time"
+                placeholder={isPublished ? "Set automatically when published" : "Select date and time"}
                 className="flatpickr-hidden-input"
                 required
               />
@@ -497,10 +537,9 @@ export default function AddQuizModal({ isOpen, show, onClose, onSave, initialDat
             <div className="space-y-1">
               <ModalLabel required>End Date</ModalLabel>
               <Flatpickr
-                value={endDate}
+                value={endPickerValue}
                 options={endPickerOptions}
                 onChange={handleEndDateChange}
-                onValueUpdate={handleEndDateChange}
                 placeholder="Select date and time"
                 className="flatpickr-hidden-input"
                 required
@@ -511,7 +550,7 @@ export default function AddQuizModal({ isOpen, show, onClose, onSave, initialDat
               <input
                 type="checkbox"
                 checked={isPublished}
-                onChange={(event) => setIsPublished(event.target.checked)}
+                onChange={(event) => handlePublishToggle(event.target.checked)}
                 className="h-4 w-4 rounded border-gray-300 text-[#013300] focus:ring-[#013300]"
               />
               Publish quiz now
