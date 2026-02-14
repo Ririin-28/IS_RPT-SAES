@@ -70,6 +70,7 @@ export interface Quiz {
   quizCode?: string | null;
   qrToken?: string | null;
   submittedCount?: number;
+  assignedCount?: number;
 }
 
 const INITIAL_QUIZZES: Record<EnglishAssessmentLevel, Quiz[]> = {
@@ -722,8 +723,8 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
 
       <TableList
         columns={[
-          { key: "no", title: "No." },
-          { key: "title", title: "Quiz Title" },
+          { key: "no", title: "No#" },
+          { key: "title", title: "Title" },
           {
             key: "quizCode",
             title: "Code",
@@ -733,7 +734,7 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
               </span>
             )
           },
-          { key: "phonemicLevel", title: "Level" },
+          { key: "phonemicLevel", title: "Phonemic" },
           {
             key: "startDate",
             title: "Start",
@@ -749,10 +750,12 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
             title: "Responses",
             render: (row: TableRow) => {
               const submitted = row.submittedCount ?? 0;
+              const assigned = row.assignedCount ?? 0;
               return (
                 <div className="flex flex-col">
-                  <span className="font-semibold text-gray-700">{submitted}</span>
-                  <span className="text-[10px] text-gray-500">submitted</span>
+                  <span className="font-semibold text-gray-700">
+                    {assigned > 0 ? `${submitted}/${assigned}` : submitted}
+                  </span>
                 </div>
               );
             },
@@ -778,19 +781,20 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
               small
               onClick={() => handleEditQuiz(row)}
               disabled={isSaving || (row.submittedCount ?? 0) > 0}
-              title={(row.submittedCount ?? 0) > 0 ? "Cannot edit quiz with responses" : "Edit quiz"}
+              title={(row.submittedCount ?? 0) > 0 ? "Cannot edit quiz with submissions" : "Edit Quiz"}
+              className={(row.submittedCount ?? 0) > 0 ? "bg-[#6c8f6c]! text-white! opacity-80 cursor-not-allowed hover:bg-[#6c8f6c]! border-[#6c8f6c]!" : ""}
             >
               Edit
             </UtilityButton>
             <UtilityButton small onClick={() => handleViewResponses(row)}>
-              Responses ({row.responses?.length ?? 0})
+              Summary
             </UtilityButton>
             {row.quizCode && (
               <UtilityButton
                 small
                 onClick={() => handleShowQr(row)}
                 title="Show QR Code"
-                className="p-1.5! text-green-700 hover:bg-green-50 rounded-md transition-colors"
+                className="p-1.5!"
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M4 4H10V10H4V4Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>

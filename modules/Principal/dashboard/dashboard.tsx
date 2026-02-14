@@ -67,6 +67,13 @@ type DashboardApiResponse = {
     monthStats: ReportMonthStat[];
     currentMonth: ReportMonthStat;
   };
+  progress?: Partial<Record<"English" | "Filipino" | "Math", SubjectProgressPayload>>;
+};
+
+type SubjectProgressPayload = {
+  gradeData: Record<string, Record<string, number>>;
+  percentageData: Record<string, Record<string, number>>;
+  gradeTotals: Record<string, number>;
 };
 
 function OverviewCard({ value, label, icon, className = "", onClick, tooltip }: OverviewCardProps) {
@@ -128,6 +135,7 @@ export default function PrincipalDashboard() {
       monthStats: [],
     },
   );
+  const [progressBySubject, setProgressBySubject] = useState<Partial<Record<"English" | "Filipino" | "Math", SubjectProgressPayload>>>({});
   const [isDashboardLoading, setIsDashboardLoading] = useState(true);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
 
@@ -154,6 +162,7 @@ export default function PrincipalDashboard() {
         const currentMonthStat = data?.reports?.currentMonth ?? null;
         const monthStats = data?.reports?.monthStats ?? [];
         setReportStats({ currentMonth: currentMonthStat, monthStats });
+        setProgressBySubject(data?.progress ?? {});
 
         if (currentMonthStat?.label) {
           setSelectedMonth(currentMonthStat.label);
@@ -212,143 +221,111 @@ export default function PrincipalDashboard() {
   // Grade levels for student progress chart
   const gradeLevels = ['1', '2', '3', '4', '5', '6'];
 
-  // Student Progress Data - 100% Stacked Bar Chart by Grade Level for each subject with original levels
-  const [englishProgressData] = useState({
-    labels: gradeLevels,
-    datasets: [
-      {
-        label: 'Non-Reader',
-        data: [15, 12, 8, 5, 3, 2],
-        backgroundColor: 'rgba(239, 68, 68, 0.8)',
-        borderColor: 'rgba(239, 68, 68, 1)',
-        borderWidth: 1,
-      },
-      {
-        label: 'Syllable Reader',
-        data: [25, 22, 18, 15, 12, 8],
-        backgroundColor: 'rgba(249, 115, 22, 0.8)',
-        borderColor: 'rgba(249, 115, 22, 1)',
-        borderWidth: 1,
-      },
-      {
-        label: 'Word Reader',
-        data: [20, 25, 30, 25, 20, 15],
-        backgroundColor: 'rgba(234, 179, 8, 0.8)',
-        borderColor: 'rgba(234, 179, 8, 1)',
-        borderWidth: 1,
-      },
-      {
-        label: 'Phrase Reader',
-        data: [15, 18, 20, 25, 28, 30],
-        backgroundColor: 'rgba(34, 197, 94, 0.8)',
-        borderColor: 'rgba(34, 197, 94, 1)',
-        borderWidth: 1,
-      },
-      {
-        label: 'Sentence Reader',
-        data: [15, 13, 14, 18, 22, 25],
-        backgroundColor: 'rgba(59, 130, 246, 0.8)',
-        borderColor: 'rgba(59, 130, 246, 1)',
-        borderWidth: 1,
-      },
-      {
-        label: 'Paragraph Reader',
-        data: [10, 10, 10, 12, 15, 20],
-        backgroundColor: 'rgba(139, 92, 246, 0.8)',
-        borderColor: 'rgba(139, 92, 246, 1)',
-        borderWidth: 1,
-      },
-    ],
-  });
+  const normalizeGradeKey = (value: string): string | null => {
+    const match = value.match(/(\d+)/);
+    if (!match) {
+      return null;
+    }
+    return match[1];
+  };
 
-  const [filipinoProgressData] = useState({
-    labels: gradeLevels,
-    datasets: [
-      {
-        label: 'Non-Reader',
-        data: [18, 15, 10, 7, 4, 3],
-        backgroundColor: 'rgba(239, 68, 68, 0.8)',
-        borderColor: 'rgba(239, 68, 68, 1)',
-        borderWidth: 1,
-      },
-      {
-        label: 'Syllable Reader',
-        data: [22, 20, 18, 15, 12, 10],
-        backgroundColor: 'rgba(249, 115, 22, 0.8)',
-        borderColor: 'rgba(249, 115, 22, 1)',
-        borderWidth: 1,
-      },
-      {
-        label: 'Word Reader',
-        data: [20, 22, 25, 23, 20, 18],
-        backgroundColor: 'rgba(234, 179, 8, 0.8)',
-        borderColor: 'rgba(234, 179, 8, 1)',
-        borderWidth: 1,
-      },
-      {
-        label: 'Phrase Reader',
-        data: [18, 20, 22, 25, 28, 30],
-        backgroundColor: 'rgba(34, 197, 94, 0.8)',
-        borderColor: 'rgba(34, 197, 94, 1)',
-        borderWidth: 1,
-      },
-      {
-        label: 'Sentence Reader',
-        data: [12, 13, 15, 18, 21, 24],
-        backgroundColor: 'rgba(59, 130, 246, 0.8)',
-        borderColor: 'rgba(59, 130, 246, 1)',
-        borderWidth: 1,
-      },
-      {
-        label: 'Paragraph Reader',
-        data: [10, 10, 10, 12, 15, 15],
-        backgroundColor: 'rgba(139, 92, 246, 0.8)',
-        borderColor: 'rgba(139, 92, 246, 1)',
-        borderWidth: 1,
-      },
-    ],
-  });
+  const normalizeLevelKey = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-  const [mathProgressData] = useState({
-    labels: gradeLevels,
-    datasets: [
-      {
-        label: 'Emerging - Not Proficient',
-        data: [20, 16, 12, 8, 5, 3],
-        backgroundColor: 'rgba(239, 68, 68, 0.8)',
-        borderColor: 'rgba(239, 68, 68, 1)',
+  const mapLevelLabel = (subject: "English" | "Filipino" | "Math", levelName: string) => {
+    const normalized = normalizeLevelKey(levelName);
+    if (!normalized) return levelName;
+    if (normalized === "notassessed") return "Not Assessed";
+
+    if (subject === "Math") {
+      if (normalized === "notproficient") return "Emerging - Not Proficient";
+      if (normalized === "lowproficient") return "Emerging - Low Proficient";
+      if (normalized === "nearlyproficient") return "Developing - Nearly Proficient";
+      if (normalized === "proficient") return "Transitioning - Proficient";
+      if (normalized === "highlyproficient") return "At Grade Level - Highly Proficient";
+      return levelName;
+    }
+
+    if (normalized === "nonreader") return "Non-Reader";
+    if (normalized === "syllable") return "Syllable Reader";
+    if (normalized === "word") return "Word Reader";
+    if (normalized === "phrase") return "Phrase Reader";
+    if (normalized === "sentence") return "Sentence Reader";
+    if (normalized === "paragraph") return "Paragraph Reader";
+    return levelName;
+  };
+
+  const buildProgressChartData = (subject: "English" | "Filipino" | "Math") => {
+    const payload = progressBySubject[subject];
+    if (!payload || Object.keys(payload.percentageData ?? {}).length === 0) {
+      return { labels: gradeLevels, datasets: [] };
+    }
+
+    const gradeLevelMap = new Map<string, Record<string, number>>();
+    Object.entries(payload.percentageData ?? {}).forEach(([gradeKey, levels]) => {
+      const normalizedGrade = normalizeGradeKey(String(gradeKey));
+      if (!normalizedGrade) {
+        return;
+      }
+      const mappedLevels: Record<string, number> = {};
+      Object.entries(levels ?? {}).forEach(([levelName, percent]) => {
+        const displayLabel = mapLevelLabel(subject, levelName || "Not Assessed");
+        mappedLevels[displayLabel] = Number(percent ?? 0);
+      });
+      gradeLevelMap.set(normalizedGrade, mappedLevels);
+    });
+
+    const levelOrder = subject === "Math"
+      ? [
+          "Emerging - Not Proficient",
+          "Emerging - Low Proficient",
+          "Developing - Nearly Proficient",
+          "Transitioning - Proficient",
+          "At Grade Level - Highly Proficient",
+        ]
+      : [
+          "Non-Reader",
+          "Syllable Reader",
+          "Word Reader",
+          "Phrase Reader",
+          "Sentence Reader",
+          "Paragraph Reader",
+        ];
+
+    const hasNotAssessed = Array.from(gradeLevelMap.values()).some((levels) => "Not Assessed" in levels);
+    const orderedLevels = hasNotAssessed ? [...levelOrder, "Not Assessed"] : levelOrder;
+
+    const colorMap: Record<string, { background: string; border: string }> = {
+      "Non-Reader": { background: "rgba(239, 68, 68, 0.8)", border: "rgba(239, 68, 68, 1)" },
+      "Syllable Reader": { background: "rgba(249, 115, 22, 0.8)", border: "rgba(249, 115, 22, 1)" },
+      "Word Reader": { background: "rgba(234, 179, 8, 0.8)", border: "rgba(234, 179, 8, 1)" },
+      "Phrase Reader": { background: "rgba(34, 197, 94, 0.8)", border: "rgba(34, 197, 94, 1)" },
+      "Sentence Reader": { background: "rgba(59, 130, 246, 0.8)", border: "rgba(59, 130, 246, 1)" },
+      "Paragraph Reader": { background: "rgba(139, 92, 246, 0.8)", border: "rgba(139, 92, 246, 1)" },
+      "Emerging - Not Proficient": { background: "rgba(239, 68, 68, 0.8)", border: "rgba(239, 68, 68, 1)" },
+      "Emerging - Low Proficient": { background: "rgba(249, 115, 22, 0.8)", border: "rgba(249, 115, 22, 1)" },
+      "Developing - Nearly Proficient": { background: "rgba(234, 179, 8, 0.8)", border: "rgba(234, 179, 8, 1)" },
+      "Transitioning - Proficient": { background: "rgba(34, 197, 94, 0.8)", border: "rgba(34, 197, 94, 1)" },
+      "At Grade Level - Highly Proficient": { background: "rgba(139, 92, 246, 0.8)", border: "rgba(139, 92, 246, 1)" },
+      "Not Assessed": { background: "rgba(156, 163, 175, 0.6)", border: "rgba(156, 163, 175, 1)" },
+    };
+
+    const datasets = orderedLevels.map((label) => {
+      const colors = colorMap[label] ?? { background: "rgba(100, 116, 139, 0.6)", border: "rgba(100, 116, 139, 1)" };
+      return {
+        label,
+        data: gradeLevels.map((grade) => {
+          const gradeEntry = gradeLevelMap.get(grade) ?? {};
+          return Number(gradeEntry[label] ?? 0);
+        }),
+        backgroundColor: colors.background,
+        borderColor: colors.border,
         borderWidth: 1,
-      },
-      {
-        label: 'Emerging - Low Proficient',
-        data: [25, 22, 20, 18, 15, 12],
-        backgroundColor: 'rgba(249, 115, 22, 0.8)',
-        borderColor: 'rgba(249, 115, 22, 1)',
-        borderWidth: 1,
-      },
-      {
-        label: 'Developing - Nearly Proficient',
-        data: [25, 26, 28, 27, 25, 23],
-        backgroundColor: 'rgba(234, 179, 8, 0.8)',
-        borderColor: 'rgba(234, 179, 8, 1)',
-        borderWidth: 1,
-      },
-      {
-        label: 'Transitioning - Proficient',
-        data: [18, 20, 22, 25, 28, 30],
-        backgroundColor: 'rgba(34, 197, 94, 0.8)',
-        borderColor: 'rgba(34, 197, 94, 1)',
-        borderWidth: 1,
-      },
-      {
-        label: 'At Grade Level - Highly Proficient',
-        data: [12, 16, 18, 22, 27, 32],
-        backgroundColor: 'rgba(139, 92, 246, 0.8)',
-        borderColor: 'rgba(139, 92, 246, 1)',
-        borderWidth: 1,
-      },
-    ],
-  });
+      };
+    });
+
+    return { labels: gradeLevels, datasets };
+  };
+
 
   // English Literacy Data - Showing progression through levels
   const [englishData] = useState({
@@ -498,12 +475,10 @@ export default function PrincipalDashboard() {
 
   // Get current subject progress data based on selection
   const getSubjectProgressData = () => {
-    switch (selectedSubject) {
-      case 'English': return englishProgressData;
-      case 'Filipino': return filipinoProgressData;
-      case 'Math': return mathProgressData;
-      default: return englishProgressData;
-    }
+    const subject = selectedSubject === "Filipino" || selectedSubject === "Math"
+      ? selectedSubject
+      : "English";
+    return buildProgressChartData(subject);
   };
 
   const getSubjectData = () => {
@@ -842,23 +817,29 @@ export default function PrincipalDashboard() {
                   </div>
 
                   <div className="h-96 mt-4">
-                    <Bar
-                      options={{
-                        ...studentProgressOptions,
-                        plugins: {
-                          ...studentProgressOptions.plugins,
-                          title: {
-                            display: true,
-                            text: `${selectedSubject} Proficiency Distribution by Grade Level`,
-                            font: {
-                              size: 16,
-                              weight: 'bold',
-                            }
-                          },
-                        }
-                      }}
-                      data={getSubjectProgressData()}
-                    />
+                    {getSubjectProgressData().datasets.length === 0 ? (
+                      <div className="flex h-full items-center justify-center text-sm text-gray-600">
+                        No phonemic distribution data available for {selectedSubject} yet.
+                      </div>
+                    ) : (
+                      <Bar
+                        options={{
+                          ...studentProgressOptions,
+                          plugins: {
+                            ...studentProgressOptions.plugins,
+                            title: {
+                              display: true,
+                              text: `${selectedSubject} Proficiency Distribution by Grade Level`,
+                              font: {
+                                size: 16,
+                                weight: 'bold',
+                              }
+                            },
+                          }
+                        }}
+                        data={getSubjectProgressData()}
+                      />
+                    )}
                   </div>
                   <div className="mt-4 text-sm text-gray-600">
                     <p className="font-medium">Shows the distribution of proficiency levels within each grade level for {selectedSubject}. Each bar represents 100% of students in that grade.</p>

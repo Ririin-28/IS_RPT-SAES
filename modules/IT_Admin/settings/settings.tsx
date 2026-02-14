@@ -544,6 +544,7 @@ export default function SystemConfiguration() {
                 </div>
               )}
 
+              {/*
               <section className="mt-6 rounded-lg border border-green-100 bg-green-50/60 p-4 sm:p-5">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -756,6 +757,7 @@ export default function SystemConfiguration() {
                   </span>
                 </div>
               </section>
+              */}
 
               <section className="mt-6 rounded-lg border border-green-100 bg-green-50/60 p-4 sm:p-5">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">

@@ -63,6 +63,15 @@ const TRACKED_MONTHS = [
   { month: 3, label: "March" },
 ] as const;
 
+const SUBJECT_NAMES = ["English", "Filipino", "Math"] as const;
+type SubjectName = (typeof SUBJECT_NAMES)[number];
+
+type SubjectProgressPayload = {
+  gradeData: Record<string, Record<string, number>>;
+  percentageData: Record<string, Record<string, number>>;
+  gradeTotals: Record<string, number>;
+};
+
 type MonthStat = {
   label: string;
   month: number;
@@ -282,6 +291,116 @@ async function fetchReportStats(): Promise<{
   };
 }
 
+async function fetchSubjectIds(): Promise<Map<SubjectName, number>> {
+  const subjectIds = new Map<SubjectName, number>();
+  if (!(await tableExists("subject"))) {
+    return subjectIds;
+  }
+
+  const [rows] = await query<RowDataPacket[]>(
+    "SELECT subject_id, subject_name FROM subject WHERE subject_name IN (?, ?, ?)",
+    [...SUBJECT_NAMES],
+  );
+
+  for (const row of rows) {
+    const name = typeof row.subject_name === "string" ? row.subject_name : null;
+    const id = Number(row.subject_id);
+    if (!name || !Number.isFinite(id)) {
+      continue;
+    }
+    const matched = SUBJECT_NAMES.find((subject) => subject.toLowerCase() === name.toLowerCase());
+    if (matched) {
+      subjectIds.set(matched, id);
+    }
+  }
+
+  return subjectIds;
+}
+
+async function fetchSubjectProgressByGrade(subjectId: number): Promise<SubjectProgressPayload> {
+  const empty: SubjectProgressPayload = { gradeData: {}, percentageData: {}, gradeTotals: {} };
+
+  const requiredTables = ["student", "grade", "student_subject_assessment", "phonemic_level"];
+  for (const table of requiredTables) {
+    if (!(await tableExists(table))) {
+      return empty;
+    }
+  }
+
+  const [totalRows] = await query<RowDataPacket[]>(
+    `
+      SELECT g.grade_level, COUNT(DISTINCT s.student_id) as total
+      FROM student s
+      INNER JOIN grade g ON s.grade_id = g.grade_id
+      GROUP BY g.grade_level
+      ORDER BY g.grade_level
+    `,
+  );
+
+  const [rows] = await query<RowDataPacket[]>(
+    `
+      SELECT
+        g.grade_level,
+        pl.level_name,
+        COUNT(DISTINCT s.student_id) as student_count
+      FROM student s
+      INNER JOIN grade g ON s.grade_id = g.grade_id
+      LEFT JOIN (
+        SELECT student_id, subject_id, MAX(assessed_at) AS latest_assessed
+        FROM student_subject_assessment
+        WHERE subject_id = ?
+        GROUP BY student_id, subject_id
+      ) latest ON latest.student_id = s.student_id AND latest.subject_id = ?
+      LEFT JOIN student_subject_assessment ssa
+        ON ssa.student_id = latest.student_id
+        AND ssa.subject_id = latest.subject_id
+        AND ssa.assessed_at = latest.latest_assessed
+      LEFT JOIN phonemic_level pl ON ssa.phonemic_id = pl.phonemic_id AND pl.subject_id = ?
+      GROUP BY g.grade_level, pl.level_name
+      ORDER BY g.grade_level, pl.level_name
+    `,
+    [subjectId, subjectId, subjectId],
+  );
+
+  const gradeData: Record<string, Record<string, number>> = {};
+  const gradeTotals: Record<string, number> = {};
+
+  totalRows.forEach((row) => {
+    const gradeKey = row.grade_level != null ? String(row.grade_level) : "";
+    if (!gradeKey) {
+      return;
+    }
+    gradeTotals[gradeKey] = Number(row.total ?? 0);
+    gradeData[gradeKey] = {};
+  });
+
+  rows.forEach((row) => {
+    const gradeKey = row.grade_level != null ? String(row.grade_level) : "";
+    if (!gradeKey) {
+      return;
+    }
+    const levelName = typeof row.level_name === "string" && row.level_name.trim().length > 0
+      ? row.level_name
+      : "Not Assessed";
+    const count = Number(row.student_count ?? 0);
+    if (!gradeData[gradeKey]) {
+      gradeData[gradeKey] = {};
+    }
+    gradeData[gradeKey][levelName] = count;
+  });
+
+  const percentageData: Record<string, Record<string, number>> = {};
+  Object.keys(gradeData).forEach((gradeKey) => {
+    percentageData[gradeKey] = {};
+    const total = gradeTotals[gradeKey] || 1;
+    Object.keys(gradeData[gradeKey]).forEach((level) => {
+      percentageData[gradeKey][level] = Math.round((gradeData[gradeKey][level] / total) * 100);
+    });
+  });
+
+  return { gradeData, percentageData, gradeTotals };
+}
+
 export async function GET() {
   try {
     const [studentTable, teacherTable, masterTeacherTable] = await Promise.all([
@@ -290,14 +409,24 @@ export async function GET() {
       resolveTable(MASTER_TEACHER_TABLE_CANDIDATES),
     ]);
 
-    const [studentCount, teacherCount, masterTeacherCount, reportStats] = await Promise.all([
+    const [studentCount, teacherCount, masterTeacherCount, reportStats, subjectIds] = await Promise.all([
       countRows(studentTable),
       countRows(teacherTable),
       countRows(masterTeacherTable),
       fetchReportStats(),
+      fetchSubjectIds(),
     ]);
 
     const totalTeachers = teacherCount + masterTeacherCount;
+
+    const progressBySubject: Partial<Record<SubjectName, SubjectProgressPayload>> = {};
+    for (const subject of SUBJECT_NAMES) {
+      const subjectId = subjectIds.get(subject);
+      if (!subjectId) {
+        continue;
+      }
+      progressBySubject[subject] = await fetchSubjectProgressByGrade(subjectId);
+    }
 
     return NextResponse.json({
       totals: {
@@ -312,6 +441,7 @@ export async function GET() {
         monthStats: reportStats.monthStats,
         currentMonth: reportStats.currentMonth,
       },
+      progress: progressBySubject,
       metadata: {
         studentTable: studentTable?.name ?? null,
         teacherTable: teacherTable?.name ?? null,

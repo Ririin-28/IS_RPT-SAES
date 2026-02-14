@@ -78,6 +78,7 @@ export interface MathQuiz {
   quizCode?: string | null;
   qrToken?: string | null;
   submittedCount?: number;
+  assignedCount?: number;
 }
 
 const INITIAL_MATH_QUIZZES: Record<MathAssessmentLevel, MathQuiz[]> = {
@@ -716,9 +717,33 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
 
       <TableList
         columns={[
-          { key: "no", title: "No#" },
-          { key: "title", title: "Title" },
-          { key: "mathLevel", title: "Phonemic" },
+          { key: "no", title: "No." },
+          { key: "title", title: "Quiz Title" },
+          {
+            key: "sections",
+            title: "Sections",
+            render: (row: TableRow) => {
+              const sectionTitles = (row.sections ?? [])
+                .map((section) => section.title?.trim())
+                .filter((value): value is string => Boolean(value));
+
+              if (!sectionTitles.length) {
+                return "-";
+              }
+
+              return sectionTitles.join(", ");
+            },
+          },
+          {
+            key: "quizCode",
+            title: "Code",
+            render: (row: TableRow) => (
+              <span className="font-mono font-bold text-gray-700 tracking-wider">
+                {row.quizCode || "-"}
+              </span>
+            )
+          },
+          { key: "mathLevel", title: "Level" },
           {
             key: "startDate",
             title: "Start",
@@ -732,7 +757,11 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
           {
             key: "responses",
             title: "Responses",
-            render: (row: TableRow) => row.responses?.length ?? 0,
+            render: (row: TableRow) => {
+              const submitted = row.submittedCount ?? 0;
+              const assigned = row.assignedCount ?? 0;
+              return assigned > 0 ? `${submitted}/${assigned}` : submitted;
+            },
           },
           {
             key: "status",
@@ -760,14 +789,14 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
               Edit
             </UtilityButton>
             <UtilityButton small onClick={() => handleViewResponses(row)}>
-              Responses ({row.responses?.length ?? 0})
+              Summary
             </UtilityButton>
             {row.quizCode && (
               <UtilityButton
                 small
                 onClick={() => handleShowQr(row)}
                 title="Show QR Code"
-                className="p-1.5! text-green-700 hover:bg-green-50 rounded-md transition-colors"
+                className="p-1.5!"
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M4 4H10V10H4V4Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>

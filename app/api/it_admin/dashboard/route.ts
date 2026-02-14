@@ -125,13 +125,15 @@ export async function GET() {
 
     const trustedDevicesAvailable = await safeTableExists("trusted_devices");
     const accountLogsAvailable = await safeTableExists("account_logs");
-    const archiveUsersAvailable = await safeTableExists("archive_users");
+    const archivedUsersAvailable = await safeTableExists("archived_users");
+    const legacyArchiveUsersAvailable = await safeTableExists("archive_users");
 
     console.log("Table status:", {
       users: usersTableExists,
       trusted_devices: trustedDevicesAvailable,
       account_logs: accountLogsAvailable,
-      archive_users: archiveUsersAvailable
+      archived_users: archivedUsersAvailable,
+      archive_users: legacyArchiveUsersAvailable
     });
 
     let totalUsers = 0;
@@ -227,9 +229,15 @@ export async function GET() {
 
     // Count archived accounts
     let archivedAccounts = 0;
-    if (archiveUsersAvailable) {
+    const archiveTableName = archivedUsersAvailable
+      ? "archived_users"
+      : legacyArchiveUsersAvailable
+        ? "archive_users"
+        : null;
+
+    if (archiveTableName) {
       try {
-        archivedAccounts = await countRows("SELECT COUNT(*) AS count FROM archive_users");
+        archivedAccounts = await countRows(`SELECT COUNT(*) AS count FROM ${archiveTableName}`);
         console.log("Archived accounts:", archivedAccounts);
       } catch (error) {
         console.error("Failed to count archived accounts:", error);
@@ -317,7 +325,9 @@ export async function GET() {
         missingUserColumns,
         trustedDevicesAvailable,
         accountLogsAvailable,
-        archiveUsersAvailable,
+        archiveUsersAvailable: archivedUsersAvailable || legacyArchiveUsersAvailable,
+        archivedUsersAvailable,
+        legacyArchiveUsersAvailable,
         usersTableExists,
       },
       recentLogins,

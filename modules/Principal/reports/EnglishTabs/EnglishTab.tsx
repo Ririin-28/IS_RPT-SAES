@@ -19,16 +19,7 @@ interface ReportFile {
   url: string;
 }
 
-const initialFiles: ReportFile[] = [
-  {
-    id: 1,
-    name: "English Progress Report",
-    uploadedAt: "2024-01-20",
-    teacher: "Jayvee Buenaventura",
-    grade: "Grade 1",
-    url: "#",
-  },
-];
+const initialFiles: ReportFile[] = [];
 
 interface CustomDropdownProps {
   options: string[];

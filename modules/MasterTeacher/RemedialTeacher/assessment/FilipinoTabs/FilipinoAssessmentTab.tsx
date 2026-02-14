@@ -95,6 +95,7 @@ export interface FilipinoQuiz {
   quizCode?: string | null;
   qrToken?: string | null;
   submittedCount?: number;
+  assignedCount?: number;
 }
 
 const INITIAL_FILIPINO_QUIZZES: Record<FilipinoAssessmentLevel, FilipinoQuiz[]> = {
@@ -744,6 +745,15 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
         columns={[
           { key: "no", title: "No#" },
           { key: "title", title: "Title" },
+          {
+            key: "quizCode",
+            title: "Code",
+            render: (row: TableRow) => (
+              <span className="font-mono font-bold text-gray-700 tracking-wider">
+                {row.quizCode || "-"}
+              </span>
+            )
+          },
           { key: "phonemicLevel", title: "Phonemic" },
           {
             key: "startDate",
@@ -758,7 +768,11 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
           {
             key: "responses",
             title: "Responses",
-            render: (row: TableRow) => row.responses?.length ?? 0,
+            render: (row: TableRow) => {
+              const submitted = row.submittedCount ?? 0;
+              const assigned = row.assignedCount ?? 0;
+              return assigned > 0 ? `${submitted}/${assigned}` : submitted;
+            },
           },
           {
             key: "status",
@@ -786,14 +800,14 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
               Edit
             </UtilityButton>
             <UtilityButton small onClick={() => handleViewResponses(row)}>
-              Responses ({row.responses?.length ?? 0})
+              Summary
             </UtilityButton>
             {row.quizCode && (
               <UtilityButton
                 small
                 onClick={() => handleShowQr(row)}
                 title="Show QR Code"
-                className="p-1.5! text-green-700 hover:bg-green-50 rounded-md transition-colors"
+                className="p-1.5!"
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M4 4H10V10H4V4Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
