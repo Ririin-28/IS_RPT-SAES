@@ -4,18 +4,41 @@ interface StudentDetailModalProps {
   show: boolean;
   onClose: () => void;
   student: any;
+  onPromote?: () => void;
+  promoteDisabled?: boolean;
 }
 
-export default function StudentDetailModal({ show, onClose, student }: StudentDetailModalProps) {
+export default function StudentDetailModal({
+  show,
+  onClose,
+  student,
+  onPromote,
+  promoteDisabled = false,
+}: StudentDetailModalProps) {
   if (!show || !student) return null;
 
   const footer = (
-    <button
-      onClick={onClose}
-      className="bg-[#013300] text-white px-6 py-2 rounded-lg hover:bg-[#013300]/90 transition-colors font-medium"
-    >
-      Close
-    </button>
+    <div className="flex flex-wrap gap-3 justify-end">
+      {onPromote && (
+        <button
+          onClick={onPromote}
+          disabled={promoteDisabled}
+          className={`px-6 py-2 rounded-lg font-medium transition-colors ${
+            promoteDisabled
+              ? "bg-gray-300 text-gray-600 cursor-not-allowed"
+              : "bg-emerald-600 text-white hover:bg-emerald-700"
+          }`}
+        >
+          Promote
+        </button>
+      )}
+      <button
+        onClick={onClose}
+        className="bg-[#013300] text-white px-6 py-2 rounded-lg hover:bg-[#013300]/90 transition-colors font-medium"
+      >
+        Close
+      </button>
+    </div>
   );
 
   return (

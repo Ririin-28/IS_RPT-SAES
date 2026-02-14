@@ -244,6 +244,7 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
   const [filter, setFilter] = useState({ phonemic: ALL_PHONEMIC });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [playLoadingId, setPlayLoadingId] = useState<string | null>(null);
+  const [promoteLoadingId, setPromoteLoadingId] = useState<string | null>(null);
 
   const userProfile = useMemo(() => getStoredUserProfile(), []);
   const userId = useMemo(() => {
@@ -529,6 +530,57 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
     void run();
   };
 
+  const handlePromoteFromModal = () => {
+    const run = async () => {
+      const studentId = selectedStudent?.studentId ?? selectedStudent?.id ?? "";
+      if (!studentId) {
+        alert("Student ID is missing.");
+        return;
+      }
+
+      setPromoteLoadingId(String(studentId));
+      try {
+        const response = await fetch("/api/teacher/remedial/students/promote-phonemic", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            studentId: String(studentId),
+            subject: "English",
+            requestedBy: userId,
+          }),
+        });
+
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.success) {
+          throw new Error(payload?.error ?? "Unable to promote student phonemic level.");
+        }
+
+        const nextLevel = payload?.nextLevel?.level_name ?? payload?.nextLevel?.levelName ?? "";
+        if (nextLevel) {
+          setStudents((prev) =>
+            prev.map((entry: any) => {
+              const entryId = entry?.studentId ?? entry?.id;
+              if (String(entryId) !== String(studentId)) {
+                return entry;
+              }
+              return {
+                ...entry,
+                englishPhonemic: nextLevel,
+                english: nextLevel,
+              };
+            })
+          );
+        }
+      } catch (error) {
+        alert(error instanceof Error ? error.message : "Failed to promote student.");
+      } finally {
+        setPromoteLoadingId(null);
+      }
+    };
+
+    void run();
+  };
+
   return (
     <div>
       <div className="flex flex-row justify-between items-center mb-4">
@@ -563,8 +615,16 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
       {/* Student Detail Modal */}
       <StudentDetailModal
         show={showDetailModal}
-        onClose={() => setShowDetailModal(false)}
+        onClose={() => {
+          setShowDetailModal(false);
+          setSelectedStudent(null);
+        }}
         student={selectedStudent}
+        onPromote={handlePromoteFromModal}
+        promoteDisabled={
+          !selectedStudent ||
+          promoteLoadingId === String(selectedStudent?.studentId ?? selectedStudent?.id ?? "")
+        }
       />
 
       {/* Student Table Section */}

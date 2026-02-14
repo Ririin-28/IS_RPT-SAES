@@ -1923,7 +1923,7 @@ export default function FilipinoFlashcards({
     return (
       <div className="mt-2 h-2 w-full rounded-full bg-emerald-100">
         <div
-          className="h-2 rounded-full bg-emerald-600 transition-all"
+          className="h-2 rounded-full bg-[#013300] transition-all"
           style={{ width: `${safeValue}%` }}
         />
       </div>
