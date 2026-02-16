@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { FaEye, FaEyeSlash, FaInfoCircle } from "react-icons/fa";
 import RPTLogoTitle from "@/components/Common/RPTLogoTitle";
 import { clearOAuthState } from "@/lib/utils/clear-oauth-state";
-import { getStoredUserProfile, storeUserProfile } from "@/lib/utils/user-profile";
+import { clearStoredUserProfile, getStoredUserProfile, storeUserProfile } from "@/lib/utils/user-profile";
 
 const DEFAULT_LOGIN_ERROR_MESSAGE = "Email and password do not match our records. Please try again.";
 
@@ -46,10 +46,12 @@ export default function Login({
   const resolveWelcomePath = useCallback((role: string | null | undefined): string => {
     const normalized = normalizeRole(role);
     switch (normalized) {
+      case "super_admin":
+      case "superadmin":
       case "it_admin":
       case "admin":
       case "itadmin":
-        return "/IT_Admin/welcome";
+        return "/Super_Admin/welcome";
       case "principal":
         return "/Principal/welcome";
       case "parent":
@@ -143,12 +145,35 @@ export default function Login({
       if (!isLoggedOut && !wasLoggedOut) {
         const storedProfile = getStoredUserProfile();
         if (storedProfile?.role) {
-          router.push(resolveWelcomePath(storedProfile.role));
+          const normalizedRole = normalizeRole(storedProfile.role);
+          const isAdminRole = ["super_admin", "superadmin", "admin", "it_admin", "itadmin"].includes(normalizedRole);
+
+          if (!isAdminRole) {
+            router.push(resolveWelcomePath(storedProfile.role));
+            return;
+          }
+
+          // Prevent login<->welcome loops: only auto-redirect admin users when server session is valid.
+          try {
+            const response = await fetch("/api/super_admin/session", {
+              method: "GET",
+              credentials: "include",
+              cache: "no-store",
+            });
+            if (response.ok) {
+              router.push(resolveWelcomePath(storedProfile.role));
+              return;
+            }
+          } catch {
+            // Ignore and keep user on login page
+          }
+
+          clearStoredUserProfile();
         }
       }
     };
 
-    checkSession();
+    void checkSession();
   }, [resolveWelcomePath, router]);
 
 
@@ -158,7 +183,7 @@ export default function Login({
     try {
       if (adminIdRequired) {
         if (!sanitizedItAdminId) {
-          setErrorMessage("Please enter your IT Admin ID to sign in.");
+          setErrorMessage("Please enter your Super Admin ID to sign in.");
           setShowErrorModal(true);
           setIsLoading(false);
           return;
@@ -186,7 +211,7 @@ export default function Login({
         const adminIdMissing = data.requireItAdminId || data.requireUserId || data.errorCode === "ADMIN_IT_ADMIN_ID_REQUIRED" || data.errorCode === "ADMIN_USER_ID_REQUIRED";
         if (!adminIdRequired && adminIdMissing) {
           setIsLoading(false);
-          setErrorMessage("IT Admin accounts must use the Admin Login and provide their IT Admin ID.");
+          setErrorMessage("Super Admin accounts must use the Admin Login and provide their Super Admin ID.");
           setShowErrorModal(true);
           if (redirectTimerRef.current) {
             clearTimeout(redirectTimerRef.current);
@@ -220,7 +245,7 @@ export default function Login({
           const welcomePath = resolvedRedirectPath;
           console.log("[LOGIN] redirecting to:", welcomePath);
           const normalizedRole = normalizeRole(data.role);
-          if (["parent", "admin", "it_admin", "itadmin"].includes(normalizedRole)) {
+          if (["parent", "super_admin", "superadmin", "admin", "it_admin", "itadmin"].includes(normalizedRole)) {
             window.location.replace(welcomePath);
             return;
           }
@@ -247,13 +272,13 @@ export default function Login({
   return (
     <div className="min-h-screen text-[#013300] relative overflow-hidden scroll-smooth flex items-center justify-center">
       {/* Background Styles - Same as Landing Page */}
-      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,_rgba(209,255,222,0.45),_transparent_20%),radial-gradient(circle_at_bottom_right,_rgba(188,240,214,0.35),_transparent_30%),linear-gradient(180deg,_rgba(255,255,255,0.98),_rgba(242,249,245,0.95))]" />
-      <div className="pointer-events-none absolute left-[12%] right-[46%] top-40 -z-10 h-56 rounded-3xl bg-gradient-to-br from-green-200/50 via-white/40 to-transparent blur-4xl" />
-      <div className="pointer-events-none absolute left-[52%] right-[12%] bottom-16 -z-10 h-56 rounded-[40px] bg-gradient-to-t from-green-200/60 via-white/35 to-transparent blur-4xl" />
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(209,255,222,0.45),transparent_20%),radial-gradient(circle_at_bottom_right,rgba(188,240,214,0.35),transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(242,249,245,0.95))]" />
+      <div className="pointer-events-none absolute left-[12%] right-[46%] top-40 -z-10 h-56 rounded-3xl bg-linear-to-br from-green-200/50 via-white/40 to-transparent blur-4xl" />
+      <div className="pointer-events-none absolute left-[52%] right-[12%] bottom-16 -z-10 h-56 rounded-[40px] bg-linear-to-t from-green-200/60 via-white/35 to-transparent blur-4xl" />
       
       {/* Additional soft gradients for depth */}
-      <div className="pointer-events-none absolute left-[5%] top-[20%] -z-10 h-48 w-48 rounded-full bg-gradient-to-br from-green-300/50 to-transparent blur-3xl" />
-      <div className="pointer-events-none absolute right-[8%] bottom-[25%] -z-10 h-56 w-56 rounded-full bg-gradient-to-tl from-green-200/90 to-transparent blur-3xl" />
+      <div className="pointer-events-none absolute left-[5%] top-[20%] -z-10 h-48 w-48 rounded-full bg-linear-to-br from-green-300/50 to-transparent blur-3xl" />
+      <div className="pointer-events-none absolute right-[8%] bottom-[25%] -z-10 h-56 w-56 rounded-full bg-linear-to-tl from-green-200/90 to-transparent blur-3xl" />
 
       {/* Error Modal */}
       {showErrorModal && (
@@ -302,20 +327,20 @@ export default function Login({
             
             {/* Platform description - concise version */}
             <div className="flex items-center justify-center mb-6 bg-green-50/80 py-2 px-3 rounded-lg border border-green-200/60 backdrop-blur-sm">
-              <FaInfoCircle className="text-green-700 mr-2 flex-shrink-0" />
+              <FaInfoCircle className="text-green-700 mr-2 shrink-0" />
               <p className="text-xs text-green-800 text-center">{infoMessage}</p>
             </div>
 
             <form onSubmit={handleLogin}>
               {adminIdRequired && (
                 <div className="mb-3">
-                  <label htmlFor="itAdminId" className="block text-sm font-medium text-[#013300] mb-1 sm:text-base">IT Admin ID</label>
+                  <label htmlFor="itAdminId" className="block text-sm font-medium text-[#013300] mb-1 sm:text-base">Super Admin ID</label>
                   <input
                     id="itAdminId"
                     type="text"
                     value={itAdminId}
                     onChange={e => setItAdminId(e.target.value)}
-                    placeholder="Enter your IT Admin ID"
+                    placeholder="Enter your Super Admin ID"
                     className="w-full px-4 py-2 border-2 border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#013300] focus:border-transparent transition placeholder-gray-400 text-[#013300] sm:py-2"
                     required={adminIdRequired}
                   />
@@ -378,7 +403,7 @@ export default function Login({
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full bg-gradient-to-r from-green-600 to-[#133000] text-white font-bold py-2.5 rounded-lg hover:opacity-90 transition shadow-md disabled:opacity-70 sm:py-2"
+                className="w-full bg-linear-to-r from-green-600 to-[#133000] text-white font-bold py-2.5 rounded-lg hover:opacity-90 transition shadow-md disabled:opacity-70 sm:py-2"
               >
                 {isLoading ? "Logging in..." : "Login"}
               </button>

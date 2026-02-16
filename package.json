@@ -6,6 +6,8 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
+    "test": "jest --runInBand",
+    "test:watch": "jest --watch",
     "format": "prettier --write .",
     "lint": "next lint"
   },

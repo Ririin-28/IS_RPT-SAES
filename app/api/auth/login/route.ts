@@ -7,6 +7,7 @@ import { buildMasterTeacherSessionCookie, createMasterTeacherSession } from "@/l
 import { buildTeacherSessionCookie, createTeacherSession } from "@/lib/server/teacher-session";
 import { getTableColumns, runWithConnection } from "@/lib/db";
 import { normalizeRoleName, resolveCanonicalRole, resolvePortalPath, resolveUserRole } from "@/lib/server/role-resolution";
+import { ensureSuperAdminPhaseOneMigration } from "@/lib/server/super-admin-migration";
 
 /* =======================
    Types
@@ -38,7 +39,7 @@ interface UserRow extends RowDataPacket {
 function roleRequiresItAdminId(role: string | null | undefined): boolean {
   if (!role) return false;
   const normalized = normalizeRoleName(role);
-  return normalized === "it_admin" || normalized === "admin" || normalized === "itadmin";
+  return normalized === "it_admin" || normalized === "admin" || normalized === "itadmin" || normalized === "super_admin";
 }
 
 function toNumber(value: unknown): number | null {
@@ -85,6 +86,58 @@ const TEACHER_ID_COLUMNS = [
   "id",
   "user_id",
 ] as const;
+
+function isMissingTableError(error: unknown): boolean {
+  const code = (error as { code?: string } | null)?.code;
+  return code === "ER_NO_SUCH_TABLE" || code === "ER_BAD_TABLE_ERROR" || code === "42S02";
+}
+
+async function resolveSuperAdminLinkedUserId(
+  db: import("mysql2/promise").PoolConnection,
+  superAdminId: string,
+): Promise<number | null> {
+  try {
+    const [superAdmins] = await db.execute<RowDataPacket[]>(
+      "SELECT user_id FROM super_admin WHERE it_admin_id = ? LIMIT 1",
+      [superAdminId],
+    );
+    const linkedUserId = Number(superAdmins[0]?.user_id);
+    if (Number.isFinite(linkedUserId) && linkedUserId > 0) {
+      return linkedUserId;
+    }
+  } catch (error) {
+    const code = (error as { code?: string } | null)?.code;
+    if (code === "ER_BAD_FIELD_ERROR") {
+      const [superAdmins] = await db.execute<RowDataPacket[]>(
+        "SELECT user_id FROM super_admin WHERE super_admin_id = ? LIMIT 1",
+        [superAdminId],
+      );
+      const linkedUserId = Number(superAdmins[0]?.user_id);
+      if (Number.isFinite(linkedUserId) && linkedUserId > 0) {
+        return linkedUserId;
+      }
+    } else if (!isMissingTableError(error)) {
+      throw error;
+    }
+  }
+
+  try {
+    const [itAdmins] = await db.execute<RowDataPacket[]>(
+      "SELECT user_id FROM it_admin WHERE it_admin_id = ? LIMIT 1",
+      [superAdminId],
+    );
+    const linkedUserId = Number(itAdmins[0]?.user_id);
+    if (Number.isFinite(linkedUserId) && linkedUserId > 0) {
+      return linkedUserId;
+    }
+  } catch (error) {
+    if (!isMissingTableError(error)) {
+      throw error;
+    }
+  }
+
+  return null;
+}
 
 async function resolveMasterTeacherId(db: import("mysql2/promise").PoolConnection, userId: number): Promise<string | null> {
   for (const table of MASTER_TEACHER_TABLES) {
@@ -161,6 +214,8 @@ async function resolveTeacherId(db: import("mysql2/promise").PoolConnection, use
 export async function POST(req: Request): Promise<Response> {
   try {
     return await runWithConnection(async (db) => {
+      await ensureSuperAdminPhaseOneMigration(db);
+
       const respond = (
         status: number,
         payload: Record<string, unknown>,
@@ -213,24 +268,21 @@ export async function POST(req: Request): Promise<Response> {
         const roleForLogic = resolvedRole ?? user.role ?? null;
         const normalizedRole = normalizeRoleName(roleForLogic);
         const canonicalRole = resolveCanonicalRole(normalizedRole);
+        const responseRole = canonicalRole || normalizedRole || roleForLogic;
         const redirectPath = resolvePortalPath(canonicalRole);
 
-        /* ===== IT Admin validation ===== */
+        /* ===== Super Admin validation ===== */
         if (roleRequiresItAdminId(roleForLogic)) {
           const normalizedItAdminId = sanitizeItAdminId(itAdminId);
           if (!normalizedItAdminId) {
             return respond(401, {
-              error: "Admin login requires IT Admin ID",
+              error: "Admin login requires Super Admin ID",
               requireItAdminId: true,
             });
           }
 
-          const [itAdmins] = await db.execute<RowDataPacket[]>(
-            "SELECT user_id FROM it_admin WHERE it_admin_id = ? LIMIT 1",
-            [normalizedItAdminId],
-          );
-
-          if (Number(itAdmins[0]?.user_id) !== user.user_id) {
+          const linkedUserId = await resolveSuperAdminLinkedUserId(db, normalizedItAdminId);
+          if (linkedUserId !== user.user_id) {
             return respond(401, { error: "Invalid credentials" });
           }
         }
@@ -258,7 +310,7 @@ export async function POST(req: Request): Promise<Response> {
           return respond(200, {
             success: true,
             otpRequired: true,
-            role: roleForLogic,
+            role: responseRole,
             redirectPath,
             user_id: user.user_id,
           });
@@ -272,7 +324,7 @@ export async function POST(req: Request): Promise<Response> {
           cookies.push(buildParentSessionCookie(token, expiresAt));
         }
 
-        if (canonicalRole === "admin" || canonicalRole === "it_admin" || canonicalRole === "itadmin") {
+        if (canonicalRole === "super_admin") {
           const { token, expiresAt } = await createAdminSession(db, user.user_id, deviceName);
           cookies.push(buildAdminSessionCookie(token, expiresAt));
         }
@@ -333,14 +385,14 @@ export async function POST(req: Request): Promise<Response> {
           cookies.push(buildTeacherSessionCookie(token, expiresAt));
         }
 
-        await recordAccountLogin(db, user.user_id, roleForLogic);
+        await recordAccountLogin(db, user.user_id, responseRole);
 
         return respond(
           200,
           {
             success: true,
             skipOtp: true,
-            role: roleForLogic,
+            role: responseRole,
             redirectPath,
             user_id: user.user_id,
             first_name: user.first_name,

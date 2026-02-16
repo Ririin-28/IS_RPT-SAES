@@ -112,7 +112,7 @@ export default function MasterTeacherStudents() {
     let cancelled = false;
     const loadRemedialTeachers = async () => {
       try {
-        const response = await fetch("/api/it_admin/accounts/masterteacher", { cache: "no-store" });
+        const response = await fetch("/api/super_admin/accounts/masterteacher", { cache: "no-store" });
         const payload = await response.json().catch(() => null);
         if (!response.ok || !Array.isArray(payload?.records)) {
           setRemedialTeachers([]);

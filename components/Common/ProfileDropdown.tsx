@@ -76,9 +76,9 @@ export default function ProfileDropdown({
     }
     const normalized = rawRole.toLowerCase().replace(/\s+/g, "_");
     const routeMap: Record<string, string> = {
-      admin: "/IT_Admin/profile",
-      it_admin: "/IT_Admin/profile",
-      itadmin: "/IT_Admin/profile",
+      admin: "/Super_Admin/profile",
+      it_admin: "/Super_Admin/profile",
+      itadmin: "/Super_Admin/profile",
       master_teacher: "/MasterTeacher/RemedialTeacher/profile",
       masterteacher: "/MasterTeacher/RemedialTeacher/profile",
       remedial_teacher: "/MasterTeacher/RemedialTeacher/profile",

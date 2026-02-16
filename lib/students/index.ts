@@ -503,7 +503,13 @@ export async function insertStudents(
 
         try {
           const [userRoleRows] = await connection.query<RowDataPacket[]>(
-            "SELECT role_id FROM users WHERE role_id IS NOT NULL AND LOWER(role) IN ('parent','guardian') ORDER BY role_id LIMIT 1",
+            `SELECT u.role_id
+             FROM users u
+             INNER JOIN role r ON r.role_id = u.role_id
+             WHERE u.role_id IS NOT NULL
+               AND LOWER(REPLACE(REPLACE(TRIM(r.role_name), '-', '_'), ' ', '_')) IN ('parent','guardian')
+             ORDER BY u.role_id
+             LIMIT 1`,
           );
           const candidate = Number(userRoleRows?.[0]?.role_id);
           if (Number.isFinite(candidate)) {

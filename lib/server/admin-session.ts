@@ -3,7 +3,7 @@ import type { Connection, PoolConnection, RowDataPacket } from "mysql2/promise";
 import { cookies } from "next/headers";
 import { runWithConnection } from "@/lib/db";
 
-const SESSION_COOKIE_NAME = "rpt_admin_session";
+export const ADMIN_SESSION_COOKIE_NAME = "rpt_admin_session";
 const DEFAULT_TTL_SECONDS = 4 * 60 * 60;
 
 let schemaPrepared = false;
@@ -66,7 +66,7 @@ export type AdminSessionRecord = {
 export function buildAdminSessionCookie(token: string, expiresAt: Date): string {
   const maxAge = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
   const directives = [
-    `${SESSION_COOKIE_NAME}=${token}`,
+    `${ADMIN_SESSION_COOKIE_NAME}=${token}`,
     "Path=/",
     "HttpOnly",
     "SameSite=Lax",
@@ -81,7 +81,7 @@ export function buildAdminSessionCookie(token: string, expiresAt: Date): string 
 
 export function buildClearedAdminSessionCookie(): string {
   const directives = [
-    `${SESSION_COOKIE_NAME}=`,
+    `${ADMIN_SESSION_COOKIE_NAME}=`,
     "Path=/",
     "HttpOnly",
     "SameSite=Lax",
@@ -104,10 +104,10 @@ export function extractAdminSessionToken(cookieHeader: string | null | undefined
     if (!trimmed) {
       continue;
     }
-    if (!trimmed.startsWith(`${SESSION_COOKIE_NAME}=`)) {
+    if (!trimmed.startsWith(`${ADMIN_SESSION_COOKIE_NAME}=`)) {
       continue;
     }
-    return trimmed.slice(SESSION_COOKIE_NAME.length + 1);
+    return trimmed.slice(ADMIN_SESSION_COOKIE_NAME.length + 1);
   }
   return null;
 }
@@ -122,18 +122,20 @@ export async function createAdminSession(
   const tokenHash = sha256(token);
   const ttlSeconds = resolveTtlSeconds();
 
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + ttlSeconds * 1000);
+
   await db.execute(
-    "UPDATE admin_sessions SET revoked_at = NOW() WHERE user_id = ? AND revoked_at IS NULL",
-    [userId],
+    "UPDATE admin_sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
+    [now, userId],
   );
 
   await db.execute(
     `INSERT INTO admin_sessions (user_id, token_hash, user_agent, created_at, last_active_at, expires_at)
-     VALUES (?, ?, ?, NOW(), NOW(), DATE_ADD(NOW(), INTERVAL ? SECOND))`,
-    [userId, tokenHash, sanitizeUserAgent(userAgent), ttlSeconds],
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [userId, tokenHash, sanitizeUserAgent(userAgent), now, now, expiresAt],
   );
 
-  const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
   return { token, expiresAt };
 }
 
@@ -165,17 +167,20 @@ export async function validateAdminSession(
   }
 
   const expiresAt = new Date(record.expires_at);
-  if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
+  const now = new Date();
+
+  // Validate expiration against current server time
+  if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= now.getTime()) {
     await db.execute(
-      "UPDATE admin_sessions SET revoked_at = NOW() WHERE session_id = ?",
-      [record.session_id],
+      "UPDATE admin_sessions SET revoked_at = ? WHERE session_id = ?",
+      [now, record.session_id],
     );
     return null;
   }
 
   await db.execute(
-    "UPDATE admin_sessions SET last_active_at = NOW() WHERE session_id = ?",
-    [record.session_id],
+    "UPDATE admin_sessions SET last_active_at = ? WHERE session_id = ?",
+    [now, record.session_id],
   );
 
   return {
@@ -205,8 +210,8 @@ export async function revokeAdminSession(
   }
 
   await db.execute(
-    "UPDATE admin_sessions SET revoked_at = NOW() WHERE session_id = ?",
-    [record.session_id],
+    "UPDATE admin_sessions SET revoked_at = ? WHERE session_id = ?",
+    [new Date(), record.session_id],
   );
 
   return Number(record.user_id);
@@ -214,7 +219,7 @@ export async function revokeAdminSession(
 
 export async function getAdminSessionFromCookies(): Promise<AdminSessionRecord | null> {
   const cookieStore = await cookies();
-  const cookie = cookieStore.get(SESSION_COOKIE_NAME);
+  const cookie = cookieStore.get(ADMIN_SESSION_COOKIE_NAME);
   if (!cookie || !cookie.value) {
     return null;
   }

@@ -26,9 +26,10 @@ const ROLE_PREFIX_RULES: Array<{ prefix: string; role: string }> = [
 ];
 
 const PORTAL_PATH_BY_ROLE: Record<string, string> = {
-  admin: "/IT_Admin/welcome",
-  it_admin: "/IT_Admin/welcome",
-  itadmin: "/IT_Admin/welcome",
+  super_admin: "/Super_Admin/welcome",
+  admin: "/Super_Admin/welcome",
+  it_admin: "/Super_Admin/welcome",
+  itadmin: "/Super_Admin/welcome",
   principal: "/Principal/welcome",
   parent: "/Parent/welcome",
   teacher: "/Teacher/welcome",
@@ -37,6 +38,10 @@ const PORTAL_PATH_BY_ROLE: Record<string, string> = {
 };
 
 const ROLE_ALIASES: Record<string, string> = {
+  superadmin: "super_admin",
+  admin: "super_admin",
+  it_admin: "super_admin",
+  itadmin: "super_admin",
   coordinator: "master_teacher",
   mt_coordinator: "master_teacher",
   master_teacher_coordinator: "master_teacher",

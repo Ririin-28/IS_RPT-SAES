@@ -12,7 +12,7 @@ export function performClientLogout(router: RouterLike) {
   const storedProfile = getStoredUserProfile();
   const userId = storedProfile?.userId ?? null;
   const normalizedRole = typeof storedProfile?.role === "string" ? storedProfile.role.trim().toLowerCase().replace(/[\s/\-]+/g, "_") : "";
-  const logoutTarget = normalizedRole === "admin" || normalizedRole === "it_admin" || normalizedRole === "itadmin"
+  const logoutTarget = normalizedRole === "admin" || normalizedRole === "it_admin" || normalizedRole === "itadmin" || normalizedRole === "super_admin"
     ? "/auth/adminlogin?logout=true"
     : "/auth/login?logout=true";
 

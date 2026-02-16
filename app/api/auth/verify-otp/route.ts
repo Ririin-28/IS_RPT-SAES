@@ -3,7 +3,8 @@ import { randomBytes } from "crypto";
 import { recordAccountLogin } from "@/lib/server/account-logs";
 import { buildParentSessionCookie, createParentSession } from "@/lib/server/parent-session";
 import { buildAdminSessionCookie, createAdminSession } from "@/lib/server/admin-session";
-import { normalizeRoleName, resolvePortalPath, resolveUserRole } from "@/lib/server/role-resolution";
+import { normalizeRoleName, resolveCanonicalRole, resolvePortalPath, resolveUserRole } from "@/lib/server/role-resolution";
+import { ensureSuperAdminPhaseOneMigration } from "@/lib/server/super-admin-migration";
 
 interface VerifyOtpPayload {
   email: string;
@@ -63,6 +64,7 @@ export async function POST(req: Request): Promise<Response> {
       database: process.env.DB_NAME,
       port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 3306,
     });
+    await ensureSuperAdminPhaseOneMigration(db);
 
     const [users] = await db.execute<UserRow[]>("SELECT * FROM users WHERE email = ?", [email]);
     const user = users[0];
@@ -101,7 +103,9 @@ export async function POST(req: Request): Promise<Response> {
     const resolvedRole = await resolveUserRole(db, user);
     const roleForLogic = resolvedRole ?? user.role ?? null;
     const normalizedRole = normalizeRoleName(roleForLogic);
-    const redirectPath = resolvePortalPath(normalizedRole);
+    const canonicalRole = resolveCanonicalRole(normalizedRole);
+    const responseRole = canonicalRole || normalizedRole || roleForLogic;
+    const redirectPath = resolvePortalPath(canonicalRole || normalizedRole);
     const responseCookies: string[] = [];
 
     if (normalizedRole === "parent") {
@@ -109,16 +113,16 @@ export async function POST(req: Request): Promise<Response> {
       responseCookies.push(buildParentSessionCookie(token, expiresAt));
     }
 
-    if (normalizedRole === "admin" || normalizedRole === "it_admin" || normalizedRole === "itadmin") {
+    if (normalizedRole === "admin" || normalizedRole === "it_admin" || normalizedRole === "itadmin" || normalizedRole === "super_admin") {
       const { token, expiresAt } = await createAdminSession(db, user.user_id, deviceName ?? null);
       responseCookies.push(buildAdminSessionCookie(token, expiresAt));
     }
 
-    await recordAccountLogin(db, user.user_id, roleForLogic);
+    await recordAccountLogin(db, user.user_id, responseRole);
 
     return respond(
       200,
-      { success: true, deviceToken, role: roleForLogic, redirectPath },
+      { success: true, deviceToken, role: responseRole, redirectPath },
       responseCookies.length > 0 ? { "Set-Cookie": responseCookies } : undefined,
     );
   } catch (error) {

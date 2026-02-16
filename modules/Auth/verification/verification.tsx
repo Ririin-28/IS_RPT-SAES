@@ -37,10 +37,12 @@ function VerificationContent() {
 	const resolveWelcomePath = useCallback((rawRole: string | null | undefined): string => {
 		const normalized = normalizeRole(rawRole);
 		switch (normalized) {
+			case "super_admin":
+			case "superadmin":
 			case "it_admin":
 			case "admin":
 			case "itadmin":
-				return "/IT_Admin/welcome";
+				return "/Super_Admin/welcome";
 			case "principal":
 				return "/Principal/welcome";
 			case "parent":
@@ -66,7 +68,7 @@ function VerificationContent() {
 		const fallbackPath = resolveWelcomePath(role);
 		const targetPath = apiRedirectPath || redirectPath || fallbackPath;
 		const normalizedRole = normalizeRole(role);
-		if (["parent", "admin", "it_admin", "itadmin"].includes(normalizedRole || "")) {
+		if (["parent", "super_admin", "superadmin", "admin", "it_admin", "itadmin"].includes(normalizedRole || "")) {
 			window.location.replace(targetPath);
 			return;
 		}

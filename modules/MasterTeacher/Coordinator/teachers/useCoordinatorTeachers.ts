@@ -188,7 +188,7 @@ export function useCoordinatorTeachers(): UseCoordinatorTeachersResult {
 
   const fetchTeachers = useCallback(async (gradeKeyOverride?: string | null) => {
     try {
-      const response = await fetch("/api/it_admin/accounts/teachers", {
+      const response = await fetch("/api/super_admin/accounts/teachers", {
         cache: "no-store",
       });
       const payload = await response.json().catch(() => null);

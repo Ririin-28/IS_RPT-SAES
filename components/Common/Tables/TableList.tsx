@@ -42,7 +42,9 @@ export default function TableList({
   const [isFullScreen, setIsFullScreen] = useState(false);
   const effectivePageSize = Math.min(Math.max(Math.floor(pageSize), 1), 10);
   const totalPages = Math.ceil((data.length || 0) / effectivePageSize);
-  const paginatedData = data.slice((page - 1) * effectivePageSize, page * effectivePageSize);
+  const paginatedData = hidePagination
+    ? data
+    : data.slice((page - 1) * effectivePageSize, page * effectivePageSize);
   const disabledSelectionIds = nonSelectableIds ?? new Set();
   const headerSelectableRows = selectable
     ? data.reduce((count, row) => count + (disabledSelectionIds.has(row.id) ? 0 : 1), 0)

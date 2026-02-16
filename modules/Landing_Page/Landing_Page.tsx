@@ -189,7 +189,7 @@ export default function Home() {
   useEffect(() => {
     const fetchLandingContent = async () => {
       try {
-        const response = await fetch("/api/it_admin/landing");
+        const response = await fetch("/api/super_admin/landing");
         if (!response.ok) {
           throw new Error(`Failed to load landing configuration (${response.status})`);
         }
