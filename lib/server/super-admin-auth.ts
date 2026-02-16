@@ -100,7 +100,7 @@ export async function requireSuperAdmin(
         } as SuperAdminAuthResult;
       }
 
-      const resolvedRole = await resolveUserRole(connection, user);
+      const resolvedRole = await resolveUserRole(connection, user as any);
       const roleForLogic = resolvedRole ?? null;
       const normalizedRole = normalizeRoleName(roleForLogic);
       const canonicalRole = resolveCanonicalRole(normalizedRole);
