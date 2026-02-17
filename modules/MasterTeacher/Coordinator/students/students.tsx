@@ -88,11 +88,20 @@ export default function MasterTeacherStudents() {
     if (!Number.isFinite(userId)) {
       return null;
     }
+    const maybeProfile = coordinatorProfile as {
+      masterTeacherId?: string | null;
+      master_teacher_id?: string | null;
+    };
+    const masterTeacherIdRaw = maybeProfile.masterTeacherId ?? maybeProfile.master_teacher_id ?? null;
+    const masterTeacherId = typeof masterTeacherIdRaw === "string" && masterTeacherIdRaw.trim()
+      ? masterTeacherIdRaw.trim()
+      : null;
     const name = formatFullNameWithMiddleInitial(coordinatorProfile) || "Master Teacher";
     return {
       id: userId,
       userId,
-      teacherId: String(userId),
+      teacherId: masterTeacherId ?? String(userId),
+      masterTeacherId,
       name,
       email: coordinatorProfile.email ?? "",
       contactNumber: "",
@@ -112,22 +121,31 @@ export default function MasterTeacherStudents() {
     let cancelled = false;
     const loadRemedialTeachers = async () => {
       try {
-        const response = await fetch("/api/super_admin/accounts/masterteacher", { cache: "no-store" });
+        const response = await fetch("/api/principal/teachers", { cache: "no-store" });
         const payload = await response.json().catch(() => null);
-        if (!response.ok || !Array.isArray(payload?.records)) {
+        const sourceRecords: any[] = Array.isArray(payload?.masterTeachers)
+          ? payload.masterTeachers
+          : Array.isArray(payload?.records)
+          ? payload.records
+          : [];
+        if (!response.ok || !sourceRecords.length) {
           setRemedialTeachers([]);
           return;
         }
 
-        const filtered = payload.records.filter((record: any) => {
+        const filtered = sourceRecords.filter((record: any) => {
           const recordGradeKey = normalizeGradeKey(record?.grade ?? null);
+          const gradeLevels: Array<string | number> = Array.isArray(record?.gradeLevels) ? record.gradeLevels : [];
+          const gradeLevelKeys = gradeLevels
+            .map((grade) => normalizeGradeKey(String(grade)))
+            .filter((key): key is string => Boolean(key));
           const handledGrades: string[] = Array.isArray(record?.remedialHandledGrades) ? record.remedialHandledGrades : [];
           const handledKeys = handledGrades
             .map((grade) => normalizeGradeKey(grade))
             .filter((key): key is string => Boolean(key));
 
-          return recordGradeKey === gradeKey || handledKeys.includes(gradeKey);
-        }).slice(0, 3);
+          return recordGradeKey === gradeKey || gradeLevelKeys.includes(gradeKey) || handledKeys.includes(gradeKey);
+        });
 
         const mapped: CoordinatorTeacher[] = filtered.map((record: any, index: number) => {
           const userId = typeof record?.userId === "number" ? record.userId : Number(record?.userId ?? NaN);
@@ -175,7 +193,7 @@ export default function MasterTeacherStudents() {
     };
     teachers.forEach(addTeacher);
     remedialTeachers.forEach(addTeacher);
-    if (coordinatorTeacher) {
+    if (coordinatorTeacher?.masterTeacherId) {
       addTeacher(coordinatorTeacher);
     }
     return Array.from(map.values());
@@ -593,4 +611,3 @@ export default function MasterTeacherStudents() {
     </div>
   );
 }
-

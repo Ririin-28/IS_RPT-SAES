@@ -172,8 +172,9 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Failed to insert student records", error);
+    const message = error instanceof Error ? error.message : "Unable to save student records.";
     return NextResponse.json(
-      { success: false, error: "Unable to save student records." },
+      { success: false, error: message },
       { status: 500 },
     );
   }

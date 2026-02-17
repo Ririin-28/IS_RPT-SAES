@@ -72,9 +72,9 @@ export async function GET(request: NextRequest) {
 
     const expectedLevelsBySubject: Record<string, string[]> = {
 
-      English: ["Non Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"],
+      English: ["Non-Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"],
 
-      Filipino: ["Non Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"],
+      Filipino: ["Non-Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"],
 
       Math: ["Not Proficient", "Low Proficient", "Nearly Proficient", "Proficient", "Highly Proficient"],
 

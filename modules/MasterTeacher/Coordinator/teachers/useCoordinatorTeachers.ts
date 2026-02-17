@@ -188,7 +188,9 @@ export function useCoordinatorTeachers(): UseCoordinatorTeachersResult {
 
   const fetchTeachers = useCallback(async (gradeKeyOverride?: string | null) => {
     try {
-      const response = await fetch("/api/super_admin/accounts/teachers", {
+      // Coordinator should not call the super-admin-only endpoint (it returns "Not authenticated").
+      // Use the principal-facing teachers API which returns the same teacher records shape we need.
+      const response = await fetch("/api/principal/teachers", {
         cache: "no-store",
       });
       const payload = await response.json().catch(() => null);
@@ -196,7 +198,15 @@ export function useCoordinatorTeachers(): UseCoordinatorTeachersResult {
         throw new Error(payload?.error ?? `Failed to fetch teachers (${response.status}).`);
       }
 
-      const records: any[] = Array.isArray(payload?.records) ? payload.records : [];
+      // Support multiple API shapes:
+      // - Super-admin endpoint: { records: [...] }
+      // - Principal endpoint: { teachers: [...] }
+      const records: any[] = Array.isArray(payload?.records)
+        ? payload.records
+        : Array.isArray(payload?.teachers)
+        ? payload.teachers
+        : [];
+
       const effectiveGradeKey = gradeKeyOverride ?? gradeKey;
 
       const filtered = effectiveGradeKey

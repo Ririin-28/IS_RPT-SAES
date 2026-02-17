@@ -17,6 +17,7 @@
     "@fullcalendar/core": "^6.1.17",
     "@fullcalendar/daygrid": "^6.1.17",
     "@fullcalendar/react": "^6.1.17",
+    "@tensorflow/tfjs": "^4.22.0",
     "@types/adm-zip": "^0.5.7",
     "@types/next-auth": "^3.13.0",
     "@types/xlsx": "^0.0.35",

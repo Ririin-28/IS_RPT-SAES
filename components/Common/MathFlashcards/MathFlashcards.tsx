@@ -5,6 +5,7 @@ import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import TableList from "@/components/Common/Tables/TableList";
 import { buildFlashcardContentKey } from "@/lib/utils/flashcards-storage";
+import { getAiInsightsAction } from "@/app/actions/get-ai-insights";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 
 const PAGE_SIZE = 8;
@@ -215,8 +216,8 @@ export default function MathFlashcards({
   const [studentSearch, setStudentSearch] = useState("");
   const [lastSavedStudentId, setLastSavedStudentId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [completedByStudent, setCompletedByStudent] = useState<Record<string, boolean>>({});
   const [dbCompletionByStudent, setDbCompletionByStudent] = useState<Record<string, boolean>>({});
+  const [dbProgressByStudent, setDbProgressByStudent] = useState<Record<string, boolean>>({});
   const [blockedSessionMessage, setBlockedSessionMessage] = useState<string | null>(null);
   const [teacherFeedback, setTeacherFeedback] = useState("");
   const [teacherFeedbackError, setTeacherFeedbackError] = useState<string | null>(null);
@@ -270,20 +271,9 @@ export default function MathFlashcards({
   }, [blockedSessionMessage]);
 
   useEffect(() => {
-    if (!sessionKeyBase || typeof window === "undefined") return;
-    const next: Record<string, boolean> = {};
-    for (const student of students) {
-      const state = readSessionState(student.id);
-      if (state?.completed) {
-        next[student.id] = true;
-      }
-    }
-    setCompletedByStudent(next);
-  }, [students, readSessionState, sessionKeyBase]);
-
-  useEffect(() => {
     if (!sessionLockEnabled || !approvedScheduleId || !subjectId || !students.length) {
       setDbCompletionByStudent({});
+      setDbProgressByStudent({});
       return;
     }
 
@@ -302,19 +292,25 @@ export default function MathFlashcards({
           }),
         });
         const payload = (await response.json().catch(() => null)) as
-          | { success?: boolean; statusByStudent?: Record<string, { completed?: boolean }> }
+          | {
+              success?: boolean;
+              statusByStudent?: Record<string, { completed?: boolean; hasProgress?: boolean }>;
+            }
           | null;
 
         if (!response.ok || !payload?.success) {
           return;
         }
 
-        const next: Record<string, boolean> = {};
+        const nextCompletion: Record<string, boolean> = {};
+        const nextProgress: Record<string, boolean> = {};
         const status = payload.statusByStudent ?? {};
         for (const student of students) {
-          next[student.id] = Boolean(status[student.id]?.completed);
+          nextCompletion[student.id] = Boolean(status[student.id]?.completed);
+          nextProgress[student.id] = Boolean(status[student.id]?.hasProgress);
         }
-        setDbCompletionByStudent(next);
+        setDbCompletionByStudent(nextCompletion);
+        setDbProgressByStudent(nextProgress);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
           return;
@@ -336,12 +332,7 @@ export default function MathFlashcards({
       setBlockedSessionMessage("This remedial session was already completed for this student.");
       return;
     }
-    const state = readSessionState(selectedStudentId);
-    if (state?.completed) {
-      setBlockedSessionMessage("This remedial session was already completed for this student.");
-      return;
-    }
-  }, [dbCompletionByStudent, readSessionState, selectedStudentId, sessionLockEnabled]);
+  }, [dbCompletionByStudent, selectedStudentId, sessionLockEnabled]);
 
   const enrichedStudents = useMemo<EnrichedStudent[]>(() => {
     const latestByStudent = new Map<string, StudentPerformanceEntry>();
@@ -406,6 +397,41 @@ export default function MathFlashcards({
   const [current, setCurrent] = useState(startIndex);
   const [sessionScores, setSessionScores] = useState<SessionScore[]>([]);
   const [showSummary, setShowSummary] = useState(false);
+
+  // AI Insights State
+  const [aiInsight, setAiInsight] = useState<string | null>(null);
+  const [isLoadingInsight, setIsLoadingInsight] = useState(false);
+
+  useEffect(() => {
+    if (showSummary && selectedStudent && sessionScores.length > 0) {
+      if (aiInsight) return;
+      setIsLoadingInsight(true);
+
+      const scoreAvg = Math.round(
+          sessionScores.reduce((sum, item) => sum + (item.score ?? 0), 0) /
+            Math.max(1, sessionScores.length),
+        );
+      
+      const timeAvg = sessionScores.reduce((sum, item) => sum + (item.responseTime ?? 0), 0) /
+            Math.max(1, sessionScores.length);
+      
+      const metrics = {
+          accuracyAvg: scoreAvg,
+          responseTimeAvg: timeAvg,
+          overallAverage: scoreAvg,
+      };
+
+      getAiInsightsAction(String(selectedStudent.id), metrics, selectedStudent.name, "Math")
+        .then((res) => {
+            if(res.success && res.insight) setAiInsight(res.insight);
+            else setAiInsight("Unable to generate insights at this time.");
+        })
+        .catch(() => setAiInsight("Error generating insights."))
+        .finally(() => setIsLoadingInsight(false));
+    } else if (!showSummary) {
+        setAiInsight(null);
+    }
+  }, [showSummary, selectedStudent, sessionScores, aiInsight]);
   const [userAnswer, setUserAnswer] = useState("");
   const [feedback, setFeedback] = useState("");
   const [startTime, setStartTime] = useState<number | null>(null);
@@ -539,14 +565,9 @@ export default function MathFlashcards({
         setBlockedSessionMessage("This remedial session was already completed for this student.");
         return;
       }
-      const state = readSessionState(studentId);
-      if (state?.completed) {
-        setBlockedSessionMessage("This remedial session was already completed for this student.");
-        return;
-      }
     }
     setSelectedStudentId(studentId);
-    const localLastIndex = readSessionState(studentId)?.lastIndex ?? startIndex;
+    const localLastIndex = startIndex;
     let resumeIndex = sessionLockEnabled
       ? Math.max(startIndex, localLastIndex)
       : startIndex;
@@ -599,28 +620,10 @@ export default function MathFlashcards({
             lastIndex,
             updatedAt: new Date().toISOString(),
           });
-        } else if (sessionLockEnabled) {
-          writeSessionState(studentId, {
-            completed: false,
-            lastIndex: resumeIndex,
-            updatedAt: new Date().toISOString(),
-          });
         }
       } catch {
-        if (sessionLockEnabled) {
-          writeSessionState(studentId, {
-            completed: false,
-            lastIndex: resumeIndex,
-            updatedAt: new Date().toISOString(),
-          });
-        }
+        // Keep local session status unchanged on fetch failures.
       }
-    } else if (sessionLockEnabled) {
-      writeSessionState(studentId, {
-        completed: false,
-        lastIndex: resumeIndex,
-        updatedAt: new Date().toISOString(),
-      });
     }
     const boundedResume = Math.min(Math.max(resumeIndex, 0), Math.max(0, flashcardsData.length - 1));
     setCurrent(boundedResume);
@@ -677,12 +680,10 @@ export default function MathFlashcards({
       setLastSavedStudentId(selectedStudentId);
     }
 
+    let remedialSessionSaved = !sessionLockEnabled;
     if (
       sessionLockEnabled &&
       selectedStudentId &&
-      approvedScheduleId &&
-      subjectId &&
-      gradeId &&
       sessionScores.length
     ) {
       const slides = sessionScores.map((item) => ({
@@ -703,9 +704,11 @@ export default function MathFlashcards({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             studentId: selectedStudentId,
-            approvedScheduleId,
-            subjectId,
-            gradeId,
+            approvedScheduleId: approvedScheduleId ?? null,
+            subjectId: subjectId ?? null,
+            gradeId: gradeId ?? null,
+            subjectName: "Math",
+            gradeLevel: selectedStudent?.grade ?? null,
             phonemicId: phonemicId ?? null,
             materialId: materialId ?? null,
             completed: showSummary,
@@ -714,8 +717,17 @@ export default function MathFlashcards({
           }),
         });
 
-        if (!response.ok && response.status !== 409) {
-          const payload = await response.json().catch(() => null);
+        const payload = (await response.json().catch(() => null)) as
+          | { success?: boolean; completed?: boolean; error?: string }
+          | null;
+        if (response.ok && payload?.success) {
+          remedialSessionSaved = true;
+          setDbProgressByStudent((prev) => ({ ...prev, [selectedStudentId]: true }));
+          setDbCompletionByStudent((prev) => ({
+            ...prev,
+            [selectedStudentId]: Boolean(payload.completed),
+          }));
+        } else if (response.status !== 409) {
           console.warn("Failed to save remedial session", payload?.error ?? response.statusText);
         }
       } catch (error) {
@@ -723,7 +735,7 @@ export default function MathFlashcards({
       }
     }
 
-    if (sessionLockEnabled && selectedStudentId) {
+    if (sessionLockEnabled && selectedStudentId && remedialSessionSaved) {
       const existing = readSessionState(selectedStudentId) ?? {
         completed: false,
         lastIndex: current,
@@ -742,9 +754,6 @@ export default function MathFlashcards({
         updatedAt: new Date().toISOString(),
       };
       writeSessionState(selectedStudentId, updated);
-      if (completed) {
-        setCompletedByStudent((prev) => ({ ...prev, [selectedStudentId]: true }));
-      }
     }
 
     resetFields();
@@ -902,13 +911,12 @@ export default function MathFlashcards({
                 data={selectionRows}
                 actions={(row: any) => {
                   const isCompleted = Boolean(
-                    sessionLockEnabled &&
-                      (dbCompletionByStudent[row.id] || completedByStudent[row.id]),
+                    sessionLockEnabled && dbCompletionByStudent[row.id],
                   );
                   const resumeState = Boolean(
                     sessionLockEnabled &&
                       !isCompleted &&
-                      (readSessionState(row.id)?.lastIndex ?? 0) > 0,
+                      dbProgressByStudent[row.id],
                   );
                   const label = isCompleted ? "Completed" : resumeState ? "Resume" : "Start";
                   return (
@@ -983,72 +991,7 @@ export default function MathFlashcards({
     subtitle = "";
   }
 
-  const buildMathInsights = (scores: SessionScore[]) => {
-    if (!scores.length) return null;
-    const avg = (values: number[]) =>
-      values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length);
-    const scoreAvg = Math.round(avg(scores.map((item) => item.score ?? 0)));
-    const timeAvg = avg(scores.map((item) => item.responseTime ?? 0));
-    const timeAvgRounded = Math.round(timeAvg * 10) / 10;
-    const weaknesses: string[] = [];
-    const strengths: string[] = [];
 
-    const accuracyLabel = scoreAvg < 60 ? "low" : scoreAvg < 75 ? "fair" : scoreAvg >= 85 ? "strong" : "ok";
-    const speedLabel = timeAvg <= 4 ? "fast" : timeAvg <= 6 ? "steady" : "slow";
-
-    if (scoreAvg < 75) weaknesses.push("getting answers right");
-    if (timeAvg > 6) weaknesses.push("solving problems quickly");
-
-    if (scoreAvg >= 85) strengths.push("good accuracy");
-    if (timeAvg <= 4) strengths.push("fast problem solving");
-
-    const recommendations: string[] = [];
-    if (scoreAvg < 75) recommendations.push("practice 10–15 problems per session, three times a week");
-    if (timeAvg > 6) recommendations.push("add short timed drills twice a week to build speed");
-    if (!recommendations.length) {
-      recommendations.push("keep a steady practice routine 2–3 times a week");
-    }
-
-    const formatList = (items: string[]) => {
-      if (!items.length) return "";
-      if (items.length === 1) return items[0];
-      if (items.length === 2) return `${items[0]} and ${items[1]}`;
-      return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
-    };
-
-    const confidence = scores.length >= 6 ? "High" : scores.length >= 3 ? "Medium" : "Low";
-    const summary = weaknesses.length
-      ? `Needs focus on ${formatList(weaknesses)}.`
-      : "Strong overall performance in this session.";
-
-    return {
-      scoreAvg,
-      timeAvg: timeAvgRounded,
-      accuracyLabel,
-      speedLabel,
-      weaknesses,
-      strengths,
-      recommendations,
-      confidence,
-      summary,
-    };
-  };
-
-  const buildInsightParagraph = (studentName: string, insights: ReturnType<typeof buildMathInsights>) => {
-    if (!insights) return "Record a few slides to generate insights.";
-    const name = studentName || "The student";
-    const weaknessText = insights.weaknesses.length
-      ? `${name} is having difficulty with ${insights.weaknesses.join(" and ")}.`
-      : `${name} shows no major weaknesses in this session.`;
-    const strengthText = insights.strengths.length
-      ? `Strengths include ${insights.strengths.join(" and ")}.`
-      : "Strengths are still building as more data is collected.";
-    const recommendationText = insights.recommendations.length
-      ? `Recommended next steps: ${insights.recommendations.join(" and ")}.`
-      : "Recommended next steps will appear after more recorded slides.";
-
-    return `${weaknessText} ${strengthText} ${recommendationText}`;
-  };
 
   if (showSummary) {
     const overallAverage = sessionScores.length
@@ -1057,8 +1000,7 @@ export default function MathFlashcards({
             Math.max(1, sessionScores.length),
         )
       : 0;
-    const insights = buildMathInsights(sessionScores);
-    const insightParagraph = buildInsightParagraph(selectedStudent?.name ?? "", insights);
+
 
     return (
       <div className="min-h-dvh bg-linear-to-br from-[#f2f8f4] via-white to-[#e6f2ec]">
@@ -1113,7 +1055,14 @@ export default function MathFlashcards({
               <h2 className="text-2xl font-bold text-black">Feedback &amp; Recommendations</h2>
             </div>
             <p className="mt-3 text-md text-slate-700 leading-relaxed">
-              {insightParagraph}
+              {isLoadingInsight ? (
+                <div className="flex items-center gap-2 text-slate-500 animate-pulse">
+                  <span className="h-4 w-4 rounded-full bg-slate-300" />
+                  Generating AI insights...
+                </div>
+              ) : (
+                aiInsight || "No insights generated."
+              )}
             </p>
 
           </div>

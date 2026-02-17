@@ -10,7 +10,7 @@ import { useTeacherMaterials } from "@/modules/Teacher/materials/useTeacherMater
 import type { MaterialStatus } from "@/lib/materials/shared";
 
 export const FILIPINO_LEVELS = [
-	"Non Reader",
+	"Non-Reader",
 	"Syllable",
 	"Word",
 	"Phrase",

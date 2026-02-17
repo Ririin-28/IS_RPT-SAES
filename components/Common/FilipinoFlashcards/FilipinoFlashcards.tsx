@@ -7,6 +7,7 @@ import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import TableList from "@/components/Common/Tables/TableList";
 import { buildFlashcardContentKey } from "@/lib/utils/flashcards-storage";
+import { getAiInsightsAction } from "@/app/actions/get-ai-insights";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 
 /* ---------- Icons ---------- */
@@ -342,8 +343,8 @@ export default function FilipinoFlashcards({
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(initialStudentId ?? null);
   const [studentSearch, setStudentSearch] = useState("");
   const [lastSavedStudentId, setLastSavedStudentId] = useState<string | null>(null);
-  const [completedByStudent, setCompletedByStudent] = useState<Record<string, boolean>>({});
   const [dbCompletionByStudent, setDbCompletionByStudent] = useState<Record<string, boolean>>({});
+  const [dbProgressByStudent, setDbProgressByStudent] = useState<Record<string, boolean>>({});
   const [blockedSessionMessage, setBlockedSessionMessage] = useState<string | null>(null);
   const [teacherFeedback, setTeacherFeedback] = useState("");
   const [teacherFeedbackError, setTeacherFeedbackError] = useState<string | null>(null);
@@ -396,20 +397,9 @@ export default function FilipinoFlashcards({
   }, [blockedSessionMessage]);
 
   useEffect(() => {
-    if (!sessionKeyBase || typeof window === "undefined") return;
-    const next: Record<string, boolean> = {};
-    for (const student of students) {
-      const state = readSessionState(student.id);
-      if (state?.completed) {
-        next[student.id] = true;
-      }
-    }
-    setCompletedByStudent(next);
-  }, [students, readSessionState, sessionKeyBase]);
-
-  useEffect(() => {
     if (!sessionLockEnabled || !approvedScheduleId || !subjectId || !students.length) {
       setDbCompletionByStudent({});
+      setDbProgressByStudent({});
       return;
     }
 
@@ -428,19 +418,25 @@ export default function FilipinoFlashcards({
           }),
         });
         const payload = (await response.json().catch(() => null)) as
-          | { success?: boolean; statusByStudent?: Record<string, { completed?: boolean }> }
+          | {
+              success?: boolean;
+              statusByStudent?: Record<string, { completed?: boolean; hasProgress?: boolean }>;
+            }
           | null;
 
         if (!response.ok || !payload?.success) {
           return;
         }
 
-        const next: Record<string, boolean> = {};
+        const nextCompletion: Record<string, boolean> = {};
+        const nextProgress: Record<string, boolean> = {};
         const status = payload.statusByStudent ?? {};
         for (const student of students) {
-          next[student.id] = Boolean(status[student.id]?.completed);
+          nextCompletion[student.id] = Boolean(status[student.id]?.completed);
+          nextProgress[student.id] = Boolean(status[student.id]?.hasProgress);
         }
-        setDbCompletionByStudent(next);
+        setDbCompletionByStudent(nextCompletion);
+        setDbProgressByStudent(nextProgress);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
           return;
@@ -462,12 +458,7 @@ export default function FilipinoFlashcards({
       setBlockedSessionMessage("This remedial session was already completed for this student.");
       return;
     }
-    const state = readSessionState(selectedStudentId);
-    if (state?.completed) {
-      setBlockedSessionMessage("This remedial session was already completed for this student.");
-      return;
-    }
-  }, [dbCompletionByStudent, readSessionState, selectedStudentId, sessionLockEnabled]);
+  }, [dbCompletionByStudent, selectedStudentId, sessionLockEnabled]);
 
   const enrichedStudents = useMemo<EnrichedStudent[]>(() => {
     const latestByStudent = new Map<string, StudentPerformanceEntry>();
@@ -517,6 +508,43 @@ export default function FilipinoFlashcards({
   const [current, setCurrent] = useState(startIndex);
   const [sessionScores, setSessionScores] = useState<SessionScore[]>([]);
   const [showSummary, setShowSummary] = useState(false);
+
+  // AI Insights State
+  const [aiInsight, setAiInsight] = useState<string | null>(null);
+  const [isLoadingInsight, setIsLoadingInsight] = useState(false);
+
+  useEffect(() => {
+    if (showSummary && selectedStudent && sessionScores.length > 0) {
+      if (aiInsight) return;
+      setIsLoadingInsight(true);
+
+      const overallAverage = Math.round(
+          sessionScores.reduce((sum, item) => sum + item.averageScore, 0) /
+            Math.max(1, sessionScores.length),
+        );
+      
+      const avg = (values: number[]) =>
+       Math.round(values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length));
+      
+      const metrics = {
+          pronunciationAvg: avg(sessionScores.map((item) => item.pronScore ?? 0)),
+          accuracyAvg: avg(sessionScores.map((item) => item.correctness ?? 0)),
+          fluencyScore: avg(sessionScores.map((item) => item.fluencyScore ?? 0)),
+          readingSpeedAvg: avg(sessionScores.map((item) => item.readingSpeedWpm ?? 0)),
+          overallAverage: overallAverage,
+      };
+
+      getAiInsightsAction(String(selectedStudent.id), metrics, selectedStudent.name, "Filipino")
+        .then((res) => {
+            if(res.success && res.insight) setAiInsight(res.insight);
+            else setAiInsight("Unable to generate insights at this time.");
+        })
+        .catch(() => setAiInsight("Error generating insights."))
+        .finally(() => setIsLoadingInsight(false));
+    } else if (!showSummary) {
+        setAiInsight(null);
+    }
+  }, [showSummary, selectedStudent, sessionScores, aiInsight]);
 
   useEffect(() => {
     if (flashcardsData.length === 0) {
@@ -665,12 +693,10 @@ export default function FilipinoFlashcards({
       setLastSavedStudentId(selectedStudentId);
     }
 
+    let remedialSessionSaved = !sessionLockEnabled;
     if (
       sessionLockEnabled &&
       selectedStudentId &&
-      approvedScheduleId &&
-      subjectId &&
-      gradeId &&
       sessionScores.length
     ) {
       const slides = sessionScores.map((item) => ({
@@ -691,9 +717,11 @@ export default function FilipinoFlashcards({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             studentId: selectedStudentId,
-            approvedScheduleId,
-            subjectId,
-            gradeId,
+            approvedScheduleId: approvedScheduleId ?? null,
+            subjectId: subjectId ?? null,
+            gradeId: gradeId ?? null,
+            subjectName: "Filipino",
+            gradeLevel: selectedStudent?.grade ?? null,
             phonemicId: phonemicId ?? null,
             materialId: materialId ?? null,
             completed: showSummary,
@@ -702,8 +730,17 @@ export default function FilipinoFlashcards({
           }),
         });
 
-        if (!response.ok && response.status !== 409) {
-          const payload = await response.json().catch(() => null);
+        const payload = (await response.json().catch(() => null)) as
+          | { success?: boolean; completed?: boolean; error?: string }
+          | null;
+        if (response.ok && payload?.success) {
+          remedialSessionSaved = true;
+          setDbProgressByStudent((prev) => ({ ...prev, [selectedStudentId]: true }));
+          setDbCompletionByStudent((prev) => ({
+            ...prev,
+            [selectedStudentId]: Boolean(payload.completed),
+          }));
+        } else if (response.status !== 409) {
           console.warn("Failed to save remedial session", payload?.error ?? response.statusText);
         }
       } catch (error) {
@@ -711,7 +748,7 @@ export default function FilipinoFlashcards({
       }
     }
 
-    if (sessionLockEnabled && selectedStudentId) {
+    if (sessionLockEnabled && selectedStudentId && remedialSessionSaved) {
       const existing = readSessionState(selectedStudentId) ?? {
         completed: false,
         lastIndex: current,
@@ -730,9 +767,6 @@ export default function FilipinoFlashcards({
         updatedAt: new Date().toISOString(),
       };
       writeSessionState(selectedStudentId, updated);
-      if (completed) {
-        setCompletedByStudent((prev) => ({ ...prev, [selectedStudentId]: true }));
-      }
     }
 
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
@@ -1021,14 +1055,9 @@ export default function FilipinoFlashcards({
         setBlockedSessionMessage("This remedial session was already completed for this student.");
         return;
       }
-      const state = readSessionState(studentId);
-      if (state?.completed) {
-        setBlockedSessionMessage("This remedial session was already completed for this student.");
-        return;
-      }
     }
     setSelectedStudentId(studentId);
-    const localLastIndex = readSessionState(studentId)?.lastIndex ?? startIndex;
+    const localLastIndex = startIndex;
     let resumeIndex = sessionLockEnabled
       ? Math.max(startIndex, localLastIndex)
       : startIndex;
@@ -1084,28 +1113,10 @@ export default function FilipinoFlashcards({
             lastIndex,
             updatedAt: new Date().toISOString(),
           });
-        } else if (sessionLockEnabled) {
-          writeSessionState(studentId, {
-            completed: false,
-            lastIndex: resumeIndex,
-            updatedAt: new Date().toISOString(),
-          });
         }
       } catch {
-        if (sessionLockEnabled) {
-          writeSessionState(studentId, {
-            completed: false,
-            lastIndex: resumeIndex,
-            updatedAt: new Date().toISOString(),
-          });
-        }
+        // Keep local session status unchanged on fetch failures.
       }
-    } else if (sessionLockEnabled) {
-      writeSessionState(studentId, {
-        completed: false,
-        lastIndex: resumeIndex,
-        updatedAt: new Date().toISOString(),
-      });
     }
     const boundedResume = Math.min(Math.max(resumeIndex, 0), Math.max(0, flashcardsData.length - 1));
     setCurrent(boundedResume);
@@ -1715,13 +1726,12 @@ export default function FilipinoFlashcards({
                 data={selectionRows}
                 actions={(row: any) => {
                   const isCompleted = Boolean(
-                    sessionLockEnabled &&
-                      (dbCompletionByStudent[row.id] || completedByStudent[row.id]),
+                    sessionLockEnabled && dbCompletionByStudent[row.id],
                   );
                   const resumeState = Boolean(
                     sessionLockEnabled &&
                       !isCompleted &&
-                      (readSessionState(row.id)?.lastIndex ?? 0) > 0,
+                      dbProgressByStudent[row.id],
                   );
                   const label = isCompleted ? "Completed" : resumeState ? "Resume" : "Start";
                   return (
@@ -1801,119 +1811,7 @@ export default function FilipinoFlashcards({
 
   
 
-  const buildFilipinoInsights = (scores: SessionScore[]) => {
-    if (!scores.length) return null;
-    const avg = (values: number[]) =>
-      Math.round(values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length));
-    const pronAvg = avg(scores.map((item) => item.pronScore ?? 0));
-    const corrAvg = avg(scores.map((item) => item.correctness ?? 0));
-    const speedAvg = avg(scores.map((item) => item.readingSpeedScore ?? 0));
-    const weaknesses: string[] = [];
-    const strengths: string[] = [];
 
-    const wordCounts = new Map<string, number>();
-    let totalExpected = 0;
-    let totalOmitted = 0;
-    const SIM_THRESHOLD = 60;
-
-    for (const score of scores) {
-      const expectedWords = normalizeText(score.sentence ?? "").split(/\s+/).filter(Boolean);
-      const spokenWords = normalizeText(score.transcription ?? "").split(/\s+/).filter(Boolean);
-      totalExpected += expectedWords.length;
-      for (const expected of expectedWords) {
-        let bestSim = 0;
-        for (const spoken of spokenWords) {
-          const lev = levenshtein(expected, spoken);
-          const sim = (Math.max(0, expected.length - lev) / Math.max(1, expected.length)) * 100;
-          if (sim > bestSim) bestSim = sim;
-          if (bestSim >= SIM_THRESHOLD) break;
-        }
-        if (bestSim < SIM_THRESHOLD) {
-          totalOmitted += 1;
-          wordCounts.set(expected, (wordCounts.get(expected) ?? 0) + 1);
-        }
-      }
-    }
-
-    const completenessAvg = totalExpected
-      ? Math.max(0, Math.round(100 - ((totalOmitted / totalExpected) * 100)))
-      : 100;
-
-    const pronLabel = pronAvg < 60 ? "low" : pronAvg < 75 ? "fair" : pronAvg >= 85 ? "strong" : "ok";
-    const corrLabel = corrAvg < 60 ? "low" : corrAvg < 75 ? "fair" : corrAvg >= 85 ? "strong" : "ok";
-    const speedLabel = speedAvg < 60 ? "slow" : speedAvg < 75 ? "steady" : speedAvg >= 85 ? "fast" : "ok";
-
-    if (pronAvg < 75) weaknesses.push("pronouncing words clearly");
-    if (corrAvg < 75) weaknesses.push("getting words right");
-    if (speedAvg < 60) weaknesses.push("reading pace");
-    if (completenessAvg < 80) weaknesses.push("completing all words");
-
-    if (pronAvg >= 85) strengths.push("clear pronunciation");
-    if (corrAvg >= 85) strengths.push("good accuracy");
-    if (speedAvg >= 85) strengths.push("fast reading pace");
-    if (completenessAvg >= 90) strengths.push("complete sentence coverage");
-
-    const recommendations: string[] = [];
-    if (pronAvg < 75) recommendations.push("do 5 minutes of echo reading and mirror the model voice");
-    if (corrAvg < 75) recommendations.push("slow down and tap each word to improve accuracy");
-    if (completenessAvg < 80) recommendations.push("point-and-read to avoid skipping words");
-    if (speedAvg < 60) recommendations.push("add 1-minute timed reading drills twice a week");
-    if (!recommendations.length) {
-      recommendations.push("keep a steady practice routine 2–3 times a week");
-    }
-
-    const formatList = (items: string[]) => {
-      if (!items.length) return "";
-      if (items.length === 1) return items[0];
-      if (items.length === 2) return `${items[0]} and ${items[1]}`;
-      return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
-    };
-
-    const confidence = scores.length >= 6 ? "High" : scores.length >= 3 ? "Medium" : "Low";
-    const summary = weaknesses.length
-      ? `Needs focus on ${formatList(weaknesses)}.`
-      : "Strong overall performance in this session.";
-
-    const weakWords = Array.from(wordCounts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
-      .map(([word]) => word);
-
-    return {
-      pronAvg,
-      corrAvg,
-      speedAvg,
-      completenessAvg,
-      pronLabel,
-      corrLabel,
-      speedLabel,
-      weaknesses,
-      strengths,
-      recommendations,
-      weakWords,
-      confidence,
-      summary,
-    };
-  };
-
-  const buildInsightParagraph = (studentName: string, insights: ReturnType<typeof buildFilipinoInsights>) => {
-    if (!insights) return "Record a few slides to generate insights.";
-    const name = studentName || "The student";
-    const weaknessText = insights.weaknesses.length
-      ? `${name} is having difficulty with ${insights.weaknesses.join(" and ")}.`
-      : `${name} shows no major weaknesses in this session.`;
-    const strengthText = insights.strengths.length
-      ? `Strengths include ${insights.strengths.join(" and ")}.`
-      : "Strengths are still building as more data is collected.";
-    const recommendationText = insights.recommendations.length
-      ? `Recommended next steps: ${insights.recommendations.join(" and ")}.`
-      : "Recommended next steps will appear after more recorded slides.";
-    const weakWordText = insights.weakWords?.length
-      ? `Key words to revisit: ${insights.weakWords.join(", ")}.`
-      : "";
-
-    return `${weaknessText} ${strengthText} ${weakWordText} ${recommendationText}`.trim();
-  };
 
   const formatPercentValue = (value: number | null | undefined) =>
     typeof value === "number" ? `${Math.round(value)}%` : "—";
@@ -1939,8 +1837,7 @@ export default function FilipinoFlashcards({
             Math.max(1, sessionScores.length),
         )
       : 0;
-    const insights = buildFilipinoInsights(sessionScores);
-    const insightParagraph = buildInsightParagraph(selectedStudent?.name ?? "", insights);
+
 
     return (
       <div className="min-h-dvh bg-linear-to-br from-[#f2f8f4] via-white to-[#e6f2ec]">
@@ -2001,7 +1898,14 @@ export default function FilipinoFlashcards({
               <h2 className="text-2xl font-bold text-black">Feedback &amp; Recommendations</h2>
             </div>
             <p className="mt-3 text-md text-slate-700 leading-relaxed">
-              {insightParagraph}
+              {isLoadingInsight ? (
+                <div className="flex items-center gap-2 text-slate-500 animate-pulse">
+                  <span className="h-4 w-4 rounded-full bg-slate-300" />
+                  Generating AI insights...
+                </div>
+              ) : (
+                aiInsight || "No insights generated."
+              )}
             </p>
 
           </div>

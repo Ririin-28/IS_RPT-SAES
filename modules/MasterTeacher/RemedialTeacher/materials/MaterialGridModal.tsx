@@ -62,7 +62,24 @@ export default function MaterialGridModal({ isOpen, onClose, activity, subject }
         uploading: false
       }));
 
-      setLevels(mappedLevels);
+      // Deduplicate levels by normalized name (e.g. "Non Reader" vs "Non-Reader").
+      // Prefer the hyphenated/canonical label when duplicates exist.
+      const normalize = (v: string) => String(v).toLowerCase().replace(/[^a-z0-9]/g, "");
+      const dedupMap = new Map<string, LevelStatus>();
+      for (const l of mappedLevels) {
+        const key = normalize(l.level.level_name ?? "");
+        const existing = dedupMap.get(key);
+        if (!existing) {
+          dedupMap.set(key, l);
+          continue;
+        }
+        // prefer hyphenated form if available
+        const existingHyphen = String(existing.level.level_name).includes("-");
+        const newHyphen = String(l.level.level_name).includes("-");
+        if (newHyphen && !existingHyphen) dedupMap.set(key, l);
+      }
+
+      setLevels(Array.from(dedupMap.values()));
     } catch (err: any) {
       setError(err.message);
     } finally {

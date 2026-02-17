@@ -17,9 +17,11 @@ type SlidePerformance = {
 
 type SaveRemedialSessionPayload = {
   studentId: number | string;
-  approvedScheduleId: number | string;
-  subjectId: number | string;
-  gradeId: number | string;
+  approvedScheduleId?: number | string | null;
+  subjectId?: number | string | null;
+  gradeId?: number | string | null;
+  subjectName?: string | null;
+  gradeLevel?: string | number | null;
   phonemicId: number | string | null;
   materialId: number | string | null;
   masteryThreshold?: number | null;
@@ -29,6 +31,8 @@ type SaveRemedialSessionPayload = {
 };
 
 const DEFAULT_MASTERY_THRESHOLD = 80;
+
+import { generateAiInsight } from "@/lib/ml/insights";
 
 function toNumber(value: number | string | null | undefined): number | null {
   if (value === null || value === undefined) return null;
@@ -53,49 +57,21 @@ function average(values: number[]): number {
   return Math.round(sum / Math.max(1, values.length));
 }
 
-function buildAiRemarks(args: {
-  studentName?: string | null;
-  pronunciationAvg: number;
-  accuracyAvg: number;
-  readingSpeedAvg: number;
-}): string {
-  const name = args.studentName?.trim() || "The student";
-  const weaknesses: string[] = [];
-  const strengths: string[] = [];
-
-  if (args.pronunciationAvg < 75) weaknesses.push("pronouncing words clearly");
-  if (args.accuracyAvg < 75) weaknesses.push("getting words right");
-  if (args.readingSpeedAvg < 60) weaknesses.push("reading pace");
-
-  if (args.pronunciationAvg >= 85) strengths.push("clear pronunciation");
-  if (args.accuracyAvg >= 85) strengths.push("good accuracy");
-  if (args.readingSpeedAvg >= 85) strengths.push("fast reading pace");
-
-  const recommendations: string[] = [];
-  if (args.pronunciationAvg < 75) recommendations.push("practice saying the words out loud with short echo reading");
-  if (args.accuracyAvg < 75) recommendations.push("repeat the target word set three times a week");
-  if (args.readingSpeedAvg < 60) recommendations.push("add short timed reading drills twice a week");
-  if (!recommendations.length) {
-    recommendations.push("keep a steady practice routine 2–3 times a week");
+function parseGradeLevelValue(value: string | number | null | undefined): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
   }
-
-  const joinList = (items: string[]) => {
-    if (items.length === 0) return "";
-    if (items.length === 1) return items[0];
-    if (items.length === 2) return `${items[0]} and ${items[1]}`;
-    return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
-  };
-
-  const weaknessText = weaknesses.length
-    ? `${name} is having difficulty with ${joinList(weaknesses)}.`
-    : `${name} shows no major weaknesses in this session.`;
-  const strengthText = strengths.length
-    ? `Strengths include ${joinList(strengths)}.`
-    : "Strengths are still building as more data is collected.";
-  const recommendationText = `Recommended next steps: ${joinList(recommendations)}.`;
-
-  return `${weaknessText} ${strengthText} ${recommendationText}`;
+  if (typeof value === "string") {
+    const match = value.match(/(\d+)/);
+    if (match) {
+      const parsed = Number.parseInt(match[1], 10);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+  }
+  return null;
 }
+
+
 
 export async function POST(request: NextRequest) {
   try {
@@ -106,9 +82,11 @@ export async function POST(request: NextRequest) {
     }
 
     const studentId = toStringId(payload.studentId);
-    const approvedScheduleId = toNumber(payload.approvedScheduleId);
-    const subjectId = toNumber(payload.subjectId);
-    const gradeId = toNumber(payload.gradeId);
+    let approvedScheduleId = toNumber(payload.approvedScheduleId);
+    let subjectId = toNumber(payload.subjectId);
+    let gradeId = toNumber(payload.gradeId);
+    const subjectName = normalizeText(payload.subjectName);
+    const gradeLevel = parseGradeLevelValue(payload.gradeLevel ?? null);
     const phonemicId = toNumber(payload.phonemicId ?? null);
     const materialId = toNumber(payload.materialId ?? null);
     const masteryThreshold = toNumber(payload.masteryThreshold ?? null) ?? DEFAULT_MASTERY_THRESHOLD;
@@ -116,7 +94,7 @@ export async function POST(request: NextRequest) {
     const slides = Array.isArray(payload.slides) ? payload.slides : [];
     const teacherFeedback = normalizeText(payload.teacherFeedback);
 
-    if (!studentId || !approvedScheduleId || !subjectId || !gradeId) {
+    if (!studentId) {
       return NextResponse.json({ success: false, error: "Missing required identifiers." }, { status: 400 });
     }
     if (!slides.length) {
@@ -161,6 +139,52 @@ export async function POST(request: NextRequest) {
     const result = await runWithConnection(async (connection) => {
       await connection.beginTransaction();
       try {
+        if (!subjectId && subjectName) {
+          const [subjectLookupRows] = await connection.query<RowDataPacket[]>(
+            "SELECT subject_id FROM subject WHERE LOWER(TRIM(subject_name)) = LOWER(TRIM(?)) LIMIT 1",
+            [subjectName],
+          );
+          subjectId = subjectLookupRows.length ? Number(subjectLookupRows[0].subject_id) : null;
+        }
+
+        if (!gradeId && gradeLevel !== null) {
+          const [gradeLookupRows] = await connection.query<RowDataPacket[]>(
+            "SELECT grade_id FROM grade WHERE grade_level = ? LIMIT 1",
+            [gradeLevel],
+          );
+          gradeId = gradeLookupRows.length ? Number(gradeLookupRows[0].grade_id) : null;
+        }
+
+        if (!subjectId || !gradeId) {
+          await connection.rollback();
+          return {
+            status: 400,
+            payload: { success: false, error: "Missing subject/grade context for remedial session save." },
+          };
+        }
+
+        if (!approvedScheduleId) {
+          const [fallbackScheduleRows] = await connection.query<RowDataPacket[]>(
+            `SELECT request_id
+             FROM approved_remedial_schedule
+             WHERE subject_id = ? AND grade_id = ?
+             ORDER BY schedule_date DESC, request_id DESC
+             LIMIT 1`,
+            [subjectId, gradeId],
+          );
+          approvedScheduleId = fallbackScheduleRows.length
+            ? Number(fallbackScheduleRows[0].request_id)
+            : null;
+        }
+
+        if (!approvedScheduleId) {
+          await connection.rollback();
+          return {
+            status: 404,
+            payload: { success: false, error: "No approved remedial schedule found for the given subject/grade." },
+          };
+        }
+
         const [scheduleRows] = await connection.query<RowDataPacket[]>(
           "SELECT request_id, title, schedule_date FROM approved_remedial_schedule WHERE request_id = ? LIMIT 1",
           [approvedScheduleId],
@@ -218,11 +242,30 @@ export async function POST(request: NextRequest) {
           performanceValues.flat(),
         );
 
-        const aiRemarks = buildAiRemarks({
-          pronunciationAvg,
-          accuracyAvg,
-          readingSpeedAvg,
-        });
+        const [subjectRows] = await connection.query<RowDataPacket[]>(
+          "SELECT subject_name FROM subject WHERE subject_id = ? LIMIT 1",
+          [subjectId],
+        );
+        const subjectName = typeof subjectRows[0]?.subject_name === "string"
+          ? subjectRows[0].subject_name
+          : "Remedial";
+
+        const validSubject = ["English", "Filipino", "Math"].includes(subjectName) 
+          ? (subjectName as "English" | "Filipino" | "Math") 
+          : "English";
+
+        const aiRemarks = await generateAiInsight(
+          String(studentId),
+          {
+            overallAverage,
+            pronunciationAvg,
+            accuracyAvg,
+            readingSpeedAvg,
+            fluencyScore: average(validatedSlides.map(s => s.fluencyScore as number)),
+          },
+          undefined,
+          validSubject
+        );
 
         await connection.query(
           `UPDATE student_remedial_session
@@ -246,13 +289,7 @@ export async function POST(request: NextRequest) {
           ],
         );
 
-        const [subjectRows] = await connection.query<RowDataPacket[]>(
-          "SELECT subject_name FROM subject WHERE subject_id = ? LIMIT 1",
-          [subjectId],
-        );
-        const subjectName = typeof subjectRows[0]?.subject_name === "string"
-          ? subjectRows[0].subject_name
-          : "Remedial";
+
         const scheduleTitle = typeof scheduleRows[0]?.title === "string"
           ? scheduleRows[0].title
           : "Remedial Session";
@@ -392,6 +429,7 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    await ensurePerformanceSchema();
     const { searchParams } = new URL(request.url);
     const studentId = toStringId(searchParams.get("studentId"));
     const approvedScheduleId = toNumber(searchParams.get("approvedScheduleId"));

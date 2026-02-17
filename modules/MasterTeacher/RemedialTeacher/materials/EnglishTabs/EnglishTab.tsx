@@ -9,7 +9,7 @@ import { useRemedialMaterials } from "../useRemedialMaterials";
 import type { MaterialStatus } from "@/lib/materials/shared";
 
 export const ENGLISH_LEVELS = [
-	"Non Reader",
+	"Non-Reader",
 	"Syllable",
 	"Word",
 	"Phrase",

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
-import { getTableColumns, query } from "@/lib/db";
+import { getTableColumns, query, runWithConnection } from "@/lib/db";
 import { getMasterTeacherSessionFromCookies } from "@/lib/server/master-teacher-session";
 
 export const dynamic = "force-dynamic";
@@ -92,16 +92,26 @@ const resolveGradeId = async (gradeLevelRaw: string): Promise<number | null> => 
 };
 
 const resolveMasterTeacherId = async (userId: number | null, fallback?: string | null) => {
-  if (fallback && String(fallback).trim().length > 0) {
-    return String(fallback).trim();
+  if (userId) {
+    const [rows] = await query<RowDataPacket[]>(
+      `SELECT master_teacher_id FROM ${MASTER_TEACHER_TABLE} WHERE user_id = ? LIMIT 1`,
+      [userId],
+    );
+    const value = rows[0]?.master_teacher_id;
+    if (value && String(value).trim().length > 0) {
+      return String(value).trim();
+    }
   }
-  if (!userId) return null;
-  const [rows] = await query<RowDataPacket[]>(
-    `SELECT master_teacher_id FROM ${MASTER_TEACHER_TABLE} WHERE user_id = ? LIMIT 1`,
-    [userId],
+
+  const fallbackValue = fallback && String(fallback).trim().length > 0 ? String(fallback).trim() : null;
+  if (!fallbackValue) return null;
+
+  const [fallbackRows] = await query<RowDataPacket[]>(
+    `SELECT master_teacher_id FROM ${MASTER_TEACHER_TABLE} WHERE master_teacher_id = ? LIMIT 1`,
+    [fallbackValue],
   );
-  const value = rows[0]?.master_teacher_id;
-  return value ? String(value).trim() : null;
+  const resolved = fallbackRows[0]?.master_teacher_id;
+  return resolved ? String(resolved).trim() : null;
 };
 
 const resolveRemedialRoleId = async (masterTeacherId: string, gradeId: number): Promise<string | null> => {
@@ -187,11 +197,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Subject not found." }, { status: 404 });
     }
 
-    await query(
-      `UPDATE ${ASSIGNMENT_TABLE} SET is_active = 0 WHERE grade_id = ? AND subject_id = ? AND is_active = 1`,
-      [gradeId, subjectId],
-    );
-
     const rowsToInsert: Array<Array<string | number | null>> = [];
 
     for (const assignment of assignments) {
@@ -208,6 +213,12 @@ export async function POST(request: NextRequest) {
         );
       }
       const teacherId = typeof assignment.teacherId === "string" ? assignment.teacherId.trim() : null;
+      if (teacherType === "regular_teacher" && !teacherId) {
+        return NextResponse.json(
+          { success: false, error: "A regular teacher assignment is missing teacherId." },
+          { status: 400 },
+        );
+      }
       const masterTeacherId = typeof assignment.masterTeacherId === "string" ? assignment.masterTeacherId.trim() : null;
       const teacherUserId = Number(assignment.teacherUserId ?? NaN);
       const resolvedMasterId = teacherType === "regular_teacher"
@@ -216,10 +227,25 @@ export async function POST(request: NextRequest) {
             Number.isFinite(teacherUserId) ? teacherUserId : null,
             masterTeacherId ?? teacherId,
           );
+      if (teacherType !== "regular_teacher" && !resolvedMasterId) {
+        return NextResponse.json(
+          { success: false, error: "A master teacher assignment could not be resolved to a valid master_teacher_id." },
+          { status: 400 },
+        );
+      }
 
       const remedialRoleId = resolvedMasterId
         ? await resolveRemedialRoleId(resolvedMasterId, gradeId)
         : null;
+      if (teacherType !== "regular_teacher" && !remedialRoleId) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Master teacher ${resolvedMasterId} has no remedial role for this grade. Remove them from auto-assignment or configure mt_remedialteacher_handled.`,
+          },
+          { status: 400 },
+        );
+      }
 
       for (const studentIdRaw of students) {
         const studentId = typeof studentIdRaw === "string" ? studentIdRaw.trim() : "";
@@ -273,12 +299,25 @@ export async function POST(request: NextRequest) {
 
     const valuesSql = rowsToInsert.map(() => `(${baseColumns.map(() => "?").join(", ")})`).join(", ");
 
-    await query<ResultSetHeader>(
-      `INSERT INTO ${ASSIGNMENT_TABLE}
-        (${baseColumns.join(", ")})
-       VALUES ${valuesSql}`,
-      rowsToInsert.flat(),
-    );
+    await runWithConnection(async (connection) => {
+      await connection.beginTransaction();
+      try {
+        await connection.query(
+          `UPDATE ${ASSIGNMENT_TABLE} SET is_active = 0 WHERE grade_id = ? AND subject_id = ? AND is_active = 1`,
+          [gradeId, subjectId],
+        );
+        await connection.query<ResultSetHeader>(
+          `INSERT INTO ${ASSIGNMENT_TABLE}
+            (${baseColumns.join(", ")})
+           VALUES ${valuesSql}`,
+          rowsToInsert.flat(),
+        );
+        await connection.commit();
+      } catch (error) {
+        await connection.rollback();
+        throw error;
+      }
+    });
 
     return NextResponse.json({ success: true, inserted: rowsToInsert.length });
   } catch (error) {
