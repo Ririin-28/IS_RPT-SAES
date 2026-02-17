@@ -132,28 +132,8 @@ export async function loadModel() {
      return null; 
    }
 
-   const loadHandler = tf.io.fromMemory(
-     JSON.parse(await fs.readFile(modelJsonPath, 'utf8')),
-     // We need to load weights manually into the tensor format if using fromMemory?
-     // No, fromMemory expects weight specs.
-     // Better approach: Use file system read. See below.
-     undefined 
-   );
-
-   // To load weights in pure JS Node is tricky. 
-   // Alternative: Inference on CLIENT side only (easier).
-   // Or: User implements a simple HTTP handler loopback? No.
-   
-   // Let's implement a loader that reads the weights.bin
-   const modelFile = JSON.parse(await fs.readFile(modelJsonPath, 'utf8'));
-   const weightsFile = await fs.readFile(path.join(MODEL_PATH, "weights.bin"));
-   
-   // We can perform a hack:
-   // tf.loadLayersModel(tf.io.browserHTTPRequest(...)) works in browser.
-   // Here we can use tf.models.modelFromJSON(topology) and then load weights.
-   
-   // Given complexity, let's recommend inference on Client Side for V1 in this plan.
-   // But for the sake of completeness, let's return the metadata so the API can pass it to client.
+   // To load weights in pure JS Node is tricky without tfjs-node.
+   // For now, expose the client model URL plus normalization metadata.
    const meta = JSON.parse(await fs.readFile(metaJsonPath, 'utf8'));
    return { modelUrl: '/models/performance-predictor/model.json', meta };
 }

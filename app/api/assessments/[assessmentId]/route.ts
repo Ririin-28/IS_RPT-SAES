@@ -7,7 +7,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_: NextRequest, props: { params: Promise<{ assessmentId: string }> }) {
+export async function GET() {
   return NextResponse.json({ success: false, error: "Method not implemented." }, { status: 405 });
 }
 

@@ -634,7 +634,6 @@ export default function MathFlashcards({
     expectedPhonemicLevel,
     flashcardsData,
     phonemicNameParam,
-    readSessionState,
     resetFields,
     sessionLockEnabled,
     startIndex,

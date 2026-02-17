@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
     let approvedScheduleId = toNumber(payload.approvedScheduleId);
     let subjectId = toNumber(payload.subjectId);
     let gradeId = toNumber(payload.gradeId);
-    const subjectName = normalizeText(payload.subjectName);
+    const subjectNameInput = normalizeText(payload.subjectName);
     const gradeLevel = parseGradeLevelValue(payload.gradeLevel ?? null);
     const phonemicId = toNumber(payload.phonemicId ?? null);
     const materialId = toNumber(payload.materialId ?? null);
@@ -139,10 +139,10 @@ export async function POST(request: NextRequest) {
     const result = await runWithConnection(async (connection) => {
       await connection.beginTransaction();
       try {
-        if (!subjectId && subjectName) {
+        if (!subjectId && subjectNameInput) {
           const [subjectLookupRows] = await connection.query<RowDataPacket[]>(
             "SELECT subject_id FROM subject WHERE LOWER(TRIM(subject_name)) = LOWER(TRIM(?)) LIMIT 1",
-            [subjectName],
+            [subjectNameInput],
           );
           subjectId = subjectLookupRows.length ? Number(subjectLookupRows[0].subject_id) : null;
         }

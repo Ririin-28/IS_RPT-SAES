@@ -3,11 +3,11 @@ import { NextResponse } from "next/server";
 import { getStudentFeatures } from "@/lib/ml/dataset";
 
 export async function GET(
-  request: Request,
-  { params }: { params: { studentId: string } }
+  _request: Request,
+  { params }: { params: Promise<{ studentId: string }> }
 ) {
   try {
-    const { studentId } = await params; // Next 15+ needs await
+    const { studentId } = await params;
     const features = await getStudentFeatures(studentId);
 
     if (!features) {

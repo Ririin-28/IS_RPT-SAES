@@ -22,13 +22,10 @@ export async function generateAiInsight(
   
   // 1. Get Predictive Context
   const features = await getStudentFeatures(studentId);
-  let predictedScore: number | null = null;
   let riskLevel = "Unknown";
-  let remedialCount = 0;
   let trend = "stable";
 
   if (features) {
-    remedialCount = features[0];
     // Simple trend heuristic: higher avg than last session?
     // We don't have trend explicitly in features yet, but we can infer from 'avgScore' vs current session.
     const avgHistorical = features[2];
@@ -38,7 +35,6 @@ export async function generateAiInsight(
     // Server-side Prediction
     const result = await predictStudentScore(features);
     if (result !== null) {
-      predictedScore = result;
       riskLevel = result < 75 ? "High" : "Low";
     }
   }

@@ -1128,7 +1128,6 @@ export default function FilipinoFlashcards({
     flashcardsData,
     gradeReadingSpeed,
     phonemicNameParam,
-    readSessionState,
     resetSessionTracking,
     sessionLockEnabled,
     startIndex,

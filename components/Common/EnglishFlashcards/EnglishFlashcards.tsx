@@ -1124,7 +1124,6 @@ export default function EnglishFlashcards({
     flashcardsData,
     gradeReadingSpeed,
     phonemicNameParam,
-    readSessionState,
     resetSessionTracking,
     sessionLockEnabled,
     startIndex,
