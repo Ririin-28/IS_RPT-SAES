@@ -25,6 +25,75 @@ const toDisplaySubject = (value: string | null | undefined, fallback: string): s
   return trimmed.replace(/\b\w/g, (char) => char.toUpperCase());
 };
 
+const KNOWN_SUFFIXES = new Set([
+  "jr",
+  "jr.",
+  "sr",
+  "sr.",
+  "ii",
+  "iii",
+  "iv",
+  "v",
+  "vi",
+  "vii",
+  "viii",
+  "ix",
+  "x",
+]);
+
+const formatSuffix = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const lower = trimmed.toLowerCase();
+  if (lower === "jr" || lower === "jr.") return "Jr.";
+  if (lower === "sr" || lower === "sr.") return "Sr.";
+  if (KNOWN_SUFFIXES.has(lower)) return trimmed.toUpperCase();
+  return trimmed;
+};
+
+const formatStudentName = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (trimmed.toLowerCase().includes("preview")) return trimmed;
+
+  if (trimmed.includes(",")) {
+    const commaParts = trimmed.split(",").map((part) => part.trim()).filter(Boolean);
+    const last = commaParts[0] ?? "";
+    const firstAndMiddle = commaParts[1] ?? "";
+    const firstParts = firstAndMiddle.split(/\s+/).filter(Boolean);
+    const first = firstParts[0] ?? "";
+    let suffixRaw = "";
+    let middleFromComma = "";
+    if (commaParts.length > 2) {
+      const possibleSuffix = commaParts[commaParts.length - 1];
+      if (KNOWN_SUFFIXES.has(possibleSuffix.toLowerCase())) {
+        suffixRaw = possibleSuffix;
+        middleFromComma = commaParts.slice(2, -1).join(" ");
+      } else {
+        middleFromComma = commaParts.slice(2).join(" ");
+      }
+    }
+    const middle = [...firstParts.slice(1), ...middleFromComma.split(/\s+/).filter(Boolean)].join(" ");
+    const middleInitial = middle ? `${middle[0].toUpperCase()}.` : "";
+    const suffix = formatSuffix(suffixRaw);
+    if (!last || !first) return trimmed;
+    return `${last}, ${first}${middleInitial ? ` ${middleInitial}` : ""}${suffix ? `, ${suffix}` : ""}`;
+  }
+
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return trimmed;
+  const lastPart = parts[parts.length - 1];
+  const suffix = KNOWN_SUFFIXES.has(lastPart.toLowerCase()) ? formatSuffix(lastPart) : "";
+  const nameParts = suffix ? parts.slice(0, -1) : parts;
+  if (nameParts.length < 2) return trimmed;
+  const first = nameParts[0];
+  const last = nameParts[nameParts.length - 1];
+  const middle = nameParts.length > 2 ? nameParts.slice(1, -1).join(" ") : "";
+  const middleInitial = middle ? `${middle[0].toUpperCase()}.` : "";
+  if (!last || !first) return trimmed;
+  return `${last}, ${first}${middleInitial ? ` ${middleInitial}` : ""}${suffix ? `, ${suffix}` : ""}`;
+};
+
 /* ---------- Math flashcards data ---------- */
 type MathFlashcard = {
   question: string;
@@ -680,11 +749,7 @@ export default function MathFlashcards({
     }
 
     let remedialSessionSaved = !sessionLockEnabled;
-    if (
-      sessionLockEnabled &&
-      selectedStudentId &&
-      sessionScores.length
-    ) {
+    if (selectedStudentId && sessionScores.length) {
       const slides = sessionScores.map((item) => ({
         flashcardIndex: item.cardIndex,
         expectedText: item.question,
@@ -1005,8 +1070,12 @@ export default function MathFlashcards({
       <div className="min-h-dvh bg-linear-to-br from-[#f2f8f4] via-white to-[#e6f2ec]">
         <div className="w-full max-w-8xl mx-auto px-4 sm:px-6 lg:px-10 py-6 flex min-h-dvh flex-col gap-5">
           <header className="rounded-3xl border border-gray-300 bg-white/70 backdrop-blur px-8 py-5 flex flex-col gap-2 shadow-md shadow-gray-200">
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">Session Summary</p>
-            <h1 className="text-3xl sm:text-4xl font-bold text-black">Overall Performance</h1>
+            <h1 className="text-3xl sm:text-4xl font-bold text-black">Session Summary</h1>
+            {selectedStudent?.name ? (
+              <p className="text-3xl sm:text-2xl font-bold text-slate-500">
+                {formatStudentName(selectedStudent.name)}
+              </p>
+            ) : null}
           </header>
 
           <div className="grid gap-4 lg:grid-cols-12">
@@ -1050,8 +1119,7 @@ export default function MathFlashcards({
 
           <div className="rounded-3xl border border-emerald-200 bg-white shadow-md shadow-emerald-100 p-6">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">AI Driven Insights</p>
-              <h2 className="text-2xl font-bold text-black">Feedback &amp; Recommendations</h2>
+              <h2 className="text-2xl font-bold text-black">System Feedback</h2>
             </div>
             <p className="mt-3 text-md text-slate-700 leading-relaxed">
               {isLoadingInsight ? (
@@ -1069,8 +1137,7 @@ export default function MathFlashcards({
           {sessionLockEnabled && (
             <div className="rounded-3xl border border-emerald-200 bg-white shadow-md shadow-emerald-100 p-6">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">Teacher Feedback</p>
-                <h2 className="text-2xl font-bold text-black">Required Notes</h2>
+                <h2 className="text-2xl font-bold text-black">Teacher Feedback</h2>
               </div>
               <textarea
                 value={teacherFeedback}

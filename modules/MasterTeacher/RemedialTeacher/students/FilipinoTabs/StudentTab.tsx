@@ -29,7 +29,24 @@ type NameParts = {
   firstName: string;
   lastName: string;
   middleNames: string[];
+  suffix: string;
 };
+
+const KNOWN_SUFFIXES = new Set([
+  "jr",
+  "jr.",
+  "sr",
+  "sr.",
+  "ii",
+  "iii",
+  "iv",
+  "v",
+  "vi",
+  "vii",
+  "viii",
+  "ix",
+  "x",
+]);
 
 // Helper function to capitalize words
 const capitalizeWord = (value: string) => {
@@ -43,22 +60,33 @@ const capitalizeWord = (value: string) => {
     .join(" ");
 };
 
+const formatSuffix = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const lower = trimmed.toLowerCase();
+  if (lower === "jr" || lower === "jr.") return "Jr.";
+  if (lower === "sr" || lower === "sr.") return "Sr.";
+  if (KNOWN_SUFFIXES.has(lower)) return trimmed.toUpperCase();
+  return trimmed;
+};
+
 // Extract name parts from student object
 const extractNameParts = (student: any): NameParts => {
   const firstName = (student?.firstName ?? student?.firstname ?? "").trim();
   const lastName = (student?.lastName ?? student?.surname ?? student?.lastname ?? "").trim();
   const middleNameRaw = (student?.middleName ?? student?.middlename ?? student?.middleInitial ?? "").trim();
+  const suffixRaw = (student?.suffix ?? student?.nameSuffix ?? "").trim();
 
   // If we have separate name fields, use them
   if (firstName || lastName) {
     const middleNames = middleNameRaw ? middleNameRaw.split(/\s+/).filter(Boolean) : [];
-    return { firstName, lastName, middleNames };
+    return { firstName, lastName, middleNames, suffix: suffixRaw };
   }
 
   // Otherwise, parse the full name
   const raw = (student?.name ?? "").trim();
   if (!raw) {
-    return { firstName: "", lastName: "", middleNames: [] };
+    return { firstName: "", lastName: "", middleNames: [], suffix: "" };
   }
 
   const commaParts = raw.split(",").map((part: string) => part.trim()).filter(Boolean);
@@ -68,34 +96,57 @@ const extractNameParts = (student: any): NameParts => {
     const firstParts = firstAndMiddle.split(/\s+/).filter(Boolean);
     const firstName = firstParts[0] ?? "";
     const middleFromFirst = firstParts.slice(1);
-    const middleFromComma = commaParts.slice(2).join(" ").split(/\s+/).filter(Boolean);
+    let suffixFromComma = "";
+    let middleFromCommaParts: string[] = [];
+    if (commaParts.length > 2) {
+      const possibleSuffix = commaParts[commaParts.length - 1];
+      if (KNOWN_SUFFIXES.has(possibleSuffix.toLowerCase())) {
+        suffixFromComma = possibleSuffix;
+        middleFromCommaParts = commaParts.slice(2, -1);
+      } else {
+        middleFromCommaParts = commaParts.slice(2);
+      }
+    }
+    const middleFromComma = middleFromCommaParts.join(" ").split(/\s+/).filter(Boolean);
+    const suffix = suffixRaw || suffixFromComma;
     return {
       firstName,
       lastName,
       middleNames: [...middleFromFirst, ...middleFromComma],
+      suffix,
     };
   }
 
   const parts = raw.split(/\s+/).filter(Boolean);
   if (!parts.length) {
-    return { firstName: "", lastName: "", middleNames: [] };
+    return { firstName: "", lastName: "", middleNames: [], suffix: "" };
   }
 
   if (parts.length === 1) {
-    return { firstName: parts[0], lastName: "", middleNames: [] };
+    return { firstName: parts[0], lastName: "", middleNames: [], suffix: "" };
+  }
+
+  const suffixCandidate = parts[parts.length - 1];
+  const suffix = !suffixRaw && KNOWN_SUFFIXES.has(suffixCandidate.toLowerCase())
+    ? suffixCandidate
+    : suffixRaw;
+  const nameParts = suffix ? parts.slice(0, -1) : parts;
+  if (nameParts.length < 2) {
+    return { firstName: parts[0], lastName: "", middleNames: [], suffix };
   }
 
   // Assume format: FirstName MiddleName LastName
   return {
-    firstName: parts[0],
-    lastName: parts[parts.length - 1],
-    middleNames: parts.slice(1, -1),
+    firstName: nameParts[0],
+    lastName: nameParts[nameParts.length - 1],
+    middleNames: nameParts.slice(1, -1),
+    suffix,
   };
 };
 
 // Format display name as "Surname, FirstName M.I."
 const formatStudentDisplayName = (student: any) => {
-  const { firstName, lastName, middleNames } = extractNameParts(student);
+  const { firstName, lastName, middleNames, suffix } = extractNameParts(student);
   
   if (!firstName && !lastName) {
     return student?.name ?? "";
@@ -123,25 +174,29 @@ const formatStudentDisplayName = (student: any) => {
     segments.push(middleInitials);
   }
   
-  // Format as "Surname, FirstName M.I."
+  const formattedSuffix = formatSuffix(suffix);
+
+  // Format as "Surname, FirstName M.I., Suffix"
   if (segments.length === 1) {
     return segments[0];
   } else if (segments.length === 2) {
-    return `${segments[0]}, ${segments[1]}`;
+    return `${segments[0]}, ${segments[1]}${formattedSuffix ? `, ${formattedSuffix}` : ""}`;
   } else {
-    return `${segments[0]}, ${segments[1]} ${segments.slice(2).join(" ")}`;
+    const core = `${segments[0]}, ${segments[1]} ${segments.slice(2).join(" ")}`;
+    return `${core}${formattedSuffix ? `, ${formattedSuffix}` : ""}`;
   }
 };
 
 // Build sort key for A-Z sorting by Surname, FirstName, Middle Initials
 const buildNameSortKey = (student: any) => {
-  const { firstName, lastName, middleNames } = extractNameParts(student);
+  const { firstName, lastName, middleNames, suffix } = extractNameParts(student);
   
   // Create sort key: lastName|firstName|middleNames
   const normalized = [
     lastName.toLowerCase(),
     firstName.toLowerCase(),
     middleNames.join(" ").toLowerCase(),
+    suffix.toLowerCase(),
   ].join("|");
   
   // If we have no name data, use the raw name field

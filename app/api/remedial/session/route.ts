@@ -100,9 +100,7 @@ export async function POST(request: NextRequest) {
     if (!slides.length) {
       return NextResponse.json({ success: false, error: "At least one slide performance is required." }, { status: 400 });
     }
-    if (completed && !teacherFeedback) {
-      return NextResponse.json({ success: false, error: "Teacher feedback is required." }, { status: 400 });
-    }
+
 
     const validatedSlides = slides
       .map((slide, index) => ({
@@ -155,6 +153,20 @@ export async function POST(request: NextRequest) {
           gradeId = gradeLookupRows.length ? Number(gradeLookupRows[0].grade_id) : null;
         }
 
+        if ((!subjectId || !gradeId) && approvedScheduleId) {
+          const [scheduleLookupRows] = await connection.query<RowDataPacket[]>(
+            `SELECT subject_id, grade_id
+             FROM approved_remedial_schedule
+             WHERE request_id = ?
+             LIMIT 1`,
+            [approvedScheduleId],
+          );
+          if (scheduleLookupRows.length) {
+            if (!subjectId) subjectId = Number(scheduleLookupRows[0].subject_id) || null;
+            if (!gradeId) gradeId = Number(scheduleLookupRows[0].grade_id) || null;
+          }
+        }
+
         if (!subjectId || !gradeId) {
           await connection.rollback();
           return {
@@ -195,11 +207,15 @@ export async function POST(request: NextRequest) {
         }
 
         const [existingRows] = await connection.query<RowDataPacket[]>(
-          "SELECT session_id FROM student_remedial_session WHERE student_id = ? AND approved_schedule_id = ? LIMIT 1",
+          `SELECT session_id, completed_at
+           FROM student_remedial_session
+           WHERE student_id = ? AND approved_schedule_id = ?
+           LIMIT 1`,
           [studentId, approvedScheduleId],
         );
 
         let sessionId = existingRows.length ? Number(existingRows[0].session_id) : null;
+        const existingCompletedAt = existingRows.length ? existingRows[0].completed_at ?? null : null;
         if (!sessionId) {
           const [sessionInsert] = await connection.query<RowDataPacket[]>(
             `INSERT INTO student_remedial_session
@@ -267,6 +283,8 @@ export async function POST(request: NextRequest) {
           validSubject
         );
 
+        const nextCompletedAt = completed ? new Date() : existingCompletedAt;
+
         await connection.query(
           `UPDATE student_remedial_session
            SET overall_average = ?,
@@ -280,7 +298,7 @@ export async function POST(request: NextRequest) {
           [
             overallAverage,
             aiRemarks,
-            completed ? new Date() : null,
+            nextCompletedAt,
             subjectId,
             gradeId,
             phonemicId,
@@ -328,11 +346,15 @@ export async function POST(request: NextRequest) {
             sessionId,
           };
           const [recordRows] = await connection.query<RowDataPacket[]>(
-            `SELECT record_id FROM performance_records WHERE student_id = ? AND activity_id = ?
+            `SELECT record_id, completed_at
+             FROM performance_records
+             WHERE student_id = ? AND activity_id = ?
              ORDER BY record_id DESC LIMIT 1`,
             [studentId, activityId],
           );
           let recordId = recordRows.length ? Number(recordRows[0].record_id) : null;
+          const existingRecordCompletedAt = recordRows.length ? recordRows[0].completed_at ?? null : null;
+          const nextRecordCompletedAt = completed ? new Date() : existingRecordCompletedAt;
 
           if (!recordId) {
             const [recordInsert] = await connection.query<RowDataPacket[]>(
@@ -345,7 +367,7 @@ export async function POST(request: NextRequest) {
                 validatedSlides.length,
                 null,
                 JSON.stringify(metadata),
-                completed ? new Date() : null,
+                nextRecordCompletedAt,
               ],
             );
             recordId = Number((recordInsert as unknown as { insertId?: number }).insertId);
@@ -359,7 +381,7 @@ export async function POST(request: NextRequest) {
                 validatedSlides.length,
                 null,
                 JSON.stringify(metadata),
-                completed ? new Date() : null,
+                nextRecordCompletedAt,
                 recordId,
               ],
             );

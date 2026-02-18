@@ -123,6 +123,75 @@ const toDisplaySubject = (value: string | null | undefined, fallback: string): s
   return trimmed.replace(/\b\w/g, (char) => char.toUpperCase());
 };
 
+const KNOWN_SUFFIXES = new Set([
+  "jr",
+  "jr.",
+  "sr",
+  "sr.",
+  "ii",
+  "iii",
+  "iv",
+  "v",
+  "vi",
+  "vii",
+  "viii",
+  "ix",
+  "x",
+]);
+
+const formatSuffix = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const lower = trimmed.toLowerCase();
+  if (lower === "jr" || lower === "jr.") return "Jr.";
+  if (lower === "sr" || lower === "sr.") return "Sr.";
+  if (KNOWN_SUFFIXES.has(lower)) return trimmed.toUpperCase();
+  return trimmed;
+};
+
+const formatStudentName = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (trimmed.toLowerCase().includes("preview")) return trimmed;
+
+  if (trimmed.includes(",")) {
+    const commaParts = trimmed.split(",").map((part) => part.trim()).filter(Boolean);
+    const last = commaParts[0] ?? "";
+    const firstAndMiddle = commaParts[1] ?? "";
+    const firstParts = firstAndMiddle.split(/\s+/).filter(Boolean);
+    const first = firstParts[0] ?? "";
+    let suffixRaw = "";
+    let middleFromComma = "";
+    if (commaParts.length > 2) {
+      const possibleSuffix = commaParts[commaParts.length - 1];
+      if (KNOWN_SUFFIXES.has(possibleSuffix.toLowerCase())) {
+        suffixRaw = possibleSuffix;
+        middleFromComma = commaParts.slice(2, -1).join(" ");
+      } else {
+        middleFromComma = commaParts.slice(2).join(" ");
+      }
+    }
+    const middle = [...firstParts.slice(1), ...middleFromComma.split(/\s+/).filter(Boolean)].join(" ");
+    const middleInitial = middle ? `${middle[0].toUpperCase()}.` : "";
+    const suffix = formatSuffix(suffixRaw);
+    if (!last || !first) return trimmed;
+    return `${last}, ${first}${middleInitial ? ` ${middleInitial}` : ""}${suffix ? `, ${suffix}` : ""}`;
+  }
+
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return trimmed;
+  const lastPart = parts[parts.length - 1];
+  const suffix = KNOWN_SUFFIXES.has(lastPart.toLowerCase()) ? formatSuffix(lastPart) : "";
+  const nameParts = suffix ? parts.slice(0, -1) : parts;
+  if (nameParts.length < 2) return trimmed;
+  const first = nameParts[0];
+  const last = nameParts[nameParts.length - 1];
+  const middle = nameParts.length > 2 ? nameParts.slice(1, -1).join(" ") : "";
+  const middleInitial = middle ? `${middle[0].toUpperCase()}.` : "";
+  if (!last || !first) return trimmed;
+  return `${last}, ${first}${middleInitial ? ` ${middleInitial}` : ""}${suffix ? `, ${suffix}` : ""}`;
+};
+
 /* ---------- Student roster & performance storage ---------- */
 
 const BASE_FLASHCARD_CONTENT_KEY = "MASTER_TEACHER_FILIPINO_FLASHCARDS";
@@ -560,9 +629,13 @@ export default function FilipinoFlashcards({
 
   const currentCard = flashcardsData[current] ?? flashcardsData[0] ?? INITIAL_FLASHCARDS[0];
   const sentence = currentCard?.sentence ?? "";
-  const isParagraphLevel = expectedPhonemicLevel === "paragraph" || sentence.length > 280;
-  const contentContainerClass =
-    `flex-1 px-6 sm:px-8 lg:px-12 py-10 via-white flex flex-col items-center ${isParagraphLevel ? "justify-start" : "justify-center"} text-center gap-4 overflow-y-auto max-h-[48vh]`;
+  const isLongContent = sentence.length > 280;
+  const contentContainerClass = [
+    "flex-1 px-6 sm:px-8 lg:px-12 via-white flex flex-col items-center text-center gap-4",
+    isLongContent
+      ? "justify-start overflow-y-auto max-h-[48vh] pt-6 pb-10"
+      : "justify-center py-10",
+  ].join(" ");
 
   // recognition + metrics state
   const [isListening, setIsListening] = useState(false);
@@ -588,12 +661,14 @@ export default function FilipinoFlashcards({
   const speechStartRef = useRef<number | null>(null);
   const speechEndRef = useRef<number | null>(null);
   const cumulativeSilentMsRef = useRef<number>(0);
+  const browserRecognitionRef = useRef<any>(null);
   const recognizerRef = useRef<SpeechSDK.SpeechRecognizer | null>(null);
   const recognizerSessionRef = useRef(0);
   const recognizerClosedRef = useRef(false);
   const synthesizerRef = useRef<SpeechSDK.SpeechSynthesizer | null>(null);
   const speechTokenRef = useRef<{ token: string; region: string; expiresAt: number } | null>(null);
   const autoStartRef = useRef(false);
+  const activeRecognizerStopRef = useRef<(() => void) | null>(null);
 
   const updateSessionProgress = useCallback(
     (nextIndex: number) => {
@@ -694,11 +769,7 @@ export default function FilipinoFlashcards({
     }
 
     let remedialSessionSaved = !sessionLockEnabled;
-    if (
-      sessionLockEnabled &&
-      selectedStudentId &&
-      sessionScores.length
-    ) {
+    if (selectedStudentId && sessionScores.length) {
       const slides = sessionScores.map((item) => ({
         flashcardIndex: item.cardIndex,
         expectedText: item.sentence,
@@ -983,7 +1054,25 @@ export default function FilipinoFlashcards({
     } catch { /* ignore */ }
   }, []);
 
+  const stopListening = useCallback(() => {
+    if (activeRecognizerStopRef.current) {
+      activeRecognizerStopRef.current();
+      activeRecognizerStopRef.current = null;
+    }
+    if (browserRecognitionRef.current) {
+      try {
+        browserRecognitionRef.current.stop();
+      } catch {
+        // ignore
+      }
+      browserRecognitionRef.current = null;
+    }
+    stopAudioAnalyser();
+    setIsListening(false);
+  }, [stopAudioAnalyser]);
+
   const resetSessionTracking = useCallback(() => {
+    stopListening();
     setRecognizedText("");
     setLiveTranscription("");
     setFeedback("");
@@ -997,17 +1086,18 @@ export default function FilipinoFlashcards({
     setIsListening(false);
     setIsProcessing(false);
     setIsPlaying(false);
-  }, [stopAudioAnalyser]);
+  }, [stopAudioAnalyser, stopListening]);
 
   useEffect(() => {
     return () => {
+      stopListening();
       stopAudioAnalyser();
       recognizerRef.current?.close();
       recognizerRef.current = null;
       synthesizerRef.current?.close();
       synthesizerRef.current = null;
     };
-  }, [stopAudioAnalyser]);
+  }, [stopAudioAnalyser, stopListening]);
 
   useEffect(() => {
     resetSessionTracking();
@@ -1300,6 +1390,14 @@ export default function FilipinoFlashcards({
       recognition.lang = "fil-PH";
       recognition.interimResults = false;
       recognition.maxAlternatives = 1;
+      browserRecognitionRef.current = recognition;
+      activeRecognizerStopRef.current = () => {
+        try {
+          recognition.stop();
+        } catch {
+          // ignore
+        }
+      };
 
       cumulativeSilentMsRef.current = 0;
       speechStartRef.current = null;
@@ -1344,6 +1442,8 @@ export default function FilipinoFlashcards({
         stopAudioAnalyser();
         setIsListening(false);
         setIsProcessing(false);
+        activeRecognizerStopRef.current = null;
+        browserRecognitionRef.current = null;
       };
 
       recognition.onerror = () => {
@@ -1351,6 +1451,8 @@ export default function FilipinoFlashcards({
         stopAudioAnalyser();
         setIsListening(false);
         setIsProcessing(false);
+        activeRecognizerStopRef.current = null;
+        browserRecognitionRef.current = null;
       };
 
       recognition.onend = () => {
@@ -1361,6 +1463,8 @@ export default function FilipinoFlashcards({
           setIsListening(false);
           setIsProcessing(false);
         }
+        activeRecognizerStopRef.current = null;
+        browserRecognitionRef.current = null;
       };
 
       recognition.start();
@@ -1374,12 +1478,19 @@ export default function FilipinoFlashcards({
       setIsListening(false);
       setIsProcessing(false);
       stopAudioAnalyser();
+      activeRecognizerStopRef.current = null;
+      browserRecognitionRef.current = null;
     }
   }, [computeScores, current, recognizedText, sentence, startAudioAnalyser, stopAudioAnalyser, upsertSessionScore]);
 
   const handleMicrophone = async () => {
     if (!sentence.trim()) return;
-    if (isListening || isProcessing) return;
+    if (isListening) {
+      stopListening();
+      return;
+    }
+    if (isProcessing) return;
+    activeRecognizerStopRef.current = null;
     if (recognizerRef.current) {
       try {
         recognizerClosedRef.current = true;
@@ -1437,7 +1548,6 @@ export default function FilipinoFlashcards({
         words: WordFeedback[];
       } | null>((resolve, reject) => {
         let settled = false;
-        let silenceTimer: number | undefined;
         const maxTimer = window.setTimeout(() => finish(), 120000);
         let totalDuration = 0;
         let totalWords = 0;
@@ -1448,7 +1558,6 @@ export default function FilipinoFlashcards({
         const finish = () => {
           if (settled) return;
           settled = true;
-          if (silenceTimer) window.clearTimeout(silenceTimer);
           if (maxTimer) window.clearTimeout(maxTimer);
           if (!isActiveSession()) {
             resolve(null);
@@ -1483,10 +1592,7 @@ export default function FilipinoFlashcards({
           );
         };
 
-        const bumpSilence = () => {
-          if (silenceTimer) window.clearTimeout(silenceTimer);
-          silenceTimer = window.setTimeout(() => finish(), 4000);
-        };
+        activeRecognizerStopRef.current = finish;
 
         recognizer.recognized = (_sender, event) => {
           if (!isActiveSession()) return;
@@ -1511,7 +1617,6 @@ export default function FilipinoFlashcards({
           );
           const segmentWords = parseWordFeedback(jsonResult, sentence, "raw");
           allWords.push(...segmentWords);
-          bumpSilence();
         };
 
         recognizer.recognizing = (_sender, event) => {
@@ -1521,7 +1626,6 @@ export default function FilipinoFlashcards({
             setLiveTranscription(interimText);
             setRecognizedText(interimText);
             setStatusMessage("Listening... 🎧");
-            bumpSilence();
           }
         };
 
@@ -1542,6 +1646,8 @@ export default function FilipinoFlashcards({
           },
         );
       });
+
+      activeRecognizerStopRef.current = null;
 
       if (!aggregate) {
         setStatusMessage("No speech detected. Please try again.");
@@ -1615,6 +1721,7 @@ export default function FilipinoFlashcards({
       await handleMicrophoneFallback();
       return;
     } finally {
+      activeRecognizerStopRef.current = null;
       if (isActiveSession()) {
         recognizerClosedRef.current = true;
         try {
@@ -1842,8 +1949,12 @@ export default function FilipinoFlashcards({
       <div className="min-h-dvh bg-linear-to-br from-[#f2f8f4] via-white to-[#e6f2ec]">
         <div className="w-full max-w-8xl mx-auto px-4 sm:px-6 lg:px-10 py-6 flex min-h-dvh flex-col gap-5">
           <header className="rounded-3xl border border-gray-300 bg-white/70 backdrop-blur px-8 py-5 flex flex-col gap-2 shadow-md shadow-gray-200">
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">Session Summary</p>
-            <h1 className="text-3xl sm:text-4xl font-bold text-black">Overall Performance</h1>
+            <h1 className="text-3xl sm:text-4xl font-bold text-black">Session Summary</h1>
+            {selectedStudent?.name ? (
+              <p className="text-3xl sm:text-2xl font-bold text-slate-500">
+                {formatStudentName(selectedStudent.name)}
+              </p>
+            ) : null}
           </header>
 
           <div className="grid gap-4 lg:grid-cols-12">
@@ -1893,8 +2004,7 @@ export default function FilipinoFlashcards({
 
           <div className="rounded-3xl border border-emerald-200 bg-white shadow-md shadow-emerald-100 p-6">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">AI Driven Insights</p>
-              <h2 className="text-2xl font-bold text-black">Feedback &amp; Recommendations</h2>
+              <h2 className="text-2xl font-bold text-black">System Feedback</h2>
             </div>
             <p className="mt-3 text-md text-slate-700 leading-relaxed">
               {isLoadingInsight ? (
@@ -1912,8 +2022,7 @@ export default function FilipinoFlashcards({
           {sessionLockEnabled && (
             <div className="rounded-3xl border border-emerald-200 bg-white shadow-md shadow-emerald-100 p-6">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">Teacher Feedback</p>
-                <h2 className="text-2xl font-bold text-black">Required Notes</h2>
+                <h2 className="text-2xl font-bold text-black">Teacher Feedback</h2>
               </div>
               <textarea
                 value={teacherFeedback}
@@ -1991,17 +2100,6 @@ export default function FilipinoFlashcards({
           </div>
         </header>
 
-        {(statusMessage || feedback) && (
-          <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 text-sm text-emerald-900">
-            <div className="flex items-center gap-2">
-              {isProcessing && <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />}
-              <span className="font-semibold">{statusMessage || feedback}</span>
-            </div>
-            {statusMessage && feedback && (
-              <p className="mt-1 text-xs text-emerald-800">{feedback}</p>
-            )}
-          </div>
-        )}
 
         <div className="mt-5 flex flex-1 flex-col gap-5">
           <div className="grid gap-3 xl:grid-cols-12 flex-1 min-h-0">
@@ -2076,7 +2174,7 @@ export default function FilipinoFlashcards({
                   >
                     <MicIcon />
                   </span>
-                  {isListening ? "Listening..." : "Speak"}
+                  {isListening ? "Stop" : "Speak"}
                 </button>
               </div>
               </div>

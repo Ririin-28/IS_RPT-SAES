@@ -70,6 +70,74 @@ const normalizeSubject = (slug?: string): SubjectKey => {
   return "english";
 };
 
+const KNOWN_SUFFIXES = new Set([
+  "jr",
+  "jr.",
+  "sr",
+  "sr.",
+  "ii",
+  "iii",
+  "iv",
+  "v",
+  "vi",
+  "vii",
+  "viii",
+  "ix",
+  "x",
+]);
+
+const formatSuffix = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const lower = trimmed.toLowerCase();
+  if (lower === "jr" || lower === "jr.") return "Jr.";
+  if (lower === "sr" || lower === "sr.") return "Sr.";
+  if (KNOWN_SUFFIXES.has(lower)) return trimmed.toUpperCase();
+  return trimmed;
+};
+
+const formatStudentNameFromString = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  if (trimmed.includes(",")) {
+    const commaParts = trimmed.split(",").map((part) => part.trim()).filter(Boolean);
+    const last = commaParts[0] ?? "";
+    const firstAndMiddle = commaParts[1] ?? "";
+    const firstParts = firstAndMiddle.split(/\s+/).filter(Boolean);
+    const first = firstParts[0] ?? "";
+    let suffixRaw = "";
+    let middleFromComma = "";
+    if (commaParts.length > 2) {
+      const possibleSuffix = commaParts[commaParts.length - 1];
+      if (KNOWN_SUFFIXES.has(possibleSuffix.toLowerCase())) {
+        suffixRaw = possibleSuffix;
+        middleFromComma = commaParts.slice(2, -1).join(" ");
+      } else {
+        middleFromComma = commaParts.slice(2).join(" ");
+      }
+    }
+    const middle = [...firstParts.slice(1), ...middleFromComma.split(/\s+/).filter(Boolean)].join(" ");
+    const middleInitial = middle ? `${middle[0].toUpperCase()}.` : "";
+    const suffix = formatSuffix(suffixRaw);
+    if (!last || !first) return trimmed;
+    return `${last}, ${first}${middleInitial ? ` ${middleInitial}` : ""}${suffix ? `, ${suffix}` : ""}`;
+  }
+
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return trimmed;
+  const lastPart = parts[parts.length - 1];
+  const suffix = KNOWN_SUFFIXES.has(lastPart.toLowerCase()) ? formatSuffix(lastPart) : "";
+  const nameParts = suffix ? parts.slice(0, -1) : parts;
+  if (nameParts.length < 2) return trimmed;
+  const first = nameParts[0];
+  const last = nameParts[nameParts.length - 1];
+  const middle = nameParts.length > 2 ? nameParts.slice(1, -1).join(" ") : "";
+  const middleInitial = middle ? `${middle[0].toUpperCase()}.` : "";
+  if (!last || !first) return trimmed;
+  return `${last}, ${first}${middleInitial ? ` ${middleInitial}` : ""}${suffix ? `, ${suffix}` : ""}`;
+};
+
 type MasterTeacherStudentsProps = {
   subjectSlug?: string;
 };
@@ -141,6 +209,19 @@ const composeDisplayName = (student: RemedialStudent): string => {
   return "Unnamed Student";
 };
 
+const formatStudentDisplayName = (student: RemedialStudent): string => {
+  const last = (student.lastName ?? "").trim();
+  const first = (student.firstName ?? "").trim();
+  const middle = (student.middleName ?? "").trim();
+  const suffix = formatSuffix((student.suffix ?? "").trim());
+  if (last || first) {
+    const middleInitial = middle ? `${middle[0].toUpperCase()}.` : "";
+    const core = `${last}${last && first ? ", " : ""}${first}${middleInitial ? ` ${middleInitial}` : ""}`;
+    return `${core}${suffix ? `, ${suffix}` : ""}`.trim();
+  }
+  return formatStudentNameFromString(composeDisplayName(student));
+};
+
 const toDisplayStudent = (student: RemedialStudent, index: number) => {
   const numericUserId = coerceNumber(student.userId);
   const numericRemedialId = coerceNumber(student.remedialId);
@@ -160,10 +241,11 @@ const toDisplayStudent = (student: RemedialStudent, index: number) => {
     id: fallbackId,
     studentId: identifier,
     lrn: student.lrn ?? student.studentIdentifier ?? null,
-    name: student.fullName ?? composeDisplayName(student),
+    name: formatStudentDisplayName(student),
     firstName: student.firstName ?? null,
     middleName: student.middleName ?? null,
     lastName: student.lastName ?? null,
+    suffix: student.suffix ?? null,
     grade: student.grade ?? "",
     section: student.section ?? "",
     guardian: student.guardian ?? "",

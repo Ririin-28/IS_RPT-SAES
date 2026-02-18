@@ -41,14 +41,19 @@ export async function fetchStudentTrainingData(): Promise<StudentTrainingData[]>
     );
     const sessions = remedialCount[0]?.count || 0;
 
-    // 2. Get Phonemic Level (from student table or join)
+    // 2. Get Phonemic Level (from subject assessment history)
     // Assuming phonemic_id maps roughly to difficulty/level (1-5).
     // If null, default to 1 (lowest).
     const [studentInfo] = await query<RowDataPacket[]>(
-      `SELECT english_phonemic_id FROM student WHERE student_id = ?`,
+      `SELECT ssa.phonemic_id
+       FROM student_subject_assessment ssa
+       JOIN subject s ON s.subject_id = ssa.subject_id
+       WHERE ssa.student_id = ? AND LOWER(TRIM(s.subject_name)) = 'english'
+       ORDER BY ssa.assessed_at DESC
+       LIMIT 1`,
       [studentId]
     );
-    const phonemicLevel = studentInfo[0]?.english_phonemic_id || 1;
+    const phonemicLevel = studentInfo[0]?.phonemic_id || 1;
 
     // 3. Get Performance History
     // Order by date DESC. Take top 6.
@@ -101,10 +106,15 @@ export async function getStudentFeatures(studentId: string): Promise<number[] | 
 
     // 2. Get Phonemic Level
     const [studentInfo] = await query<RowDataPacket[]>(
-      `SELECT english_phonemic_id FROM student WHERE student_id = ?`,
+      `SELECT ssa.phonemic_id
+       FROM student_subject_assessment ssa
+       JOIN subject s ON s.subject_id = ssa.subject_id
+       WHERE ssa.student_id = ? AND LOWER(TRIM(s.subject_name)) = 'english'
+       ORDER BY ssa.assessed_at DESC
+       LIMIT 1`,
       [studentId]
     );
-    const phonemicLevel = studentInfo[0]?.english_phonemic_id || 1;
+    const phonemicLevel = studentInfo[0]?.phonemic_id || 1;
 
     // 3. Get Recent Performance Average
     // Take top 5 recent activities
