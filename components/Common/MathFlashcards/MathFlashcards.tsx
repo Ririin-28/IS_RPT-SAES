@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useMemo, useCallback, useRef, type CSSProperties } from "react";
+import * as SpeechSDK from "microsoft-cognitiveservices-speech-sdk";
 import { FiArrowLeft, FiArrowRight } from "react-icons/fi";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
@@ -8,6 +9,24 @@ import { buildFlashcardContentKey } from "@/lib/utils/flashcards-storage";
 import { getAiInsightsAction } from "@/app/actions/get-ai-insights";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 
+const ALLOW_BROWSER_FALLBACK = process.env.NEXT_PUBLIC_ALLOW_SPEECH_FALLBACK === "true";
+
+/* ---------- Icons ---------- */
+const Volume2Icon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/>
+    <path d="M16 9a5 5 0 0 1 0 6"/>
+    <path d="M19.364 18.364a9 9 0 0 0 0-12.728"/>
+  </svg>
+);
+
+const MicIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 19v3"/>
+    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+    <rect x="9" y="2" width="6" height="13" rx="3"/>
+  </svg>
+);
 const PAGE_SIZE = 8;
 
 const normalizeLevelLabel = (value?: string | null): string => {
@@ -92,6 +111,272 @@ const formatStudentName = (value: string): string => {
   const middleInitial = middle ? `${middle[0].toUpperCase()}.` : "";
   if (!last || !first) return trimmed;
   return `${last}, ${first}${middleInitial ? ` ${middleInitial}` : ""}${suffix ? `, ${suffix}` : ""}`;
+};
+
+const formatNumberForSpeech = (value: number) => {
+  if (!Number.isFinite(value)) return "";
+  return Number.isInteger(value) ? String(value) : String(value);
+};
+
+const formatQuestionForSpeech = (question: string) => {
+  return question
+    .replace(/×/g, " times ")
+    .replace(/\bx\b/gi, " times ")
+    .replace(/\*/g, " times ")
+    .replace(/÷/g, " divided by ")
+    .replace(/\//g, " divided by ")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+type ParsedMathQuestion = {
+  left: number;
+  right: number;
+  operator: "+" | "-" | "*" | "/";
+  symbol: string;
+  operatorWord: string;
+  stepVerb: string;
+  result: number;
+};
+
+const parseMathQuestion = (question: string): ParsedMathQuestion | null => {
+  const match = question
+    .replace(/×/g, "*")
+    .replace(/÷/g, "/")
+    .match(/^\s*(-?\d+(?:\.\d+)?)\s*([+\-*/xX])\s*(-?\d+(?:\.\d+)?)\s*$/);
+  if (!match) return null;
+  const left = Number.parseFloat(match[1]);
+  const rawOp = match[2];
+  const right = Number.parseFloat(match[3]);
+  if (!Number.isFinite(left) || !Number.isFinite(right)) return null;
+  const operator = rawOp.toLowerCase() === "x" ? "*" : (rawOp as "+" | "-" | "*" | "/");
+  let operatorWord = "";
+  let stepVerb = "";
+  let result = 0;
+
+  switch (operator) {
+    case "+":
+      operatorWord = "add";
+      stepVerb = "add";
+      result = left + right;
+      break;
+    case "-":
+      operatorWord = "subtract";
+      stepVerb = "take away";
+      result = left - right;
+      break;
+    case "*":
+      operatorWord = "multiply";
+      stepVerb = "multiply by";
+      result = left * right;
+      break;
+    case "/":
+      operatorWord = "divide";
+      stepVerb = "divide by";
+      result = right === 0 ? Number.NaN : left / right;
+      break;
+    default:
+      return null;
+  }
+
+  return {
+    left,
+    right,
+    operator,
+    symbol: operator,
+    operatorWord,
+    stepVerb,
+    result,
+  };
+};
+
+const buildMathTutorSteps = (parsed: ParsedMathQuestion): string[] => {
+  const leftText = formatNumberForSpeech(parsed.left);
+  const rightText = formatNumberForSpeech(parsed.right);
+  const resultText = formatNumberForSpeech(parsed.result);
+
+  switch (parsed.operator) {
+    case "+":
+      return [
+        `Start with ${leftText}.`,
+        `Add ${rightText}.`,
+        `That makes ${resultText}.`,
+      ];
+    case "-":
+      return [
+        `Start with ${leftText}.`,
+        `Take away ${rightText}.`,
+        `That leaves ${resultText}.`,
+      ];
+    case "*":
+      return [
+        `We are multiplying ${leftText} by ${rightText}.`,
+        `Think of ${leftText} groups of ${rightText}.`,
+        `That equals ${resultText}.`,
+      ];
+    case "/":
+      return [
+        `We are dividing ${leftText} by ${rightText}.`,
+        `Split ${leftText} into ${rightText} equal groups.`,
+        `Each group has ${resultText}.`,
+      ];
+    default:
+      return [];
+  }
+};
+
+const buildMathTeachingSteps = (parsed: ParsedMathQuestion): string[] => {
+  const leftText = formatNumberForSpeech(parsed.left);
+  const rightText = formatNumberForSpeech(parsed.right);
+
+  switch (parsed.operator) {
+    case "+":
+      return [
+        `Start with ${leftText}.`,
+        `Count forward ${rightText} step${parsed.right === 1 ? "" : "s"}.`,
+        "Say the new number you land on.",
+      ];
+    case "-":
+      return [
+        `Start with ${leftText}.`,
+        `Count back ${rightText} step${parsed.right === 1 ? "" : "s"}.`,
+        "Say the number you land on.",
+      ];
+    case "*":
+      return [
+        `Multiplication means groups.`,
+        `Make ${leftText} group${parsed.left === 1 ? "" : "s"} of ${rightText}.`,
+        "Add the groups together.",
+      ];
+    case "/":
+      return [
+        `Division means equal groups.`,
+        `Split ${leftText} into ${rightText} equal groups.`,
+        "Count how many are in each group.",
+      ];
+    default:
+      return [];
+  }
+};
+
+const buildMathFormulaHint = (parsed: ParsedMathQuestion): string => {
+  const leftText = formatNumberForSpeech(parsed.left);
+  const rightText = formatNumberForSpeech(parsed.right);
+  const symbol = parsed.operator === "*" ? "x" : parsed.operator === "/" ? "/" : parsed.operator;
+  return `Formula: ${leftText} ${symbol} ${rightText} = ?`;
+};
+
+const buildMathSmartPrompt = (
+  parsed: ParsedMathQuestion,
+  numericAnswer: number | null,
+  numericExpected: number | null,
+): string => {
+  if (numericAnswer !== null && numericExpected !== null) {
+    const diff = numericExpected - numericAnswer;
+    if (parsed.operator === "+" || parsed.operator === "-") {
+      if (diff === 1) return "Almost there! Let\'s count forward one more time.";
+      if (diff === -1) return "Almost there! Let\'s count back one more time.";
+      if (Math.abs(diff) <= 2) return "Close! Count again carefully, one step at a time.";
+    }
+    if (parsed.operator === "*") {
+      if (Math.abs(diff) === 1) {
+        return "Almost there! Recount your groups one more time.";
+      }
+      if (Math.abs(diff) <= Math.max(2, Math.abs(parsed.right))) {
+        return "Close! Check your groups and add them again.";
+      }
+    }
+    if (parsed.operator === "/") {
+      if (Math.abs(diff) === 1) {
+        return "Almost there! Check the equal groups one more time.";
+      }
+      return "Nice try! Check how many equal groups you can make.";
+    }
+  }
+  return "Nice try! Let\'s solve it together using the formula.";
+};
+
+const normalizeSpokenNumber = (text: string): string => {
+  const cleaned = text.toLowerCase().replace(/[^a-z0-9.\-\s]/g, " ").trim();
+  const numericMatch = cleaned.match(/-?\d+(?:\.\d+)?/);
+  if (numericMatch) return numericMatch[0];
+
+  const tokens = cleaned.split(/\s+/).filter(Boolean);
+  if (!tokens.length) return text.trim();
+
+  const wordMap: Record<string, number> = {
+    zero: 0,
+    one: 1,
+    two: 2,
+    three: 3,
+    four: 4,
+    five: 5,
+    six: 6,
+    seven: 7,
+    eight: 8,
+    nine: 9,
+    ten: 10,
+    eleven: 11,
+    twelve: 12,
+    thirteen: 13,
+    fourteen: 14,
+    fifteen: 15,
+    sixteen: 16,
+    seventeen: 17,
+    eighteen: 18,
+    nineteen: 19,
+    twenty: 20,
+    thirty: 30,
+    forty: 40,
+    fifty: 50,
+    sixty: 60,
+    seventy: 70,
+    eighty: 80,
+    ninety: 90,
+  };
+
+  let sign = 1;
+  let total = 0;
+  let current = 0;
+  let decimalMode = false;
+  let decimalDigits = "";
+
+  for (const token of tokens) {
+    if (token === "minus" || token === "negative") {
+      sign = -1;
+      continue;
+    }
+    if (token === "point" || token === "dot") {
+      decimalMode = true;
+      continue;
+    }
+    const value = wordMap[token];
+    if (typeof value === "number") {
+      if (decimalMode) {
+        decimalDigits += String(value);
+      } else if (value >= 20) {
+        current += value;
+      } else {
+        current += value;
+      }
+      continue;
+    }
+    if (token === "hundred") {
+      current = current === 0 ? 100 : current * 100;
+      continue;
+    }
+    if (token === "thousand") {
+      total += current * 1000;
+      current = 0;
+    }
+  }
+
+  const baseNumber = sign * (total + current);
+  if (decimalDigits) {
+    return `${baseNumber}.${decimalDigits}`;
+  }
+  if (Number.isFinite(baseNumber)) return String(baseNumber);
+  return text.trim();
 };
 
 /* ---------- Math flashcards data ---------- */
@@ -466,6 +751,12 @@ export default function MathFlashcards({
   const [current, setCurrent] = useState(startIndex);
   const [sessionScores, setSessionScores] = useState<SessionScore[]>([]);
   const [showSummary, setShowSummary] = useState(false);
+  const [isTutorAssistOn, setIsTutorAssistOn] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
+  const [tutorGuidance, setTutorGuidance] = useState<string[]>([]);
+  const [showCorrectAnswer, setShowCorrectAnswer] = useState(false);
 
   // AI Insights State
   const [aiInsight, setAiInsight] = useState<string | null>(null);
@@ -506,6 +797,9 @@ export default function MathFlashcards({
   const [startTime, setStartTime] = useState<number | null>(null);
   const [rate, setRate] = useState<number | null>(null);
   const [score, setScore] = useState<number | null>(null);
+  const synthesizerRef = useRef<SpeechSDK.SpeechSynthesizer | null>(null);
+  const speechTokenRef = useRef<{ token: string; region: string; expiresAt: number } | null>(null);
+  const browserRecognitionRef = useRef<any>(null);
   const hasRecordedScoreForCurrent = useMemo(
     () => sessionScores.some((item) => item.cardIndex === current),
     [current, sessionScores],
@@ -525,6 +819,208 @@ export default function MathFlashcards({
 
   const { question, correctAnswer } = flashcardsData[current] ?? { question: "", correctAnswer: "" };
 
+  const getSpeechToken = useCallback(async () => {
+    const now = Date.now();
+    if (speechTokenRef.current && speechTokenRef.current.expiresAt > now + 30000) {
+      return speechTokenRef.current;
+    }
+    const response = await fetch("/api/azure-speech/token", { cache: "no-store" });
+    const payload = (await response.json().catch(() => null)) as
+      | { token?: string; region?: string; expiresIn?: number; error?: string }
+      | null;
+
+    if (!response.ok || !payload?.token || !payload.region) {
+      throw new Error(payload?.error || "Azure Speech token request failed.");
+    }
+
+    const expiresIn = typeof payload.expiresIn === "number" ? payload.expiresIn : 540;
+    const tokenInfo = {
+      token: payload.token,
+      region: payload.region,
+      expiresAt: now + expiresIn * 1000,
+    };
+    speechTokenRef.current = tokenInfo;
+    return tokenInfo;
+  }, []);
+
+  const escapeSsmlText = useCallback((value: string) => {
+    return value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;");
+  }, []);
+
+  const stopSpeechPlayback = useCallback(() => {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    try {
+      synthesizerRef.current?.close();
+    } catch {
+      // ignore
+    }
+    synthesizerRef.current = null;
+  }, []);
+
+  const getPreferredFemaleVoice = useCallback((language: string) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return null;
+    const voices = window.speechSynthesis.getVoices();
+    if (!voices.length) return null;
+    const languagePrefix = language.toLowerCase().split("-")[0];
+    const sameLanguage = voices.filter((voice) =>
+      voice.lang?.toLowerCase().startsWith(languagePrefix),
+    );
+    const pool = sameLanguage.length ? sameLanguage : voices;
+
+    const preferredTokens = [
+      "jenny",
+      "aria",
+      "sara",
+      "susan",
+      "zira",
+      "female",
+      "woman",
+      "girl",
+      "katja",
+      "olivia",
+      "emma",
+      "ava",
+    ];
+
+    const preferred = pool.find((voice) => {
+      const name = (voice.name || "").toLowerCase();
+      return preferredTokens.some((token) => name.includes(token));
+    });
+
+    return preferred ?? pool[0] ?? null;
+  }, []);
+
+  const speakWithAzureNeural = useCallback(async (
+    text: string,
+    options: {
+      voiceName: string;
+      locale: string;
+      style?: string;
+      rate?: string;
+      sentenceBoundaryMs?: number;
+    },
+  ) => {
+    const { token, region } = await getSpeechToken();
+    const speechConfig = SpeechSDK.SpeechConfig.fromAuthorizationToken(token, region);
+    speechConfig.speechSynthesisVoiceName = options.voiceName;
+    const audioConfig = SpeechSDK.AudioConfig.fromDefaultSpeakerOutput();
+    const synthesizer = new SpeechSDK.SpeechSynthesizer(speechConfig, audioConfig);
+    synthesizerRef.current = synthesizer;
+
+    const content = escapeSsmlText(text);
+    const rate = options.rate ?? "-8%";
+    const sentenceBoundaryMs = Number.isFinite(options.sentenceBoundaryMs)
+      ? Math.max(0, Math.round(options.sentenceBoundaryMs as number))
+      : null;
+    const boundarySilence = sentenceBoundaryMs !== null
+      ? `<mstts:silence type="Sentenceboundary" value="${sentenceBoundaryMs}ms"/>`
+      : "";
+    const ssml = options.style
+      ? `<speak version="1.0" xmlns="https://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${options.locale}"><voice name="${options.voiceName}">${boundarySilence}<mstts:express-as style="${options.style}"><prosody rate="${rate}">${content}</prosody></mstts:express-as></voice></speak>`
+      : `<speak version="1.0" xmlns="https://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${options.locale}"><voice name="${options.voiceName}">${boundarySilence}<prosody rate="${rate}">${content}</prosody></voice></speak>`;
+
+    return await new Promise<void>((resolve, reject) => {
+      synthesizer.speakSsmlAsync(
+        ssml,
+        () => resolve(),
+        (error) => reject(error),
+      );
+    }).finally(() => {
+      synthesizer.close();
+      synthesizerRef.current = null;
+    });
+  }, [escapeSsmlText, getSpeechToken]);
+
+  const speakTutorFeedback = useCallback(async (text: string) => {
+    if (!isTutorAssistOn || !text.trim()) return;
+    setStatusMessage("Tutor speaking...");
+    stopSpeechPlayback();
+    try {
+      await speakWithAzureNeural(text, {
+        voiceName: "en-PH-RosaNeural",
+        locale: "en-US",
+        style: "cheerful",
+        rate: "-6%",
+        sentenceBoundaryMs: 80,
+      });
+    } catch (error) {
+      console.error("Tutor feedback speech failed", error);
+      if (ALLOW_BROWSER_FALLBACK && typeof window !== "undefined" && "speechSynthesis" in window) {
+        const utter = new window.SpeechSynthesisUtterance(text);
+        utter.lang = "en-US";
+        utter.rate = 0.9;
+        utter.pitch = 1;
+        const voice = getPreferredFemaleVoice("en-US");
+        if (voice) utter.voice = voice;
+        window.speechSynthesis.speak(utter);
+      }
+    } finally {
+      setStatusMessage("");
+    }
+  }, [getPreferredFemaleVoice, isTutorAssistOn, speakWithAzureNeural, stopSpeechPlayback]);
+
+  const handleSpeakFallback = useCallback(() => {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+      const utter = new window.SpeechSynthesisUtterance(formatQuestionForSpeech(question));
+      utter.rate = 0.88;
+      utter.pitch = 1;
+      utter.volume = 1;
+      utter.lang = "en-US";
+      const voice = getPreferredFemaleVoice("en-US");
+      if (voice) utter.voice = voice;
+      setIsPlaying(true);
+      utter.onend = () => setIsPlaying(false);
+      utter.onerror = () => setIsPlaying(false);
+      window.speechSynthesis.speak(utter);
+    }
+  }, [getPreferredFemaleVoice, question]);
+
+  const handleSpeak = async () => {
+    const spokenQuestion = formatQuestionForSpeech(question);
+    if (!spokenQuestion.trim() || isPlaying) return;
+    setStatusMessage("Preparing audio...");
+    setIsPlaying(true);
+    stopSpeechPlayback();
+    try {
+      await speakWithAzureNeural(spokenQuestion, {
+        voiceName: "en-PH-RosaNeural",
+        locale: "en-US",
+        style: "friendly",
+        rate: "-8%",
+      });
+      setStatusMessage("");
+    } catch (error) {
+      console.error("Azure TTS failed", error);
+      if (ALLOW_BROWSER_FALLBACK) {
+        setStatusMessage("Azure TTS unavailable. Using browser voice.");
+        handleSpeakFallback();
+      } else {
+        setStatusMessage("Azure TTS unavailable.");
+      }
+    } finally {
+      setIsPlaying(false);
+    }
+  };
+
+  const stopSpeechRecognition = useCallback(() => {
+    if (browserRecognitionRef.current) {
+      try {
+        browserRecognitionRef.current.stop();
+      } catch {
+        // ignore
+      }
+      browserRecognitionRef.current = null;
+    }
+  }, []);
+
   const validateInput = (input: string): boolean => {
     const validPattern = /^[0-9.\-]*$/;
     return validPattern.test(input);
@@ -538,12 +1034,19 @@ export default function MathFlashcards({
   };
 
   const resetFields = useCallback(() => {
+    stopSpeechPlayback();
+    stopSpeechRecognition();
+    setIsListening(false);
+    setIsPlaying(false);
+    setStatusMessage("");
     setUserAnswer("");
     setFeedback("");
+    setTutorGuidance([]);
+    setShowCorrectAnswer(false);
     setRate(null);
     setScore(null);
     setStartTime(Date.now());
-  }, []);
+  }, [stopSpeechPlayback, stopSpeechRecognition]);
 
   const upsertSessionScore = useCallback(
     (cardIndex: number, questionText: string, sc: { score: number; responseTime: number; transcription?: string | null }) => {
@@ -563,6 +1066,118 @@ export default function MathFlashcards({
     },
     [],
   );
+
+  const submitAnswer = useCallback((rawAnswer: string) => {
+    const trimmedAnswer = rawAnswer.trim();
+    if (!trimmedAnswer) {
+      setFeedback("Please enter your answer first.");
+      return;
+    }
+
+    setShowCorrectAnswer(false);
+
+    const endTime = Date.now();
+    const durationSec = (endTime - (startTime || endTime)) / 1000;
+    setRate(durationSec);
+
+    const numericAnswer = Number.parseFloat(trimmedAnswer);
+    const numericExpected = Number.parseFloat(correctAnswer);
+    const numericMatch = Number.isFinite(numericAnswer) && Number.isFinite(numericExpected)
+      ? Math.abs(numericAnswer - numericExpected) < 0.000001
+      : false;
+    const isCorrect = trimmedAnswer === correctAnswer || numericMatch;
+    setScore(isCorrect ? 100 : 0);
+
+    const parsed = parseMathQuestion(question);
+
+    if (isCorrect) {
+      setTutorGuidance([]);
+      if (durationSec < 3) setFeedback("Excellent speed and accuracy! ⚡");
+      else if (durationSec < 6) setFeedback("Good job! Try to be faster next time.");
+      else setFeedback("Correct! But a bit slow ⏱️");
+    } else if (parsed) {
+      const prompt = buildMathSmartPrompt(
+        parsed,
+        Number.isFinite(numericAnswer) ? numericAnswer : null,
+        Number.isFinite(numericExpected) ? numericExpected : null,
+      );
+      const formulaHint = buildMathFormulaHint(parsed);
+      const guidance = isTutorAssistOn
+        ? [formulaHint, ...buildMathTeachingSteps(parsed)]
+        : [formulaHint];
+      setTutorGuidance(guidance);
+      setFeedback(prompt);
+
+      if (isTutorAssistOn) {
+        void speakTutorFeedback(prompt);
+      }
+    } else {
+      const fallbackPrompt = "Nice try! Let\'s solve it together using the formula.";
+      setTutorGuidance(["Formula: Re-read the problem and solve it step by step."]);
+      setFeedback(fallbackPrompt);
+
+      if (isTutorAssistOn) {
+        void speakTutorFeedback(fallbackPrompt);
+      }
+    }
+
+    if (selectedStudentId) {
+      onSavePerformance({
+        id: `perf-${Date.now()}`,
+        studentId: selectedStudentId,
+        timestamp: new Date().toISOString(),
+        score: isCorrect ? 100 : 0,
+        responseTime: durationSec,
+        cardIndex: current,
+        question: question,
+      });
+    }
+
+    upsertSessionScore(current, question, { score: isCorrect ? 100 : 0, responseTime: durationSec, transcription: trimmedAnswer });
+  }, [correctAnswer, current, isTutorAssistOn, onSavePerformance, question, selectedStudentId, speakTutorFeedback, startTime, upsertSessionScore]);
+
+  const handleMicrophone = useCallback(() => {
+    if (typeof window === "undefined") return;
+    if (isListening) {
+      stopSpeechRecognition();
+      setIsListening(false);
+      setStatusMessage("");
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setStatusMessage("Speech recognition is not supported in this browser.");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-US";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    browserRecognitionRef.current = recognition;
+
+    recognition.onresult = (event: any) => {
+      const transcript = event?.results?.[0]?.[0]?.transcript ?? "";
+      const normalized = normalizeSpokenNumber(transcript);
+      setUserAnswer(normalized);
+      setStatusMessage("Answer captured. Submitting now...");
+      submitAnswer(normalized);
+    };
+
+    recognition.onerror = () => {
+      setStatusMessage("Speech recognition failed. Please type your answer.");
+      setIsListening(false);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    setIsListening(true);
+    setStatusMessage("Listening...");
+    recognition.start();
+  }, [isListening, stopSpeechRecognition, submitAnswer]);
 
   const formatDuration = (seconds: number) => {
     if (!Number.isFinite(seconds)) return "—";
@@ -852,40 +1467,7 @@ export default function MathFlashcards({
   }, [current, resetFields, setUserAnswer, setFeedback, setRate, setScore, setStartTime]);
 
   const handleSubmit = () => {
-    if (!userAnswer.trim()) {
-      setFeedback("Please enter your answer first.");
-      return;
-    }
-
-    const endTime = Date.now();
-    const durationSec = (endTime - (startTime || endTime)) / 1000;
-    setRate(durationSec);
-
-    const isCorrect = userAnswer.trim() === correctAnswer;
-    setScore(isCorrect ? 100 : 0);
-
-    if (isCorrect) {
-      if (durationSec < 3) setFeedback("Excellent speed and accuracy! ⚡");
-      else if (durationSec < 6) setFeedback("Good job! Try to be faster next time.");
-      else setFeedback("Correct! But a bit slow ⏱️");
-    } else {
-      setFeedback("Incorrect. Try again!");
-    }
-
-    // Log the interaction
-    if (selectedStudentId) {
-      onSavePerformance({
-        id: `perf-${Date.now()}`,
-        studentId: selectedStudentId,
-        timestamp: new Date().toISOString(),
-        score: isCorrect ? 100 : 0,
-        responseTime: durationSec,
-        cardIndex: current,
-        question: question,
-      });
-    }
-
-    upsertSessionScore(current, question, { score: isCorrect ? 100 : 0, responseTime: durationSec, transcription: userAnswer.trim() });
+    submitAnswer(userAnswer);
   };
 
   const selectionRows = paginatedStudents.map((student, index) => ({
@@ -1194,7 +1776,7 @@ export default function MathFlashcards({
   return (
     <div className="min-h-dvh bg-linear-to-br from-[#f2f8f4] via-white to-[#e6f2ec]">
       <div className="w-full max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex min-h-dvh flex-col">
-        <header className="rounded-3xl border border-gray-300 bg-white/70 backdrop-blur px-6 py-5 sm:py-6 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between shadow-md shadow-gray-200">
+        <header className="rounded-3xl border border-gray-300 bg-white/70 backdrop-blur px-8 py-5 sm:py-6 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between shadow-md shadow-gray-200">
           <div className="space-y-1 text-center lg:text-left">
             {subtitle && (
               <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700">{subtitle}</p>
@@ -1220,46 +1802,123 @@ export default function MathFlashcards({
           <div className="grid gap-3 xl:grid-cols-12 flex-1 min-h-0">
             <section className="xl:col-span-8 flex flex-col min-h-0">
               <div className="h-full rounded-3xl border border-gray-300 bg-white shadow-md shadow-gray-200 overflow-hidden flex flex-col">
-                <div className="flex-1 px-6 sm:px-8 lg:px-12 py-12 flex flex-col items-center justify-center text-center gap-6">
-                  <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white px-6 py-8 shadow-sm">
-                    <p className="text-3xl sm:text-4xl lg:text-5xl font-semibold text-[#013300] leading-tight">
+                <div className="flex-1 px-6 sm:px-8 lg:px-12 py-6 flex flex-col items-center text-center gap-6">
+                  <div className="w-full max-w-4xl rounded-3xl border border-slate-200 bg-white px-6 py-7 shadow-sm text-center">
+                    <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-700">Problem</p>
+                    <p className="mt-3 text-3xl sm:text-4xl lg:text-5xl font-semibold text-[#013300] leading-tight">
                       {question}
                     </p>
                   </div>
-                  <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-slate-50/80 p-5">
-                    <p className="text-sm font-semibold text-slate-700 text-center">Your answer</p>
-                    <div className="mt-4 flex flex-col gap-4 md:flex-row md:items-center">
-                      <input
-                        type="text"
-                        value={userAnswer}
-                        onChange={handleInputChange}
-                        className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-lg font-semibold text-[#013300] transition focus:border-[#013300] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#013300]/30"
-                        placeholder="Type and submit"
-                        inputMode="decimal"
-                        pattern="[0-9.\-]*"
-                        title="Only numbers, decimal point, and minus sign are allowed"
-                      />
-                      <button
-                        onClick={handleSubmit}
-                        className="w-full rounded-xl bg-[#013300] px-6 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-green-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#013300]/60 md:w-auto"
-                      >
-                        Check Answer
-                      </button>
+
+                  <div className="w-full max-w-4xl grid gap-4">
+                    <div className="rounded-3xl border border-slate-200 bg-slate-50/80 p-5">
+                      <div className="flex flex-col gap-4 md:flex-row md:items-end">
+                        <div className="flex-1 text-left">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Type your answer</p>
+                          <input
+                            type="text"
+                            value={userAnswer}
+                            onChange={handleInputChange}
+                            className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-lg font-semibold text-[#013300] transition focus:border-[#013300] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#013300]/30"
+                            placeholder="Type and submit"
+                            inputMode="decimal"
+                            pattern="[0-9.\-]*"
+                            title="Only numbers, decimal point, and minus sign are allowed"
+                          />
+                        </div>
+                        <button
+                          onClick={handleSubmit}
+                          className="w-full md:w-auto rounded-xl bg-[#013300] px-6 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-green-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#013300]/60"
+                        >
+                          Check Answer
+                        </button>
+                      </div>
                     </div>
                   </div>
+                </div>
+                <div className="px-6 sm:px-8 py-6 border-t border-gray-300 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-between">
+                  <button
+                    onClick={handleSpeak}
+                    className={`group flex items-center gap-3 rounded-full px-6 py-3 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600 active:scale-95 ${
+                      isPlaying
+                        ? "bg-[#013300] text-white shadow-md shadow-gray-200"
+                        : "border border-[#013300] bg-white text-[#013300] hover:border-[#013300] hover:bg-[#013300] hover:text-white"
+                    } w-full md:w-auto`}
+                  >
+                    <span
+                      className={`grid h-10 w-10 place-items-center rounded-full transition-colors ${
+                        isPlaying
+                          ? "bg-white/10 text-white animate-pulse"
+                          : "bg-white text-[#013300] group-hover:bg-[#013300] group-hover:text-white group-focus-visible:bg-[#013300] group-focus-visible:text-white"
+                      }`}
+                    >
+                      <Volume2Icon />
+                    </span>
+                    {isPlaying ? "Playing..." : "Listen"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsTutorAssistOn((prev) => {
+                        if (prev) stopSpeechPlayback();
+                        return !prev;
+                      });
+                    }}
+                    className={`group flex items-center gap-3 rounded-full px-6 py-3 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600 active:scale-95 ${
+                      isTutorAssistOn
+                        ? "border border-emerald-700 bg-emerald-50 text-emerald-800"
+                        : "border border-gray-300 bg-white text-slate-600"
+                    } w-full md:w-auto`}
+                  >
+                    <span
+                      className={`grid h-10 w-10 place-items-center rounded-full transition-colors ${
+                        isTutorAssistOn
+                          ? "bg-emerald-100 text-emerald-800"
+                          : "bg-gray-100 text-slate-500"
+                      }`}
+                    >
+                      T
+                    </span>
+                    {isTutorAssistOn ? "Tutor Assist: On" : "Tutor Assist: Off"}
+                  </button>
+                  <button
+                    onClick={handleMicrophone}
+                    className={`group flex items-center gap-3 rounded-full px-6 py-3 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600 active:scale-95 ${
+                      isListening
+                        ? "bg-[#013300] text-white shadow-md shadow-gray-200"
+                        : "border border-[#013300] bg-white text-[#013300] hover:border-[#013300] hover:bg-[#013300] hover:text-white"
+                    } w-full md:w-auto`}
+                  >
+                    <span
+                      className={`grid h-10 w-10 place-items-center rounded-full transition-colors ${
+                        isListening
+                          ? "bg-white/10 text-white animate-pulse"
+                          : "bg-white text-[#013300] group-hover:bg-[#013300] group-hover:text-white group-focus-visible:bg-[#013300] group-focus-visible:text-white"
+                      }`}
+                    >
+                      <MicIcon />
+                    </span>
+                    {isListening ? "Stop" : "Speak"}
+                  </button>
                 </div>
               </div>
             </section>
 
-            <aside className="xl:col-span-4 flex flex-col gap-6 min-h-0">
-              <div className="rounded-3xl border border-gray-300 bg-white/80 backdrop-blur px-6 py-7 shadow-md shadow-gray-200 flex flex-1 flex-col min-h-0">
-                <h2 className="text-lg font-semibold text-[#013300]">Real-time Insights</h2>
-                <div className="mt-6 flex flex-1 flex-col gap-4 min-h-0">
-                  <div className="rounded-2xl border border-gray-300 bg-emerald-50/60 px-4 py-3 flex flex-col flex-1">
-                    <p className="text-xs uppercase tracking-wide text-emerald-800">Remarks</p>
+            <aside className="xl:col-span-4 flex flex-col gap-4 min-h-0">
+              <div className="rounded-3xl border border-gray-300 bg-white/80 backdrop-blur px-5 py-5 shadow-md shadow-gray-200 flex flex-1 flex-col min-h-0">
+                <h2 className="text-base font-semibold text-[#013300]">Performance Insights</h2>
+                <div className="mt-4 flex flex-1 flex-col gap-3 min-h-0">
+                  <div className="rounded-2xl border border-gray-300 bg-emerald-50/60 px-3 py-2.5 flex flex-col flex-1">
+                    <p className="text-xs uppercase tracking-wide text-emerald-800">Solution Guidance</p>
                     <p className="mt-1 text-sm font-medium text-[#013300]">
                       {feedback || "Submit an answer to see how you did."}
                     </p>
+                    {tutorGuidance.length ? (
+                      <div className="mt-2 space-y-1 text-sm font-medium text-[#013300]">
+                        {tutorGuidance.map((step, index) => (
+                          <p key={`${step}-${index}`}>{index + 1}. {step}</p>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                   <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 auto-rows-fr">
                     <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col">
@@ -1273,7 +1932,18 @@ export default function MathFlashcards({
                     </div>
                     <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col">
                       <dt className="text-xs uppercase tracking-wide text-slate-500">Correct answer</dt>
-                      <dd className="text-lg font-semibold text-[#013300]">••••••</dd>
+                      <dd className="text-lg font-semibold text-[#013300]">
+                        {score === 100 && showCorrectAnswer ? correctAnswer : "••••••"}
+                      </dd>
+                      {score === 100 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowCorrectAnswer((prev) => !prev)}
+                          className="mt-2 inline-flex items-center justify-center rounded-full border border-emerald-200 px-3 py-1 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-50"
+                        >
+                          {showCorrectAnswer ? "Hide answer" : "Show answer"}
+                        </button>
+                      )}
                     </div>
                   </dl>
                 </div>

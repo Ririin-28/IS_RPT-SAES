@@ -10,6 +10,8 @@ import { buildFlashcardContentKey } from "@/lib/utils/flashcards-storage";
 import { getAiInsightsAction } from "@/app/actions/get-ai-insights";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 
+const ALLOW_BROWSER_FALLBACK = process.env.NEXT_PUBLIC_ALLOW_SPEECH_FALLBACK === "true";
+
 /* ---------- Icons ---------- */
 const Volume2Icon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -237,6 +239,12 @@ type SessionScore = {
 
 type WordFeedback = {
   word: string;
+  accuracyScore: number | null;
+  errorType?: string | null;
+};
+
+type PhonemeFeedback = {
+  phoneme: string;
   accuracyScore: number | null;
   errorType?: string | null;
 };
@@ -641,6 +649,8 @@ export default function FilipinoFlashcards({
   const [isListening, setIsListening] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isTutorAssistOn, setIsTutorAssistOn] = useState(true);
+  const [, setIsTutorSpeaking] = useState(false);
   const [recognizedText, setRecognizedText] = useState("");
   const [liveTranscription, setLiveTranscription] = useState("");
   const [feedback, setFeedback] = useState("");
@@ -949,54 +959,251 @@ export default function FilipinoFlashcards({
     }
   }, [applyOmissionsToWordFeedback]);
 
+  const parsePhonemeFeedback = useCallback((
+    jsonResult: string | undefined | null,
+  ): PhonemeFeedback[] => {
+    if (!jsonResult) return [];
+    try {
+      const parsed = JSON.parse(jsonResult) as any;
+      const words = parsed?.NBest?.[0]?.Words ?? [];
+      const phonemes = words.flatMap((word: any) => {
+        const items = Array.isArray(word?.Phonemes) ? word.Phonemes : [];
+        return items.map((item: any) => ({
+          phoneme: String(item?.Phoneme ?? "").trim(),
+          accuracyScore: typeof item?.PronunciationAssessment?.AccuracyScore === "number"
+            ? Math.round(item.PronunciationAssessment.AccuracyScore)
+            : null,
+          errorType: item?.PronunciationAssessment?.ErrorType ?? null,
+        }));
+      });
+      return phonemes.filter((item: PhonemeFeedback) => item.phoneme);
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const buildPhonemeHint = useCallback((phonemes: PhonemeFeedback[]) => {
+    if (!phonemes.length) return "";
+    const focus = phonemes.filter((item) =>
+      (item.errorType && item.errorType !== "None") ||
+      (typeof item.accuracyScore === "number" && item.accuracyScore < 85)
+    );
+    if (!focus.length) return "";
+    const unique: string[] = [];
+    for (const item of focus) {
+      const value = item.phoneme.toUpperCase();
+      if (value && !unique.includes(value)) unique.push(value);
+      if (unique.length >= 3) break;
+    }
+    if (!unique.length) return "";
+    const formatted = unique.map((item) => `/${item}/`).join(", ");
+    return `Tutukan ang tunog na ${formatted}.`;
+  }, []);
+
+  const formatWordList = useCallback((words: string[]) => {
+    const unique: string[] = [];
+    for (const word of words) {
+      const trimmed = word.trim();
+      if (trimmed && !unique.includes(trimmed)) unique.push(trimmed);
+    }
+    if (!unique.length) return "";
+    if (unique.length === 1) return unique[0];
+    if (unique.length === 2) return `${unique[0]} and ${unique[1]}`;
+    return `${unique.slice(0, -1).join(", ")}, and ${unique[unique.length - 1]}`;
+  }, []);
+
+  const buildTutorFeedback = useCallback((
+    wordFeedbackItems: WordFeedback[],
+    targetText: string,
+    phonemeHint: string,
+  ) => {
+    const lowWords = wordFeedbackItems
+      .filter((item) => typeof item.accuracyScore === "number" && item.accuracyScore <= 75)
+      .map((item) => item.word);
+    const list = formatWordList(lowWords);
+
+    let base = "";
+    if (!lowWords.length) {
+      base = "Magaling! Malinaw ang pagbigkas mo sa mga salita.";
+    } else if (lowWords.length <= 2 && list) {
+      base = `Magandang pagsisikap! Malapit na. Subukan natin ulit ang mga salitang ito: ${list}.`;
+    } else if (list) {
+      base = `Magsanay tayo nang sabay. Ulitin ang mga salitang ito: ${list}.`;
+    } else {
+      const trimmed = targetText.trim();
+      const safeTarget = trimmed || "that";
+      base = `Magsanay tayo nang sabay. Ulitin mo pagkatapos ko: ${safeTarget}.`;
+    }
+
+    return phonemeHint ? `${base} ${phonemeHint}` : base;
+  }, [formatWordList]);
+
+  const stopSpeechPlayback = useCallback(() => {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    try {
+      synthesizerRef.current?.close();
+    } catch {
+      // ignore
+    }
+    synthesizerRef.current = null;
+  }, []);
+
+  const getPreferredFemaleVoice = useCallback((language: string) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return null;
+    const voices = window.speechSynthesis.getVoices();
+    if (!voices.length) return null;
+    const languagePrefix = language.toLowerCase().split("-")[0];
+    const sameLanguage = voices.filter((voice) =>
+      voice.lang?.toLowerCase().startsWith(languagePrefix),
+    );
+    const pool = sameLanguage.length ? sameLanguage : voices;
+
+    const preferredTokens = [
+      "blessica",
+      "jenny",
+      "aria",
+      "maria",
+      "ana",
+      "female",
+      "woman",
+      "girl",
+      "katja",
+      "olivia",
+      "emma",
+      "ava",
+    ];
+
+    const preferred = pool.find((voice) => {
+      const name = (voice.name || "").toLowerCase();
+      return preferredTokens.some((token) => name.includes(token));
+    });
+
+    return preferred ?? pool[0] ?? null;
+  }, []);
+
+  const escapeSsmlText = useCallback((value: string) => {
+    return value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;");
+  }, []);
+
+  const speakWithAzureNeural = useCallback(async (
+    text: string,
+    options: {
+      voiceName: string;
+      locale: string;
+      style?: string;
+      rate?: string;
+      sentenceBoundaryMs?: number;
+    },
+  ) => {
+    const { token, region } = await getSpeechToken();
+    const speechConfig = SpeechSDK.SpeechConfig.fromAuthorizationToken(token, region);
+    speechConfig.speechSynthesisVoiceName = options.voiceName;
+    const audioConfig = SpeechSDK.AudioConfig.fromDefaultSpeakerOutput();
+    const synthesizer = new SpeechSDK.SpeechSynthesizer(speechConfig, audioConfig);
+    synthesizerRef.current = synthesizer;
+
+    const content = escapeSsmlText(text);
+    const rate = options.rate ?? "-8%";
+    const sentenceBoundaryMs = Number.isFinite(options.sentenceBoundaryMs)
+      ? Math.max(0, Math.round(options.sentenceBoundaryMs as number))
+      : null;
+    const boundarySilence = sentenceBoundaryMs !== null
+      ? `<mstts:silence type="Sentenceboundary" value="${sentenceBoundaryMs}ms"/>`
+      : "";
+    const ssml = options.style
+      ? `<speak version="1.0" xmlns="https://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${options.locale}"><voice name="${options.voiceName}">${boundarySilence}<mstts:express-as style="${options.style}"><prosody rate="${rate}">${content}</prosody></mstts:express-as></voice></speak>`
+      : `<speak version="1.0" xmlns="https://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${options.locale}"><voice name="${options.voiceName}">${boundarySilence}<prosody rate="${rate}">${content}</prosody></voice></speak>`;
+
+    return await new Promise<void>((resolve, reject) => {
+      synthesizer.speakSsmlAsync(
+        ssml,
+        () => resolve(),
+        (error) => reject(error),
+      );
+    }).finally(() => {
+      synthesizer.close();
+      synthesizerRef.current = null;
+    });
+  }, [escapeSsmlText, getSpeechToken]);
+
+  const speakTutorFeedback = useCallback(async (
+    text: string,
+  ) => {
+    if (!isTutorAssistOn || !text.trim()) return;
+    setStatusMessage("Tutor speaking...");
+    setIsTutorSpeaking(true);
+    stopSpeechPlayback();
+    try {
+      await speakWithAzureNeural(text, {
+        voiceName: "fil-PH-AngeloNeural",
+        locale: "fil-PH",
+        rate: "-6%",
+        sentenceBoundaryMs: 80,
+      });
+    } catch (error) {
+      console.error("Tutor feedback speech failed", error);
+      if (ALLOW_BROWSER_FALLBACK && typeof window !== "undefined" && "speechSynthesis" in window) {
+        const utter = new window.SpeechSynthesisUtterance(text);
+        utter.lang = "fil-PH";
+        utter.rate = 0.9;
+        utter.pitch = 1;
+        const voice = getPreferredFemaleVoice("fil-PH");
+        if (voice) utter.voice = voice;
+        window.speechSynthesis.speak(utter);
+      }
+    } finally {
+      setIsTutorSpeaking(false);
+      setStatusMessage("");
+    }
+  }, [getPreferredFemaleVoice, isTutorAssistOn, speakWithAzureNeural, stopSpeechPlayback]);
+
 
   const handleSpeakFallback = useCallback(() => {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
       const utter = new window.SpeechSynthesisUtterance(sentence);
-      utter.rate = 0.9;
-      utter.pitch = 1.1;
+      utter.rate = 0.88;
+      utter.pitch = 1;
+      utter.volume = 1;
       utter.lang = "fil-PH";
+      const voice = getPreferredFemaleVoice("fil-PH");
+      if (voice) utter.voice = voice;
       setIsPlaying(true);
       utter.onend = () => setIsPlaying(false);
       utter.onerror = () => setIsPlaying(false);
       window.speechSynthesis.speak(utter);
     }
-  }, [sentence]);
+  }, [getPreferredFemaleVoice, sentence]);
 
   const handleSpeak = async () => {
     if (!sentence.trim() || isPlaying) return;
     setStatusMessage("Preparing audio...");
     setIsPlaying(true);
+    stopSpeechPlayback();
     try {
-      const { token, region } = await getSpeechToken();
-      const speechConfig = SpeechSDK.SpeechConfig.fromAuthorizationToken(token, region);
-      speechConfig.speechSynthesisVoiceName = "fil-PH-BlessicaNeural";
-      const audioConfig = SpeechSDK.AudioConfig.fromDefaultSpeakerOutput();
-      const synthesizer = new SpeechSDK.SpeechSynthesizer(speechConfig, audioConfig);
-      synthesizerRef.current = synthesizer;
-
-      synthesizer.speakTextAsync(
-        sentence,
-        () => {
-          synthesizer.close();
-          synthesizerRef.current = null;
-          setIsPlaying(false);
-          setStatusMessage("");
-        },
-        (error) => {
-          console.error("Azure TTS error", error);
-          synthesizer.close();
-          synthesizerRef.current = null;
-          setIsPlaying(false);
-          setStatusMessage("Azure TTS failed. Using browser voice.");
-          handleSpeakFallback();
-        },
-      );
+      await speakWithAzureNeural(sentence, {
+        voiceName: "fil-PH-AngeloNeural",
+        locale: "fil-PH",
+        rate: "-8%",
+      });
+      setStatusMessage("");
     } catch (error) {
       console.error("Azure TTS failed", error);
+      if (ALLOW_BROWSER_FALLBACK) {
+        setStatusMessage("Azure TTS unavailable. Using browser voice.");
+        handleSpeakFallback();
+      } else {
+        setStatusMessage("Azure TTS unavailable.");
+      }
+    } finally {
       setIsPlaying(false);
-      setStatusMessage("Azure TTS unavailable. Using browser voice.");
-      handleSpeakFallback();
     }
   };
 
@@ -1374,6 +1581,12 @@ export default function FilipinoFlashcards({
 
   // ---------- Microphone handler ----------
   const handleMicrophoneFallback = useCallback(async () => {
+    if (!ALLOW_BROWSER_FALLBACK) {
+      setFeedback("Azure Speech is required. Please try again.");
+      setIsListening(false);
+      setIsProcessing(false);
+      return;
+    }
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -1426,7 +1639,9 @@ export default function FilipinoFlashcards({
 
         const sc = computeScores(sentence, spoken, conf);
         setMetrics(sc);
-        setFeedback(sc.remarks);
+        const tutorFeedback = buildTutorFeedback(sc.wordFeedback ?? [], sentence, "");
+        setFeedback(tutorFeedback);
+        void speakTutorFeedback(tutorFeedback);
         setWordFeedback(sc.wordFeedback ?? []);
         upsertSessionScore(current, sentence, {
           pronScore: sc.pronScore,
@@ -1546,6 +1761,7 @@ export default function FilipinoFlashcards({
         wordCount: number;
         scores: { pronunciation: number; accuracy: number; fluency: number; completeness: number };
         words: WordFeedback[];
+        phonemes: PhonemeFeedback[];
       } | null>((resolve, reject) => {
         let settled = false;
         const maxTimer = window.setTimeout(() => finish(), 120000);
@@ -1554,6 +1770,7 @@ export default function FilipinoFlashcards({
         let totalText = "";
         const weighted = { pronunciation: 0, accuracy: 0, fluency: 0, completeness: 0 };
         const allWords: WordFeedback[] = [];
+        const allPhonemes: PhonemeFeedback[] = [];
 
         const finish = () => {
           if (settled) return;
@@ -1580,6 +1797,7 @@ export default function FilipinoFlashcards({
                   completeness: weighted.completeness / totalWords,
                 },
                 words: applyOmissionsToWordFeedback(allWords, sentence),
+                phonemes: allPhonemes,
               });
             },
             (error) => {
@@ -1617,6 +1835,8 @@ export default function FilipinoFlashcards({
           );
           const segmentWords = parseWordFeedback(jsonResult, sentence, "raw");
           allWords.push(...segmentWords);
+          const segmentPhonemes = parsePhonemeFeedback(jsonResult);
+          allPhonemes.push(...segmentPhonemes);
         };
 
         recognizer.recognizing = (_sender, event) => {
@@ -1679,6 +1899,9 @@ export default function FilipinoFlashcards({
         Math.max(0, Math.round((pronScore + accuracyScore + speedGrade.score) / 3)),
       );
 
+      const phonemeHint = buildPhonemeHint(aggregate.phonemes);
+      const tutorFeedback = buildTutorFeedback(aggregate.words, sentence, phonemeHint);
+
       const azureMetrics = {
         pronScore,
         accuracyScore,
@@ -1700,8 +1923,9 @@ export default function FilipinoFlashcards({
       setLiveTranscription(spoken);
       setWordFeedback(words);
       setMetrics(azureMetrics);
-      setFeedback("Pronunciation assessment complete.");
+      setFeedback(tutorFeedback);
       setStatusMessage("");
+      void speakTutorFeedback(tutorFeedback);
 
       upsertSessionScore(current, sentence, {
         pronScore: azureMetrics.pronScore,
@@ -1715,11 +1939,15 @@ export default function FilipinoFlashcards({
       });
     } catch (error) {
       console.error("Azure speech recognition failed", error);
-      setStatusMessage("Azure Speech failed. Switching to browser speech.");
-      setFeedback("Using browser speech recognition.");
-      didFallback = true;
-      await handleMicrophoneFallback();
-      return;
+      if (ALLOW_BROWSER_FALLBACK) {
+        setStatusMessage("Azure Speech failed. Switching to browser speech.");
+        setFeedback("Using browser speech recognition.");
+        didFallback = true;
+        await handleMicrophoneFallback();
+        return;
+      }
+      setStatusMessage("Azure Speech failed. Please try again.");
+      setFeedback("Azure Speech failed. Please try again.");
     } finally {
       activeRecognizerStopRef.current = null;
       if (isActiveSession()) {
@@ -2156,6 +2384,30 @@ export default function FilipinoFlashcards({
                     <Volume2Icon />
                   </span>
                   {isPlaying ? "Playing..." : "Listen"}
+                </button>
+                <button
+                  onClick={() => {
+                    setIsTutorAssistOn((prev) => {
+                      if (prev) stopSpeechPlayback();
+                      return !prev;
+                    });
+                  }}
+                  className={`group flex items-center gap-3 rounded-full px-6 py-3 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600 active:scale-95 ${
+                    isTutorAssistOn
+                      ? "border border-emerald-700 bg-emerald-50 text-emerald-800"
+                      : "border border-gray-300 bg-white text-slate-600"
+                  } w-full md:w-auto`}
+                >
+                  <span
+                    className={`grid h-10 w-10 place-items-center rounded-full transition-colors ${
+                      isTutorAssistOn
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-gray-100 text-slate-500"
+                    }`}
+                  >
+                    T
+                  </span>
+                  {isTutorAssistOn ? "Tutor Assist: On" : "Tutor Assist: Off"}
                 </button>
                 <button
                   onClick={handleMicrophone}

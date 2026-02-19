@@ -3,21 +3,41 @@ import React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import ProfileDropdown from "../Common/ProfileDropdown";
 import { performClientLogout } from "@/lib/utils/logout";
+import { getStoredUserProfile } from "@/lib/utils/user-profile";
+import { normalizeMaterialSubject } from "@/lib/materials/shared";
 
 interface HeaderProps {
   title?: string;
   onSearch?: (query: string) => void;
 }
 
+type MaterialNotificationItem = {
+  id: string;
+  source: "Teacher" | "Remedial Teacher";
+  title: string;
+  createdAt: string;
+};
+
+const toReadableDateTime = (value: string): string => {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Date unavailable";
+  return parsed.toLocaleString();
+};
+
 export default function MasterTeacherHeader({ title }: HeaderProps) {
   const [showDropdown, setShowDropdown] = React.useState(false);
   const [showNotifications, setShowNotifications] = React.useState(false);
+  const [notifications, setNotifications] = React.useState<MaterialNotificationItem[]>([]);
+  const [unreadCount, setUnreadCount] = React.useState(0);
+  const [loadingNotifications, setLoadingNotifications] = React.useState(false);
+  const [notificationsError, setNotificationsError] = React.useState<string | null>(null);
   const profileBtnRef = React.useRef<HTMLButtonElement>(null);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const notificationBtnRef = React.useRef<HTMLButtonElement>(null);
   const notificationDropdownRef = React.useRef<HTMLDivElement>(null);
   const pathname = usePathname();
   const router = useRouter();
+  const isCoordinatorView = Boolean(pathname?.startsWith("/MasterTeacher/Coordinator"));
 
   const syncRoleContext = React.useCallback(async (roleContext: "coordinator" | "remedial") => {
     try {
@@ -75,6 +95,122 @@ export default function MasterTeacherHeader({ title }: HeaderProps) {
     }
   }, [pathname, syncRoleContext]);
 
+  const loadCoordinatorNotifications = React.useCallback(async () => {
+    if (!isCoordinatorView) {
+      setNotifications([]);
+      setUnreadCount(0);
+      setNotificationsError(null);
+      return;
+    }
+
+    setLoadingNotifications(true);
+    setNotificationsError(null);
+
+    try {
+      const profile = getStoredUserProfile();
+      const userId = profile?.userId ? String(profile.userId).trim() : "";
+
+      if (!userId) {
+        setNotifications([]);
+        setUnreadCount(0);
+        setNotificationsError("Unable to load coordinator profile.");
+        return;
+      }
+
+      const profileResponse = await fetch(
+        `/api/master_teacher/coordinator/profile?userId=${encodeURIComponent(userId)}`,
+        { cache: "no-store" },
+      );
+      const profilePayload = await profileResponse.json().catch(() => null);
+      const subjectCandidate =
+        profilePayload?.coordinator?.coordinatorSubject ?? profilePayload?.coordinator?.subjectsHandled ?? null;
+      const normalizedSubject = normalizeMaterialSubject(subjectCandidate);
+
+      if (!profileResponse.ok || !profilePayload?.success || !normalizedSubject) {
+        setNotifications([]);
+        setUnreadCount(0);
+        setNotificationsError("Coordinator subject is not available.");
+        return;
+      }
+
+      const teacherParams = new URLSearchParams({
+        subject: normalizedSubject,
+        status: "pending",
+        pageSize: "25",
+      });
+      const remedialParams = new URLSearchParams({
+        subject: normalizedSubject,
+        status: "pending",
+        pageSize: "25",
+      });
+
+      const [teacherRes, remedialRes] = await Promise.all([
+        fetch(`/api/materials?${teacherParams.toString()}`, { cache: "no-store" }),
+        fetch(`/api/master_teacher/coordinator/materials?${remedialParams.toString()}`, { cache: "no-store" }),
+      ]);
+
+      const teacherPayload = await teacherRes.json().catch(() => null);
+      const remedialPayload = await remedialRes.json().catch(() => null);
+
+      const teacherRows: Array<Record<string, unknown>> = Array.isArray(teacherPayload?.data) ? teacherPayload.data : [];
+      const remedialRows: Array<Record<string, unknown>> = Array.isArray(remedialPayload?.data) ? remedialPayload.data : [];
+
+      const teacherItems: MaterialNotificationItem[] = teacherRows.map((row, index) => ({
+        id: `teacher-${String(row.id ?? row.material_id ?? index)}`,
+        source: "Teacher",
+        title: typeof row.title === "string" && row.title.trim().length > 0 ? row.title.trim() : "Teacher submitted a material",
+        createdAt: typeof row.createdAt === "string" ? row.createdAt : new Date().toISOString(),
+      }));
+
+      const remedialItems: MaterialNotificationItem[] = remedialRows.map((row, index) => ({
+        id: `remedial-${String(row.material_id ?? row.id ?? index)}`,
+        source: "Remedial Teacher",
+        title:
+          typeof row.title === "string" && row.title.trim().length > 0
+            ? row.title.trim()
+            : "Remedial teacher submitted a material",
+        createdAt:
+          typeof row.submitted_at === "string"
+            ? row.submitted_at
+            : typeof row.created_at === "string"
+              ? row.created_at
+              : new Date().toISOString(),
+      }));
+
+      const merged = [...teacherItems, ...remedialItems].sort((a, b) => {
+        const aTime = new Date(a.createdAt).getTime();
+        const bTime = new Date(b.createdAt).getTime();
+        return bTime - aTime;
+      });
+
+      const teacherTotal = Number(teacherPayload?.pagination?.total ?? teacherItems.length);
+      const remedialTotal = Number(remedialPayload?.pagination?.total ?? remedialItems.length);
+      const totalPending = teacherTotal + remedialTotal;
+
+      setNotifications(merged);
+      setUnreadCount(Number.isFinite(totalPending) ? totalPending : merged.length);
+    } catch {
+      setNotifications([]);
+      setUnreadCount(0);
+      setNotificationsError("Failed to load notifications.");
+    } finally {
+      setLoadingNotifications(false);
+    }
+  }, [isCoordinatorView]);
+
+  React.useEffect(() => {
+    void loadCoordinatorNotifications();
+    if (!isCoordinatorView) return;
+
+    const timer = window.setInterval(() => {
+      void loadCoordinatorNotifications();
+    }, 60000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [isCoordinatorView, loadCoordinatorNotifications]);
+
   // Hide dropdowns when clicking outside
   React.useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -112,7 +248,13 @@ export default function MasterTeacherHeader({ title }: HeaderProps) {
                 ref={notificationBtnRef}
                 className="relative w-10 h-10 flex items-center justify-center hover:scale-[1.08] transition mr-4" 
                 aria-label="Notifications"
-                onClick={() => setShowNotifications(prev => !prev)}
+                onClick={() => {
+                  const willOpen = !showNotifications;
+                  setShowNotifications(willOpen);
+                  if (willOpen) {
+                    void loadCoordinatorNotifications();
+                  }
+                }}
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -129,7 +271,11 @@ export default function MasterTeacherHeader({ title }: HeaderProps) {
                   <path d="M10.268 21a2 2 0 0 0 3.464 0" />
                   <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" />
                 </svg>
-                {/* Notification badge - removed since there are no notifications */}
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center leading-none">
+                    {unreadCount > 99 ? "99+" : unreadCount}
+                  </span>
+                )}
               </button>
               
               {showNotifications && (
@@ -153,28 +299,44 @@ export default function MasterTeacherHeader({ title }: HeaderProps) {
                     </button>
                   </div>
                   
-                  {/* Empty state */}
-                  <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="48"
-                      height="48"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="#9CA3AF"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="mb-4"
-                    >
-                      <path d="M10.268 21a2 2 0 0 0 3.464 0" />
-                      <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" />
-                    </svg>
-                    <p className="text-gray-500">No notifications at this time</p>
-                    <p className="text-sm text-gray-400 mt-1">You&apos;ll see notifications here when you get them</p>
-                  </div>
-                  
-                  {/* Footer removed since there are no notifications to mark as read */}
+                  {loadingNotifications ? (
+                    <div className="px-4 py-8 text-center text-sm text-gray-500">Loading notifications...</div>
+                  ) : notificationsError ? (
+                    <div className="px-4 py-8 text-center text-sm text-red-500">{notificationsError}</div>
+                  ) : notifications.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="48"
+                        height="48"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="#9CA3AF"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="mb-4"
+                      >
+                        <path d="M10.268 21a2 2 0 0 0 3.464 0" />
+                        <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" />
+                      </svg>
+                      <p className="text-gray-500">No pending material submissions.</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-gray-100">
+                      {notifications.map((notification) => (
+                        <div key={notification.id} className="px-4 py-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-[#013300]">
+                            {notification.source}
+                          </p>
+                          <p className="text-sm text-gray-800 mt-1">{notification.title}</p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {toReadableDateTime(notification.createdAt)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
