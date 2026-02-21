@@ -7,6 +7,9 @@ import { useForm } from "react-hook-form";
 // Button Components
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
+import KebabMenu from "@/components/Common/Menus/KebabMenu";
+import Toast from "@/components/Toast";
+import ToastActivity from "@/components/ToastActivity";
 // Modal Components
 import AddScheduleModal from "./Modals/AddScheduleModal";
 import ActivityDetailModal from "./Modals/ActivityDetailModal";
@@ -73,12 +76,6 @@ const SUBJECT_SYNONYM_MAP: Record<string, string> = {
   values: "Values Education",
   "values education": "Values Education",
   ede: "Values Education",
-};
-
-const TOAST_TONE_STYLES: Record<"success" | "info" | "error", string> = {
-  success: "bg-emerald-600 text-white border border-emerald-500",
-  info: "bg-blue-600 text-white border border-blue-500",
-  error: "bg-red-600 text-white border border-red-500",
 };
 
 const normalizeStatusLabel = (value: unknown): string | null => {
@@ -529,6 +526,9 @@ export default function MasterTeacherCalendar() {
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendFeedback, setSendFeedback] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; tone: "success" | "info" | "error" } | null>(null);
+  const [importActionToast, setImportActionToast] = useState<string | null>(null);
+  const [pendingImportIds, setPendingImportIds] = useState<number[]>([]);
+  const [activityToast, setActivityToast] = useState<{ message: string; tone: "success" | "info" | "error" } | null>(null);
 
   const scheduleRange = useMemo(() => {
     if (!remedialWindow?.startDate || !remedialWindow?.endDate) {
@@ -589,6 +589,30 @@ export default function MasterTeacherCalendar() {
 
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    if (!activityToast) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setActivityToast(null);
+    }, 2400);
+
+    return () => window.clearTimeout(timer);
+  }, [activityToast]);
+
+  const handleDeclineImportedActivities = useCallback(() => {
+    if (!pendingImportIds.length) {
+      setImportActionToast(null);
+      return;
+    }
+
+    setActivities((prev) => prev.filter((activity) => !pendingImportIds.includes(activity.id)));
+    setPendingImportIds([]);
+    setImportActionToast(null);
+    setActivityToast({ message: "Imported activities were removed.", tone: "info" });
+  }, [pendingImportIds, showToast]);
 
   const scheduleWindowLabel = useMemo(() => {
     if (!scheduleRange) {
@@ -1619,7 +1643,11 @@ export default function MasterTeacherCalendar() {
               `Skipped ${skipped} entr${skipped === 1 ? "y" : "ies"} that could not be imported.`,
             );
           }
-          showToast(summaryParts.join(" "), skipped > 0 ? "info" : "success");
+          const importedIds = newActivities.map((activity) => activity.id);
+          if (importedIds.length > 0) {
+            setPendingImportIds((prev) => Array.from(new Set([...prev, ...importedIds])));
+            setImportActionToast(`${summaryParts.join(" ")} Send or decline the imported activities.`);
+          }
         }
       } catch (error) {
         console.error("Failed to import activities", error);
@@ -1798,6 +1826,8 @@ export default function MasterTeacherCalendar() {
       }
       showToast(feedbackParts.join(" "), skippedCount > 0 ? "info" : "success");
       setShowSendModal(false);
+      setImportActionToast(null);
+      setPendingImportIds([]);
 
       const sendableIds = new Set(sendableActivities.map((activity) => activity.id));
       setActivities((prev) =>
@@ -2361,7 +2391,11 @@ export default function MasterTeacherCalendar() {
   const templateButtonDisabled = templateDownloading || !hasConfiguredRemedialWindow;
 
   return (
-    <div className="flex h-screen bg-white overflow-hidden">
+    <div className="relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-24 right-0 h-72 w-72 rounded-full bg-emerald-100/25 blur-3xl" />
+        <div className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-emerald-200/30 blur-3xl" />
+      </div>
       <input
         ref={fileInputRef}
         type="file"
@@ -2370,11 +2404,11 @@ export default function MasterTeacherCalendar() {
         onChange={handleImportInputChange}
       />
       <Sidebar />
-      <div className="flex-1 pt-16 flex flex-col overflow-hidden">
+      <div className="relative z-10 flex-1 pt-16 flex flex-col overflow-hidden">
         <Header title="Calendar" />
         <main className="flex-1 overflow-y-auto">
           <div className="p-4 h-full sm:p-5 md:p-6">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-full min-h-[400px] overflow-y-auto p-4 sm:p-5 md:p-6">
+            <div className="relative z-10 h-full min-h-100 overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_20px_45px_-28px_rgba(15,23,42,0.45)] backdrop-blur-xl sm:p-5 md:p-6">
               {/* Calendar Controls */}
               <div className="flex flex-col gap-3 mb-4">
                 {profileLoading && !profileError && (
@@ -2466,36 +2500,53 @@ export default function MasterTeacherCalendar() {
                       </button>
                     </div>
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:space-x-2">
-                      <SecondaryButton
-                        type="button"
+                      <KebabMenu
                         small
-                        disabled={importButtonDisabled}
-                        onClick={handleImportButtonClick}
-                        className={`px-4 ${importButtonDisabled ? "cursor-not-allowed opacity-60" : ""}`}
-                        title={!hasConfiguredRemedialWindow ? "Principal has not set a remedial period yet." : !canPlanActivities ? scheduleBlockingReason ?? "Scheduling is currently disabled." : undefined}
-                      >
-                        {importing ? "Importing..." : "Import Activities"}
-                      </SecondaryButton>
-                      <SecondaryButton
-                        type="button"
-                        small
-                        disabled={templateButtonDisabled}
-                        onClick={handleDownloadTemplate}
-                        className={`px-4 ${templateButtonDisabled ? "cursor-not-allowed opacity-60" : ""}`}
-                        title={!hasConfiguredRemedialWindow ? "Principal has not set a remedial period yet." : undefined}
-                      >
-                        {templateDownloading ? "Preparing..." : "Download Template"}
-                      </SecondaryButton>
-                      <PrimaryButton
-                        type="button"
-                        small
-                        className="px-4"
-                        disabled={sendButtonDisabled}
-                        onClick={handleOpenSendModal}
-                        title={sendButtonDisabled ? "Add calendar activities before sending to the principal." : undefined}
-                      >
-                        {sending ? "Sending..." : "Send Activities"}
-                      </PrimaryButton>
+                        align="right"
+                        menuWidthClass="w-56"
+                        renderItems={(close) => (
+                          <div className="py-1">
+                            <button
+                              type="button"
+                              disabled={importButtonDisabled}
+                              onClick={() => {
+                                handleImportButtonClick();
+                                close();
+                              }}
+                              title={!hasConfiguredRemedialWindow ? "Principal has not set a remedial period yet." : !canPlanActivities ? scheduleBlockingReason ?? "Scheduling is currently disabled." : undefined}
+                              className={`w-full px-4 py-2 text-left text-sm text-[#013300] flex items-center gap-2 ${
+                                importButtonDisabled ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50"
+                              }`}
+                            >
+                              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v12" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="m17 8-5-5-5 5" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                              </svg>
+                              {importing ? "Uploading..." : "Upload File"}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={templateButtonDisabled}
+                              onClick={() => {
+                                handleDownloadTemplate();
+                                close();
+                              }}
+                              title={!hasConfiguredRemedialWindow ? "Principal has not set a remedial period yet." : undefined}
+                              className={`w-full px-4 py-2 text-left text-sm text-[#013300] flex items-center gap-2 ${
+                                templateButtonDisabled ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50"
+                              }`}
+                            >
+                              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="m7 10 5 5 5-5" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 15V3" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 19h14" />
+                              </svg>
+                              {templateDownloading ? "Preparing..." : "Download Template"}
+                            </button>
+                          </div>
+                        )}
+                      />
                     </div>
                   </div>
                 </div>
@@ -2639,14 +2690,42 @@ export default function MasterTeacherCalendar() {
       </div>
       {toast && (
         <div className="fixed inset-0 z-50 flex items-start justify-center pointer-events-none">
-          <div
-            role="status"
-            aria-live="assertive"
-            className={`pointer-events-auto mt-24 rounded-xl px-4 py-3 text-sm font-semibold shadow-lg ${TOAST_TONE_STYLES[toast.tone]}`}
-          >
-            {toast.message}
-          </div>
+          <Toast message={toast.message} tone={toast.tone} className="mt-24" />
         </div>
+      )}
+      {activityToast && (
+        <ToastActivity message={activityToast.message} tone={activityToast.tone} />
+      )}
+      {importActionToast && pendingImportIds.length > 0 && (
+        <ToastActivity
+          title="Imported activities"
+          message={importActionToast}
+          tone="info"
+          actions={
+            <>
+              <button
+                type="button"
+                onClick={handleDeclineImportedActivities}
+                disabled={sending}
+                className={`rounded-full border border-gray-200 bg-white/80 px-3 py-1 text-xs font-semibold text-gray-700 transition hover:bg-white ${
+                  sending ? "cursor-not-allowed opacity-60" : ""
+                }`}
+              >
+                Decline
+              </button>
+              <button
+                type="button"
+                onClick={handleOpenSendModal}
+                disabled={sendButtonDisabled}
+                className={`rounded-full border border-[#013300] bg-[#013300] px-3 py-1 text-xs font-semibold text-white transition hover:bg-emerald-700 ${
+                  sendButtonDisabled ? "cursor-not-allowed opacity-60 hover:bg-emerald-600" : ""
+                }`}
+              >
+                {sending ? "Sending..." : "Send"}
+              </button>
+            </>
+          }
+        />
       )}
     </div>
   );

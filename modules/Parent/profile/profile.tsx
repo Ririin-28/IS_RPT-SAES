@@ -218,8 +218,12 @@ export default function ParentProfile() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F6FAF6]">
-      <div className="bg-[#F4FBF4] px-4 py-6 sm:px-6">
+    <div className="relative min-h-dvh overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-24 right-0 h-72 w-72 rounded-full bg-emerald-100/25 blur-3xl" />
+        <div className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-emerald-200/30 blur-3xl" />
+      </div>
+      <div className="relative z-10 bg-[#F4FBF4] px-4 py-6 sm:px-6">
         <div className="mx-auto max-w-5xl">
           <div className="flex items-center justify-between rounded-[26px] bg-[#ECF9ED] px-6 py-4 shadow-[0_12px_32px_rgba(12,59,31,0.08)]">
             <h1 className="text-2xl font-semibold text-[#0C3B1F]">My Profile</h1>
@@ -261,7 +265,7 @@ export default function ParentProfile() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
+      <div className="relative z-10 mx-auto max-w-4xl px-4 py-8 sm:px-6">
         <div className="rounded-3xl border border-[#E2E8DD] bg-white p-6 shadow-[0_30px_80px_rgba(12,59,31,0.08)] sm:p-8">
           {isLoading ? (
             <div className="py-14 text-center text-gray-600">Loading profile...</div>

@@ -28,6 +28,7 @@ const NAV_LINKS = [
   { label: "Home", href: "#home" },
   { label: "About", href: "#about" },
   { label: "Download", href: "#mobile" },
+  { label: "Location", href: "#location" },
   { label: "Contacts", href: "#contacts" },
   { label: "Login", href: "/auth/login", isRoute: true },
 ];
@@ -176,7 +177,8 @@ export default function Home() {
     about: false,
     mission: false,
     features: false,
-    mobile: false
+    mobile: false,
+    location: false,
   });
   
   const heroRef = useRef(null);
@@ -184,6 +186,7 @@ export default function Home() {
   const missionRef = useRef(null);
   const featuresRef = useRef(null);
   const mobileRef = useRef(null);
+  const locationRef = useRef(null);
 
   // Fetch landing page content from your existing API
   useEffect(() => {
@@ -247,6 +250,7 @@ export default function Home() {
       if (missionRef.current) observer.observe(missionRef.current);
       if (featuresRef.current) observer.observe(featuresRef.current);
       if (mobileRef.current) observer.observe(mobileRef.current);
+      if (locationRef.current) observer.observe(locationRef.current);
     }, 100);
 
     return () => {
@@ -272,28 +276,29 @@ export default function Home() {
     return mounted && visibleSections[section as keyof typeof visibleSections];
   };
   return (
-    <div className="min-h-screen text-[#013300] relative overflow-hidden scroll-smooth">
-      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(209,255,222,0.45),transparent_16%),radial-gradient(circle_at_bottom_right,rgba(188,240,214,0.35),transparent_22%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(242,249,245,0.95))]" />
-      <div className="pointer-events-none absolute left-[12%] right-[46%] top-40 -z-10 h-56 rounded-3xl bg-linear-to-br from-green-200/30 via-white/40 to-transparent blur-4xl" />
-      <div className="pointer-events-none absolute left-[52%] right-[12%] bottom-16 -z-10 h-56 rounded-[40px] bg-linear-to-t from-green-100/45 via-white/35 to-transparent blur-4xl" />
+    <div className="relative min-h-screen overflow-hidden scroll-smooth bg-[#f6faf8] text-[#013300]">
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(198,238,216,0.34),transparent_20%),radial-gradient(circle_at_bottom_right,rgba(212,242,225,0.3),transparent_24%),linear-gradient(180deg,rgba(251,254,252,0.98),rgba(244,250,246,0.96))]" />
+      <div className="pointer-events-none absolute left-[12%] right-[50%] top-36 -z-10 h-48 rounded-3xl bg-linear-to-br from-green-100/40 via-white/40 to-transparent blur-4xl" />
+      <div className="pointer-events-none absolute left-[56%] right-[12%] bottom-12 -z-10 h-48 rounded-[36px] bg-linear-to-t from-green-100/35 via-white/35 to-transparent blur-4xl" />
       
       {/* Navbar - Responsive Organization */}
-      <header className={`fixed top-0 left-0 w-full z-30 bg-white shadow-md scroll-smooth transition-all duration-500 ${
+      <header className={`fixed inset-x-0 top-4 z-30 flex justify-center px-2 transition-all duration-500 ${
         mounted ? 'translate-y-0 opacity-100' : '-translate-y-4 opacity-0'
       }`}>
-        <div className="flex items-center justify-between px-6 py-4 md:px-8 md:py-4 md:justify-center md:relative lg:px-10">
-          <div className="flex items-center gap-3 md:absolute md:left-8 lg:left-10">
+        <div className="w-[90%] max-w-8xl rounded-full border border-white/80 bg-white/78 px-5 py-3 shadow-[0_10px_28px_rgba(15,23,42,0.12)] backdrop-blur-xl md:px-8 md:py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
             <RPTLogoTitle small />
           </div>
-          <nav className="hidden md:flex md:gap-10 lg:gap-16">
+          <nav className="hidden md:ml-auto md:flex md:items-center md:gap-8 lg:gap-12">
             {NAV_LINKS.map((item, index) => (
               <Link
                 key={item.label}
                 href={item.href}
                 scroll={!item.isRoute}
                 className={`
-                  font-bold text-[#013300] hover:text-green-800 transition-all duration-300 transform hover:scale-105
-                  md:text-lg lg:text-lg
+                  rounded-full px-2 py-1 text-base font-semibold text-slate-700 transition-colors duration-200 hover:text-[#013300]
+                  md:text-[15px] lg:text-base
                   ${mounted ? 'translate-y-0 opacity-100' : '-translate-y-2 opacity-0'}
                 `}
                 style={{ transitionDelay: `${index * 100 + 200}ms` }}
@@ -302,6 +307,7 @@ export default function Home() {
               </Link>
             ))}
           </nav>
+          </div>
         </div>
       </header>
 
@@ -309,12 +315,12 @@ export default function Home() {
       <main
         ref={heroRef}
         id="home"
-        className="relative pt-24 px-6 py-8 overflow-hidden md:pt-28 md:px-8 md:py-12 lg:pt-20 lg:px-12"
+        className="relative overflow-hidden px-6 py-8 pt-28 md:px-8 md:py-12 md:pt-32 lg:px-12 lg:py-16"
       >
         {/* Soft gradients behind the hero */}
-        <div className="absolute inset-x-0 top-12 h-105 bg-linear-to-br from-green-100 via-white to-green-50 blur-3xl opacity-70" />
-        <div className="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-linear-to-br from-green-500/20 to-green-300/10 blur-2xl" />
-        <div className="absolute bottom-0 -left-20 h-64 w-64 rounded-full bg-green-200/30 blur-2xl" />
+        <div className="absolute inset-x-0 top-12 h-96 bg-linear-to-br from-green-50 via-white to-green-50/60 opacity-80 blur-3xl" />
+        <div className="absolute -top-20 -right-20 h-64 w-64 rounded-full bg-linear-to-br from-green-100/35 to-green-50/25 blur-2xl" />
+        <div className="absolute bottom-0 -left-16 h-56 w-56 rounded-full bg-green-100/35 blur-2xl" />
 
         <div className="relative max-w-7xl mx-auto py-8 grid md:gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:items-center lg:py-16 lg:gap-15">
           {/* Text Content */}
@@ -344,13 +350,7 @@ export default function Home() {
               Welcome to <span className="font-semibold">RPT-SAES</span>
             </p>
             <h1
-              className={`
-              text-3xl font-extrabold text-[#013300] mb-4 leading-tight
-              md:text-4xl md:mb-5 lg:text-5xl
-              transition-all duration-800 delay-200 transform
-              ${mounted ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}
-              text-center sm:text-left
-            `}
+              className="text-3xl font-extrabold text-[#013300] mb-6 leading-tight md:text-4xl lg:text-5xl"
             >
               Transforming Remedial
               <br />
@@ -370,7 +370,7 @@ export default function Home() {
               mounted ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-6 opacity-0 scale-95'
             } items-center sm:items-start w-full`}>
               <Link href="/auth/login" className="
-                flex items-center justify-center pl-4 pr-2 py-2 bg-[#013300] text-white text-base font-bold rounded-lg hover:bg-green-900 transition-all duration-300 transform hover:scale-105
+                flex items-center justify-center rounded-xl bg-[#013300] pl-4 pr-2 py-2 text-base font-semibold text-white transition-colors duration-200 hover:bg-[#014a1f]
                 md:pl-4 md:py-3 md:text-lg lg:text-xl
                 w-full sm:w-auto sm:justify-start
               ">
@@ -391,7 +391,7 @@ export default function Home() {
           `}
           >
             <div className="relative isolate">
-              <div className="relative overflow-hidden rounded-4xl border border-green-100/60 bg-white/70 shadow-[0_25px_50px_rgba(1,51,0,0.12)] backdrop-blur">
+              <div className="relative overflow-hidden rounded-3xl border border-gray-200/80 bg-white/85 shadow-[0_16px_36px_rgba(15,23,42,0.10)]">
                 <div className="relative h-100 md:h-120 lg:h-125">
                   {HERO_IMAGES.map((src, index) => (
                     <div
@@ -417,7 +417,7 @@ export default function Home() {
                     type="button"
                     onClick={handlePrev}
                     aria-label="Previous slide"
-                    className="rounded-full bg-white/80 p-2 text-[#013300] shadow hover:bg-white transition-all duration-300 transform hover:scale-110"
+                    className="rounded-full border border-white/80 bg-white/85 p-2 text-[#013300] shadow-sm transition-colors duration-200 hover:bg-white"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
                       <path d="m15 18-6-6 6-6" />
@@ -427,7 +427,7 @@ export default function Home() {
                     type="button"
                     onClick={handleNext}
                     aria-label="Next slide"
-                    className="rounded-full bg-white/80 p-2 text-[#013300] shadow hover:bg-white transition-all duration-300 transform hover:scale-110"
+                    className="rounded-full border border-white/80 bg-white/85 p-2 text-[#013300] shadow-sm transition-colors duration-200 hover:bg-white"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
                       <path d="m9 18 6-6-6-6" />
@@ -435,7 +435,7 @@ export default function Home() {
                   </button>
                 </div>
 
-                <div className="absolute bottom-0 left-0 right-0 px-6 py-5 bg-linear-to-t from-[#013300]/90 via-[#013300]/50 to-transparent rounded-b-4xl">
+                <div className="absolute bottom-0 left-0 right-0 rounded-b-3xl bg-linear-to-t from-[#013300]/78 via-[#013300]/35 to-transparent px-6 py-5">
                 <h3 className="text-2xl font-bold text-white md:text-2xl lg:text-2xl">
                   {"San Agustin Elementary School"}
                 </h3>
@@ -463,183 +463,107 @@ export default function Home() {
         </div>
       </main>
 
-      {/* About Section - With Feature Cards */}
+      {/* About & Features Section (Scaled & Balanced) */}
       <section
         ref={aboutRef}
         id="about"
-        className="px-6 py-16 md:px-8 md:py-20 lg:px-12 lg:py-24"
+        className="relative px-6 py-16 md:px-8 md:py-20 lg:px-12 lg:py-24 bg-linear-to-b from-transparent via-green-50/30 to-transparent"
       >
-        <div className="mb-12 w-full max-w-6xl mx-auto px-4 md:mb-16">
-          <h2
-            className={`
-            text-3xl font-extrabold text-[#013300] mb-4 text-center leading-tight
-            md:text-4xl md:mb-5 lg:text-5xl
-            transition-all duration-800 delay-200 transform
-            ${isSectionVisible('about') ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}
-          `}
-          >
-            About RPT-SAES
-          </h2>
-
-          {/* Mission Section with Animated Circles */}
-          <div ref={missionRef} id="mission" className="relative mt-16 mb-20 max-w-4xl mx-auto">
-            <h3
-              className={`text-2xl font-semibold text-[#013300] mb-6 text-center md:text-3xl transition-all duration-700 delay-200 transform ${
-                isSectionVisible("mission") ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"
+        <div className="mx-auto max-w-7xl">
+          <div className="flex flex-col lg:flex-row lg:items-center gap-12 lg:gap-16">
+            
+            {/* Mission / About Left Column */}
+            <div 
+              ref={missionRef} 
+              id="mission"
+              className={`lg:w-5/12 transition-all duration-1000 transform ${
+                isSectionVisible('mission') ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'
               }`}
             >
-            </h3>
-            
-            <div className={`
-              absolute -left-20 top-1/2 -translate-y-1/2 w-40 h-40 rounded-full
-              bg-linear-to-br from-green-500/20 to-green-300/10 blur-2xl
-              transition-all duration-1000 delay-300
-              ${isSectionVisible('mission') ? 'translate-x-0 opacity-100 scale-100' : '-translate-x-20 opacity-0 scale-50'}
-            `}></div>
-            
-            <div className={`
-              absolute -right-20 top-1/2 -translate-y-1/2 w-40 h-40 rounded-full
-              bg-linear-to-br from-green-300/15 to-green-100/25 blur-2xl
-              transition-all duration-1000 delay-500
-              ${isSectionVisible('mission') ? 'translate-x-0 opacity-100 scale-100' : 'translate-x-20 opacity-0 scale-50'}
-            `}></div>
-
-            <div className="relative z-10">
-              <div className={`
-                bg-linear-to-r from-green-50/60 to-green-100/40 
-                border border-green-100/40 rounded-3xl
-                backdrop-blur-sm
-                transition-all duration-800 delay-700
-                ${isSectionVisible('mission') ? 'scale-100 opacity-100' : 'scale-95 opacity-0'}
-              `}>
-                <p className={`
-                  text-green-900 leading-relaxed text-lg px-6 py-8 text-center
-                  md:text-xl md:px-10 md:py-10
-                  transition-all duration-700 delay-900
-                  ${isSectionVisible('mission') ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}
-                `}>
-                  Our mission is to enhance the San Agustin Elementary School remedial program by providing teachers with a centralized system that tracks student performance, manages materials, and uses AI-driven analysis to support student learning.
-                </p>
-              </div>
+              <h2 className="text-3xl font-extrabold text-left text-[#013300] mb-6 leading-tight md:text-4xl lg:text-5xl">
+                Transforming Remedial Education
+              </h2>
+              <p className="text-base text-green-900 mb-6 md:text-lg md:mb-6
+                transition-all duration-700 delay-800 transform
+                translate-y-0 opacity-100
+              ">
+                Our mission is to enhance the San Agustin Elementary School remedial program by providing teachers with a centralized system that tracks student performance, manages materials, and uses AI-driven analysis to support student learning.
+              </p>
             </div>
-          </div>
-          
-          {/* Key Features Title */}
-          <div ref={featuresRef} id="features" className="mt-16">
-            <h3 className={`
-              text-2xl font-semibold text-[#013300] mb-8 text-center
-              md:text-3xl md:mb-12
-              transition-all duration-700 delay-200 transform
-              ${isSectionVisible('features') ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}
-            `}>
-              Key Features
-            </h3>
-          </div>
-          
-          {/* Feature Cards Section */}
-          <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-4 md:gap-8">
-            {[
-              {
-                defaultIcon: "/Landing_Cards/1A.png",
-                hoverIcon: "/Landing_Cards/1B.png",
-                title: "Centralized Repository",
-                desc: "A unified platform where teachers can manage all remedial materials in one place."
-              },
-              {
-                defaultIcon: "/Landing_Cards/2A.png",
-                hoverIcon: "/Landing_Cards/2B.png",
-                title: "Tracking Student Performance",
-                desc: "Tracks student progress in literacy and numeracy to record students performance."
-              },
-              {
-                defaultIcon: "/Landing_Cards/3A.png",
-                hoverIcon: "/Landing_Cards/3B.png",
-                title: "AI-Driven Analysis",
-                desc: "Smart recommendations that help teachers identify learning gaps of students."
-              },
-              {
-                defaultIcon: "/Landing_Cards/4A.png",
-                hoverIcon: "/Landing_Cards/4B.png",
-                title: "Interactive Quiz",
-                desc: "Engaging digital quizzes that make learning of students interactive and dynamic."
-              }
-            ].map((feature, index) => (
-              <div
-                key={index}
-                className={`
-                  group relative bg-white/80 backdrop-blur-sm rounded-2xl p-8 border border-green-100/60 
-                  shadow-[0_8px_32px_rgba(1,51,0,0.08)] hover:shadow-[0_20px_50px_rgba(1,51,0,0.15)]
-                  transition-all duration-300 ease-out cursor-pointer
-                  flex flex-col items-center text-center
-                  hover:bg-linear-to-br hover:from-green-50 hover:to-white
-                  hover:border-green-200/80
-                  min-h-70 md:min-h-75 lg:min-h-80
-                  transform
-                  ${isSectionVisible('features') ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}
-                `}
-                style={{ transitionDelay: `${isSectionVisible('features') ? 300 + index * 150 : 0}ms` }}
-              >
-                <div className="
-                  flex flex-col items-center justify-center h-full
-                  group-hover:opacity-0 group-hover:scale-90
-                  transition-all duration-300 ease-out
-                ">
-                  <Image
-                    src={feature.defaultIcon}
-                    alt={`${feature.title} icon`}
-                    width={80}
-                    height={80}
-                    className="w-20 h-20 object-contain mb-6"
-                  />
-                  
-                  <h4 className="
-                    font-bold text-[#013300] text-xl leading-tight px-2
-                  ">
-                    {feature.title}
-                  </h4>
-                </div>
 
-                <div className="
-                  absolute inset-0 p-8 flex flex-col items-center justify-center
-                  opacity-0 scale-95
-                  group-hover:opacity-100 group-hover:scale-100
-                  transition-all duration-300 ease-out
-                  pointer-events-none
-                ">
-                  <Image
-                    src={feature.hoverIcon}
-                    alt={`${feature.title} icon highlighted`}
-                    width={72}
-                    height={72}
-                    className="w-16 h-16 object-contain mb-6"
-                  />
+            {/* Key Features Right Column (2x2 Grid) */}
+            <div 
+              ref={featuresRef}
+              id="features"
+              className="lg:w-7/12 grid grid-cols-1 gap-6 sm:grid-cols-2 md:gap-8 mt-8 lg:mt-0"
+            >
+              {[
+                {
+                  defaultIcon: "/Landing_Cards/1A.png",
+                  hoverIcon: "/Landing_Cards/1B.png",
+                  title: "Centralized Repository",
+                  desc: "Manage all your remedial materials securely in one unified platform."
+                },
+                {
+                  defaultIcon: "/Landing_Cards/2A.png",
+                  hoverIcon: "/Landing_Cards/2B.png",
+                  title: "Tracking Performance",
+                  desc: "Seamlessly record and track student progress in literacy and numeracy."
+                },
+                {
+                  defaultIcon: "/Landing_Cards/3A.png",
+                  hoverIcon: "/Landing_Cards/3B.png",
+                  title: "AI-Driven Analysis",
+                  desc: "Get smart recommendations to easily identify student learning gaps."
+                },
+                {
+                  defaultIcon: "/Landing_Cards/4A.png",
+                  hoverIcon: "/Landing_Cards/4B.png",
+                  title: "Interactive Quizzes",
+                  desc: "Create dynamic digital quizzes to make student learning more engaging."
+                }
+              ].map((feature, index) => (
+                <div
+                  key={index}
+                  className={`
+                    group relative flex flex-col items-start rounded-3xl bg-white p-6
+                    border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.02)]
+                    transition-all duration-500 ease-out 
+                    hover:-translate-y-2 hover:shadow-[0_12px_40px_rgba(1,51,0,0.08)] hover:border-green-100/60
+                    ${isSectionVisible('features') ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}
+                  `}
+                  style={{ transitionDelay: `${isSectionVisible('features') ? index * 120 : 0}ms` }}
+                >
+                  {/* Scaled Up Icon Block */}
+                  <div className="mb-6 flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-green-50 transition-colors duration-500 group-hover:bg-green-100/60">
+                    <div className="relative h-8 w-8">
+                      <Image
+                        src={feature.defaultIcon}
+                        alt={`${feature.title} icon`}
+                        fill
+                        className="object-contain transition-all duration-500 group-hover:opacity-0 group-hover:scale-90"
+                      />
+                      <Image
+                        src={feature.hoverIcon}
+                        alt={`${feature.title} icon highlighted`}
+                        fill
+                        className="absolute inset-0 object-contain opacity-0 scale-90 transition-all duration-500 group-hover:opacity-100 group-hover:scale-100"
+                      />
+                    </div>
+                  </div>
                   
-                  <h4 className="
-                    font-bold text-[#013300] text-lg leading-tight mb-4 px-2
-                    group-hover:text-green-800
-                  ">
+                  {/* Restored Typography Size */}
+                  <h3 className="mb-3 text-xl font-bold text-[#013300] leading-tight transition-colors duration-300 group-hover:text-green-800">
                     {feature.title}
-                  </h4>
+                  </h3>
                   
-                  <p className="
-                    text-green-800 text-base leading-relaxed text-center
-                    opacity-0 translate-y-2
-                    group-hover:opacity-100 group-hover:translate-y-0
-                    transition-all duration-300 delay-100
-                    px-2
-                  ">
+                  <p className="text-base leading-relaxed text-green-800 opacity-90 transition-colors duration-300 group-hover:text-[#013300]">
                     {feature.desc}
                   </p>
                 </div>
+              ))}
+            </div>
 
-                <div className="
-                  absolute inset-0 rounded-2xl
-                  scale-100 group-hover:scale-105
-                  transition-transform duration-300 ease-out
-                  -z-10
-                " />
-              </div>
-            ))}
           </div>
         </div>
       </section>
@@ -654,7 +578,7 @@ export default function Home() {
           <div className="flex flex-col items-center justify-center gap-8 md:flex-row md:gap-12 lg:gap-16">
             <div className="shrink-0 relative">
               <div className={`
-                absolute -top-12 -left-12 w-64 h-64 rounded-full bg-green-700/10 z-0
+                absolute -top-12 -left-12 w-64 h-64 rounded-full bg-green-100/45 z-0
                 md:-top-16 md:-left-16 md:w-96 md:h-96
                 lg:-top-5 lg:-left-20 lg:w-92 lg:h-92
                 transition-all duration-1000 delay-300
@@ -662,7 +586,7 @@ export default function Home() {
               `}></div>
               
               <div className={`
-                absolute -bottom-12 -right-12 w-60 h-60 rounded-full bg-green-500/15 z-0
+                absolute -bottom-12 -right-12 w-60 h-60 rounded-full bg-green-100/35 z-0
                 md:-bottom-16 md:-right-16 md:w-80 md:h-80
                 lg:-bottom-2 lg:-right-12 lg:w-96 lg:h-96
                 transition-all duration-1000 delay-500
@@ -670,7 +594,7 @@ export default function Home() {
               `}></div>
               
               <div className={`
-                absolute top-1/2 -right-14 w-52 h-52 rounded-full bg-green-300/20 transform -translate-y-1/2 z-0
+                absolute top-1/2 -right-14 w-52 h-52 rounded-full bg-green-50/65 transform -translate-y-1/2 z-0
                 md:-right-20 md:w-72 md:h-72
                 lg:-right-8 lg:w-80 lg:h-80
                 transition-all duration-1000 delay-700
@@ -710,12 +634,7 @@ export default function Home() {
                 `}
               />
               <h3
-                className={`
-                text-2xl font-extrabold text-[#013300] mb-5
-                md:text-3xl lg:text-4xl
-                transition-all duration-700 delay-600 transform
-                ${isSectionVisible('mobile') ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}
-              `}
+                className="text-3xl font-extrabold text-[#013300] mb-6 leading-tight md:text-4xl lg:text-5xl"
               >
                 Innovation  
                <br className="hidden md:block" /> in Your Hands
@@ -738,10 +657,7 @@ export default function Home() {
               >
                 <Link
                   href="/PWA"
-                  className="
-                    flex items-center justify-center px-6 py-3 bg-green-900 text-white text-base font-bold rounded-lg
-                    hover:bg-green-800 transition md:px-8 md:py-3 md:text-lg
-                  "
+                  className="flex items-center justify-center rounded-xl bg-[#013300] px-6 py-3 text-base font-semibold text-white transition-colors duration-200 hover:bg-[#014a1f] md:px-8 md:py-3 md:text-lg"
                 >
                   <svg
                     className="w-5 h-5 mr-2 md:w-6 md:h-6"
@@ -764,8 +680,69 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Location Section - Modern Flat UI */}
+      <section
+        ref={locationRef}
+        id="location"
+        className="relative px-6 py-16 md:px-8 md:py-20 lg:px-12 lg:py-24 bg-linear-to-b from-transparent via-green-50/30 to-transparent"
+      >
+        <div className="mx-auto max-w-7xl">
+          <div className="grid grid-cols-1 gap-10 lg:grid-cols-2 lg:gap-16 lg:items-center">
+            
+            {/* Left Column: Text & Details */}
+            <div 
+              className={`transition-all duration-1000 transform ${
+                isSectionVisible('location') ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'
+              }`}
+            >
+              <h2 className="text-3xl font-extrabold text-[#013300] mb-6 leading-tight md:text-4xl lg:text-5xl">
+                Visit Our Campus
+              </h2>
+              <p className="text-base text-green-900 mb-6 md:text-lg md:mb-6
+                transition-all duration-700 delay-800 transform
+                translate-y-0 opacity-100">
+                We are conveniently located in the heart of Novaliches. Come visit San Agustin Elementary School and see where the learning happens.
+              </p>
+
+              {/* Address Card (Flat UI Style) */}
+              <div className="inline-flex flex-col sm:flex-row items-start sm:items-center gap-6 rounded-[2rem] bg-white px-8 py-6 border border-green-50 transition-transform duration-300 hover:-translate-y-1 w-full sm:w-auto">
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-[#f0f7f3] text-[#013300]">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8">
+                    <path fillRule="evenodd" d="m11.54 22.351.07.04.028.016a.76.76 0 0 0 .723 0l.028-.015.071-.041a16.975 16.975 0 0 0 1.144-.742 19.58 19.58 0 0 0 2.683-2.282c1.944-1.99 3.963-4.98 3.963-8.827a8.25 8.25 0 0 0-16.5 0c0 3.846 2.02 6.837 3.963 8.827a19.58 19.58 0 0 0 2.682 2.282 16.975 16.975 0 0 0 1.145.742ZM12 13.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-[#013300] mb-1.5">San Agustin Elementary School</h3>
+                  <p className="text-base text-green-800 leading-relaxed opacity-90">
+                    Heavenly Drive St., San Agustin,<br />
+                    Novaliches, Quezon City
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column: Map (Flat UI Cutout) */}
+            <div 
+              className={`relative h-[350px] w-full overflow-hidden rounded-[2.5rem] bg-green-50 md:h-[450px] transition-all duration-1000 delay-200 transform ${
+                isSectionVisible('location') ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'
+              }`}
+            >
+              <iframe
+                title="San Agustin Elementary School Location"
+                src="https://www.google.com/maps?q=San%20Agustin%20Elementary%20School%2C%20G%2C%20P2HP%2B8QG%2C%200%20Susano%20Rd%2C%20Novaliches%2C%20Quezon%20City%2C%20Metro%20Manila%2C%20Philippines&output=embed"
+                className="absolute inset-0 h-full w-full border-0 grayscale-[20%] transition-all duration-500 hover:grayscale-0"
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+                allowFullScreen
+              />
+            </div>
+
+          </div>
+        </div>
+      </section>
+
       {/* Gradient Transition Section */}
-      <div className={`w-full h-32 bg-linear-to-b from-transparent to-white pointer-events-none transition-opacity duration-1000 ${
+      <div className={`pointer-events-none h-24 w-full bg-linear-to-b from-transparent to-white/70 transition-opacity duration-1000 ${
         mounted ? 'opacity-100' : 'opacity-0'
       }`} />
       

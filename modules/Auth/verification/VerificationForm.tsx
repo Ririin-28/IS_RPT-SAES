@@ -69,8 +69,8 @@ export default function VerificationForm({ email, user_id, role, redirectPath, o
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-green-200 relative overflow-hidden md:py-8">
-      <div className="flex flex-col justify-center items-center bg-white rounded-3xl shadow-xl p-6 w-full sm:p-6 sm:max-w-md md:w-96">
+    <div className="min-h-screen flex items-center justify-center bg-[#f6faf8] relative overflow-hidden md:py-8">
+      <div className="flex flex-col justify-center items-center bg-white/90 rounded-3xl shadow-lg p-8 w-full sm:p-8 sm:max-w-md md:w-96 border border-green-50">
         <div className="w-full">
           <h2 className="text-2xl font-bold text-green-900 mb-6 text-center sm:text-3xl sm:mb-6">Device Verification</h2>
           <p className="mb-2 text-black text-center">An OTP will be sent to your email: <b>{email}</b></p>
@@ -79,7 +79,7 @@ export default function VerificationForm({ email, user_id, role, redirectPath, o
               type="button"
               onClick={sendOtp}
               disabled={loading || sendDisabled}
-              className="w-full bg-gradient-to-r from-green-600 to-[#133000] text-white font-bold py-2.5 rounded-lg hover:opacity-90 transition shadow-md disabled:opacity-70 sm:py-2 mb-4"
+              className="w-full bg-linear-to-r from-green-600 to-[#133000] text-white font-bold py-2.5 rounded-lg hover:opacity-90 transition shadow-md disabled:opacity-70 sm:py-2 mb-4"
             >
               {loading ? "Sending..." : "Send OTP"}
             </button>
@@ -101,7 +101,7 @@ export default function VerificationForm({ email, user_id, role, redirectPath, o
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-gradient-to-r from-green-600 to-[#133000] text-white font-bold py-2.5 rounded-lg hover:opacity-90 transition shadow-md disabled:opacity-70 sm:py-2"
+                className="w-full bg-linear-to-r from-green-600 to-[#133000] text-white font-bold py-2.5 rounded-lg hover:opacity-90 transition shadow-md disabled:opacity-70 sm:py-2"
               >
                 {loading ? "Verifying..." : "Verify"}
               </button>

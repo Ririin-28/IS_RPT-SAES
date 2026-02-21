@@ -21,7 +21,7 @@ export default function ITAdminWelcome() {
   }, []);
 
   return (
-    <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-green-100 via-green-50 to-white">
+    <div className="relative min-h-dvh flex items-center justify-center overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
       {/* Decorative static background shapes */}
       <svg className="absolute left-0 top-0 w-2/3 h-2/3 opacity-30 blur-2xl z-0" viewBox="0 0 400 400" fill="none">
         <circle cx="200" cy="200" r="200" fill="url(#paint0_radial)" />

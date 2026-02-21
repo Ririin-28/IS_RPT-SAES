@@ -32,13 +32,13 @@ function CustomDropdown({ value, onChange, options, className = "" }: {
       <select
         value={value}
         onChange={onChange}
-        className="w-full px-4 py-2.5 bg-white text-green-900 rounded-lg shadow-sm focus:outline-none focus:ring-1 appearance-none pr-10 cursor-pointer transition-colors duration-150 hover:border-[#013300]"
+        className="w-full rounded-xl border border-white/65 bg-white/55 px-4 py-2.5 pr-10 text-slate-700 shadow-[0_6px_18px_rgba(15,23,42,0.08)] backdrop-blur-md focus:outline-none focus:ring-2 focus:ring-gray-200/80 focus:border-gray-300 appearance-none cursor-pointer transition-colors duration-150 hover:border-gray-200"
       >
         {options.map(option => (
           <option key={option} value={option}>{option}</option>
         ))}
       </select>
-      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-green-700">
+      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
         <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
           <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
         </svg>
@@ -82,14 +82,14 @@ function OverviewCard({
     return content;
   };
 
-  const baseClasses = `relative group bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg
+    const baseClasses = `relative group rounded-2xl border border-white/70 bg-white/60 shadow-[0_10px_26px_rgba(15,23,42,0.08)] backdrop-blur-xl
       flex flex-col items-center justify-center p-5 min-w-[160px] min-h-[110px] 
-      transition-transform duration-200 hover:scale-105
-      sm:p-6 sm:min-w-[180px] sm:min-h-[120px]
+      transition duration-200 hover:border-gray-200 hover:bg-white/70
+      sm:p-6 sm:min-w-[180px] sm:min-h-30
       lg:p-7 ${className}`;
 
   const tooltipNode = tooltip ? (
-    <span className="pointer-events-none absolute -top-2 left-1/2 z-10 hidden w-56 -translate-x-1/2 -translate-y-full rounded-md bg-[#013300] px-3 py-2 text-center text-xs font-medium text-white opacity-0 shadow-lg transition-opacity duration-200 group-hover:block group-hover:opacity-100">
+    <span className="pointer-events-none absolute -top-2 left-1/2 z-10 hidden w-56 -translate-x-1/2 -translate-y-full rounded-md bg-slate-700 px-3 py-2 text-center text-xs font-medium text-white opacity-0 shadow-lg transition-opacity duration-200 group-hover:block group-hover:opacity-100">
       {tooltip}
     </span>
   ) : null;
@@ -98,12 +98,12 @@ function OverviewCard({
     <>
       {tooltipNode}
       <div className="flex flex-row items-center">
-        <span className="text-4xl font-extrabold text-[#013300] drop-shadow sm:text-5xl">
+        <span className="text-4xl font-semibold text-slate-900 sm:text-5xl">
           {sanitizeContent(value)}
         </span>
         {icon && <span className="ml-1 sm:ml-2">{icon}</span>}
       </div>
-      <div className="text-green-900 text-sm font-semibold mt-1 tracking-wide sm:text-base sm:mt-2">
+      <div className="text-slate-600 text-sm font-medium mt-1 tracking-wide sm:text-base sm:mt-2">
         {sanitizeContent(label)}
       </div>
     </>
@@ -441,21 +441,25 @@ export default function TeacherDashboard() {
     : `Overall improvement: ${improvementValue >= 0 ? "+" : ""}${improvementValue} levels since ${monthOptions[0] ?? "start"}`;
 
   return (
-    <div className="flex h-screen bg-white overflow-hidden">
+    <div className="relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-24 right-0 h-72 w-72 rounded-full bg-emerald-100/25 blur-3xl" />
+        <div className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-emerald-200/30 blur-3xl" />
+      </div>
       <RemedialTeacherSidebar />
 
-      <div className="flex-1 pt-16 flex flex-col overflow-hidden">
+      <div className="relative z-10 flex-1 pt-16 flex flex-col overflow-hidden">
         <MasterTeacherHeader title="Dashboard" />
 
         <main className="flex-1 overflow-y-auto">
-          <div className="p-4 h-full sm:p-5 md:p-6">
-            <div className="bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[400px] overflow-y-auto p-4 sm:p-5 md:p-6">
+          <div className="relative p-4 h-full sm:p-5 md:p-6">
+            <div className="relative h-full min-h-100 overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.10)] backdrop-blur-xl sm:p-5 md:p-6">
               {/* Teacher Info Section */}
               <div className="flex flex-col mb-3 md:flex-row md:items-center md:justify-between">
                 <SecondaryHeader title="Teacher Overview" />
               </div>
 
-              <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg p-4 mb-6 min-w-full min-h-[120px] sm:p-5 sm:mb-7 md:p-6 md:mb-8">
+              <div className="mb-6 min-w-full min-h-30 rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg sm:mb-7 sm:p-5 md:mb-8 md:p-6">
                 {isLoadingProfile ? (
                   <div className="flex h-full items-center justify-center">
                     <BodyText title="Loading profile..." />
@@ -492,7 +496,7 @@ export default function TeacherDashboard() {
                 )}
               </div>
 
-              <hr className="border-gray-300 mb-4 sm:mb-5 md:mb-6" />
+              <hr className="border-gray-200 mb-4 sm:mb-5 md:mb-6" />
 
               {/* Overview Cards Section */}
               <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
@@ -548,10 +552,10 @@ export default function TeacherDashboard() {
                 </div>
               )}
 
-              <hr className="border-gray-300 mb-4 sm:mb-5 md:mb-6" />
+              <hr className="border-gray-200 mb-4 sm:mb-5 md:mb-6" />
 
               {/* Student Performance */}
-              <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg p-6 mb-8">
+              <div className="mb-8 rounded-2xl border border-white/75 bg-white/55 p-6 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
                   <TertiaryHeader title="Student Performance" />
                   <div className="flex space-x-2 mt-2 md:mt-0">
@@ -611,7 +615,7 @@ export default function TeacherDashboard() {
               </div>
 
               {/* Student Distribution by Level */}
-              <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg p-6">
+              <div className="rounded-2xl border border-white/75 bg-white/55 p-6 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
                   <TertiaryHeader title="Student Distribution by Level" />
                   <div className="flex space-x-2 mt-2 md:mt-0">

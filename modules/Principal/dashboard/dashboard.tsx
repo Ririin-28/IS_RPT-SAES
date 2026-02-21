@@ -77,10 +77,10 @@ type SubjectProgressPayload = {
 };
 
 function OverviewCard({ value, label, icon, className = "", onClick, tooltip }: OverviewCardProps) {
-  const baseClasses = `relative group bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg flex flex-col items-center justify-center p-5 min-w-[160px] min-h-[110px] transition-transform duration-200 hover:scale-105 sm:p-6 sm:min-w-[180px] sm:min-h-[120px] lg:p-7 ${className}`;
+  const baseClasses = `relative group rounded-2xl border border-white/70 bg-white/60 shadow-[0_10px_26px_rgba(15,23,42,0.08)] backdrop-blur-xl flex flex-col items-center justify-center p-5 min-w-[160px] min-h-[110px] transition duration-200 hover:border-gray-200 hover:bg-white/70 sm:p-6 sm:min-w-[180px] sm:min-h-30 lg:p-7 ${className}`;
 
   const tooltipNode = tooltip ? (
-    <span className="pointer-events-none absolute -top-2 left-1/2 z-10 hidden w-56 -translate-x-1/2 -translate-y-full rounded-md bg-[#013300] px-3 py-2 text-center text-xs font-medium text-white opacity-0 shadow-lg transition-opacity duration-200 group-hover:block group-hover:opacity-100">
+    <span className="pointer-events-none absolute -top-2 left-1/2 z-10 hidden w-56 -translate-x-1/2 -translate-y-full rounded-md bg-slate-700 px-3 py-2 text-center text-xs font-medium text-white opacity-0 shadow-lg transition-opacity duration-200 group-hover:block group-hover:opacity-100">
       {tooltip}
     </span>
   ) : null;
@@ -89,10 +89,10 @@ function OverviewCard({ value, label, icon, className = "", onClick, tooltip }: 
     <>
       {tooltipNode}
       <div className="flex flex-row items-center">
-        <span className="text-4xl font-extrabold text-[#013300] drop-shadow sm:text-5xl">{value}</span>
+        <span className="text-4xl font-semibold text-slate-900 sm:text-5xl">{value}</span>
         {icon && <span className="ml-1 sm:ml-2">{icon}</span>}
       </div>
-      <div className="text-green-900 text-sm font-semibold mt-1 tracking-wide sm:text-base sm:mt-2">{label}</div>
+      <div className="text-slate-600 text-sm font-medium mt-1 tracking-wide sm:text-base sm:mt-2">{label}</div>
     </>
   );
 
@@ -276,20 +276,20 @@ export default function PrincipalDashboard() {
 
     const levelOrder = subject === "Math"
       ? [
-          "Emerging - Not Proficient",
-          "Emerging - Low Proficient",
-          "Developing - Nearly Proficient",
-          "Transitioning - Proficient",
-          "At Grade Level - Highly Proficient",
-        ]
+        "Emerging - Not Proficient",
+        "Emerging - Low Proficient",
+        "Developing - Nearly Proficient",
+        "Transitioning - Proficient",
+        "At Grade Level - Highly Proficient",
+      ]
       : [
-          "Non-Reader",
-          "Syllable Reader",
-          "Word Reader",
-          "Phrase Reader",
-          "Sentence Reader",
-          "Paragraph Reader",
-        ];
+        "Non-Reader",
+        "Syllable Reader",
+        "Word Reader",
+        "Phrase Reader",
+        "Sentence Reader",
+        "Paragraph Reader",
+      ];
 
     const hasNotAssessed = Array.from(gradeLevelMap.values()).some((levels) => "Not Assessed" in levels);
     const orderedLevels = hasNotAssessed ? [...levelOrder, "Not Assessed"] : levelOrder;
@@ -721,13 +721,17 @@ export default function PrincipalDashboard() {
   }, [router]);
 
   return (
-    <div className="flex h-screen bg-white overflow-hidden">
+    <div className="relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-24 right-0 h-72 w-72 rounded-full bg-emerald-100/25 blur-3xl" />
+        <div className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-emerald-200/30 blur-3xl" />
+      </div>
       <PrincipalSidebar />
-      <div className="flex-1 pt-16 flex flex-col overflow-hidden">
+      <div className="relative z-10 flex-1 pt-16 flex flex-col overflow-hidden">
         <PrincipalHeader title="Dashboard" />
         <main className="flex-1 overflow-y-auto">
-          <div className="p-4 h-full sm:p-5 md:p-6">
-            <div className="bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[400px] overflow-y-auto p-4 sm:p-5 md:p-6">
+          <div className="relative p-4 h-full sm:p-5 md:p-6">
+            <div className="relative h-full min-h-100 overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.10)] backdrop-blur-xl sm:p-5 md:p-6">
               {/* Info Section */}
               <div className="flex flex-col mb-3 md:flex-row md:items-center md:justify-between">
                 <SecondaryHeader title="Principal Overview" />
@@ -786,12 +790,12 @@ export default function PrincipalDashboard() {
                 />
               </div>
 
-              <hr className="border-gray-300 mb-4 sm:mb-5 md:mb-6" />
+              <hr className="border-gray-200 mb-4 sm:mb-5 md:mb-6" />
 
               {/* Charts Section */}
               <div className="space-y-8">
                 {/* Subject Progress Chart - 100% Stacked Bar */}
-                <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg p-6">
+                <div className="rounded-2xl border border-white/75 bg-white/55 p-6 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg">
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
                     <div className="flex flex-col md:flex-row md:items-center space-y-2 md:space-y-0 md:space-x-4">
                       <TertiaryHeader title={`${selectedSubject} Student Progress by Grade Level`} />
@@ -800,7 +804,7 @@ export default function PrincipalDashboard() {
                           <select
                             value={selectedSubject}
                             onChange={(e) => setSelectedSubject(e.target.value)}
-                            className="w-full px-4 py-2.5 bg-white text-green-900 rounded-lg shadow-sm focus:outline-none focus:ring-1 appearance-none pr-10 cursor-pointer transition-colors duration-150 hover:border-[#013300]"
+                            className="w-full rounded-xl border border-white/65 bg-white/55 px-4 py-2.5 pr-10 text-slate-700 shadow-[0_6px_18px_rgba(15,23,42,0.08)] backdrop-blur-md focus:outline-none focus:ring-2 focus:ring-gray-200/80 focus:border-gray-300 appearance-none cursor-pointer transition-colors duration-150 hover:border-gray-200"
                           >
                             <option value="English">English</option>
                             <option value="Filipino">Filipino</option>
@@ -847,7 +851,7 @@ export default function PrincipalDashboard() {
                 </div>
 
                 {/* Teacher Report Submissions Chart - Donut with Center Label */}
-                <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg p-6">
+                <div className="rounded-2xl border border-white/75 bg-white/55 p-6 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg">
                   <TertiaryHeader title="Teacher Report Submissions" />
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-center">
                     {/* Donut Chart Section */}
@@ -867,7 +871,7 @@ export default function PrincipalDashboard() {
                     <div className="md:col-span-2">
                       <div className="grid grid-cols-2 gap-4">
                         {/* Submitted Reports */}
-                        <div className="bg-white rounded-2xl shadow-lg border border-green-100 p-5 transition-all duration-300 hover:shadow-xl hover:scale-105">
+                        <div className="bg-white/70 rounded-2xl shadow-sm border border-gray-200 p-5 transition-colors duration-200 hover:border-gray-300">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center">
                               <div className="w-4 h-4 bg-green-500 rounded-full mr-3 shadow-sm"></div>
@@ -884,7 +888,7 @@ export default function PrincipalDashboard() {
                         </div>
 
                         {/* Pending Reports */}
-                        <div className="bg-white rounded-2xl shadow-lg border border-red-100 p-5 transition-all duration-300 hover:shadow-xl hover:scale-105">
+                        <div className="bg-white/70 rounded-2xl shadow-sm border border-gray-200 p-5 transition-colors duration-200 hover:border-gray-300">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center">
                               <div className="w-4 h-4 bg-red-500 rounded-full mr-3 shadow-sm"></div>
@@ -901,7 +905,7 @@ export default function PrincipalDashboard() {
                         </div>
 
                         {/* Total Teachers */}
-                        <div className="bg-white rounded-2xl shadow-lg border border-blue-100 p-5 transition-all duration-300 hover:shadow-xl hover:scale-105">
+                        <div className="bg-white/70 rounded-2xl shadow-sm border border-gray-200 p-5 transition-colors duration-200 hover:border-gray-300">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center">
                               <div className="w-4 h-4 bg-blue-500 rounded-full mr-3 shadow-sm"></div>
@@ -920,7 +924,7 @@ export default function PrincipalDashboard() {
                         </div>
 
                         {/* Deadline */}
-                        <div className="bg-white rounded-2xl shadow-lg border border-purple-100 p-5 transition-all duration-300 hover:shadow-xl hover:scale-105">
+                        <div className="bg-white/70 rounded-2xl shadow-sm border border-gray-200 p-5 transition-colors duration-200 hover:border-gray-300">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center">
                               <div className="w-4 h-4 bg-purple-500 rounded-full mr-3 shadow-sm"></div>
@@ -932,7 +936,7 @@ export default function PrincipalDashboard() {
                             </div>
                           </div>
                           <div className="mt-3 flex items-center justify-center">
-                            <div className="text-xs text-purple-600 bg-purple-50 px-2 py-1 rounded-full font-medium border border-purple-200">
+                            <div className="text-xs text-purple-600 bg-purple-50 px-2 py-1 rounded-full font-medium border border-gray-200">
                               This Month
                             </div>
                           </div>

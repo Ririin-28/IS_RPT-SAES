@@ -123,13 +123,17 @@ export default function PrincipalMaterials({ subjectSlug }: PrincipalMaterialsPr
   }, [scheduleActivities, searchTerm]);
 
   return (
-    <div className="flex h-screen bg-white overflow-hidden">
+    <div className="relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-24 right-0 h-72 w-72 rounded-full bg-emerald-100/25 blur-3xl" />
+        <div className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-emerald-200/30 blur-3xl" />
+      </div>
       <PrincipalSidebar />
-      <div className="flex-1 pt-16 flex flex-col overflow-hidden">
+      <div className="relative z-10 flex-1 pt-16 flex flex-col overflow-hidden">
         <PrincipalHeader title="Materials" />
         <main className="flex-1 overflow-y-auto">
-          <div className="p-4 h-full sm:p-5 md:p-6">
-            <div className="bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[400px] overflow-hidden flex flex-col">
+          <div className="relative p-4 h-full sm:p-5 md:p-6">
+            <div className="relative h-full min-h-100 overflow-hidden flex flex-col rounded-2xl border border-white/70 bg-white/45 shadow-[0_14px_38px_rgba(15,23,42,0.10)] backdrop-blur-xl">
               <div className="p-4 sm:p-5 border-b border-gray-100 shrink-0">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
                   <div className="flex flex-wrap sm:flex-nowrap items-center gap-0 w-full sm:w-auto">
@@ -181,7 +185,7 @@ export default function PrincipalMaterials({ subjectSlug }: PrincipalMaterialsPr
         onClose={() => setShowReviewModal(false)}
         title={`Review Materials: ${selectedActivity?.title || subjectTitle}`}
       >
-        <div className="p-4 min-h-[400px]">
+        <div className="p-4 min-h-100">
           <MaterialTabContent
             subject={subjectTitle}
             category={reviewCategory}

@@ -125,13 +125,13 @@ export default function ITAdminOperationsLog() {
   }, [fetchHistory]);
 
   return (
-    <div className="flex h-screen bg-[#f7faf8] overflow-hidden">
+    <div className="flex h-screen bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec] overflow-hidden">
       <ITAdminSidebar />
       <div className="flex-1 flex flex-col min-h-screen">
         <ITAdminHeader title="Critical Operations Log" />
         <main className="flex-1 overflow-y-auto pt-16">
           <div className="p-4 h-full sm:p-5 md:p-6">
-            <div className="rounded-2xl border border-gray-200 bg-white/95 shadow-sm h-full min-h-[400px] overflow-y-auto p-4 sm:p-5 md:p-6">
+            <div className="relative h-full min-h-[400px] overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.10)] backdrop-blur-xl sm:p-5 md:p-6">
               <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900">
                 <p className="font-semibold">Audit Notice</p>
                 <p className="text-sm mt-1">

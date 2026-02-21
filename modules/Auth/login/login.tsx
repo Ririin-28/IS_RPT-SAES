@@ -270,15 +270,11 @@ export default function Login({
   };
 
   return (
-    <div className="min-h-screen text-[#013300] relative overflow-hidden scroll-smooth flex items-center justify-center">
-      {/* Background Styles - Same as Landing Page */}
-      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(209,255,222,0.45),transparent_20%),radial-gradient(circle_at_bottom_right,rgba(188,240,214,0.35),transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(242,249,245,0.95))]" />
-      <div className="pointer-events-none absolute left-[12%] right-[46%] top-40 -z-10 h-56 rounded-3xl bg-linear-to-br from-green-200/50 via-white/40 to-transparent blur-4xl" />
-      <div className="pointer-events-none absolute left-[52%] right-[12%] bottom-16 -z-10 h-56 rounded-[40px] bg-linear-to-t from-green-200/60 via-white/35 to-transparent blur-4xl" />
-      
-      {/* Additional soft gradients for depth */}
-      <div className="pointer-events-none absolute left-[5%] top-[20%] -z-10 h-48 w-48 rounded-full bg-linear-to-br from-green-300/50 to-transparent blur-3xl" />
-      <div className="pointer-events-none absolute right-[8%] bottom-[25%] -z-10 h-56 w-56 rounded-full bg-linear-to-tl from-green-200/90 to-transparent blur-3xl" />
+    <div className="min-h-screen text-[#013300] relative overflow-hidden scroll-smooth flex items-center justify-center bg-[#f6faf8]">
+      {/* Soft, flat backgrounds for modern UI */}
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(198,238,216,0.34),transparent_20%),radial-gradient(circle_at_bottom_right,rgba(212,242,225,0.3),transparent_24%),linear-gradient(180deg,rgba(251,254,252,0.98),rgba(244,250,246,0.96))]" />
+      <div className="pointer-events-none absolute left-[12%] right-[50%] top-36 -z-10 h-48 rounded-3xl bg-linear-to-br from-green-100/40 via-white/40 to-transparent blur-4xl" />
+      <div className="pointer-events-none absolute left-[56%] right-[12%] bottom-12 -z-10 h-48 rounded-[36px] bg-linear-to-t from-green-100/35 via-white/35 to-transparent blur-4xl" />
 
       {/* Error Modal */}
       {showErrorModal && (
@@ -321,7 +317,7 @@ export default function Login({
         </div>
 
         {/* Login Card */}
-        <div className="flex flex-col justify-center items-center bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-6 w-full sm:p-6 sm:max-w-md md:w-96 border border-green-100/60">
+        <div className="flex flex-col justify-center items-center bg-white/90 rounded-3xl shadow-lg p-8 w-full sm:p-8 sm:max-w-md md:w-96 border border-green-50">
           <div className="w-full">
             <h2 className="text-2xl font-bold text-green-900 mb-2 text-center sm:text-3xl">Login</h2>
             
@@ -403,7 +399,7 @@ export default function Login({
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full bg-linear-to-r from-green-600 to-[#133000] text-white font-bold py-2.5 rounded-lg hover:opacity-90 transition shadow-md disabled:opacity-70 sm:py-2"
+                className="w-full bg-linear-to-r from-green-600 to-[#133000] text-white font-bold py-2.5 rounded-xl hover:opacity-90 transition shadow-md disabled:opacity-70 sm:py-2"
               >
                 {isLoading ? "Logging in..." : "Login"}
               </button>

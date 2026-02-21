@@ -129,19 +129,23 @@ export default function MasterTeacherMaterials() {
 
 
   return (
-    <div className="flex h-screen bg-white overflow-hidden">
+    <div className="relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-24 right-0 h-72 w-72 rounded-full bg-emerald-100/25 blur-3xl" />
+        <div className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-emerald-200/30 blur-3xl" />
+      </div>
       {/*---------------------------------Sidebar---------------------------------*/}
       <Sidebar />
 
       {/*---------------------------------Main Content---------------------------------*/}
-      <div className="flex-1 pt-16 flex flex-col overflow-hidden">
+      <div className="relative z-10 flex-1 pt-16 flex flex-col overflow-hidden">
         <Header title="Materials" />
         <main className="flex-1 flex flex-col min-h-0 overflow-hidden p-4 sm:p-5 md:p-6">
             {/*---------------------------------Unified Main Container---------------------------------*/}
-            <div className="w-full h-full bg-white rounded-lg shadow-md border border-gray-200 flex flex-col overflow-hidden">
+            <div className="relative z-10 w-full h-full rounded-2xl border border-white/70 bg-white/45 shadow-[0_20px_45px_-28px_rgba(15,23,42,0.45)] backdrop-blur-xl flex flex-col overflow-hidden">
                 
                 {/* Fixed Header Section (Controls) */}
-                <div className="p-4 sm:p-5 border-b border-gray-100 flex-shrink-0">
+                <div className="p-4 sm:p-5 border-b border-gray-100 shrink-0">
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-0">
                             <SecondaryHeader title={`${subject} Materials`} />
@@ -177,7 +181,7 @@ export default function MasterTeacherMaterials() {
                 {/* Scrollable Content Section */}
                 <div className="flex-1 overflow-hidden flex flex-col relative">
                      {/* Inner Header for Schedule (Optional, but keeps context) */}
-                     <div className="px-4 pt-4 sm:px-6 sm:pt-6 pb-2 flex-shrink-0">
+                     <div className="px-4 pt-4 sm:px-6 sm:pt-6 pb-2 shrink-0">
                         <h2 className="text-lg font-bold text-gray-800">Scheduled Activities ({subject})</h2>
                      </div>
 

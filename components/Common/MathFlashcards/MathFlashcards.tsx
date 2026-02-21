@@ -1503,7 +1503,7 @@ export default function MathFlashcards({
 
   if (!forceSessionOnly && view === "select") {
     return (
-      <div className="min-h-dvh bg-linear-to-br from-[#f2f8f4] via-white to-[#e6f2ec]">
+      <div className="relative min-h-dvh bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
         <div className="w-full max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex min-h-dvh flex-col">
           <header className="rounded-3xl border border-gray-300 bg-white/70 backdrop-blur px-8 py-5 sm:py-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between shadow-md shadow-gray-200">
             <div className="space-y-3 text-center sm:text-left">
@@ -1530,7 +1530,7 @@ export default function MathFlashcards({
             </div>
           )}
 
-          <div className="mt-5 rounded-3xl border border-gray-300 bg-white shadow-md shadow-gray-200 p-6 space-y-6 flex flex-1 flex-col min-h-0">
+          <div className="mt-5 rounded-3xl border border-white/70 bg-white/45 p-6 space-y-6 shadow-[0_20px_45px_-28px_rgba(15,23,42,0.45)] backdrop-blur-xl flex flex-1 flex-col min-h-0">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm font-medium text-gray-600">{selectionSummaryText}</p>
               <div>
@@ -1589,7 +1589,7 @@ export default function MathFlashcards({
 
   if (sessionLockEnabled && blockedSessionMessage && forceSessionOnly) {
     return (
-      <div className="min-h-dvh bg-linear-to-br from-[#f2f8f4] via-white to-[#e6f2ec]">
+      <div className="relative min-h-dvh bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
         <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10 flex min-h-dvh flex-col items-center justify-center">
           <div className="rounded-3xl border border-amber-200 bg-amber-50 px-6 py-5 text-center text-amber-900 shadow-sm">
             <p className="text-lg font-semibold">Session Locked</p>
@@ -1649,7 +1649,7 @@ export default function MathFlashcards({
 
 
     return (
-      <div className="min-h-dvh bg-linear-to-br from-[#f2f8f4] via-white to-[#e6f2ec]">
+      <div className="relative min-h-dvh bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
         <div className="w-full max-w-8xl mx-auto px-4 sm:px-6 lg:px-10 py-6 flex min-h-dvh flex-col gap-5">
           <header className="rounded-3xl border border-gray-300 bg-white/70 backdrop-blur px-8 py-5 flex flex-col gap-2 shadow-md shadow-gray-200">
             <h1 className="text-3xl sm:text-4xl font-bold text-black">Session Summary</h1>
@@ -1774,7 +1774,7 @@ export default function MathFlashcards({
   }
 
   return (
-    <div className="min-h-dvh bg-linear-to-br from-[#f2f8f4] via-white to-[#e6f2ec]">
+    <div className="relative min-h-dvh bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
       <div className="w-full max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex min-h-dvh flex-col">
         <header className="rounded-3xl border border-gray-300 bg-white/70 backdrop-blur px-8 py-5 sm:py-6 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between shadow-md shadow-gray-200">
           <div className="space-y-1 text-center lg:text-left">
@@ -1801,7 +1801,7 @@ export default function MathFlashcards({
         <div className="mt-5 flex flex-1 flex-col gap-5">
           <div className="grid gap-3 xl:grid-cols-12 flex-1 min-h-0">
             <section className="xl:col-span-8 flex flex-col min-h-0">
-              <div className="h-full rounded-3xl border border-gray-300 bg-white shadow-md shadow-gray-200 overflow-hidden flex flex-col">
+              <div className="h-full rounded-3xl border border-white/70 bg-white/45 shadow-[0_20px_45px_-28px_rgba(15,23,42,0.45)] backdrop-blur-xl overflow-hidden flex flex-col">
                 <div className="flex-1 px-6 sm:px-8 lg:px-12 py-6 flex flex-col items-center text-center gap-6">
                   <div className="w-full max-w-4xl rounded-3xl border border-slate-200 bg-white px-6 py-7 shadow-sm text-center">
                     <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-700">Problem</p>

@@ -96,7 +96,11 @@ export default function PrincipalReports({ subjectSlug }: PrincipalReportsProps)
   }, [subject, activeGrade, subjectGradeComponents, fallbackGrade]);
 
   return (
-    <div className="flex h-screen bg-white overflow-hidden">
+    <div className="relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-24 right-0 h-72 w-72 rounded-full bg-emerald-100/25 blur-3xl" />
+        <div className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-emerald-200/30 blur-3xl" />
+      </div>
       {/*---------------------------------Sidebar---------------------------------*/}
       <Sidebar />
 
@@ -104,7 +108,7 @@ export default function PrincipalReports({ subjectSlug }: PrincipalReportsProps)
       <div
         className="
         /* Mobile */
-        flex-1 pt-16 flex flex-col overflow-hidden
+        relative z-10 flex-1 pt-16 flex flex-col overflow-hidden
         
       "
       >
@@ -113,7 +117,7 @@ export default function PrincipalReports({ subjectSlug }: PrincipalReportsProps)
           <div
             className="
             /* Mobile */
-            p-4 h-full
+            relative p-4 h-full
             
             /* Tablet */
             sm:p-5
@@ -126,7 +130,7 @@ export default function PrincipalReports({ subjectSlug }: PrincipalReportsProps)
             <div
               className="
               /* Mobile */
-              bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[400px] 
+              relative bg-white/45 rounded-2xl shadow-[0_14px_38px_rgba(15,23,42,0.10)] border border-white/70 h-full min-h-100 backdrop-blur-xl
               overflow-y-auto p-4
               
               /* Tablet */

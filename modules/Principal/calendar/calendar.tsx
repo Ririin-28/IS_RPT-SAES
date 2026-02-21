@@ -414,9 +414,8 @@ export default function PrincipalCalendar() {
 
     return (
       <div
-        className={`h-24 p-1 border overflow-hidden relative hover:bg-gray-50 transition-colors cursor-pointer ${
-          withinPeriod ? "border-green-200 bg-green-50" : "border-gray-100"
-        }`}
+        className={`h-24 p-1 border overflow-hidden relative hover:bg-gray-50 transition-colors cursor-pointer ${withinPeriod ? "border-green-200 bg-green-50" : "border-gray-100"
+          }`}
       >
         <div className="text-right text-sm font-medium text-gray-800 mb-1">
           {withinPeriod && (
@@ -506,12 +505,12 @@ export default function PrincipalCalendar() {
 
     const startMinutes = parseTimeToMinutes(resolvedStartTime);
     const endMinutes = parseTimeToMinutes(resolvedEndTime);
-    
+
     if (startMinutes === null || endMinutes === null) {
       setSubjectMutationError("Invalid time format.");
       return;
     }
-    
+
     if (endMinutes <= startMinutes) {
       setSubjectMutationError("End time must be later than start time.");
       return;
@@ -542,25 +541,25 @@ export default function PrincipalCalendar() {
           created_by_user_id: createdByUserId,
         }),
       });
-      
+
       const payload = (await response.json().catch(() => null)) as {
         success: boolean;
         schedule: Partial<SubjectScheduleFormValues> | null;
         options?: { subjects?: string[] } | null;
         error?: string | null;
       } | null;
-      
+
       if (!response.ok) {
         const message = payload && typeof payload.error === "string"
           ? payload.error
           : `Request failed with status ${response.status}`;
         throw new Error(message);
       }
-      
+
       if (!payload || !payload.success) {
         throw new Error(payload?.error ?? "Failed to update subject schedule.");
       }
-      
+
       const schedule = normalizeSubjectSchedule(payload.schedule ?? {
         ...draft,
         startTime: resolvedStartTime,
@@ -745,13 +744,17 @@ export default function PrincipalCalendar() {
   }), [remedialPeriod, selectedSchoolYear]);
 
   return (
-    <div className="flex h-screen bg-white overflow-hidden">
+    <div className="relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-24 right-0 h-72 w-72 rounded-full bg-emerald-100/25 blur-3xl" />
+        <div className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-emerald-200/30 blur-3xl" />
+      </div>
       <Sidebar />
-      <div className="flex-1 pt-16 flex flex-col overflow-hidden">
+      <div className="relative z-10 flex-1 pt-16 flex flex-col overflow-hidden">
         <Header title="Calendar" />
         <main className="flex-1 overflow-y-auto">
-          <div className="p-4 h-full sm:p-5 md:p-6">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-full min-h-[400px] overflow-y-auto p-4 sm:p-5 md:p-6">
+          <div className="relative p-4 h-full sm:p-5 md:p-6">
+            <div className="relative h-full min-h-100 overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.10)] backdrop-blur-xl sm:p-5 md:p-6">
               {/* Calendar Controls */}
               <div className="flex flex-col gap-3 mb-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -783,7 +786,7 @@ export default function PrincipalCalendar() {
                       onClick={() => setShowPeriodModal(true)}
                       disabled={isMutating}
                     >
-                      {remedialPeriod ? "Update Schedule" : "Set Schedule"}
+                      {remedialPeriod ? "Update" : "Set"}
                     </PrimaryButton>
                     <DangerButton
                       type="button"
@@ -792,7 +795,7 @@ export default function PrincipalCalendar() {
                       onClick={openCancelModal}
                       disabled={isMutating || !remedialPeriod}
                     >
-                      Cancel Schedule
+                      Reset
                     </DangerButton>
                   </div>
                 </div>
@@ -806,11 +809,10 @@ export default function PrincipalCalendar() {
                           key={grade}
                           type="button"
                           onClick={() => setSelectedGrade(grade)}
-                          className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${
-                            selectedGrade === grade
+                          className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${selectedGrade === grade
                               ? "bg-[#013300] text-white border-[#013300]"
                               : "bg-white text-gray-700 border-gray-200 hover:bg-gray-100"
-                          }`}
+                            }`}
                         >
                           Grade {grade}
                         </button>
@@ -855,7 +857,7 @@ export default function PrincipalCalendar() {
                         onClick={handleOpenSubjectModal}
                         disabled={subjectMutating}
                       >
-                        {subjectScheduleConfigured ? "Edit Subjects" : "Set Subjects"}
+                        {subjectScheduleConfigured ? "Update" : "Set"}
                       </PrimaryButton>
                       <DangerButton
                         type="button"

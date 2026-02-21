@@ -1,4 +1,7 @@
-import React from "react";
+"use client";
+
+import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 interface BaseModalProps {
   show: boolean;
@@ -17,7 +20,22 @@ export default function BaseModal({
   maxWidth = "2xl",
   footer 
 }: BaseModalProps) {
-  if (!show) return null;
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted || !show) return undefined;
+    const { overflow } = document.body.style;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = overflow;
+    };
+  }, [mounted, show]);
+
+  if (!show || !mounted) return null;
 
   const maxWidthClasses = {
     sm: "max-w-sm",
@@ -29,9 +47,10 @@ export default function BaseModal({
     "4xl": "max-w-4xl"
   };
 
-  return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-[100] transition-opacity duration-200">
-      <div className={`bg-white rounded-lg shadow-xl w-full ${maxWidthClasses[maxWidth]} max-h-[95vh] overflow-y-auto`}>
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
+      <div className={`relative z-[10000] bg-white rounded-lg shadow-xl w-full ${maxWidthClasses[maxWidth]} max-h-[95vh] overflow-y-auto`}>
         {/* Modal Header with green background */}
         <div className="bg-[#013300] text-white rounded-t-lg p-6">
           <div className="flex justify-between items-center">
@@ -60,7 +79,8 @@ export default function BaseModal({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

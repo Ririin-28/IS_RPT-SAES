@@ -20,9 +20,8 @@ export default function PrimaryButton({
   const disabledStateClasses = "bg-[#8ca28f] border-[#8ca28f] cursor-not-allowed opacity-70";
   return (
     <button
-      className={`border-3 text-white font-bold rounded-lg transition ${
-        disabled ? disabledStateClasses : enabledStateClasses
-      } ${sizeClasses} ${widthClass} ${className}`}
+      className={`border-3 text-white font-bold rounded-lg transition ${disabled ? disabledStateClasses : enabledStateClasses
+        } ${sizeClasses} ${widthClass} ${className}`}
       disabled={disabled}
       {...restProps}
     >

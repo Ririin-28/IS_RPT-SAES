@@ -250,18 +250,16 @@ export default function MasterTeacherRemedial() {
   const subjectHeader = subject === "Assessment" ? "Assessment Center" : `${subject} Remedial`;
 
   return (
-    <div className="flex h-screen bg-white overflow-hidden">
+    <div className="relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-24 right-0 h-72 w-72 rounded-full bg-emerald-100/25 blur-3xl" />
+        <div className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-emerald-200/30 blur-3xl" />
+      </div>
       {/*---------------------------------Sidebar---------------------------------*/}
       <Sidebar />
 
       {/*---------------------------------Main Content---------------------------------*/}
-      <div
-        className="
-        /* Mobile */
-        flex-1 pt-16 flex flex-col overflow-hidden
-        
-      "
-      >
+      <div className="relative z-10 flex-1 pt-16 flex flex-col overflow-hidden">
         <Header title="Remedial" />
         <main className="flex-1 overflow-y-auto">
           <div
@@ -277,13 +275,7 @@ export default function MasterTeacherRemedial() {
           "
           >
             {/*---------------------------------Main Container---------------------------------*/}
-            <div
-              className="
-              /* Mobile */
-              bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-100 
-              overflow-hidden flex flex-col
-            "
-            >
+            <div className="relative z-10 h-full min-h-100 overflow-hidden rounded-2xl border border-white/70 bg-white/45 shadow-[0_20px_45px_-28px_rgba(15,23,42,0.45)] backdrop-blur-xl flex flex-col">
               <div className="p-4 sm:p-5 border-b border-gray-100 shrink-0">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
                     <div className="flex items-center gap-0">

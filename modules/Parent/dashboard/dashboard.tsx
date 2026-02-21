@@ -34,9 +34,9 @@ function OverviewCard({
   onClick?: () => void;
 }) {
   const containerClasses = `
-      bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg
+      rounded-2xl border border-white/70 bg-white/60 shadow-[0_10px_26px_rgba(15,23,42,0.08)] backdrop-blur-xl
       flex flex-col items-center justify-center p-5 min-w-[160px] min-h-[110px]
-      transition-transform duration-200 hover:scale-105
+      transition duration-200 hover:border-gray-200 hover:bg-white/70
       sm:p-6 sm:min-w-[180px] sm:min-h-[120px]
       lg:p-7
       ${className}
@@ -45,10 +45,10 @@ function OverviewCard({
   const content = (
     <>
       <div className="flex flex-row items-center">
-        <span className="text-4xl font-extrabold text-[#013300] drop-shadow sm:text-5xl">{value}</span>
+        <span className="text-4xl font-semibold text-slate-900 sm:text-5xl">{value}</span>
         {icon && <span className="ml-1 sm:ml-2">{icon}</span>}
       </div>
-      <div className="text-green-900 text-sm font-semibold mt-1 tracking-wide sm:text-base sm:mt-2">{label}</div>
+      <div className="text-slate-600 text-sm font-medium mt-1 tracking-wide sm:text-base sm:mt-2">{label}</div>
     </>
   );
 
@@ -80,9 +80,8 @@ function ScheduleCard({
 }) {
   return (
     <div
-      className={`bg-white p-4 rounded-lg shadow flex justify-between items-center border border-gray-200 ${
-        isToday ? "border-gray-300 bg-green-50" : ""
-      }`}
+      className={`bg-white p-4 rounded-lg shadow flex justify-between items-center border border-gray-200 ${isToday ? "border-gray-300 bg-green-50" : ""
+        }`}
     >
       <div>
         <h4 className={`font-semibold ${isToday ? "text-green-900" : "text-green-900"}`}>{day}</h4>
@@ -290,7 +289,7 @@ function AttendanceCalendar({ attendanceRecords, attendanceRate }: AttendanceCal
     let statusClass = "bg-gray-50 text-gray-400"; // default: no record
     if (summary?.hasRecord) {
       statusClass = summary.present
-        ? "bg-green-100 text-green-800 border border-green-200"
+        ? "bg-green-100 text-green-800 border border-gray-200"
         : "bg-red-100 text-red-800 border border-red-200";
     } else if (isWeekend) {
       statusClass = "bg-gray-50 text-gray-400";
@@ -299,9 +298,8 @@ function AttendanceCalendar({ attendanceRecords, attendanceRate }: AttendanceCal
     dayCells.push(
       <div
         key={day}
-        className={`h-12 flex items-center justify-center rounded text-sm font-medium border border-gray-100 ${statusClass} ${
-          isToday ? "ring-1 ring-gray-300" : ""
-        }`}
+        className={`h-12 flex items-center justify-center rounded text-sm font-medium border border-gray-100 ${statusClass} ${isToday ? "ring-1 ring-gray-300" : ""
+          }`}
       >
         {day}
       </div>,
@@ -353,7 +351,7 @@ function AttendanceCalendar({ attendanceRecords, attendanceRate }: AttendanceCal
 
       <div className="flex flex-wrap items-center justify-center gap-4 text-xs mb-6">
         <div className="flex items-center space-x-1">
-          <div className="w-3 h-3 bg-green-100 rounded border border-green-200" />
+          <div className="w-3 h-3 bg-green-100 rounded border border-gray-200" />
           <span className="text-gray-700 font-medium">Present</span>
         </div>
         <div className="flex items-center space-x-1">
@@ -475,7 +473,7 @@ function NotificationCard() {
   return (
     <div className="fixed top-4 right-4 z-50 max-w-md">
       <div className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
-        <div className="flex justify-between items-center p-4 bg-gradient-to-r from-red-50 to-red-100 border-b border-red-200">
+        <div className="flex justify-between items-center p-4 bg-linear-to-r from-red-50 to-red-100 border-b border-red-200">
           <h3 className="font-bold text-red-800">{text.title}</h3>
           <button
             onClick={handleClose}
@@ -488,7 +486,7 @@ function NotificationCard() {
 
         <div className="p-4">
           <div className="flex items-start">
-            <div className="flex-shrink-0 mr-3">
+            <div className="shrink-0 mr-3">
               <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
                 <svg
                   className="w-6 h-6 text-red-600"
@@ -518,7 +516,7 @@ function NotificationCard() {
           <div className="flex flex-wrap items-center justify-between gap-2 mt-4 pt-3 border-t border-gray-100">
             <button
               onClick={() => setIsTranslated(!isTranslated)}
-              className="px-3 py-1.5 text-sm bg-gradient-to-r from-green-50 to-green-100 text-green-800 font-medium rounded-lg hover:from-green-100 hover:to-green-200 transition-all duration-200 border border-green-200"
+              className="px-3 py-1.5 text-sm bg-linear-to-r from-green-50 to-green-100 text-green-800 font-medium rounded-lg hover:from-green-100 hover:to-green-200 transition-all duration-200 border border-gray-200"
             >
               {isTranslated ? "Translate to English" : "Isalin sa Tagalog"}
             </button>
@@ -544,14 +542,14 @@ function ProgressCard({ title, value, description, icon, color = "green" }: {
   color?: "green" | "blue" | "orange" | "yellow";
 }) {
   const colorClasses = {
-    green: "bg-gradient-to-br from-green-50 to-green-100 border border-gray-200",
-    blue: "bg-gradient-to-br from-blue-50 to-blue-100 border border-gray-200",
-    orange: "bg-gradient-to-br from-orange-50 to-orange-100 border border-gray-200",
-    yellow: "bg-gradient-to-br from-yellow-50 to-yellow-100 border border-gray-200"
+    green: "border border-gray-200 bg-white/60 backdrop-blur-md",
+    blue: "border border-gray-200 bg-white/60 backdrop-blur-md",
+    orange: "border border-gray-200 bg-white/60 backdrop-blur-md",
+    yellow: "border border-gray-200 bg-white/60 backdrop-blur-md"
   };
 
   return (
-    <div className={`p-4 rounded-xl ${colorClasses[color]} shadow-sm`}>
+    <div className={`p-4 rounded-xl ${colorClasses[color]} shadow-[0_8px_24px_rgba(15,23,42,0.07)]`}>
       <div className="flex items-center mb-2">
         {icon && <div className="mr-3 text-2xl">{icon}</div>}
         <h4 className="font-bold text-gray-800">{title}</h4>
@@ -814,10 +812,14 @@ export default function ParentDashboard() {
     currentChild.progressDetails[selectedSubject] ?? currentChild.progressDetails.English;
 
   return (
-    <div className="flex h-screen bg-white overflow-hidden">
+    <div className="relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-24 right-0 h-72 w-72 rounded-full bg-emerald-100/25 blur-3xl" />
+        <div className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-emerald-200/30 blur-3xl" />
+      </div>
       <NotificationCard />
       {/*---------------------------------Main Content---------------------------------*/}
-      <div className="w-full pt-16 flex flex-col overflow-hidden">
+      <div className="relative z-10 w-full pt-16 flex flex-col overflow-hidden">
         <Header
           title="Dashboard"
           childOptions={childOptions.map((child) => ({
@@ -829,9 +831,9 @@ export default function ParentDashboard() {
         />
 
         <main className="flex-1 overflow-y-auto">
-          <div className="p-4 h-full sm:p-5 md:p-6">
+          <div className="relative p-4 h-full sm:p-5 md:p-6">
             {/*---------------------------------Main Container---------------------------------*/}
-            <div className="bg-white rounded-lg shadow-md border border-gray-200 w-full h-full min-h-[380px] overflow-y-auto p-4 sm:p-5 md:p-6">
+            <div className="relative w-full h-full min-h-95 overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.10)] backdrop-blur-xl sm:p-5 md:p-6">
               <div className="mb-6">
                 <SecondaryHeader title="Child Profile" />
               </div>
@@ -849,7 +851,7 @@ export default function ParentDashboard() {
               )}
 
               {/* Child Details Section */}
-              <div className="bg-[#E9FDF2] rounded-xl shadow-lg p-6 mb-8 min-h-[160px] flex flex-col gap-6 md:flex-row md:items-start md:px-8">
+              <div className="mb-8 min-h-40 rounded-2xl border border-white/75 bg-white/55 p-6 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg flex flex-col gap-6 md:flex-row md:items-start md:px-8">
 
                 <div className="flex-1 w-full">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-4">
@@ -881,7 +883,7 @@ export default function ParentDashboard() {
                 </div>
               </div>
 
-              <hr className="border-gray-300 mb-6" />
+              <hr className="border-gray-200 mb-6" />
 
               {/* Overview Cards Section */}
               <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
@@ -893,7 +895,7 @@ export default function ParentDashboard() {
                   label="Attendance Rate"
                   icon={
                     <svg width="38" height="38" fill="none" viewBox="0 0 24 24">
-                      <path d="M12 8V12L15 15M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="#013300" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M12 8V12L15 15M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="#013300" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                   }
                   onClick={handleAttendanceCardClick}
@@ -915,13 +917,13 @@ export default function ParentDashboard() {
                 />
               </div>
 
-              <hr className="border-gray-300 mb-6" />
+              <hr className="border-gray-200 mb-6" />
 
               {/* Remedial Subjects Section */}
               <div className="space-y-8">
-                <div ref={progressSectionRef} className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg p-6">
+                <div ref={progressSectionRef} className="rounded-2xl border border-white/75 bg-white/55 p-6 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg">
                   <TertiaryHeader title="Learning Progress" />
-                  
+
                   {/* Subject Buttons */}
                   <div className="flex flex-wrap gap-4 mt-6 mb-8">
                     {subjects.map((subject) => {
@@ -930,7 +932,7 @@ export default function ParentDashboard() {
                         <UtilityButton
                           key={subject}
                           onClick={() => handleSubjectCardClick(subject)}
-                          className={`transition-all duration-200 ${isActive ? 'shadow-lg' : '!bg-white !text-[#013300] border-[#013300] hover:!bg-green-50 hover:!text-[#013300]'}`}
+                          className={`transition-all duration-200 ${isActive ? 'shadow-lg' : 'bg-white! text-[#013300]! border-gray-300 hover:bg-gray-50! hover:text-[#013300]!'}`}
                         >
                           {subject}
                         </UtilityButton>
@@ -997,7 +999,7 @@ export default function ParentDashboard() {
                 </div>
 
                 {/* Updated Schedule Section with Calendar */}
-                <div ref={attendanceSectionRef} className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-lg p-6">
+                <div ref={attendanceSectionRef} className="rounded-2xl border border-white/75 bg-white/55 p-6 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg">
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {/* Schedule Cards */}
                     <div>
@@ -1018,7 +1020,7 @@ export default function ParentDashboard() {
                         <p className="italic">Siguraduhin na dumadalo ang inyong anak sa lahat ng remedial sessions.</p>
                       </div>
                     </div>
-                    
+
                     {/* Attendance Calendar */}
                     <AttendanceCalendar attendanceRecords={attendanceRecords} attendanceRate={attendanceRate} />
                   </div>
