@@ -5,8 +5,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useForm } from "react-hook-form";
 // Button Components
-import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
-import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import KebabMenu from "@/components/Common/Menus/KebabMenu";
 import Toast from "@/components/Toast";
 import ToastActivity from "@/components/ToastActivity";
@@ -62,7 +60,18 @@ interface RemedialScheduleWindow {
   active: boolean;
 }
 
-type WeeklySubjectSchedule = Record<Weekday, string>;
+type WeeklySubjectSchedule = Record<Weekday, string> & {
+  startTime?: string;
+  endTime?: string;
+};
+
+const SUBJECT_DAY_LABELS: Record<Weekday, string> = {
+  Monday: "M",
+  Tuesday: "T",
+  Wednesday: "W",
+  Thursday: "Th",
+  Friday: "F",
+};
 
 const SUBJECT_SYNONYM_MAP: Record<string, string> = {
   english: "English",
@@ -148,6 +157,24 @@ const statusBadgeTone = (status: string | null | undefined) => {
   return "bg-blue-100 text-blue-800 border border-blue-200";
 };
 
+const getSubjectChipTone = (subject: string | null | undefined) => {
+  const value = subject?.toLowerCase() ?? "";
+  if (value.includes("english")) return "bg-emerald-700 text-white border-emerald-700";
+  if (value.includes("filipino")) return "bg-blue-700 text-white border-blue-700";
+  if (value.includes("math")) return "bg-rose-700 text-white border-rose-700";
+  if (value.includes("assessment")) return "bg-amber-700 text-white border-amber-700";
+  return "bg-gray-700 text-white border-gray-700";
+};
+
+const resolveActivitySubject = (title: string | null | undefined, subject: string | null | undefined) => {
+  const text = `${title ?? ""}`.toLowerCase();
+  if (text.includes("english")) return "english";
+  if (text.includes("filipino")) return "filipino";
+  if (text.includes("math")) return "math";
+  if (text.includes("assessment")) return "assessment";
+  return subject ?? null;
+};
+
 const resolveStatusToneOverride = (status: string | null | undefined): ActivityTone | null => {
   const normalized = normalizeStatusLabel(status);
   if (!normalized) {
@@ -187,12 +214,27 @@ const normalizeSubjectValue = (raw: string): string | null => {
     .trim();
 };
 
+const normalizeScheduleTime = (value: unknown): string => {
+  if (typeof value !== "string") {
+    return "";
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  const match = /^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/.exec(trimmed);
+  return match ? `${match[1]}:${match[2]}` : "";
+};
+
 const normalizeWeeklySubjectSchedule = (value: unknown): WeeklySubjectSchedule => {
   const schedule = {} as WeeklySubjectSchedule;
+  const record = value as Record<string, unknown> | null;
   for (const day of WEEKDAY_ORDER) {
-    const raw = (value as Record<string, unknown> | null)?.[day];
+    const raw = record?.[day];
     schedule[day] = typeof raw === "string" ? raw.trim() : "";
   }
+  schedule.startTime = normalizeScheduleTime(record?.startTime);
+  schedule.endTime = normalizeScheduleTime(record?.endTime);
   return schedule;
 };
 
@@ -258,11 +300,29 @@ const createDateWithTime = (baseDate: Date, time: string): Date => {
   return result;
 };
 
-const formatTimeLabel = (time: string): string => {
+const formatTimeLabel = (time: string | null | undefined): string => {
+  if (!time) {
+    return "--";
+  }
   const [hour, minute] = time.split(":").map(Number);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+    return "--";
+  }
   const date = new Date();
   date.setHours(hour, minute, 0, 0);
   return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+};
+
+const formatMonthRangeShort = (start: Date | null, end: Date | null): string => {
+  if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return "--";
+  }
+  const startLabel = start.toLocaleDateString("en-US", { month: "short" });
+  const endLabel = end.toLocaleDateString("en-US", { month: "short" });
+  if (startLabel === endLabel) {
+    return startLabel;
+  }
+  return `${startLabel}-${endLabel}`;
 };
 
 const parseTimestamp = (value: string | null | undefined): Date | null => {
@@ -447,6 +507,15 @@ const normalizeGradeLabel = (value: unknown): string | null => {
   return trimmed;
 };
 
+const getSubjectColor = (subject: string | null | undefined) => {
+  const value = subject?.toLowerCase() ?? "";
+  if (value.includes("english")) return "border-emerald-200 bg-emerald-50";
+  if (value.includes("filipino")) return "border-blue-200 bg-blue-100";
+  if (value.includes("math")) return "border-rose-200 bg-rose-100";
+  if (value.includes("assessment")) return "border-amber-200 bg-amber-100";
+  return "border-gray-100";
+};
+
 const buildStoredProfileName = (profile: StoredUserProfile | null, fallback: string | null): string | null => {
   if (profile) {
     const parts: string[] = [];
@@ -518,6 +587,8 @@ export default function MasterTeacherCalendar() {
   const [remedialWindowError, setRemedialWindowError] = useState<string | null>(null);
   const [remedialGuardMessage, setRemedialGuardMessage] = useState<string | null>(null);
   const [weeklySubjectSchedule, setWeeklySubjectSchedule] = useState<WeeklySubjectSchedule | null>(null);
+  const [weeklySubjectScheduleLoading, setWeeklySubjectScheduleLoading] = useState<boolean>(true);
+  const [weeklySubjectScheduleError, setWeeklySubjectScheduleError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [templateDownloading, setTemplateDownloading] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
@@ -562,7 +633,7 @@ export default function MasterTeacherCalendar() {
     if (!weeklySubjectSchedule) {
       return false;
     }
-    return Object.values(weeklySubjectSchedule).some((value) => value.trim().length > 0);
+    return WEEKDAY_ORDER.some((day) => (weeklySubjectSchedule[day] ?? "").trim().length > 0);
   }, [weeklySubjectSchedule]);
 
   const hasActiveRemedialWindow = remedialWindowStatus === "active";
@@ -651,9 +722,6 @@ export default function MasterTeacherCalendar() {
     missingAssignments.length > 1
       ? `${missingAssignments.slice(0, -1).join(", ")} and ${missingAssignments[missingAssignments.length - 1]}`
       : missingAssignments[0] ?? "";
-  const remediationPlanTitle = hasAssignedGrade
-    ? `${gradeLabel} Remediation Plan`
-    : "Remediation Plan (grade assignment pending)";
 
   const scheduleBlockingReason = useMemo(() => {
     if (remedialWindowLoading) {
@@ -761,6 +829,8 @@ export default function MasterTeacherCalendar() {
   }, [hasActiveRemedialWindow]);
 
   const loadWeeklySubjectSchedule = useCallback(async () => {
+    setWeeklySubjectScheduleLoading(true);
+    setWeeklySubjectScheduleError(null);
     try {
       const response = await fetch("/api/principal/weekly-subject-schedule", { cache: "no-store" });
       if (!response.ok) {
@@ -776,8 +846,12 @@ export default function MasterTeacherCalendar() {
       }
       setWeeklySubjectSchedule(normalizeWeeklySubjectSchedule(payload.schedule ?? null));
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to load the weekly subject schedule.";
       console.warn("Failed to load weekly subject schedule", error);
       setWeeklySubjectSchedule(null);
+      setWeeklySubjectScheduleError(message);
+    } finally {
+      setWeeklySubjectScheduleLoading(false);
     }
   }, []);
 
@@ -1934,14 +2008,6 @@ export default function MasterTeacherCalendar() {
     // Only persist when sending to principal.
   };
 
-  const clearWeeklyPlan = () => {
-    if (weeklySchedule) {
-      const weekKey = buildWeekKey(gradeLabel, weeklySchedule.weekStart);
-      setActivities((prev) => prev.filter((activity) => activity.weekRef !== weekKey));
-    }
-    setWeeklySchedule(null);
-  };
-
   // Delete schedule with confirmation
   const handleDeleteClick = (activity: Activity) => {
     if (isActivityLocked(activity)) {
@@ -2039,89 +2105,10 @@ export default function MasterTeacherCalendar() {
 
   // Render the calendar based on view
   const renderCalendar = () => {
-    if (view === "month") {
-      return renderMonthView();
-    } else if (view === "week") {
+    if (view === "week") {
       return renderWeekView();
-    } else {
-      return renderListView();
     }
-  };
-
-  // List View
-  const renderListView = () => {
-    const activitiesByWeek = getActivitiesByWeek();
-
-    return (
-      <div className="space-y-6">
-        {activitiesByWeek.length > 0 ? (
-          activitiesByWeek.map(({ week, activities }) => (
-            <div key={week} className="border rounded-lg p-4">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4 border-b pb-2">
-                {week} - {activities[0].date.getFullYear()}
-              </h3>
-              <div className="space-y-3">
-                {activities.map((activity) => {
-                  const viewOnly = isActivityLocked(activity);
-                  const displayTitle = activity.title?.trim().length
-                    ? activity.title
-                    : activity.subject ?? "Scheduled Activity";
-                  const normalizedStatus = normalizeStatusLabel(activity.status);
-                  const isApproved = normalizedStatus === "Approved";
-                  const toneOverride = resolveStatusToneOverride(activity.status);
-                  const tone = toneOverride ?? resolveActivityTone(activity.subject ?? activity.type);
-                  const statusClass = isApproved ? statusBadgeTone("Approved") : null;
-                  return (
-                    <div
-                      key={activity.id}
-                      className={`p-3 border border-l-4 rounded-lg shadow-sm transition-shadow cursor-pointer ${tone.backgroundClass} ${tone.borderClass} hover:shadow-md`}
-                      style={{ borderLeftColor: tone.accentColor }}
-                      onClick={() => setSelectedActivity(activity)}
-                    >
-                      <div className="flex justify-between items-start gap-3">
-                        <div className="flex-1 space-y-1.5">
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`font-semibold ${tone.titleClass} flex-1 truncate`}
-                            >
-                              {displayTitle}
-                            </span>
-
-                            {statusClass && (
-                              <span
-                                className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold whitespace-nowrap ${statusClass}`}
-                              >
-                                Approved
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        {!viewOnly && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteClick(activity);
-                            }}
-                            className="text-gray-400 hover:text-red-500 text-lg"
-                            aria-label="Delete activity"
-                          >
-                            ×
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))
-        ) : (
-          <div className="text-center text-gray-500 py-8">
-            No activities scheduled yet. Plan the weekly subjects above or double-click a date in month view to add a single session.
-          </div>
-        )}
-      </div>
-    );
+    return renderMonthView();
   };
 
   const renderMonthView = () => {
@@ -2156,21 +2143,17 @@ export default function MasterTeacherCalendar() {
             : false;
           const highlightDay =
             withinRemedialWindow && !isWeekendDate(currentDay) && isCoordinatorSubjectDay(currentDay);
+          const subjectColor = highlightDay
+            ? getSubjectColor(dayActivities[0]?.subject ?? coordinatorSubject ?? null)
+            : "border-gray-100";
 
           days.push(
             <div
               key={`day-${day}`}
-              className={`h-24 p-1 border overflow-hidden relative hover:bg-gray-50 transition-colors cursor-pointer ${
-                highlightDay ? "border-green-200 bg-green-50" : "border-gray-100"
-              }`}
+              className={`h-24 p-1 border overflow-hidden relative hover:bg-gray-50 transition-colors cursor-pointer ${subjectColor}`}
               onDoubleClick={() => handleDateDoubleClick(currentDay)}
             >
               <div className="text-right text-sm font-medium text-gray-800 mb-1">
-                {highlightDay && (
-                  <span className="absolute left-1 top-1 text-[0.65rem] font-semibold uppercase tracking-wide text-[#013300]/70">
-                    Remedial
-                  </span>
-                )}
                 {isToday ? (
                   <span className="inline-block w-6 h-6 bg-[#013300] text-white rounded-full text-center leading-6">
                     {day}
@@ -2185,41 +2168,42 @@ export default function MasterTeacherCalendar() {
                   const displayTitle = activity.title?.trim().length
                     ? activity.title
                     : activity.subject ?? "Scheduled Activity";
-                  const normalizedStatus = normalizeStatusLabel(activity.status);
-                  const isApproved = normalizedStatus === "Approved";
-                  const toneOverride = resolveStatusToneOverride(activity.status);
-                  const tone = toneOverride ?? resolveActivityTone(activity.subject ?? activity.type);
-                  const statusClass = isApproved ? statusBadgeTone("Approved") : null;
+                  const activitySubject = resolveActivitySubject(displayTitle, activity.subject ?? null);
+                  const indicator =
+                    activitySubject?.toLowerCase().startsWith("eng")
+                      ? "E"
+                      : activitySubject?.toLowerCase().startsWith("fil")
+                      ? "F"
+                      : activitySubject?.toLowerCase().startsWith("math")
+                      ? "M"
+                      : null;
 
                   return (
                     <div
                       key={activity.id}
-                      className={`text-xs p-1 rounded cursor-pointer border ${tone.backgroundClass} ${tone.borderClass}`}
+                      className={`rounded-lg border px-2 py-1 text-[0.7rem] font-semibold shadow-sm ${getSubjectChipTone(activitySubject)}`}
                       onClick={() => setSelectedActivity(activity)}
+                      title={displayTitle}
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <span className={`block truncate font-semibold ${tone.titleClass}`}>{displayTitle}</span>
-                          <div className="mt-0.5 flex items-center justify-between gap-2 text-[0.6rem] text-gray-600">
-                            {statusClass && (
-                              <span
-                                className={`ml-auto inline-flex items-center rounded-full px-1.5 py-0.5 font-semibold ${statusClass}`}
-                              >
-                                Approved
-                              </span>
-                            )}
-                          </div>
-                        </div>
+                      <div className="flex items-start gap-2">
+                        {indicator && (
+                          <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/20 text-[0.6rem] font-semibold text-white">
+                            {indicator}
+                          </span>
+                        )}
+                        <span className="min-w-0 flex-1 text-[0.7rem] font-semibold leading-snug text-white line-clamp-2">
+                          {displayTitle}
+                        </span>
                         {!viewOnly && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               handleDeleteClick(activity);
                             }}
-                            className="text-xs text-red-500 hover:text-red-700"
+                            className="text-xs text-white/80 hover:text-white"
                             aria-label="Delete activity"
                           >
-                            ×
+                            ??
                           </button>
                         )}
                       </div>
@@ -2244,8 +2228,36 @@ export default function MasterTeacherCalendar() {
       );
     }
 
+    const normalizedGrade = normalizeGradeLabel(gradeLabel) ?? `Grade ${gradeLabel}`;
+
     return (
       <div>
+        <div className="px-4 py-3 border-b border-gray-100 bg-white">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-base font-semibold text-gray-900">{normalizedGrade} Calendar</h3>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-gray-600">
+              <span className="text-[0.7rem] font-semibold uppercase tracking-[0.2em] text-gray-500">Legend</span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-700">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                English
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-blue-700">
+                <span className="h-2 w-2 rounded-full bg-blue-500" />
+                Filipino
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-rose-700">
+                <span className="h-2 w-2 rounded-full bg-rose-500" />
+                Math
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-700">
+                <span className="h-2 w-2 rounded-full bg-amber-500" />
+                Assessment
+              </span>
+            </div>
+          </div>
+        </div>
         <div className="grid grid-cols-7 bg-gray-50 text-sm font-medium text-gray-700">
           {["S", "M", "T", "W", "T", "F", "S"].map((day, index) => (
             <div key={`${day}-${index}`} className="p-2 text-center">
@@ -2264,6 +2276,29 @@ export default function MasterTeacherCalendar() {
 
     const days = [];
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const formatSubjectLabel = (subject: string | null) => {
+      if (!subject) return "Remedial";
+      const normalized = subject.toLowerCase();
+      if (normalized.includes("english")) return "English";
+      if (normalized.includes("filipino")) return "Filipino";
+      if (normalized.includes("math")) return "Math";
+      if (normalized.includes("assessment")) return "Assessment";
+      return subject
+        .split(" ")
+        .filter(Boolean)
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ");
+    };
+    const formatTimeRange = (start: Date, end: Date) => {
+      const startLabel = start.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+      const endLabel = end.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+      return `${startLabel} - ${endLabel}`.toLowerCase();
+    };
+    const formatStackedDate = (date: Date) => ({
+      weekday: date.toLocaleDateString("en-US", { weekday: "short" }),
+      day: date.toLocaleDateString("en-US", { day: "2-digit" }),
+      month: date.toLocaleDateString("en-US", { month: "short" }),
+    });
 
     for (let i = 0; i < 7; i++) {
       const dayDate = new Date(startDate);
@@ -2300,48 +2335,44 @@ export default function MasterTeacherCalendar() {
           <div className="p-2 space-y-2">
             {dayActivities.length > 0 ? (
               dayActivities.map((activity) => {
-                const viewOnly = isActivityLocked(activity);
                 const displayTitle = activity.title?.trim().length
                   ? activity.title
                   : activity.subject ?? "Scheduled Activity";
-                const normalizedStatus = normalizeStatusLabel(activity.status);
-                const isApproved = normalizedStatus === "Approved";
-                const toneOverride = resolveStatusToneOverride(activity.status);
-                const tone = toneOverride ?? resolveActivityTone(activity.subject ?? activity.type);
-                const statusClass = isApproved ? statusBadgeTone("Approved") : null;
+                const weekdayLabel = dayDate.toLocaleDateString("en-US", { weekday: "long" });
+                const scheduleSubject = WEEKDAY_ORDER.includes(weekdayLabel as Weekday)
+                  ? weeklySubjectSchedule?.[weekdayLabel as Weekday] ?? null
+                  : null;
+                const activitySubject = resolveActivitySubject(displayTitle, scheduleSubject);
+                const subjectTone = getSubjectColor(activitySubject);
+                const subjectLabel = formatSubjectLabel(activitySubject);
+                const dateParts = formatStackedDate(activity.date);
+                const timeLabel = subjectScheduleConfigured
+                  ? `${formatTimeLabel(weeklySubjectSchedule?.startTime)} - ${formatTimeLabel(
+                      weeklySubjectSchedule?.endTime,
+                    )}`.toLowerCase()
+                  : formatTimeRange(activity.date, activity.end);
 
                 return (
                   <div
                     key={activity.id}
-                    className={`p-2 border border-l-4 rounded-lg shadow-sm transition-shadow cursor-pointer ${tone.backgroundClass} ${tone.borderClass} hover:shadow-md`}
-                    style={{ borderLeftColor: tone.accentColor }}
+                    className={`rounded-2xl border border-transparent p-4 shadow-sm ring-1 ring-black/5 ${subjectTone}`}
                     onClick={() => setSelectedActivity(activity)}
                   >
-                    <div className="flex justify-between items-start gap-3">
-                      <div className="flex-1 space-y-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className={`font-semibold text-sm ${tone.titleClass}`}>{displayTitle}</span>
-                          {statusClass && (
-                            <span
-                              className={`ml-auto inline-flex items-center rounded-full px-1.5 py-0.5 text-[0.6rem] font-semibold ${statusClass}`}
-                            >
-                              Approved
-                            </span>
-                          )}
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
+                      <div className="min-w-[72px] text-center">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          {dateParts.weekday}
                         </div>
+                        <div className="text-3xl font-semibold text-gray-900 leading-none">{dateParts.day}</div>
+                        <div className="text-sm font-semibold text-gray-600">{dateParts.month}</div>
                       </div>
-                      {!viewOnly && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteClick(activity);
-                          }}
-                          className="text-gray-400 hover:text-red-500 text-lg"
-                          aria-label="Delete activity"
-                        >
-                          ×
-                        </button>
-                      )}
+                      <div className="flex-1 space-y-1">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                          {subjectLabel}
+                        </div>
+                        <div className="text-base font-semibold text-gray-900">{displayTitle}</div>
+                        <div className="text-sm text-gray-600">{timeLabel}</div>
+                      </div>
                     </div>
                   </div>
                 );
@@ -2357,22 +2388,30 @@ export default function MasterTeacherCalendar() {
     return <div className="divide-y">{days}</div>;
   };
 
-  const weeklyWeekStartLabel = weeklySchedule ? formatLongDate(parseDateInput(weeklySchedule.weekStart)) : null;
-  const weeklyTimeLabel = weeklySchedule
-    ? `${formatTimeLabel(weeklySchedule.startTime)} - ${formatTimeLabel(weeklySchedule.endTime)}`
-    : null;
-  const weeklySubjectSummary = useMemo(() => {
-    if (!weeklySchedule) {
-      return null;
+  const subjectScheduleTimeLabel = useMemo(
+    () =>
+      `${formatTimeLabel(weeklySubjectSchedule?.startTime)} - ${formatTimeLabel(
+        weeklySubjectSchedule?.endTime,
+      )}`,
+    [weeklySubjectSchedule],
+  );
+  const activeRemedialQuarter = remedialWindow?.quarter ?? null;
+  const activeRemedialQuarterLabel = useMemo(() => {
+    if (!remedialWindow?.startDate || !remedialWindow?.endDate) {
+      return activeRemedialQuarter ?? "--";
     }
-    for (const day of WEEKDAY_ORDER) {
-      const subject = weeklySchedule.subjects?.[day];
-      if (subject && subject.trim().length > 0) {
-        return subject;
-      }
+    const start = new Date(`${remedialWindow.startDate}T00:00:00`);
+    const end = new Date(`${remedialWindow.endDate}T00:00:00`);
+    const monthRange = formatMonthRangeShort(start, end);
+    if (!activeRemedialQuarter) {
+      return monthRange;
     }
-    return null;
-  }, [weeklySchedule]);
+    return monthRange && monthRange !== "--"
+      ? `${activeRemedialQuarter} | ${monthRange}`
+      : activeRemedialQuarter;
+  }, [activeRemedialQuarter, remedialWindow?.endDate, remedialWindow?.startDate]);
+  const subjectScheduleEmpty =
+    !weeklySubjectScheduleLoading && !weeklySubjectScheduleError && !subjectScheduleConfigured;
 
   const sendableActivities = useMemo(
     () => activities.filter((activity) => !isActivityLocked(activity)),
@@ -2391,10 +2430,11 @@ export default function MasterTeacherCalendar() {
   const templateButtonDisabled = templateDownloading || !hasConfiguredRemedialWindow;
 
   return (
-    <div className="relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
+    <div className="relative flex h-screen overflow-hidden bg-[#f2f7f4]">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-24 right-0 h-72 w-72 rounded-full bg-emerald-100/25 blur-3xl" />
-        <div className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-emerald-200/30 blur-3xl" />
+        <div className="absolute -top-32 right-[-10%] h-80 w-80 rounded-full bg-emerald-200/35 blur-3xl" />
+        <div className="absolute bottom-[-10%] left-[-5%] h-96 w-96 rounded-full bg-emerald-100/50 blur-3xl" />
+        <div className="absolute top-16 left-1/2 h-40 w-96 -translate-x-1/2 rounded-full bg-white/70 blur-2xl" />
       </div>
       <input
         ref={fileInputRef}
@@ -2424,17 +2464,6 @@ export default function MasterTeacherCalendar() {
                 {remedialWindowError && (
                   <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                     {remedialWindowError}
-                  </div>
-                )}
-                {remedialStatusBanner && (
-                  <div
-                    className={`rounded-md border px-3 py-2 text-sm ${
-                      remedialStatusBanner.tone === "success"
-                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                        : "border-blue-200 bg-blue-50 text-blue-800"
-                    }`}
-                  >
-                    {remedialStatusBanner.message}
                   </div>
                 )}
                 {sendFeedback && (
@@ -2490,14 +2519,6 @@ export default function MasterTeacherCalendar() {
                       >
                         Week
                       </button>
-                      <button
-                        onClick={() => setView("list")}
-                        className={`px-3 py-1.5 text-xs rounded-md sm:text-sm ${
-                          view === "list" ? "bg-white text-gray-800 shadow-sm" : "text-gray-600 hover:text-gray-800"
-                        }`}
-                      >
-                        List
-                      </button>
                     </div>
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:space-x-2">
                       <KebabMenu
@@ -2551,53 +2572,73 @@ export default function MasterTeacherCalendar() {
                   </div>
                 </div>
 
-                <div className="rounded-lg border border-gray-200 bg-gray-50/80 p-4">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <p className="text-xl font-semibold text-gray-800">{remediationPlanTitle}</p>
-                      <div className="mt-1 space-y-1 text-sm text-gray-600">
-                        {coordinatorSubject ? (
-                          <p>Coordinator Subject: {coordinatorSubject}</p>
-                        ) : (
-                          <p className="italic text-gray-500">Coordinator subject not assigned yet.</p>
-                        )}
-                        {weeklySchedule ? (
-                          <p>
-                            Week of {weeklyWeekStartLabel}
-                            {weeklyTimeLabel ? ` · ${weeklyTimeLabel}` : ""}
-                          </p>
-                        ) : (
-                          <p>Click Set Schedule to add schedule for {gradeLabel}</p>
-                        )}
-                      </div>
+                <div className="rounded-2xl border border-white/80 bg-white/80 px-4 py-2 shadow-sm">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex items-center gap-3">
+                      <h3 className="text-base font-semibold text-gray-900">Schedule Overview</h3>
+                      {(weeklySubjectScheduleLoading || remedialWindowLoading) && (
+                        <span className="text-xs text-gray-400">Loading...</span>
+                      )}
                     </div>
-                    {weeklySchedule && (
-                      <SecondaryButton
-                        type="button"
-                        onClick={clearWeeklyPlan}
-                        className="px-4 py-2 text-sm"
-                      >
-                        Clear Plan
-                      </SecondaryButton>
-                    )}
+                    <div />
                   </div>
 
-                  {weeklySchedule && (
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                      <div className="rounded-xl border border-gray-200 bg-white px-5 py-4 shadow-sm">
-                        <div className="text-sm font-semibold uppercase tracking-wide text-gray-500">Subject</div>
-                        <div className="mt-1 text-lg font-semibold text-black">
-                          {weeklySubjectSummary ?? "Subject not assigned"}
-                        </div>
-                        {weeklyTimeLabel && <div className="mt-2 text-sm text-gray-600">{weeklyTimeLabel}</div>}
-                      </div>
-                      <div className="rounded-xl border border-gray-200 bg-white px-5 py-4 shadow-sm">
-                        <div className="text-sm font-semibold uppercase tracking-wide text-gray-500">Week Coverage</div>
-                        <div className="mt-1 text-sm text-gray-600">
-                          {WEEKDAY_ORDER.join(", ")}
-                        </div>
+                  <div className="mt-1 grid gap-3 text-xs font-semibold text-emerald-900 lg:grid-cols-3">
+                    <div className="text-center">Remedial Time</div>
+                    <div className="text-center">Remedial Subjects</div>
+                    <div className="text-center">Remedial Period</div>
+                  </div>
+
+                  <div className="mt-1 flex flex-col gap-3 rounded-lg bg-white px-1 py-1 text-sm text-gray-700 lg:flex-row lg:items-center">
+                    <div className="flex flex-1 justify-center">
+                      <div className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600">
+                        <span className="inline-flex items-center justify-center rounded-full text-gray-600">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <circle cx="12" cy="12" r="9" />
+                            <path d="M12 7v6l4 2" />
+                          </svg>
+                        </span>
+                        <span className="font-base">{subjectScheduleTimeLabel}</span>
                       </div>
                     </div>
+
+                    <span className="hidden h-6 w-px bg-gray-300 lg:block" />
+
+                    <div className="flex flex-1 justify-center">
+                      <div className="flex items-center gap-2 overflow-x-auto text-center scrollbar-hide">
+                        {WEEKDAY_ORDER.map((day) => (
+                          <div key={day} className="flex shrink-0 items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-1 text-sm text-gray-600">
+                            <span className="font-semibold text-[#013300]">{SUBJECT_DAY_LABELS[day]}</span>
+                            <span className="text-gray-500">|</span>
+                            <span className="text-gray-600">{weeklySubjectSchedule?.[day] || "--"}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <span className="hidden h-6 w-px bg-gray-300 lg:block" />
+
+                    <div className="flex flex-1 justify-center">
+                      <div className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600">
+                        <span className="inline-flex items-center justify-center rounded-full text-gray-600">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <rect x="3" y="4" width="18" height="18" rx="2" />
+                            <path d="M16 2v4M8 2v4M3 10h18" />
+                          </svg>
+                        </span>
+                        <span className="text-gray-600">{activeRemedialQuarterLabel}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {weeklySubjectScheduleError && (
+                    <p className="mt-2 text-xs text-amber-600">{weeklySubjectScheduleError}</p>
+                  )}
+                  {remedialWindowError && (
+                    <p className="mt-1 text-xs text-amber-600">{remedialWindowError}</p>
+                  )}
+                  {subjectScheduleEmpty && (
+                    <p className="mt-2 text-xs text-gray-500">Weekly schedule is not set yet.</p>
                   )}
                 </div>
               </div>

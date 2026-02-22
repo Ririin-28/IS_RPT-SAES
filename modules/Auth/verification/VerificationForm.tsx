@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { storeUserProfile } from "@/lib/utils/user-profile";
 
 interface VerificationFormProps {
   email: string;
@@ -60,6 +61,14 @@ export default function VerificationForm({ email, user_id, role, redirectPath, o
     const data = await res.json();
     setLoading(false);
     if (data.success) {
+      storeUserProfile({
+        userId: data.user_id ?? user_id ?? null,
+        email: data.email ?? email ?? null,
+        firstName: data.first_name ?? null,
+        middleName: data.middle_name ?? null,
+        lastName: data.last_name ?? null,
+        role: data.role ?? role ?? null,
+      });
       localStorage.setItem("deviceToken", data.deviceToken);
       localStorage.setItem("device_token", data.deviceToken);
       onVerified(data.deviceToken, data.redirectPath ?? redirectPath ?? null);

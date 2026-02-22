@@ -1,6 +1,7 @@
-"use client";
+﻿"use client";
 import Sidebar from "@/components/MasterTeacher/RemedialTeacher/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
+import { getStoredUserProfile } from "@/lib/utils/user-profile";
 import { useCallback, useEffect, useState } from "react";
 
 
@@ -13,7 +14,13 @@ interface Activity {
   end: Date;
   type: string;
   subject?: string | null;
+  grade?: string | null;
 }
+
+type WeeklySubjectSchedule = {
+  startTime?: string;
+  endTime?: string;
+};
 
 const getSubjectIndicator = (subject: string | null | undefined): string | null => {
   if (!subject) {
@@ -35,6 +42,37 @@ const getSubjectIndicator = (subject: string | null | undefined): string | null 
   return null;
 };
 
+const formatGradeLabel = (value: string | null | undefined): string | null => {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.toLowerCase().startsWith("grade") ? trimmed : `Grade ${trimmed}`;
+};
+
+const resolveGradeTitle = (items: Activity[], fallbackGrade?: string | null): string => {
+  const normalizedFallback = formatGradeLabel(fallbackGrade ?? null);
+  if (normalizedFallback) {
+    return `${normalizedFallback} Calendar`;
+  }
+  const gradeMatches = new Set<string>();
+  for (const activity of items) {
+    const explicitGrade = formatGradeLabel(activity.grade ?? null);
+    if (explicitGrade) {
+      gradeMatches.add(explicitGrade);
+      continue;
+    }
+    const source = `${activity.title ?? ""} ${activity.roomNo ?? ""}`;
+    const match = /grade\s*([0-9]+)/i.exec(source);
+    if (match?.[1]) {
+      gradeMatches.add(`Grade ${match[1]}`);
+    }
+  }
+  if (gradeMatches.size === 1) {
+    return `${Array.from(gradeMatches)[0]} Calendar`;
+  }
+  return "Remedial Calendar";
+};
+
 export default function MasterTeacherCalendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState("month");
@@ -42,6 +80,7 @@ export default function MasterTeacherCalendar() {
 
   // Activities data in state - Start with empty array
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [weeklySubjectSchedule, setWeeklySubjectSchedule] = useState<WeeklySubjectSchedule | null>(null);
 
   const loadApprovedActivities = useCallback(async () => {
     try {
@@ -55,6 +94,7 @@ export default function MasterTeacherCalendar() {
           date?: string | null;
           day?: string | null;
           subject?: string | null;
+          grade?: string | null;
         }>;
         error?: string | null;
       } | null;
@@ -78,6 +118,7 @@ export default function MasterTeacherCalendar() {
             end: new Date(dateValue.getTime() + 60 * 60 * 1000),
             type: "class",
             subject: item.subject ?? null,
+            grade: item.grade ?? null,
           } satisfies Activity;
         })
         .filter((item): item is Activity => item !== null);
@@ -92,6 +133,31 @@ export default function MasterTeacherCalendar() {
   useEffect(() => {
     loadApprovedActivities();
   }, [loadApprovedActivities]);
+
+  const loadWeeklySubjectSchedule = useCallback(async () => {
+    try {
+      const response = await fetch("/api/principal/weekly-subject-schedule", { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+      const payload = (await response.json().catch(() => null)) as {
+        success?: boolean;
+        schedule?: Record<string, unknown> | null;
+        error?: string;
+      } | null;
+      if (!payload?.success) {
+        throw new Error(payload?.error ?? "Unable to load the weekly subject schedule.");
+      }
+      setWeeklySubjectSchedule(normalizeWeeklySubjectSchedule(payload.schedule ?? null));
+    } catch (error) {
+      console.warn("Failed to load weekly subject schedule", error);
+      setWeeklySubjectSchedule(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadWeeklySubjectSchedule();
+  }, [loadWeeklySubjectSchedule]);
 
   // Get week number for a date
   const getWeekNumber = (date: Date): number => {
@@ -161,74 +227,75 @@ export default function MasterTeacherCalendar() {
     }
   };
 
-  // Render the calendar based on view
-  const renderCalendar = () => {
-    if (view === "month") {
-      return renderMonthView();
-    } else if (view === "week") {
-      return renderWeekView();
-    } else {
-      return renderListView();
-    }
+  const getSubjectColor = (subject: string | null | undefined) => {
+    const value = subject?.toLowerCase() ?? "";
+    if (value.includes("english")) return "border-emerald-200 bg-emerald-50";
+    if (value.includes("filipino")) return "border-blue-200 bg-blue-100";
+    if (value.includes("math")) return "border-rose-200 bg-rose-100";
+    if (value.includes("assessment")) return "border-amber-200 bg-amber-100";
+    return "border-gray-100";
   };
 
-  // List View
-  const renderListView = () => {
-    const activitiesByWeek = getActivitiesByWeek();
+  const normalizeScheduleTime = (value: unknown): string => {
+    if (typeof value !== "string") {
+      return "";
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return "";
+    }
+    const match = /^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/.exec(trimmed);
+    return match ? `${match[1]}:${match[2]}` : "";
+  };
 
-    return (
-      <div className="space-y-6">
-        {activitiesByWeek.length > 0 ? (
-          activitiesByWeek.map(({ week, activities }) => (
-            <div key={week} className="border rounded-lg p-4">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4 border-b pb-2">
-                {week} - {activities[0].date.getFullYear()}
-              </h3>
-              <div className="space-y-3">
-                {activities.map((activity) => {
-                  const indicator = getSubjectIndicator(activity.subject);
-                  return (
-                  <div
-                    key={activity.id}
-                    className="p-3 border-l-4 border-[#013300] bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow"
-                  >
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          {indicator && (
-                            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-[#013300]/10 text-[0.6rem] font-semibold text-[#013300]">
-                              {indicator}
-                            </span>
-                          )}
-                          <div className="font-medium text-gray-900">{activity.title}</div>
-                        </div>
-                        <div className="text-sm text-gray-600 mt-1">
-                          {activity.date.toLocaleDateString("en-US", { 
-                            month: "long", 
-                            day: "numeric", 
-                            year: "numeric" 
-                          })}
-                        </div>
-                        <div className="text-xs text-gray-500 mt-1">{activity.roomNo}</div>
-                      </div>
+  const normalizeWeeklySubjectSchedule = (value: unknown): WeeklySubjectSchedule => {
+    const record = value as Record<string, unknown> | null;
+    return {
+      startTime: normalizeScheduleTime(record?.startTime),
+      endTime: normalizeScheduleTime(record?.endTime),
+    };
+  };
 
-                    </div>
-                  </div>
-                );
-                })}
-              </div>
-            </div>
-          ))
-        ) : (
-          <div className="text-center text-gray-500 py-8">
-            No activities scheduled.
-          </div>
-        )}
-      </div>
-    );
+  const formatTimeLabel = (time: string | null | undefined): string => {
+    if (!time) {
+      return "--";
+    }
+    const [hour, minute] = time.split(":").map(Number);
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+      return "--";
+    }
+    const date = new Date();
+    date.setHours(hour, minute, 0, 0);
+    return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  };
+
+  const getSubjectChipTone = (subject: string | null | undefined) => {
+    const value = subject?.toLowerCase() ?? "";
+    if (value.includes("english")) return "bg-emerald-700 text-white border-emerald-700";
+    if (value.includes("filipino")) return "bg-blue-700 text-white border-blue-700";
+    if (value.includes("math")) return "bg-rose-700 text-white border-rose-700";
+    if (value.includes("assessment")) return "bg-amber-700 text-white border-amber-700";
+    return "bg-gray-700 text-white border-gray-700";
+  };
+
+  // Render the calendar based on view
+  const renderCalendar = () => {
+    if (view === "week") {
+      return renderWeekView();
+    }
+    return renderMonthView();
   };
 
   const renderMonthView = () => {
+    const storedProfile = getStoredUserProfile();
+    const profileGrade =
+      storedProfile?.gradeLevel ??
+      (storedProfile as { gradeLabel?: string | null })?.gradeLabel ??
+      (storedProfile as { grade?: string | null })?.grade ??
+      (storedProfile as { gradeRaw?: string | null })?.gradeRaw ??
+      (storedProfile as { gradeNumber?: string | number | null })?.gradeNumber ??
+      null;
+    const gradeTitle = resolveGradeTitle(activities, typeof profileGrade === "number" ? String(profileGrade) : profileGrade);
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
     const firstDay = new Date(year, month, 1).getDay();
@@ -249,11 +316,12 @@ export default function MasterTeacherCalendar() {
           const dayActivities = activities.filter(
             (a) => a.date.getDate() === day && a.date.getMonth() === month && a.date.getFullYear() === year
           );
+          const subjectColor = dayActivities.length ? getSubjectColor(dayActivities[0].subject) : "border-gray-100";
 
           days.push(
             <div
               key={`day-${day}`}
-              className="h-24 p-1 border overflow-hidden relative hover:bg-gray-50 transition-colors cursor-pointer border-gray-100"
+              className={`h-24 p-1 border overflow-hidden relative hover:bg-gray-50 transition-colors cursor-pointer ${subjectColor}`}
             >
               <div className="text-right text-sm font-medium text-gray-800 mb-1">
                 {day === new Date().getDate() && month === new Date().getMonth() && year === new Date().getFullYear() ? (
@@ -268,22 +336,23 @@ export default function MasterTeacherCalendar() {
                 {dayActivities.slice(0, 2).map((activity) => {
                   const indicator = getSubjectIndicator(activity.subject);
                   return (
-                  <div
-                    key={activity.id}
-                    className={`text-xs p-1 rounded truncate cursor-pointer border ${getActivityColor(activity.type)}`}
-                  >
-                    <div className="flex justify-between items-center gap-2">
-                      <span className="truncate font-semibold text-[#013300] flex items-center gap-1">
+                    <div
+                      key={activity.id}
+                      className={`group rounded-lg border px-2 py-1 text-[0.7rem] font-semibold shadow-sm ${getSubjectChipTone(activity.subject)}`}
+                      title={activity.title}
+                    >
+                      <div className="flex items-start gap-2">
                         {indicator && (
-                          <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-[#013300]/10 text-[0.6rem] font-semibold text-[#013300]">
+                          <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/20 text-[0.6rem] font-bold text-white">
                             {indicator}
                           </span>
                         )}
-                        <span className="truncate">{activity.title}</span>
-                      </span>
+                        <span className="text-[0.7rem] font-semibold leading-snug text-white line-clamp-2">
+                          {activity.title}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                );
+                  );
                 })}
                 {dayActivities.length > 2 && (
                   <div className="text-xs text-gray-500 text-center bg-gray-100 rounded p-1">
@@ -305,6 +374,30 @@ export default function MasterTeacherCalendar() {
 
     return (
       <div>
+        <div className="px-4 py-3 border-b border-gray-100 bg-white">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h3 className="text-base font-semibold text-gray-800">{gradeTitle}</h3>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
+              <span className="text-[0.7rem] font-semibold uppercase tracking-[0.2em] text-gray-500">Legend</span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-700">
+                <span className="h-2 w-2 rounded-full  bg-emerald-500" />
+                English
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-blue-700">
+                <span className="h-2 w-2 rounded-full bg-blue-500" />
+                Filipino
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-rose-700">
+                <span className="h-2 w-2 rounded-full bg-rose-500" />
+                Math
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-700">
+                <span className="h-2 w-2 rounded-full bg-amber-500" />
+                Assessment
+              </span>
+            </div>
+          </div>
+        </div>
         <div className="grid grid-cols-7 bg-gray-50 text-sm font-medium text-gray-700">
           {["S", "M", "T", "W", "T", "F", "S"].map((day, index) => (
             <div key={`${day}-${index}`} className="p-2 text-center">
@@ -323,6 +416,29 @@ export default function MasterTeacherCalendar() {
 
     const days = [];
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const formatSubjectLabel = (subject: string | null | undefined) => {
+      if (!subject) return "Remedial";
+      const normalized = subject.toLowerCase();
+      if (normalized.includes("english")) return "English";
+      if (normalized.includes("filipino")) return "Filipino";
+      if (normalized.includes("math")) return "Math";
+      if (normalized.includes("assessment")) return "Assessment";
+      return subject
+        .split(" ")
+        .filter(Boolean)
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ");
+    };
+    const formatTimeRange = (start: Date, end: Date) => {
+      const startLabel = start.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+      const endLabel = end.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+      return `${startLabel} - ${endLabel}`.toLowerCase();
+    };
+    const formatStackedDate = (date: Date) => ({
+      weekday: date.toLocaleDateString("en-US", { weekday: "short" }),
+      day: date.toLocaleDateString("en-US", { day: "2-digit" }),
+      month: date.toLocaleDateString("en-US", { month: "short" }),
+    });
 
     for (let i = 0; i < 7; i++) {
       const dayDate = new Date(startDate);
@@ -358,30 +474,39 @@ export default function MasterTeacherCalendar() {
           <div className="p-2 space-y-2">
             {dayActivities.length > 0 ? (
               dayActivities.map((activity) => {
-                const indicator = getSubjectIndicator(activity.subject);
+                const subjectTone = getSubjectColor(activity.subject);
+                const subjectLabel = formatSubjectLabel(activity.subject ?? null);
+                const dateParts = formatStackedDate(activity.date);
+                const timeLabel =
+                  weeklySubjectSchedule?.startTime && weeklySubjectSchedule?.endTime
+                    ? `${formatTimeLabel(weeklySubjectSchedule.startTime)} - ${formatTimeLabel(
+                        weeklySubjectSchedule.endTime,
+                      )}`.toLowerCase()
+                    : formatTimeRange(activity.date, activity.end);
+
                 return (
-                <div
-                  key={activity.id}
-                  className="p-2 rounded-lg border-l-4 shadow-sm bg-white hover:shadow-md transition-shadow"
-                  style={{
-                    borderLeftColor: activity.type === "class" ? "#2563EB" : activity.type === "meeting" ? "#059669" : "#7C3AED",
-                  }}
-                >
-                  <div className="flex items-center gap-2">
-                    {indicator && (
-                      <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-[#013300]/10 text-[0.6rem] font-semibold text-[#013300]">
-                        {indicator}
-                      </span>
-                    )}
-                    <div className="font-medium text-gray-900 text-sm">{activity.title}</div>
+                  <div
+                    key={activity.id}
+                    className={`rounded-2xl border border-transparent p-4 shadow-sm ring-1 ring-black/5 ${subjectTone}`}
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
+                      <div className="min-w-[72px] text-center">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          {dateParts.weekday}
+                        </div>
+                        <div className="text-3xl font-semibold text-gray-900 leading-none">{dateParts.day}</div>
+                        <div className="text-sm font-semibold text-gray-600">{dateParts.month}</div>
+                      </div>
+                      <div className="flex-1 space-y-1">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                          {subjectLabel}
+                        </div>
+                        <div className="text-base font-semibold text-gray-900">{activity.title}</div>
+                        <div className="text-sm text-gray-600">{timeLabel}</div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="text-xs text-gray-600 mt-1">
-                    {activity.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} -{" "}
-                    {activity.end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                  </div>
-                  <div className="text-xs text-gray-500 mt-1">{activity.roomNo}</div>
-                </div>
-              );
+                );
               })
             ) : (
               <div className="text-center text-gray-400 py-4 text-sm">No activities scheduled</div>
@@ -424,9 +549,7 @@ export default function MasterTeacherCalendar() {
                   <h2 className="text-lg font-semibold text-gray-800 sm:text-xl">
                     {view === "month"
                       ? currentDate.toLocaleDateString("en-US", { month: "long", year: "numeric" })
-                      : view === "week"
-                      ? `Week of ${currentDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
-                      : "Activities by Week"}
+                      : `Week of ${currentDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
                   </h2>
                   <button onClick={goToToday} className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-md text-gray-700">
                     Today
@@ -449,14 +572,6 @@ export default function MasterTeacherCalendar() {
                       }`}
                     >
                       Week
-                    </button>
-                    <button
-                      onClick={() => setView("list")}
-                      className={`px-3 py-1.5 text-xs rounded-md sm:text-sm ${
-                        view === "list" ? "bg-white text-gray-800 shadow-sm" : "text-gray-600 hover:text-gray-800"
-                      }`}
-                    >
-                      List
                     </button>
                   </div>
                 </div>

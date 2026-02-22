@@ -42,6 +42,11 @@ export default function Login({
   const [errorMessage, setErrorMessage] = useState(DEFAULT_LOGIN_ERROR_MESSAGE);
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sanitizedItAdminId = useMemo(() => itAdminId.trim(), [itAdminId]);
+  const trimmedEmail = useMemo(() => email.trim(), [email]);
+  const trimmedPassword = useMemo(() => password.trim(), [password]);
+  const canSubmit = adminIdRequired
+    ? Boolean(trimmedEmail && trimmedPassword && sanitizedItAdminId)
+    : Boolean(trimmedEmail && trimmedPassword);
 
   const resolveWelcomePath = useCallback((role: string | null | undefined): string => {
     const normalized = normalizeRole(role);
@@ -179,6 +184,11 @@ export default function Login({
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canSubmit) {
+      setErrorMessage("Please enter your email and password to continue.");
+      setShowErrorModal(true);
+      return;
+    }
     setIsLoading(true);
     try {
       if (adminIdRequired) {
@@ -224,23 +234,22 @@ export default function Login({
         setErrorMessage(data.error || DEFAULT_LOGIN_ERROR_MESSAGE);
         setShowErrorModal(true);
       } else {
-        storeUserProfile({
-          firstName: data.first_name,
-          middleName: data.middle_name,
-          lastName: data.last_name,
-          role: data.role,
-          userId: data.user_id,
-          email: data.email ?? email,
-        });
-        try {
-          sessionStorage.setItem("wasLoggedOut", "false");
-        } catch (storageError) {
-          console.warn("Unable to persist logout marker", storageError);
-        }
-
         const resolvedRedirectPath = data.redirectPath || resolveWelcomePath(data.role);
 
         if (data.skipOtp) {
+          storeUserProfile({
+            firstName: data.first_name,
+            middleName: data.middle_name,
+            lastName: data.last_name,
+            role: data.role,
+            userId: data.user_id,
+            email: data.email ?? email,
+          });
+          try {
+            sessionStorage.setItem("wasLoggedOut", "false");
+          } catch (storageError) {
+            console.warn("Unable to persist logout marker", storageError);
+          }
           // Device is trusted, redirect to welcome page
           const welcomePath = resolvedRedirectPath;
           console.log("[LOGIN] redirecting to:", welcomePath);
@@ -251,6 +260,7 @@ export default function Login({
           }
           router.push(welcomePath);
         } else {
+          clearStoredUserProfile();
           // Device not trusted, redirect to verification page
           const params = new URLSearchParams({
             email,
@@ -347,7 +357,7 @@ export default function Login({
                 <label htmlFor="email" className="block text-sm font-medium text-[#013300] mb-1 sm:text-base">Email Address</label>
                 <input
                   id="email"
-                  type="text"
+                  type="email"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   placeholder="Enter your email address"
@@ -398,7 +408,7 @@ export default function Login({
               {/* Submit Button */}
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || !canSubmit}
                 className="w-full bg-linear-to-r from-green-600 to-[#133000] text-white font-bold py-2.5 rounded-xl hover:opacity-90 transition shadow-md disabled:opacity-70 sm:py-2"
               >
                 {isLoading ? "Logging in..." : "Login"}

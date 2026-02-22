@@ -18,6 +18,9 @@ interface UserRow extends RowDataPacket {
   otp_code: string | null;
   otp_expires_at: Date | string | null;
   role: string | null;
+  first_name?: string | null;
+  middle_name?: string | null;
+  last_name?: string | null;
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -122,7 +125,17 @@ export async function POST(req: Request): Promise<Response> {
 
     return respond(
       200,
-      { success: true, deviceToken, role: responseRole, redirectPath },
+      {
+        success: true,
+        deviceToken,
+        role: responseRole,
+        redirectPath,
+        user_id: user.user_id,
+        email: user.email,
+        first_name: user.first_name ?? null,
+        middle_name: user.middle_name ?? null,
+        last_name: user.last_name ?? null,
+      },
       responseCookies.length > 0 ? { "Set-Cookie": responseCookies } : undefined,
     );
   } catch (error) {

@@ -52,6 +52,50 @@ function sanitizeItAdminId(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+const MAX_EMAIL_LENGTH = 254;
+const MAX_PASSWORD_LENGTH = 256;
+const MAX_DEVICE_FIELD_LENGTH = 200;
+
+function isSafeText(value: unknown, maxLength: number): value is string {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= maxLength;
+}
+
+function isValidEmail(value: string): boolean {
+  if (value.length > MAX_EMAIL_LENGTH) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function validateLoginPayload(payload: LoginRequestPayload) {
+  if (!isSafeText(payload.email, MAX_EMAIL_LENGTH) || !isValidEmail(payload.email.trim())) {
+    return { ok: false, error: "Invalid email address" };
+  }
+
+  if (!isSafeText(payload.password, MAX_PASSWORD_LENGTH)) {
+    return { ok: false, error: "Password is required" };
+  }
+
+  if (payload.userId !== undefined && payload.userId !== null && String(payload.userId).trim()) {
+    const normalizedUserId = toNumber(payload.userId);
+    if (normalizedUserId === null || normalizedUserId <= 0) {
+      return { ok: false, error: "Invalid credentials" };
+    }
+  }
+
+  if (payload.itAdminId !== undefined && payload.itAdminId !== null && typeof payload.itAdminId !== "string") {
+    return { ok: false, error: "Invalid credentials" };
+  }
+
+  if (payload.deviceToken && !isSafeText(payload.deviceToken, MAX_DEVICE_FIELD_LENGTH)) {
+    return { ok: false, error: "Invalid device token" };
+  }
+
+  if (payload.deviceName && !isSafeText(payload.deviceName, MAX_DEVICE_FIELD_LENGTH)) {
+    return { ok: false, error: "Invalid device name" };
+  }
+
+  return { ok: true } as const;
+}
+
 const MASTER_TEACHER_TABLES = [
   "master_teacher",
   "master_teachers",
@@ -242,6 +286,17 @@ export async function POST(req: Request): Promise<Response> {
       try {
         const { email, password, userId, itAdminId, deviceToken, deviceName } =
           (await req.json()) as LoginRequestPayload;
+        const validation = validateLoginPayload({
+          email,
+          password,
+          userId,
+          itAdminId,
+          deviceToken,
+          deviceName,
+        });
+        if (!validation.ok) {
+          return respond(400, { error: validation.error });
+        }
 
         /* ===== Fetch user ===== */
         const [users] = await db.execute<UserRow[]>(
@@ -313,6 +368,10 @@ export async function POST(req: Request): Promise<Response> {
             role: responseRole,
             redirectPath,
             user_id: user.user_id,
+            first_name: user.first_name,
+            middle_name: user.middle_name,
+            last_name: user.last_name,
+            email: user.email,
           });
         }
 

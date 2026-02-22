@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import Sidebar from "@/components/Teacher/Sidebar";
 import Header from "@/components/Teacher/Header";
 import { useCallback, useEffect, useState } from "react";
@@ -19,6 +19,11 @@ interface Activity {
   subject: string | null;
   status: string | null;
 }
+
+type WeeklySubjectSchedule = {
+  startTime?: string;
+  endTime?: string;
+};
 
 type TeacherProfileResponse = {
   success?: boolean;
@@ -163,6 +168,57 @@ const statusBadgeTone = (status: string | null | undefined) => {
 const isViewOnlyStatus = (status: string | null | undefined): boolean =>
   Boolean(status && status.toLowerCase().includes("approve"));
 
+const getSubjectColor = (subject: string | null | undefined) => {
+  const value = subject?.toLowerCase() ?? "";
+  if (value.includes("english")) return "border-emerald-200 bg-emerald-50";
+  if (value.includes("filipino")) return "border-blue-200 bg-blue-100";
+  if (value.includes("math")) return "border-rose-200 bg-rose-100";
+  if (value.includes("assessment")) return "border-amber-200 bg-amber-100";
+  return "border-gray-100";
+};
+
+const getSubjectChipTone = (subject: string | null | undefined) => {
+  const value = subject?.toLowerCase() ?? "";
+  if (value.includes("english")) return "bg-emerald-700 text-white border-emerald-700";
+  if (value.includes("filipino")) return "bg-blue-700 text-white border-blue-700";
+  if (value.includes("math")) return "bg-rose-700 text-white border-rose-700";
+  if (value.includes("assessment")) return "bg-amber-700 text-white border-amber-700";
+  return "bg-gray-700 text-white border-gray-700";
+};
+
+const normalizeScheduleTime = (value: unknown): string => {
+  if (typeof value !== "string") {
+    return "";
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  const match = /^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/.exec(trimmed);
+  return match ? `${match[1]}:${match[2]}` : "";
+};
+
+const normalizeWeeklySubjectSchedule = (value: unknown): WeeklySubjectSchedule => {
+  const record = value as Record<string, unknown> | null;
+  return {
+    startTime: normalizeScheduleTime(record?.startTime),
+    endTime: normalizeScheduleTime(record?.endTime),
+  };
+};
+
+const formatTimeLabel = (time: string | null | undefined): string => {
+  if (!time) {
+    return "--";
+  }
+  const [hour, minute] = time.split(":").map(Number);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+    return "--";
+  }
+  const date = new Date();
+  date.setHours(hour, minute, 0, 0);
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+};
+
 export default function TeacherCalendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState("month");
@@ -172,6 +228,7 @@ export default function TeacherCalendar() {
   const [profileLoading, setProfileLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [gradeFilter, setGradeFilter] = useState<string | null>(null);
+  const [weeklySubjectSchedule, setWeeklySubjectSchedule] = useState<WeeklySubjectSchedule | null>(null);
 
   const combineDateTime = useCallback((dateStr: string | null, timeStr: string | null): Date | null => {
     if (!dateStr) {
@@ -401,6 +458,31 @@ export default function TeacherCalendar() {
     fetchActivities(gradeFilter ?? null);
   }, [fetchActivities, gradeFilter, profileLoading]);
 
+  const loadWeeklySubjectSchedule = useCallback(async () => {
+    try {
+      const response = await fetch("/api/principal/weekly-subject-schedule", { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+      const payload = (await response.json().catch(() => null)) as {
+        success?: boolean;
+        schedule?: Record<string, unknown> | null;
+        error?: string;
+      } | null;
+      if (!payload?.success) {
+        throw new Error(payload?.error ?? "Unable to load the weekly subject schedule.");
+      }
+      setWeeklySubjectSchedule(normalizeWeeklySubjectSchedule(payload.schedule ?? null));
+    } catch (error) {
+      console.warn("Failed to load weekly subject schedule", error);
+      setWeeklySubjectSchedule(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadWeeklySubjectSchedule();
+  }, [loadWeeklySubjectSchedule]);
+
   const handleRefresh = useCallback(() => {
     fetchActivities(gradeFilter ?? null);
     resolveTeacherGrade();
@@ -458,193 +540,14 @@ export default function TeacherCalendar() {
     setCurrentDate(new Date());
   };
 
-  // Group activities by week
-  const renderListView = () => {
-    const activitiesByWeek = getActivitiesByWeek();
-
-    return (
-      <div className="space-y-6">
-        {activitiesByWeek.length > 0 ? (
-          activitiesByWeek.map(({ week, activities }) => (
-            <div key={week} className="border rounded-lg p-4">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4 border-b pb-2">
-                {week} - {activities[0].date.getFullYear()}
-              </h3>
-              <div className="space-y-3">
-                {activities.map((activity) => {
-                  const viewOnly = isViewOnlyStatus(activity.status);
-                  const statusLabel = activity.status ?? null;
-                  const tone = resolveActivityTone(activity.type);
-                  const statusClass = statusLabel ? statusBadgeTone(viewOnly ? "Pending" : statusLabel) : null;
-
-                  return (
-                    <div
-                      key={activity.id}
-                      className={`p-3 border border-l-4 rounded-lg shadow-sm transition-shadow ${tone.backgroundClass} ${tone.borderClass}`}
-                      style={{ borderLeftColor: tone.accentColor }}
-                    >
-                      <div className="flex flex-col gap-1.5">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className={`font-semibold ${tone.titleClass}`}>{activity.title}</span>
-                          {statusLabel && statusClass && (
-                            <span
-                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${statusClass}`}
-                            >
-                              {statusLabel}
-                            </span>
-                          )}
-                          {viewOnly && (
-                            <span className="text-xs font-semibold uppercase tracking-wide text-gray-600">
-                              View Only
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
-                          <span>
-                            {activity.date.toLocaleDateString("en-US", {
-                              month: "long",
-                              day: "numeric",
-                              year: "numeric",
-                            })}
-                          </span>
-                          <span className="text-gray-300">•</span>
-                          <span>
-                            {activity.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                            {" – "}
-                            {activity.end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                          </span>
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {[activity.subject, activity.grade].filter(Boolean).join(" • ") || "Scheduled activity"}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))
-        ) : (
-          <div className="text-center text-gray-500 py-8">No activities scheduled.</div>
-        )}
-      </div>
-    );
-  };
-
-  const resolveActivityTone = (type: string | null | undefined) => {
-    const normalized = (type ?? "").toLowerCase();
-
-    if (normalized.includes("english")) {
-      return {
-        backgroundClass: "bg-blue-50",
-        borderClass: "border-blue-200",
-        titleClass: "text-blue-900",
-        accentColor: "#2563EB",
-      } as const;
-    }
-
-    if (normalized.includes("filipino")) {
-      return {
-        backgroundClass: "bg-purple-50",
-        borderClass: "border-purple-200",
-        titleClass: "text-purple-900",
-        accentColor: "#7C3AED",
-      } as const;
-    }
-
-    if (normalized.includes("math")) {
-      return {
-        backgroundClass: "bg-amber-50",
-        borderClass: "border-amber-200",
-        titleClass: "text-amber-900",
-        accentColor: "#D97706",
-      } as const;
-    }
-
-    if (normalized.includes("meeting")) {
-      return {
-        backgroundClass: "bg-green-50",
-        borderClass: "border-green-200",
-        titleClass: "text-green-900",
-        accentColor: "#047857",
-      } as const;
-    }
-
-    if (normalized.includes("appointment")) {
-      return {
-        backgroundClass: "bg-rose-50",
-        borderClass: "border-rose-200",
-        titleClass: "text-rose-900",
-        accentColor: "#DB2777",
-      } as const;
-    }
-
-    if (normalized.includes("event")) {
-      return {
-        backgroundClass: "bg-sky-50",
-        borderClass: "border-sky-200",
-        titleClass: "text-sky-900",
-        accentColor: "#0EA5E9",
-      } as const;
-    }
-
-    return {
-      backgroundClass: "bg-gray-50",
-      borderClass: "border-gray-200",
-      titleClass: "text-gray-900",
-      accentColor: "#047857",
-    } as const;
-  };
-
-  const getActivityColor = (type: string) => {
-    switch (type) {
-      case "class":
-        return "bg-blue-100 text-blue-800 border-blue-200";
-      case "meeting":
-        return "bg-green-100 text-green-800 border-green-200";
-      case "appointment":
-        return "bg-purple-100 text-purple-800 border-purple-200";
-      case "event":
-        return "bg-amber-100 text-amber-800 border-amber-200";
-      default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
-    }
-  };
-
-  // Render the calendar based on view
-  const renderCalendar = () => {
-    if (profileLoading) {
-      return <div className="py-10 text-center text-gray-500">Loading teacher profile...</div>;
-    }
-
-    if (loading) {
-      return <div className="py-10 text-center text-gray-500">Loading activities...</div>;
-    }
-
-    if (error) {
-      return (
-        <div className="py-10 text-center text-red-600">
-          {error}
-        </div>
-      );
-    }
-
-    if (view === "list") {
-      return renderListView();
-    }
-
-    if (view === "week") {
-      return renderWeekView();
-    }
-
-    return renderMonthView();
-  };
-
   const renderMonthView = () => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const today = new Date();
+    const gradeLabel = normalizeGradeLabel(gradeFilter) ?? "Grade";
+    const calendarTitle = gradeLabel ? `${gradeLabel} Calendar` : "Calendar";
 
     const weeks = [];
     let day = 1;
@@ -655,20 +558,25 @@ export default function TeacherCalendar() {
       const days = [];
       for (let j = 0; j < 7; j++) {
         if ((i === 0 && j < firstDay) || day > daysInMonth) {
-          days.push(<div key={`empty-${i}-${j}`} className="h-20 p-1 border border-gray-100"></div>);
+          days.push(<div key={`empty-${i}-${j}`} className="h-20 p-1 border border-gray-100" />);
         } else {
           const currentDay = new Date(year, month, day);
           const dayActivities = activities.filter(
-            (a) => a.date.getDate() === day && a.date.getMonth() === month && a.date.getFullYear() === year
+            (a) => a.date.getDate() === day && a.date.getMonth() === month && a.date.getFullYear() === year,
           );
+          const isToday =
+            currentDay.getDate() === today.getDate() &&
+            currentDay.getMonth() === today.getMonth() &&
+            currentDay.getFullYear() === today.getFullYear();
+          const subjectColor = dayActivities.length ? getSubjectColor(dayActivities[0].subject) : "border-gray-100";
 
           days.push(
             <div
               key={`day-${day}`}
-              className="h-24 p-1 border overflow-hidden relative hover:bg-gray-50 transition-colors cursor-pointer border-gray-100"
+              className={`h-24 p-1 border overflow-hidden relative hover:bg-gray-50 transition-colors ${subjectColor}`}
             >
               <div className="text-right text-sm font-medium text-gray-800 mb-1">
-                {day === new Date().getDate() && month === new Date().getMonth() && year === new Date().getFullYear() ? (
+                {isToday ? (
                   <span className="inline-block w-6 h-6 bg-[#013300] text-white rounded-full text-center leading-6">
                     {day}
                   </span>
@@ -680,22 +588,25 @@ export default function TeacherCalendar() {
                 {dayActivities.slice(0, 2).map((activity) => {
                   const indicator = getSubjectIndicator(activity.subject);
                   return (
-                  <div
-                    key={activity.id}
-                    className={`text-xs p-1 rounded truncate cursor-pointer border ${getActivityColor(activity.type)}`}
-                  >
-                    <div className="flex justify-between items-center gap-2">
-                      <span className="truncate font-semibold text-[#013300] flex items-center gap-1">
+                    <div
+                      key={activity.id}
+                      className={`rounded-lg border px-2 py-1 text-[0.7rem] font-semibold shadow-sm ${getSubjectChipTone(
+                        activity.subject,
+                      )}`}
+                      title={activity.title}
+                    >
+                      <div className="flex items-start gap-2">
                         {indicator && (
-                          <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-[#013300]/10 text-[0.6rem] font-semibold text-[#013300]">
+                          <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/20 text-[0.6rem] font-semibold text-white">
                             {indicator}
                           </span>
                         )}
-                        <span className="truncate">{activity.title}</span>
-                      </span>
+                        <span className="min-w-0 flex-1 text-[0.7rem] font-semibold leading-snug text-white line-clamp-2">
+                          {activity.title}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                );
+                  );
                 })}
                 {dayActivities.length > 2 && (
                   <div className="text-xs text-gray-500 text-center bg-gray-100 rounded p-1">
@@ -717,10 +628,36 @@ export default function TeacherCalendar() {
 
     return (
       <div>
+        <div className="px-4 py-3 border-b border-gray-100 bg-white">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-base font-semibold text-gray-900">{calendarTitle}</h3>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-gray-600">
+              <span className="text-[0.7rem] font-semibold uppercase tracking-[0.2em] text-gray-500">Legend</span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-700">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                English
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-blue-700">
+                <span className="h-2 w-2 rounded-full bg-blue-500" />
+                Filipino
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-rose-700">
+                <span className="h-2 w-2 rounded-full bg-rose-500" />
+                Math
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-700">
+                <span className="h-2 w-2 rounded-full bg-amber-500" />
+                Assessment
+              </span>
+            </div>
+          </div>
+        </div>
         <div className="grid grid-cols-7 bg-gray-50 text-sm font-medium text-gray-700">
-          {["S", "M", "T", "W", "T", "F", "S"].map((day, index) => (
-            <div key={`${day}-${index}`} className="p-2 text-center">
-              {day}
+          {["S", "M", "T", "W", "T", "F", "S"].map((dayLabel, index) => (
+            <div key={`${dayLabel}-${index}`} className="p-2 text-center">
+              {dayLabel}
             </div>
           ))}
         </div>
@@ -729,12 +666,36 @@ export default function TeacherCalendar() {
     );
   };
 
+  // Group activities by week
   const renderWeekView = () => {
     const startDate = new Date(currentDate);
     startDate.setDate(startDate.getDate() - startDate.getDay());
 
     const days = [];
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const formatSubjectLabel = (subject: string | null) => {
+      if (!subject) return "Remedial";
+      const normalized = subject.toLowerCase();
+      if (normalized.includes("english")) return "English";
+      if (normalized.includes("filipino")) return "Filipino";
+      if (normalized.includes("math")) return "Math";
+      if (normalized.includes("assessment")) return "Assessment";
+      return subject
+        .split(" ")
+        .filter(Boolean)
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ");
+    };
+    const formatTimeRange = (start: Date, end: Date) => {
+      const startLabel = start.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+      const endLabel = end.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+      return `${startLabel} - ${endLabel}`.toLowerCase();
+    };
+    const formatStackedDate = (date: Date) => ({
+      weekday: date.toLocaleDateString("en-US", { weekday: "short" }),
+      day: date.toLocaleDateString("en-US", { day: "2-digit" }),
+      month: date.toLocaleDateString("en-US", { month: "short" }),
+    });
 
     for (let i = 0; i < 7; i++) {
       const dayDate = new Date(startDate);
@@ -770,46 +731,35 @@ export default function TeacherCalendar() {
           <div className="p-2 space-y-2">
             {dayActivities.length > 0 ? (
               dayActivities.map((activity) => {
-                const viewOnly = isViewOnlyStatus(activity.status);
-                const statusLabel = activity.status ?? null;
-                const tone = resolveActivityTone(activity.type);
-                const statusClass = statusLabel ? statusBadgeTone(viewOnly ? "Pending" : statusLabel) : null;
-                const indicator = getSubjectIndicator(activity.subject);
+                const subjectTone = activity.subject ? getSubjectColor(activity.subject) : "border-gray-100";
+                const subjectLabel = formatSubjectLabel(activity.subject ?? null);
+                const dateParts = formatStackedDate(activity.date);
+                const timeLabel =
+                  weeklySubjectSchedule?.startTime && weeklySubjectSchedule?.endTime
+                    ? `${formatTimeLabel(weeklySubjectSchedule.startTime)} - ${formatTimeLabel(
+                        weeklySubjectSchedule.endTime,
+                      )}`.toLowerCase()
+                    : formatTimeRange(activity.date, activity.end);
 
                 return (
                   <div
                     key={activity.id}
-                    className={`p-3 border border-l-4 rounded-lg shadow-sm transition-shadow ${tone.backgroundClass} ${tone.borderClass}`}
-                    style={{ borderLeftColor: tone.accentColor }}
+                    className={`rounded-2xl border border-transparent p-4 shadow-sm ring-1 ring-black/5 ${subjectTone}`}
                   >
-                    <div className="flex flex-col gap-1.5">
-                      <div className="flex flex-wrap items-center gap-2">
-                        {indicator && (
-                          <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-[#013300]/10 text-[0.6rem] font-semibold text-[#013300]">
-                            {indicator}
-                          </span>
-                        )}
-                        <span className={`font-semibold text-sm ${tone.titleClass}`}>{activity.title}</span>
-                        {statusLabel && statusClass && (
-                          <span
-                            className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[0.65rem] font-semibold ${statusClass}`}
-                          >
-                            {statusLabel}
-                          </span>
-                        )}
-                        {viewOnly && (
-                          <span className="text-[0.65rem] font-semibold uppercase tracking-wide text-gray-600">
-                            View Only
-                          </span>
-                        )}
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
+                      <div className="min-w-[72px] text-center">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          {dateParts.weekday}
+                        </div>
+                        <div className="text-3xl font-semibold text-gray-900 leading-none">{dateParts.day}</div>
+                        <div className="text-sm font-semibold text-gray-600">{dateParts.month}</div>
                       </div>
-                      <div className="text-xs text-gray-600">
-                        {activity.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        {" – "}
-                        {activity.end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {[activity.subject, activity.grade].filter(Boolean).join(" • ") || "Scheduled activity"}
+                      <div className="flex-1 space-y-1">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                          {subjectLabel}
+                        </div>
+                        <div className="text-base font-semibold text-gray-900">{activity.title}</div>
+                        <div className="text-sm text-gray-600">{timeLabel}</div>
                       </div>
                     </div>
                   </div>
@@ -825,6 +775,30 @@ export default function TeacherCalendar() {
 
     return <div className="divide-y">{days}</div>;
   };
+
+  function renderCalendar() {
+    if (profileLoading) {
+      return <div className="py-10 text-center text-gray-500">Loading teacher profile...</div>;
+    }
+
+    if (loading) {
+      return <div className="py-10 text-center text-gray-500">Loading activities...</div>;
+    }
+
+    if (error) {
+      return (
+        <div className="py-10 text-center text-red-600">
+          {error}
+        </div>
+      );
+    }
+
+    if (view === "week") {
+      return renderWeekView();
+    }
+
+    return renderMonthView();
+  }
 
   return (
     <div className="relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
@@ -861,9 +835,7 @@ export default function TeacherCalendar() {
                   <h2 className="text-lg font-semibold text-gray-800 sm:text-xl">
                     {view === "month"
                       ? currentDate.toLocaleDateString("en-US", { month: "long", year: "numeric" })
-                      : view === "week"
-                      ? `Week of ${currentDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
-                      : "Activities by Week"}
+                      : `Week of ${currentDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
                   </h2>
                   <button onClick={goToToday} className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-md text-gray-700">
                     Today
@@ -887,22 +859,7 @@ export default function TeacherCalendar() {
                     >
                       Week
                     </button>
-                    <button
-                      onClick={() => setView("list")}
-                      className={`px-3 py-1.5 text-xs rounded-md sm:text-sm ${
-                        view === "list" ? "bg-white text-gray-800 shadow-sm" : "text-gray-600 hover:text-gray-800"
-                      }`}
-                    >
-                      List
-                    </button>
                   </div>
-                  <button
-                    onClick={handleRefresh}
-                    className="px-3 py-1.5 text-xs sm:text-sm rounded-md border border-gray-200 text-gray-600 hover:text-gray-800 hover:border-gray-300"
-                    disabled={loading || profileLoading}
-                  >
-                    {loading ? "Loading..." : profileError ? "Retry" : "Refresh"}
-                  </button>
                 </div>
               </div>
 

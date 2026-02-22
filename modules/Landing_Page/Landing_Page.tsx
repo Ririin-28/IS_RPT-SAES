@@ -171,7 +171,9 @@ const normalizeLandingContent = (data: ApiLandingPayload | undefined | null): La
 export default function Home() {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [mounted, setMounted] = useState(false);
-  const [landingContent, setLandingContent] = useState<LandingContent | null>(null);
+  const [landingContent, setLandingContent] = useState<LandingContent>(
+    createFallbackLandingContent()
+  );
   const [visibleSections, setVisibleSections] = useState({
     hero: false,
     about: false,
@@ -188,6 +190,11 @@ export default function Home() {
   const mobileRef = useRef(null);
   const locationRef = useRef(null);
 
+  // Mark mounted immediately so LCP is not gated by API latency
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   // Fetch landing page content from your existing API
   useEffect(() => {
     const fetchLandingContent = async () => {
@@ -203,8 +210,6 @@ export default function Home() {
       } catch (error) {
         console.error('Failed to fetch landing content:', error);
         setLandingContent(createFallbackLandingContent());
-      } finally {
-        setMounted(true);
       }
     };
 
@@ -217,6 +222,7 @@ export default function Home() {
     .map((img) => img.dataUrl as string) || DEFAULT_HERO_IMAGES;
   
   const slideCount = HERO_IMAGES.length;
+  const activeSlide = HERO_IMAGES[currentSlide % slideCount] ?? HERO_IMAGES[0];
 
   useEffect(() => {
     if (!mounted) return;
@@ -393,23 +399,16 @@ export default function Home() {
             <div className="relative isolate">
               <div className="relative overflow-hidden rounded-3xl border border-gray-200/80 bg-white/85 shadow-[0_16px_36px_rgba(15,23,42,0.10)]">
                 <div className="relative h-100 md:h-120 lg:h-125">
-                  {HERO_IMAGES.map((src, index) => (
-                    <div
-                      key={src}
-                      className={`absolute inset-0 transition-all duration-700 ease-out ${
-                        index === currentSlide ? "opacity-100 scale-100" : "opacity-0 scale-105 pointer-events-none"
-                      }`}
-                    >
-                      <Image
-                        src={src}
-                        alt={`San Agustin Elementary School campus view ${index + 1}`}
-                        fill
-                        priority={index === 0}
-                        className="object-cover transition-transform duration-700 ease-out hover:scale-[1.02]"
-                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 90vw, 1600px"
-                      />
-                    </div>
-                  ))}
+                  <div className="absolute inset-0 transition-all duration-700 ease-out opacity-100 scale-100">
+                    <Image
+                      src={activeSlide}
+                      alt={`San Agustin Elementary School campus view ${currentSlide + 1}`}
+                      fill
+                      priority
+                      className="object-cover transition-transform duration-700 ease-out hover:scale-[1.02]"
+                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 90vw, 1600px"
+                    />
+                  </div>
                 </div>
 
                 <div className="absolute inset-y-0 left-0 right-0 flex items-center justify-between px-4">

@@ -109,7 +109,7 @@ export default function TeacherSidebar() {
         ],
       },
       {
-        label: "Assessment",
+        label: "Assessments",
         icon: <AssessmentIcon />,
         children: [
           { label: "English", path: "/Teacher/assessment/english" },
