@@ -3,6 +3,7 @@ import Sidebar from "@/components/MasterTeacher/RemedialTeacher/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 import { useCallback, useEffect, useState } from "react";
+import ActivityDetailModal from "./Modals/ActivityDetailModal";
 
 
 interface Activity {
@@ -81,6 +82,7 @@ export default function MasterTeacherCalendar() {
   // Activities data in state - Start with empty array
   const [activities, setActivities] = useState<Activity[]>([]);
   const [weeklySubjectSchedule, setWeeklySubjectSchedule] = useState<WeeklySubjectSchedule | null>(null);
+  const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
 
   const loadApprovedActivities = useCallback(async () => {
     try {
@@ -340,6 +342,7 @@ export default function MasterTeacherCalendar() {
                       key={activity.id}
                       className={`group rounded-lg border px-2 py-1 text-[0.7rem] font-semibold shadow-sm ${getSubjectChipTone(activity.subject)}`}
                       title={activity.title}
+                      onClick={() => setSelectedActivity(activity)}
                     >
                       <div className="flex items-start gap-2">
                         {indicator && (
@@ -488,6 +491,7 @@ export default function MasterTeacherCalendar() {
                   <div
                     key={activity.id}
                     className={`rounded-2xl border border-transparent p-4 shadow-sm ring-1 ring-black/5 ${subjectTone}`}
+                    onClick={() => setSelectedActivity(activity)}
                   >
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
                       <div className="min-w-[72px] text-center">
@@ -583,6 +587,15 @@ export default function MasterTeacherCalendar() {
               <div className="border rounded-lg overflow-hidden bg-white">
                 {renderCalendar()}
               </div>
+              <ActivityDetailModal
+                activity={selectedActivity}
+                onClose={() => setSelectedActivity(null)}
+                remedialTime={
+                  weeklySubjectSchedule?.startTime && weeklySubjectSchedule?.endTime
+                    ? `${formatTimeLabel(weeklySubjectSchedule.startTime)} - ${formatTimeLabel(weeklySubjectSchedule.endTime)}`
+                    : null
+                }
+              />
             </div>
           </div>
         </main>

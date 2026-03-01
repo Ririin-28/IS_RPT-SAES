@@ -6,7 +6,6 @@ import type { ChangeEvent } from "react";
 import { useForm } from "react-hook-form";
 // Button Components
 import KebabMenu from "@/components/Common/Menus/KebabMenu";
-import Toast from "@/components/Toast";
 import ToastActivity from "@/components/ToastActivity";
 // Modal Components
 import AddScheduleModal from "./Modals/AddScheduleModal";
@@ -117,6 +116,17 @@ const isActivityLocked = (activity: Activity | null | undefined): boolean => {
     return normalized === "Approved";
   }
   return String(activity.status).toLowerCase().includes("approve");
+};
+
+const isActivitySendable = (activity: Activity | null | undefined): boolean => {
+  if (!activity) {
+    return false;
+  }
+  const normalized = normalizeStatusLabel(activity.status);
+  if (normalized === "Approved" || normalized === "Pending") {
+    return false;
+  }
+  return true;
 };
 
 const STATUS_TONE_OVERRIDES: Record<string, ActivityTone> = {
@@ -562,6 +572,7 @@ export default function MasterTeacherCalendar() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [activityToDelete, setActivityToDelete] = useState<Activity | null>(null);
   const [weeklySchedule, setWeeklySchedule] = useState<WeeklyScheduleFormData | null>(null);
+  const [scheduleOverviewCollapsed, setScheduleOverviewCollapsed] = useState(false);
 
   // React Hook Form setup
   const formMethods = useForm<CalendarFormValues>({
@@ -683,7 +694,7 @@ export default function MasterTeacherCalendar() {
     setPendingImportIds([]);
     setImportActionToast(null);
     setActivityToast({ message: "Imported activities were removed.", tone: "info" });
-  }, [pendingImportIds, showToast]);
+  }, [pendingImportIds]);
 
   const scheduleWindowLabel = useMemo(() => {
     if (!scheduleRange) {
@@ -1228,6 +1239,13 @@ export default function MasterTeacherCalendar() {
               droppedGrade,
               droppedSubject,
             });
+
+            if (approvedCount > 0) {
+              showToast(
+                `${approvedCount} activit${approvedCount === 1 ? "y is" : "ies are"} already approved by the principal.`,
+                "info",
+              );
+            }
           }
 
           setActivities(parsedActivities);
@@ -1535,7 +1553,9 @@ export default function MasterTeacherCalendar() {
             gradeLabel: gradeLabel ?? null,
             activities: items.map((activity) => ({
               title: activity.title,
-              date: activity.date.toISOString(),
+              date: formatDateOnly(activity.date),
+              day: activity.day,
+              subject: activity.subject ?? null,
             })),
           }),
         });
@@ -1852,7 +1872,7 @@ export default function MasterTeacherCalendar() {
 
     try {
       if (!sendableActivities.length) {
-        showToast("All scheduled activities have already been approved.", "info");
+        showToast("All scheduled activities have already been submitted or approved.", "info");
         setShowSendModal(false);
         return;
       }
@@ -1871,7 +1891,7 @@ export default function MasterTeacherCalendar() {
           title: activity.title,
           subject: activity.subject ?? fallbackSubject,
           gradeLevel: activity.gradeLevel ?? gradeLabel,
-          date: activity.date.toISOString(),
+          date: formatDateOnly(activity.date),
           end: activity.end.toISOString(),
           day: activity.date.toLocaleDateString("en-US", { weekday: "long" }),
           weekRef: activity.weekRef ?? null,
@@ -1893,10 +1913,26 @@ export default function MasterTeacherCalendar() {
       }
 
       const inserted = typeof result.inserted === "number" && result.inserted >= 0 ? result.inserted : activities.length;
-      const skippedCount = Array.isArray(result.skipped) ? result.skipped.length : 0;
+      const skippedEntries = Array.isArray(result.skipped)
+        ? (result.skipped as Array<{ title?: string | null; reason?: string | null }>)
+        : [];
+      const skippedCount = skippedEntries.length;
       const feedbackParts = [`Sent ${inserted} activit${inserted === 1 ? "y" : "ies"} to the principal for approval.`];
       if (skippedCount > 0) {
         feedbackParts.push(`${skippedCount} entr${skippedCount === 1 ? "y" : "ies"} were skipped.`);
+        const reasonCounts = new Map<string, number>();
+        for (const entry of skippedEntries) {
+          const reason = entry?.reason?.trim();
+          if (!reason) continue;
+          reasonCounts.set(reason, (reasonCounts.get(reason) ?? 0) + 1);
+        }
+        if (reasonCounts.size > 0) {
+          const topReasons = Array.from(reasonCounts.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 2)
+            .map(([reason, count]) => `${count} ${count === 1 ? "entry" : "entries"}: ${reason}`);
+          feedbackParts.push(topReasons.join(" | "));
+        }
       }
       showToast(feedbackParts.join(" "), skippedCount > 0 ? "info" : "success");
       setShowSendModal(false);
@@ -2203,7 +2239,19 @@ export default function MasterTeacherCalendar() {
                             className="text-xs text-white/80 hover:text-white"
                             aria-label="Delete activity"
                           >
-                            ??
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              className="h-4 w-4"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M3 6h18" />
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M8 6V4h8v2" />
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M10 11v6M14 11v6" />
+                            </svg>
                           </button>
                         )}
                       </div>
@@ -2414,7 +2462,7 @@ export default function MasterTeacherCalendar() {
     !weeklySubjectScheduleLoading && !weeklySubjectScheduleError && !subjectScheduleConfigured;
 
   const sendableActivities = useMemo(
-    () => activities.filter((activity) => !isActivityLocked(activity)),
+    () => activities.filter((activity) => isActivitySendable(activity)),
     [activities],
   );
 
@@ -2580,65 +2628,93 @@ export default function MasterTeacherCalendar() {
                         <span className="text-xs text-gray-400">Loading...</span>
                       )}
                     </div>
-                    <div />
-                  </div>
-
-                  <div className="mt-1 grid gap-3 text-xs font-semibold text-emerald-900 lg:grid-cols-3">
-                    <div className="text-center">Remedial Time</div>
-                    <div className="text-center">Remedial Subjects</div>
-                    <div className="text-center">Remedial Period</div>
-                  </div>
-
-                  <div className="mt-1 flex flex-col gap-3 rounded-lg bg-white px-1 py-1 text-sm text-gray-700 lg:flex-row lg:items-center">
-                    <div className="flex flex-1 justify-center">
-                      <div className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600">
-                        <span className="inline-flex items-center justify-center rounded-full text-gray-600">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <circle cx="12" cy="12" r="9" />
-                            <path d="M12 7v6l4 2" />
-                          </svg>
-                        </span>
-                        <span className="font-base">{subjectScheduleTimeLabel}</span>
-                      </div>
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => setScheduleOverviewCollapsed((v) => !v)}
+                        className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                        aria-expanded={!scheduleOverviewCollapsed}
+                        aria-controls="coordinator-schedule-overview"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="20"
+                          height="20"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className={scheduleOverviewCollapsed ? "" : "rotate-180 transition"}
+                          aria-hidden="true"
+                        >
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      </button>
                     </div>
+                  </div>
 
-                    <span className="hidden h-6 w-px bg-gray-300 lg:block" />
+                  {!scheduleOverviewCollapsed && (
+                    <div id="coordinator-schedule-overview">
+                      <div className="mt-1 grid gap-3 text-xs font-semibold text-emerald-900 lg:grid-cols-3">
+                        <div className="text-center">Remedial Time</div>
+                        <div className="text-center">Remedial Subjects</div>
+                        <div className="text-center">Remedial Period</div>
+                      </div>
 
-                    <div className="flex flex-1 justify-center">
-                      <div className="flex items-center gap-2 overflow-x-auto text-center scrollbar-hide">
-                        {WEEKDAY_ORDER.map((day) => (
-                          <div key={day} className="flex shrink-0 items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-1 text-sm text-gray-600">
-                            <span className="font-semibold text-[#013300]">{SUBJECT_DAY_LABELS[day]}</span>
-                            <span className="text-gray-500">|</span>
-                            <span className="text-gray-600">{weeklySubjectSchedule?.[day] || "--"}</span>
+                      <div className="mt-1 flex flex-col gap-3 rounded-lg bg-white px-1 py-1 text-sm text-gray-700 lg:flex-row lg:items-center">
+                        <div className="flex flex-1 justify-center">
+                          <div className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600">
+                            <span className="inline-flex items-center justify-center rounded-full text-gray-600">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <circle cx="12" cy="12" r="9" />
+                                <path d="M12 7v6l4 2" />
+                              </svg>
+                            </span>
+                            <span className="font-base">{subjectScheduleTimeLabel}</span>
                           </div>
-                        ))}
+                        </div>
+
+                        <span className="hidden h-6 w-px bg-gray-300 lg:block" />
+
+                        <div className="flex flex-1 justify-center">
+                          <div className="flex items-center gap-2 overflow-x-auto text-center scrollbar-hide">
+                            {WEEKDAY_ORDER.map((day) => (
+                              <div key={day} className="flex shrink-0 items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-1 text-sm text-gray-600">
+                                <span className="font-semibold text-[#013300]">{SUBJECT_DAY_LABELS[day]}</span>
+                                <span className="text-gray-500">|</span>
+                                <span className="text-gray-600">{weeklySubjectSchedule?.[day] || "--"}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <span className="hidden h-6 w-px bg-gray-300 lg:block" />
+
+                        <div className="flex flex-1 justify-center">
+                          <div className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600">
+                            <span className="inline-flex items-center justify-center rounded-full text-gray-600">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <rect x="3" y="4" width="18" height="18" rx="2" />
+                                <path d="M16 2v4M8 2v4M3 10h18" />
+                              </svg>
+                            </span>
+                            <span className="text-gray-600">{activeRemedialQuarterLabel}</span>
+                          </div>
+                        </div>
                       </div>
+
+                      {weeklySubjectScheduleError && (
+                        <p className="mt-2 text-xs text-amber-600">{weeklySubjectScheduleError}</p>
+                      )}
+                      {remedialWindowError && (
+                        <p className="mt-1 text-xs text-amber-600">{remedialWindowError}</p>
+                      )}
+                      {subjectScheduleEmpty && (
+                        <p className="mt-2 text-xs text-gray-500">Weekly schedule is not set yet.</p>
+                      )}
                     </div>
-
-                    <span className="hidden h-6 w-px bg-gray-300 lg:block" />
-
-                    <div className="flex flex-1 justify-center">
-                      <div className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600">
-                        <span className="inline-flex items-center justify-center rounded-full text-gray-600">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <rect x="3" y="4" width="18" height="18" rx="2" />
-                            <path d="M16 2v4M8 2v4M3 10h18" />
-                          </svg>
-                        </span>
-                        <span className="text-gray-600">{activeRemedialQuarterLabel}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {weeklySubjectScheduleError && (
-                    <p className="mt-2 text-xs text-amber-600">{weeklySubjectScheduleError}</p>
-                  )}
-                  {remedialWindowError && (
-                    <p className="mt-1 text-xs text-amber-600">{remedialWindowError}</p>
-                  )}
-                  {subjectScheduleEmpty && (
-                    <p className="mt-2 text-xs text-gray-500">Weekly schedule is not set yet.</p>
                   )}
                 </div>
               </div>
@@ -2689,6 +2765,7 @@ export default function MasterTeacherCalendar() {
               <ActivityDetailModal 
                 activity={selectedActivity} 
                 onClose={() => setSelectedActivity(null)} 
+                remedialTime={subjectScheduleConfigured ? subjectScheduleTimeLabel : null}
                 onDelete={(id) => {
                   const activity = activities.find(a => a.id === id);
                   if (activity) handleDeleteClick(activity);
@@ -2730,9 +2807,12 @@ export default function MasterTeacherCalendar() {
         />
       </div>
       {toast && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pointer-events-none">
-          <Toast message={toast.message} tone={toast.tone} className="mt-24" />
-        </div>
+        <ToastActivity
+          title={toast.tone === "success" ? "Activities" : toast.tone === "error" ? "Action needed" : "Status update"}
+          message={toast.message}
+          tone={toast.tone}
+          className="max-w-md"
+        />
       )}
       {activityToast && (
         <ToastActivity message={activityToast.message} tone={activityToast.tone} />

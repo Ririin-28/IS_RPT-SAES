@@ -289,7 +289,7 @@ export default function PrincipalRequests() {
           throw new Error(message);
         }
 
-        const resolvedStatus = normalizeStatusLabel(payload.status ?? action === "approve" ? "Approved" : "Declined");
+        const resolvedStatus = normalizeStatusLabel(payload.status ?? (action === "approve" ? "Approved" : "Declined"));
 
         setRequests((prev) =>
           prev.map((item) =>

@@ -2,13 +2,13 @@ import BaseModal, { ModalInfoItem, ModalSection } from "@/components/Common/Moda
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 
 interface Activity {
-  id: number;
+  id: string;
   title: string;
-  day?: string | null;
+  day: string | null;
   date: Date;
   end: Date;
-  subject?: string | null;
-  grade?: string | null;
+  subject: string | null;
+  grade: string | null;
 }
 
 interface ActivityDetailModalProps {

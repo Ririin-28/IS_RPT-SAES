@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import Sidebar from "@/components/Principal/Sidebar";
 import Header from "@/components/Principal/Header";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -6,7 +6,7 @@ import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
-import BaseModal, { ModalInfoItem } from "@/components/Common/Modals/BaseModal";
+import BaseModal, { ModalInfoItem, ModalSection } from "@/components/Common/Modals/BaseModal";
 import {
   QUARTER_OPTIONS,
   type QuarterOption,
@@ -24,6 +24,9 @@ interface Activity {
   date: Date;
   end: Date;
   type: string;
+  subject?: string | null;
+  gradeLevel?: string | null;
+  day?: string | null;
 }
 
 interface RemedialPeriod {
@@ -255,6 +258,7 @@ export default function PrincipalCalendar() {
   const [view, setView] = useState<"month" | "week">("month");
   const [activities, setActivities] = useState<Activity[]>([]);
   const [selectedGrade, setSelectedGrade] = useState<(typeof GRADE_OPTIONS)[number]>(1);
+  const [scheduleOverviewCollapsed, setScheduleOverviewCollapsed] = useState(false);
   const [remedialPeriod, setRemedialPeriod] = useState<RemedialPeriod | null>(null);
   const [selectedSchoolYear, setSelectedSchoolYear] = useState<string>(resolveDefaultSchoolYear());
   const [showCancelModal, setShowCancelModal] = useState(false);
@@ -400,6 +404,9 @@ export default function PrincipalCalendar() {
           id: string;
           title: string | null;
           submittedBy?: string | null;
+          subject?: string | null;
+          gradeLevel?: string | null;
+          day?: string | null;
           date: string | null;
           end?: string | null;
           type?: string | null;
@@ -424,6 +431,9 @@ export default function PrincipalCalendar() {
             date,
             end,
             type: item.type ?? "remedial",
+            subject: item.subject ?? null,
+            gradeLevel: item.gradeLevel ?? null,
+            day: item.day ?? null,
           };
           return activity;
         })
@@ -1245,65 +1255,93 @@ export default function PrincipalCalendar() {
                       <span className="text-xs text-gray-400">Loading...</span>
                     )}
                   </div>
-                  <div />
-                </div>
-
-                <div className="mt-1 grid gap-3 text-xs font-semibold text-emerald-900 lg:grid-cols-3">
-                  <div className="text-center">Remedial Time</div>
-                  <div className="text-center">Remedial Subjects</div>
-                  <div className="text-center">Remedial Period</div>
-                </div>
-
-                <div className="mt-1 flex flex-col gap-3 rounded-lg bg-white px-1 py-1 text-sm text-gray-700 lg:flex-row lg:items-center">
-                  <div className="flex flex-1 justify-center">
-                    <div className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600">
-                      <span className="inline-flex items-center justify-center rounded-full text-gray-600">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <circle cx="12" cy="12" r="9" />
-                          <path d="M12 7v6l4 2" />
-                        </svg>
-                      </span>
-                      <span className="font-base">{weeklyTimeLabel}</span>
-                    </div>
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setScheduleOverviewCollapsed((v) => !v)}
+                      className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                      aria-expanded={!scheduleOverviewCollapsed}
+                      aria-controls="principal-schedule-overview"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className={scheduleOverviewCollapsed ? "" : "rotate-180 transition"}
+                        aria-hidden="true"
+                      >
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </button>
                   </div>
+                </div>
 
-                  <span className="hidden h-6 w-px bg-gray-300 lg:block" />
+                {!scheduleOverviewCollapsed && (
+                  <div id="principal-schedule-overview">
+                    <div className="mt-1 grid gap-3 text-xs font-semibold text-emerald-900 lg:grid-cols-3">
+                      <div className="text-center">Remedial Time</div>
+                      <div className="text-center">Remedial Subjects</div>
+                      <div className="text-center">Remedial Period</div>
+                    </div>
 
-                  <div className="flex flex-1 justify-center">
-                    <div className="flex items-center gap-2 overflow-x-auto text-center scrollbar-hide">
-                      {SUBJECT_WEEKDAYS.map((day) => (
-                        <div key={day} className="flex shrink-0 items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-1 text-sm text-gray-600">
-                          <span className="font-semibold text-[#013300]">{SUBJECT_DAY_LABELS[day]}</span>
-                          <span className="text-gray-500">|</span>
-                          <span className="text-gray-600">{subjectSchedule[day] || "--"}</span>
+                    <div className="mt-1 flex flex-col gap-3 rounded-lg bg-white px-1 py-1 text-sm text-gray-700 lg:flex-row lg:items-center">
+                      <div className="flex flex-1 justify-center">
+                        <div className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600">
+                          <span className="inline-flex items-center justify-center rounded-full text-gray-600">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <circle cx="12" cy="12" r="9" />
+                              <path d="M12 7v6l4 2" />
+                            </svg>
+                          </span>
+                          <span className="font-base">{weeklyTimeLabel}</span>
                         </div>
-                      ))}
+                      </div>
+
+                      <span className="hidden h-6 w-px bg-gray-300 lg:block" />
+
+                      <div className="flex flex-1 justify-center">
+                        <div className="flex items-center gap-2 overflow-x-auto text-center scrollbar-hide">
+                          {SUBJECT_WEEKDAYS.map((day) => (
+                            <div key={day} className="flex shrink-0 items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-1 text-sm text-gray-600">
+                              <span className="font-semibold text-[#013300]">{SUBJECT_DAY_LABELS[day]}</span>
+                              <span className="text-gray-500">|</span>
+                              <span className="text-gray-600">{subjectSchedule[day] || "--"}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <span className="hidden h-6 w-px bg-gray-300 lg:block" />
+
+                      <div className="flex flex-1 justify-center">
+                        <div className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600">
+                          <span className="inline-flex items-center justify-center rounded-full text-gray-600">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <rect x="3" y="4" width="18" height="18" rx="2" />
+                              <path d="M16 2v4M8 2v4M3 10h18" />
+                            </svg>
+                          </span>
+                          <span className="text-gray-600">{activeRemedialQuarterLabel}</span>
+                        </div>
+                      </div>
                     </div>
+
+                    {subjectScheduleError && (
+                      <p className="mt-2 text-xs text-amber-600">{subjectScheduleError}</p>
+                    )}
+                    {scheduleError && (
+                      <p className="mt-1 text-xs text-amber-600">{scheduleError}</p>
+                    )}
+                    {subjectScheduleEmpty && !subjectScheduleLoading && !subjectScheduleError && (
+                      <p className="mt-2 text-xs text-gray-500">Weekly schedule is not set yet.</p>
+                    )}
                   </div>
-
-                  <span className="hidden h-6 w-px bg-gray-300 lg:block" />
-
-                  <div className="flex flex-1 justify-center">
-                    <div className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600">
-                      <span className="inline-flex items-center justify-center rounded-full text-gray-600">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <rect x="3" y="4" width="18" height="18" rx="2" />
-                          <path d="M16 2v4M8 2v4M3 10h18" />
-                        </svg>
-                      </span>
-                      <span className="text-gray-600">{activeRemedialQuarterLabel}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {subjectScheduleError && (
-                  <p className="mt-2 text-xs text-amber-600">{subjectScheduleError}</p>
-                )}
-                {scheduleError && (
-                  <p className="mt-1 text-xs text-amber-600">{scheduleError}</p>
-                )}
-                {subjectScheduleEmpty && !subjectScheduleLoading && !subjectScheduleError && (
-                  <p className="mt-2 text-xs text-gray-500">Weekly schedule is not set yet.</p>
                 )}
               </div>
 
@@ -1621,7 +1659,7 @@ export default function PrincipalCalendar() {
         show={showActivityModal}
         onClose={handleCloseActivityModal}
         title="Activity Details"
-        maxWidth="md"
+        maxWidth="lg"
         footer={(
           <>
             <SecondaryButton type="button" onClick={handleCloseActivityModal} disabled={activityRemoving}>
@@ -1638,19 +1676,43 @@ export default function PrincipalCalendar() {
             {activityRemoveError}
           </div>
         )}
-        <div className="space-y-4">
-          <ModalInfoItem label="Title" value={selectedActivity?.title ?? "-"} />
-          <ModalInfoItem
-            label="Date"
-            value={selectedActivity ? selectedActivity.date.toLocaleDateString("en-US", {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-              year: "numeric",
-            }) : "-"}
-          />
-          <ModalInfoItem label="Submitted by" value={selectedActivity?.submittedBy ?? "-"} />
-        </div>
+        <ModalSection title="Grade and Subject">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <ModalInfoItem label="Subject" value={selectedActivity?.subject ?? selectedActivity?.title ?? "-"} />
+            <ModalInfoItem label="Grade Level" value={selectedActivity?.gradeLevel ?? `Grade ${selectedGrade}`} />
+          </div>
+        </ModalSection>
+
+        <ModalSection title="Date and Time">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <ModalInfoItem
+              label="Date"
+              value={
+                selectedActivity
+                  ? selectedActivity.date.toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })
+                  : "-"
+              }
+            />
+            <ModalInfoItem
+              label="Day"
+              value={selectedActivity?.day ?? selectedActivity?.date.toLocaleDateString("en-US", { weekday: "long" }) ?? "-"}
+            />
+            <ModalInfoItem
+              label="Time"
+              value={
+                selectedActivity
+                  ? subjectScheduleConfigured
+                    ? weeklyTimeLabel
+                    : `${selectedActivity.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} - ${selectedActivity.end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                  : "-"
+              }
+            />
+          </div>
+        </ModalSection>
       </BaseModal>
     </div>
   );
