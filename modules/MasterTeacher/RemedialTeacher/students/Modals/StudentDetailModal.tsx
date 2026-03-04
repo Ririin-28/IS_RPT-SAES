@@ -4,8 +4,8 @@ interface StudentDetailModalProps {
   show: boolean;
   onClose: () => void;
   student: any;
-  onPromote?: () => void;
-  promoteDisabled?: boolean;
+  onPromote?: (subject: "English" | "Filipino" | "Math") => void;
+  promoteLoading?: boolean;
 }
 
 export default function StudentDetailModal({
@@ -13,25 +13,12 @@ export default function StudentDetailModal({
   onClose,
   student,
   onPromote,
-  promoteDisabled = false,
+  promoteLoading = false,
 }: StudentDetailModalProps) {
   if (!show || !student) return null;
 
   const footer = (
     <div className="flex flex-wrap gap-3 justify-end">
-      {onPromote && (
-        <button
-          onClick={onPromote}
-          disabled={promoteDisabled}
-          className={`px-6 py-2 rounded-lg font-medium transition-colors ${
-            promoteDisabled
-              ? "bg-gray-300 text-gray-600 cursor-not-allowed"
-              : "bg-emerald-600 text-white hover:bg-emerald-700"
-          }`}
-        >
-          Promote
-        </button>
-      )}
       <button
         onClick={onClose}
         className="bg-[#013300] text-white px-6 py-2 rounded-lg hover:bg-[#013300]/90 transition-colors font-medium"
@@ -127,6 +114,45 @@ export default function StudentDetailModal({
           <ModalInfoItem label="Math Proficiency" value={student.mathProficiency} />
         </div>
       </ModalSection>
+
+      {onPromote && (
+        <ModalSection title="Promote Level">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            {[
+              { subject: "English", level: student.englishPhonemic ?? student.english ?? "" },
+              { subject: "Filipino", level: student.filipinoPhonemic ?? student.filipino ?? "" },
+              { subject: "Math", level: student.mathProficiency ?? student.math ?? "" },
+            ].map((item) => {
+              const levelLabel = String(item.level ?? "").trim();
+              const isAvailable = levelLabel.length > 0 && levelLabel.toLowerCase() !== "n/a";
+              const isDisabled = promoteLoading || !isAvailable;
+              return (
+                <button
+                  key={item.subject}
+                  type="button"
+                  onClick={() => onPromote(item.subject as "English" | "Filipino" | "Math")}
+                  disabled={isDisabled}
+                  className={`flex items-center justify-between rounded-xl border px-4 py-3 text-left transition ${
+                    isDisabled
+                      ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed"
+                      : "border-emerald-200 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
+                  }`}
+                >
+                  <div className="flex flex-col">
+                    <span className="text-sm font-semibold">{item.subject}</span>
+                    <span className="text-xs text-gray-500">
+                      {isAvailable ? `Current: ${levelLabel}` : "No level available"}
+                    </span>
+                  </div>
+                  <span className="text-xs font-semibold">
+                    {promoteLoading ? "Promoting..." : "Promote"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </ModalSection>
+      )}
     </BaseModal>
   );
 }

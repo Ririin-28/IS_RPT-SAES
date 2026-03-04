@@ -540,7 +540,7 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
     void run();
   };
 
-  const handlePromoteFromModal = () => {
+  const handlePromoteFromModal = (subject: "English" | "Filipino" | "Math") => {
     const run = async () => {
       const studentId = selectedStudent?.studentId ?? selectedStudent?.id ?? "";
       if (!studentId) {
@@ -555,7 +555,7 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             studentId: String(studentId),
-            subject: "English",
+            subject,
             requestedBy: userId,
           }),
         });
@@ -573,10 +573,24 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
               if (String(entryId) !== String(studentId)) {
                 return entry;
               }
+              if (subject === "English") {
+                return {
+                  ...entry,
+                  englishPhonemic: nextLevel,
+                  english: nextLevel,
+                };
+              }
+              if (subject === "Filipino") {
+                return {
+                  ...entry,
+                  filipinoPhonemic: nextLevel,
+                  filipino: nextLevel,
+                };
+              }
               return {
                 ...entry,
-                englishPhonemic: nextLevel,
-                english: nextLevel,
+                mathProficiency: nextLevel,
+                math: nextLevel,
               };
             })
           );
@@ -633,7 +647,7 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
         }}
         student={selectedStudent}
         onPromote={handlePromoteFromModal}
-        promoteDisabled={
+        promoteLoading={
           !selectedStudent ||
           promoteLoadingId === String(selectedStudent?.studentId ?? selectedStudent?.id ?? "")
         }

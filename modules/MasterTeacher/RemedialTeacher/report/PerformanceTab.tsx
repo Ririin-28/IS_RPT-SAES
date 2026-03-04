@@ -224,8 +224,15 @@ export default function PerformanceTab({ student, sessions, subjectLabel, backHr
                                     </table>
                                   </div>
                                   <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Remarks</p>
-                                  <div className="mt-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-[#013300]">
-                                    {session.ai_remarks?.trim() || "No AI remarks available."}
+                                  <div className="mt-2 space-y-2">
+                                    <div className="rounded-lg bg-green-50 px-3 py-2 text-sm text-[#013300]">
+                                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">AI Remarks</p>
+                                      <p className="mt-1">{session.ai_remarks?.trim() || "No AI remarks available."}</p>
+                                    </div>
+                                    <div className="rounded-lg bg-green-50 px-3 py-2 text-sm text-[#013300]">
+                                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Teacher Remarks</p>
+                                      <p className="mt-1">{session.teacher_notes?.trim() || "No teacher remarks available."}</p>
+                                    </div>
                                   </div>
                                 </div>
                               )}

@@ -157,6 +157,7 @@ export type RemedialSessionTimelineItem = {
   material_id?: number | null;
   overall_average?: number | null;
   ai_remarks?: string | null;
+  teacher_notes?: string | null;
   completed_at?: string | Date | null;
   created_at?: string | Date | null;
   schedule_title?: string | null;
@@ -230,29 +231,62 @@ export async function getRemedialSessionTimeline(
   const subjectName = options?.subjectName?.trim() ?? "";
   const subjectId = subjectName ? await resolveSubjectIdByName(subjectName) : null;
 
+  let canLoadTeacherNotes = false;
+  try {
+    const performanceColumns = await getTableColumns("performance_records");
+    const remarksColumns = await getTableColumns("remarks");
+    canLoadTeacherNotes =
+      performanceColumns.has("record_id") &&
+      performanceColumns.has("student_id") &&
+      performanceColumns.has("metadata") &&
+      remarksColumns.has("performance_record_id") &&
+      remarksColumns.has("teacher_notes");
+  } catch {
+    canLoadTeacherNotes = false;
+  }
+
+  const teacherNotesSelect = canLoadTeacherNotes
+    ? `(
+      SELECT r.teacher_notes
+      FROM performance_records pr
+      INNER JOIN remarks r ON r.performance_record_id = pr.record_id
+      WHERE pr.student_id = s.student_id
+        AND (
+          JSON_UNQUOTE(JSON_EXTRACT(pr.metadata, '$.sessionId')) = CAST(s.session_id AS CHAR)
+          OR (
+            JSON_EXTRACT(pr.metadata, '$.sessionId') IS NULL
+            AND JSON_UNQUOTE(JSON_EXTRACT(pr.metadata, '$.approvedScheduleId')) = CAST(s.approved_schedule_id AS CHAR)
+          )
+        )
+      ORDER BY pr.record_id DESC, r.remark_id DESC
+      LIMIT 1
+    )`
+    : "NULL";
+
   let sessionSql = `
     SELECT
-      session_id,
-      student_id,
-      approved_schedule_id,
-      subject_id,
-      grade_id,
-      phonemic_id,
-      material_id,
-      overall_average,
-      ai_remarks,
-      completed_at,
-      created_at
-    FROM student_remedial_session
-    WHERE student_id = ?
+      s.session_id,
+      s.student_id,
+      s.approved_schedule_id,
+      s.subject_id,
+      s.grade_id,
+      s.phonemic_id,
+      s.material_id,
+      s.overall_average,
+      s.ai_remarks,
+      ${teacherNotesSelect} AS teacher_notes,
+      s.completed_at,
+      s.created_at
+    FROM student_remedial_session s
+    WHERE s.student_id = ?
   `;
 
   const params: Array<string | number | null> = [studentId];
   if (subjectId) {
-    sessionSql += ` AND subject_id = ?`;
+    sessionSql += ` AND s.subject_id = ?`;
     params.push(subjectId);
   }
-  sessionSql += ` ORDER BY COALESCE(completed_at, created_at) DESC`;
+  sessionSql += ` ORDER BY COALESCE(s.completed_at, s.created_at) DESC`;
 
   const [sessionRows] = await query<RowDataPacket[]>(sessionSql, params);
   const sessions = (sessionRows ?? []).map((row): RemedialSessionTimelineItem => ({
@@ -265,6 +299,7 @@ export async function getRemedialSessionTimeline(
     material_id: row.material_id ?? null,
     overall_average: toNumberValue(row.overall_average),
     ai_remarks: row.ai_remarks ?? null,
+    teacher_notes: row.teacher_notes ?? null,
     completed_at: row.completed_at ?? null,
     created_at: row.created_at ?? null,
     schedule_title: null,
