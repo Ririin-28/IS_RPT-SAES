@@ -89,6 +89,33 @@ function resolveName(row: Record<string, any>): {
   return { firstName: null, middleName: null, lastName: null, fullName: null };
 }
 
+function getMiddleInitial(value: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return `${trimmed.charAt(0).toUpperCase()}.`;
+}
+
+function formatPrincipalStudentFullName(input: {
+  firstName: string | null;
+  middleName: string | null;
+  lastName: string | null;
+  suffix: string | null;
+  fallback?: string | null;
+}): string | null {
+  const firstName = input.firstName?.trim() || null;
+  const middleInitial = getMiddleInitial(input.middleName);
+  const lastName = input.lastName?.trim() || null;
+  const suffix = input.suffix?.trim() || null;
+
+  if (lastName || firstName) {
+    return [lastName, firstName, middleInitial, suffix].filter(Boolean).join(", ");
+  }
+
+  const fallback = input.fallback?.trim();
+  return fallback && fallback.length > 0 ? fallback : null;
+}
+
 async function resolveStudentTable(): Promise<{ name: string; columns: Set<string> } | null> {
   for (const candidate of STUDENT_TABLE_CANDIDATES) {
     if (!(await tableExists(candidate))) {
@@ -140,6 +167,29 @@ export async function GET() {
         ? "grade"
         : null;
     const gradeTableExists = gradeIdColumn ? await tableExists("grade") : false;
+    const canJoinAssessmentLevels = (await tableExists("student_subject_assessment"))
+      && (await tableExists("phonemic_level"))
+      && (await tableExists("subject"));
+
+    let englishSubjectId: number | null = null;
+    let filipinoSubjectId: number | null = null;
+    let mathSubjectId: number | null = null;
+
+    if (canJoinAssessmentLevels) {
+      const [[englishRow]] = await query<RowDataPacket[]>(
+        "SELECT subject_id FROM subject WHERE LOWER(TRIM(subject_name)) = 'english' LIMIT 1",
+      );
+      const [[filipinoRow]] = await query<RowDataPacket[]>(
+        "SELECT subject_id FROM subject WHERE LOWER(TRIM(subject_name)) = 'filipino' LIMIT 1",
+      );
+      const [[mathRow]] = await query<RowDataPacket[]>(
+        "SELECT subject_id FROM subject WHERE LOWER(TRIM(subject_name)) IN ('math', 'mathematics') LIMIT 1",
+      );
+
+      englishSubjectId = typeof englishRow?.subject_id === "number" ? englishRow.subject_id : null;
+      filipinoSubjectId = typeof filipinoRow?.subject_id === "number" ? filipinoRow.subject_id : null;
+      mathSubjectId = typeof mathRow?.subject_id === "number" ? mathRow.subject_id : null;
+    }
 
     const studentContactColumn = pickFirstColumn(studentTable.columns, CONTACT_COLUMNS);
     const userContactColumn = canJoinStudentUsers ? pickFirstColumn(userColumns, CONTACT_COLUMNS) : null;
@@ -238,6 +288,16 @@ export async function GET() {
 
     selectParts.push(canJoinStudentUsers ? "u.username AS user_username" : "NULL AS user_username");
 
+    if (canJoinAssessmentLevels) {
+      selectParts.push("sa.english_phonemic AS english_phonemic");
+      selectParts.push("sa.filipino_phonemic AS filipino_phonemic");
+      selectParts.push("sa.math_phonemic AS math_phonemic");
+    } else {
+      selectParts.push("NULL AS english_phonemic");
+      selectParts.push("NULL AS filipino_phonemic");
+      selectParts.push("NULL AS math_phonemic");
+    }
+
     if (canJoinParent && parentStudentParentIdColumn && parentStudentStudentIdColumn && parentTableIdColumn && parentTableUserIdColumn) {
       selectParts.push("ps.parent_id AS parent_identifier");
       selectParts.push(parentRelationshipColumn ? `ps.${parentRelationshipColumn} AS parent_relationship` : "NULL AS parent_relationship");
@@ -313,6 +373,23 @@ export async function GET() {
       }
     }
 
+    const sqlParams: Array<number> = [];
+    if (canJoinAssessmentLevels) {
+      joinClauses.push(
+        `LEFT JOIN (
+          SELECT
+            ssa.student_id,
+            MAX(CASE WHEN ssa.subject_id = ? THEN pl.level_name END) AS english_phonemic,
+            MAX(CASE WHEN ssa.subject_id = ? THEN pl.level_name END) AS filipino_phonemic,
+            MAX(CASE WHEN ssa.subject_id = ? THEN pl.level_name END) AS math_phonemic
+          FROM student_subject_assessment AS ssa
+          LEFT JOIN phonemic_level AS pl ON pl.phonemic_id = ssa.phonemic_id
+          GROUP BY ssa.student_id
+        ) AS sa ON sa.student_id = s.${studentIdColumn}`,
+      );
+      sqlParams.push(englishSubjectId ?? -1, filipinoSubjectId ?? -1, mathSubjectId ?? -1);
+    }
+
     const orderClauses: string[] = [];
     if (studentTable.columns.has("last_name")) {
       orderClauses.push("s.last_name ASC");
@@ -335,7 +412,7 @@ export async function GET() {
       ORDER BY ${orderClauses.join(", ")}
     `;
 
-    const [rows] = await query<RowDataPacket[]>(sql);
+    const [rows] = await query<RowDataPacket[]>(sql, sqlParams);
 
     const students = rows.map((row) => {
       const identifierRaw = row.student_identifier;
@@ -347,8 +424,18 @@ export async function GET() {
       const lrn = row.student_lrn ? String(row.student_lrn).trim() : null;
       const suffix = row.student_suffix ? String(row.student_suffix).trim() : null;
       const nameParts = resolveName(row);
+      const formattedName = formatPrincipalStudentFullName({
+        firstName: nameParts.firstName,
+        middleName: nameParts.middleName,
+        lastName: nameParts.lastName,
+        suffix,
+        fallback: nameParts.fullName,
+      });
       const email = row.student_email ?? row.user_email ?? null;
       const contactNumber = row.student_contact ?? row.user_contact ?? null;
+      const englishPhonemic = row.english_phonemic ? String(row.english_phonemic).trim() : null;
+      const filipinoPhonemic = row.filipino_phonemic ? String(row.filipino_phonemic).trim() : null;
+      const mathProficiency = row.math_phonemic ? String(row.math_phonemic).trim() : null;
       const parentFirstName = row.parent_first_name ?? null;
       const parentMiddleName = row.parent_middle_name ?? null;
       const parentLastName = row.parent_last_name ?? null;
@@ -368,8 +455,14 @@ export async function GET() {
         sections: section,
         subjects,
         lrn,
+        english: englishPhonemic,
+        filipino: filipinoPhonemic,
+        math: mathProficiency,
+        englishPhonemic,
+        filipinoPhonemic,
+        mathProficiency,
         suffix,
-        name: nameParts.fullName,
+        name: formattedName,
         firstName: nameParts.firstName,
         middleName: nameParts.middleName,
         lastName: nameParts.lastName,

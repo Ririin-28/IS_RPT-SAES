@@ -12,7 +12,7 @@ import TeacherAllGradesTab from "./TeacherTab/AllGradesTab";
 import MasterTeacherAllGradesTab from "./MasterTeacherTab/AllGradesTab";
 
 
-const GRADE_OPTIONS = ["All Grades", "1", "2", "3", "4", "5", "6"] as const;
+const GRADE_OPTIONS = ["All Grades", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"] as const;
 
 const normalizeGradeTab = (value: string): string => {
   if (value === "All Grades") return "All Grades";

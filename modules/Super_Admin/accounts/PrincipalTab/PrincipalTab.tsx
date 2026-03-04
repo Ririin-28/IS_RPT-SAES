@@ -5,6 +5,7 @@ import * as XLSX from "xlsx";
 import TableList from "@/components/Common/Tables/TableList";
 import PrincipalDetailsModal from "./Modals/PrincipalDetailsModal";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
+import SortMenu, { type SortMenuItem } from "@/components/Common/Menus/SortMenu";
 import AccountActionsMenu, { type AccountActionKey } from "../components/AccountActionsMenu";
 import AddPrincipalModal, { type AddPrincipalFormValues } from "./Modals/AddPrincipalModal";
 import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
@@ -15,6 +16,12 @@ import AccountCreatedModal, { type AccountCreatedInfo } from "@/components/Commo
 import { exportAccountRows, PRINCIPAL_EXPORT_COLUMNS } from "../utils/export-columns";
 
 const NAME_COLLATOR = new Intl.Collator("en", { sensitivity: "base", numeric: true });
+type PrincipalSortKey = "name_asc" | "name_desc";
+const DEFAULT_PRINCIPAL_SORT: PrincipalSortKey = "name_asc";
+const PRINCIPAL_SORT_ITEMS: SortMenuItem<PrincipalSortKey>[] = [
+  { value: "name_asc", label: "Name (A-Z)" },
+  { value: "name_desc", label: "Name (Z-A)" },
+];
 
 function toStringOrNull(value: unknown): string | null {
   if (value === null || value === undefined) {
@@ -184,6 +191,7 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
   const [isArchiving, setIsArchiving] = useState(false);
   const [uploadedPasswords, setUploadedPasswords] = useState<Array<{name: string; email: string; password: string}>>([]);
   const [uploadedAccounts, setUploadedAccounts] = useState<AccountCreatedInfo[] | null>(null);
+  const [sortBy, setSortBy] = useState<PrincipalSortKey>(DEFAULT_PRINCIPAL_SORT);
 
   const addPrincipalForm = useForm<AddPrincipalFormValues>({
     mode: "onTouched",
@@ -247,15 +255,36 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
     });
   }, [principals, searchTerm]);
 
+  const sortedPrincipals = useMemo(() => {
+    const list = [...filteredPrincipals];
+    list.sort((a, b) => {
+      const nameA = toStringOrNull(a.name);
+      const nameB = toStringOrNull(b.name);
+
+      if (nameA && nameB && nameA !== nameB) {
+        return sortBy === "name_asc"
+          ? NAME_COLLATOR.compare(nameA, nameB)
+          : NAME_COLLATOR.compare(nameB, nameA);
+      }
+      if (nameA && !nameB) return -1;
+      if (!nameA && nameB) return 1;
+
+      const idA = typeof a.userId === "number" ? a.userId : Number.parseInt(String(a.userId ?? 0), 10) || 0;
+      const idB = typeof b.userId === "number" ? b.userId : Number.parseInt(String(b.userId ?? 0), 10) || 0;
+      return idA - idB;
+    });
+    return list;
+  }, [filteredPrincipals, sortBy]);
+
   const handleExport = useCallback(() => {
     void exportAccountRows({
-      rows: filteredPrincipals,
+      rows: sortedPrincipals,
       columns: PRINCIPAL_EXPORT_COLUMNS,
       baseFilename: "principal-accounts",
       sheetName: "Principal Accounts",
       emptyMessage: "No principal accounts available to export.",
     });
-  }, [filteredPrincipals]);
+  }, [sortedPrincipals]);
 
   const handleShowDetails = (principal: any) => {
     setSelectedPrincipal(principal);
@@ -580,12 +609,12 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
 
   const handleSelectAll = useCallback((checked: boolean) => {
     if (checked) {
-      const keys = new Set(filteredPrincipals.map((principal: any) => getPrincipalKey(principal)));
+      const keys = new Set(sortedPrincipals.map((principal: any) => getPrincipalKey(principal)));
       setSelectedPrincipalKeys(keys);
       return;
     }
     setSelectedPrincipalKeys(new Set());
-  }, [filteredPrincipals, getPrincipalKey]);
+  }, [getPrincipalKey, sortedPrincipals]);
 
   const handleCancelSelect = useCallback(() => {
     setSelectMode(false);
@@ -705,9 +734,18 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
     <div>
       <div className="flex flex-row justify-between items-center mb-4 gap-4">
         <p className="text-gray-600 text-md font-medium">
-          Total: {principals.length}
+          Total: {sortedPrincipals.length}
         </p>
         <div className="flex items-center gap-3">
+          <SortMenu
+            small
+            iconOnly
+            align="right"
+            value={sortBy}
+            items={PRINCIPAL_SORT_ITEMS}
+            onChange={setSortBy}
+            buttonAriaLabel="Open principal sort options"
+          />
           {selectMode ? (
             <>
               <SecondaryButton small onClick={handleCancelSelect}>
@@ -729,7 +767,7 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
               buttonAriaLabel="Open Principal actions"
               exportConfig={{
                 onExport: handleExport,
-                disabled: filteredPrincipals.length === 0,
+                disabled: sortedPrincipals.length === 0,
               }}
               downloadPasswordsConfig={{
                 onDownload: handleDownloadPasswords,
@@ -821,7 +859,7 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
             render: (row: any) => row.lastLoginDisplay ?? "—",
           },
         ]}
-        data={filteredPrincipals.map((principal, idx) => ({
+        data={sortedPrincipals.map((principal, idx) => ({
           ...principal,
           id: getPrincipalKey(principal),
           no: idx + 1,

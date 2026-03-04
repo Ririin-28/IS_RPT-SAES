@@ -96,24 +96,29 @@ export function useCoordinatorMaterials({ subject, level, requestId }: UseCoordi
 
   const fetchTeacherMaterials = useCallback(async (): Promise<CoordinatorMaterialRow[]> => {
     if (!normalizedLevel) return [];
+    const statuses: MaterialStatus[] = ["pending", "approved", "rejected"];
 
-    const params = new URLSearchParams({
-      subject: normalizedSubject,
-      level: normalizedLevel,
-      status: "pending",
-      pageSize: "100",
-    });
+    const groupedRows = await Promise.all(
+      statuses.map(async (status) => {
+        const params = new URLSearchParams({
+          subject: normalizedSubject,
+          level: normalizedLevel,
+          status,
+          pageSize: "100",
+        });
 
-    const response = await fetch(`/api/materials?${params.toString()}`, { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(`Failed to fetch teacher materials (${response.status})`);
-    }
+        const response = await fetch(`/api/materials?${params.toString()}`, { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error(`Failed to fetch teacher materials (${response.status})`);
+        }
 
-    const data = await response.json();
-    const rows: MaterialDto[] = Array.isArray(data?.data) ? data.data : [];
-    const visibleRows = rows.filter((row) => row.status !== "rejected");
+        const data = await response.json();
+        const rows: MaterialDto[] = Array.isArray(data?.data) ? data.data : [];
+        return rows;
+      }),
+    );
 
-    return visibleRows.map((row) => ({
+    return groupedRows.flat().map((row) => ({
       ...row,
       teacherName: buildTeacherName(row),
       source: "teacher" as const,
@@ -199,9 +204,7 @@ export function useCoordinatorMaterials({ subject, level, requestId }: UseCoordi
         }),
       ]);
 
-      const combined = [...teacherRows, ...remedialRows]
-        .filter((row) => row.status !== "rejected")
-        .sort((a, b) => {
+      const combined = [...teacherRows, ...remedialRows].sort((a, b) => {
           const isMath = normalizedSubject.toLowerCase() === "math";
           const order = isMath ? MATH_LEVEL_ORDER : PHONEMIC_LEVEL_ORDER;
           const aLevel = getLevelSortIndex(a.level, order);

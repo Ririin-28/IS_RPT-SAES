@@ -39,6 +39,37 @@ const toText = (value: unknown): string | null => {
   return trimmed.length ? trimmed : null;
 };
 
+const normalizeSubjectLookupKey = (value: string): string =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const addSubjectLookupAlias = (map: Map<string, number>, key: string, subjectId: number) => {
+  const trimmed = key.trim();
+  if (!trimmed.length) return;
+  if (!map.has(trimmed)) {
+    map.set(trimmed, subjectId);
+  }
+};
+
+const addCommonSubjectAliases = (map: Map<string, number>, normalizedName: string, subjectId: number) => {
+  if (normalizedName.includes("english")) {
+    addSubjectLookupAlias(map, "english", subjectId);
+  }
+  if (normalizedName.includes("filipino")) {
+    addSubjectLookupAlias(map, "filipino", subjectId);
+  }
+  if (normalizedName.includes("math") || normalizedName.includes("mathematics")) {
+    addSubjectLookupAlias(map, "math", subjectId);
+    addSubjectLookupAlias(map, "mathematics", subjectId);
+  }
+  if (normalizedName.includes("assessment")) {
+    addSubjectLookupAlias(map, "assessment", subjectId);
+  }
+};
+
 const resolveSubjectLookup = async (): Promise<{ table: string; idColumn: string; nameColumn: string } | null> => {
   for (const table of SUBJECT_TABLE_CANDIDATES) {
     const columns = await getTableColumns(table).catch(() => new Set<string>());
@@ -66,12 +97,50 @@ const loadSubjectNameMap = async (): Promise<Map<string, number>> => {
   );
   for (const row of rows) {
     const id = toNumber(row.subject_id);
-    const name = toText(row.subject_name)?.toLowerCase();
+    const name = toText(row.subject_name);
     if (id && name) {
-      map.set(name, id);
+      const lowered = name.toLowerCase();
+      const normalized = normalizeSubjectLookupKey(name);
+      addSubjectLookupAlias(map, lowered, id);
+      addSubjectLookupAlias(map, normalized, id);
+      addCommonSubjectAliases(map, normalized, id);
     }
   }
   return map;
+};
+
+const resolveProvidedSubjectId = (
+  providedSubjectName: string | null,
+  subjectNameMap: Map<string, number>,
+): number | null => {
+  if (!providedSubjectName) {
+    return null;
+  }
+
+  const lowered = providedSubjectName.toLowerCase();
+  const normalized = normalizeSubjectLookupKey(providedSubjectName);
+  const directMatch =
+    subjectNameMap.get(lowered) ??
+    subjectNameMap.get(normalized) ??
+    null;
+  if (directMatch) {
+    return directMatch;
+  }
+
+  if (normalized.includes("english")) {
+    return subjectNameMap.get("english") ?? null;
+  }
+  if (normalized.includes("filipino")) {
+    return subjectNameMap.get("filipino") ?? null;
+  }
+  if (normalized.includes("math") || normalized.includes("mathematics")) {
+    return subjectNameMap.get("math") ?? subjectNameMap.get("mathematics") ?? null;
+  }
+  if (normalized.includes("assessment")) {
+    return subjectNameMap.get("assessment") ?? null;
+  }
+
+  return null;
 };
 
 const parseActivityDate = (value: string): Date | null => {
@@ -290,7 +359,7 @@ export async function POST(request: NextRequest) {
 
       const weeklySubjectId = weeklySubjectMap.get(weekday) ?? null;
       const providedSubjectName = toText(activity.subject);
-      const providedSubjectId = providedSubjectName ? subjectNameMap.get(providedSubjectName.toLowerCase()) ?? null : null;
+      const providedSubjectId = resolveProvidedSubjectId(providedSubjectName, subjectNameMap);
       const subjectId = providedSubjectId ?? weeklySubjectId;
       if (!subjectId) {
         skipped.push({ title, reason: `No subject assigned for ${weekday}.` });

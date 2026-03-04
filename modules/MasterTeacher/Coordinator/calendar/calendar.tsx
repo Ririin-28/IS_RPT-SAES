@@ -1914,7 +1914,12 @@ export default function MasterTeacherCalendar() {
 
       const inserted = typeof result.inserted === "number" && result.inserted >= 0 ? result.inserted : activities.length;
       const skippedEntries = Array.isArray(result.skipped)
-        ? (result.skipped as Array<{ title?: string | null; reason?: string | null }>)
+        ? (result.skipped as Array<{ id?: number | null; title?: string | null; reason?: string | null }>)
+        : [];
+      const insertedActivityIds = Array.isArray(result.insertedActivityIds)
+        ? (result.insertedActivityIds as Array<number | string>)
+            .map((value) => Number(value))
+            .filter((value) => Number.isFinite(value))
         : [];
       const skippedCount = skippedEntries.length;
       const feedbackParts = [`Sent ${inserted} activit${inserted === 1 ? "y" : "ies"} to the principal for approval.`];
@@ -1939,14 +1944,16 @@ export default function MasterTeacherCalendar() {
       setImportActionToast(null);
       setPendingImportIds([]);
 
-      const sendableIds = new Set(sendableActivities.map((activity) => activity.id));
-      setActivities((prev) =>
-        prev.map((activity) =>
-          sendableIds.has(activity.id)
-            ? { ...activity, status: "Pending" }
-            : activity,
-        ),
-      );
+      if (insertedActivityIds.length > 0) {
+        const insertedIdSet = new Set(insertedActivityIds);
+        setActivities((prev) =>
+          prev.map((activity) =>
+            insertedIdSet.has(activity.id)
+              ? { ...activity, status: "Pending" }
+              : activity,
+          ),
+        );
+      }
     } catch (error) {
       console.error("Failed to send activities", error);
       setSendError(error instanceof Error ? error.message : "Unable to send activities to the principal right now.");
@@ -2592,7 +2599,7 @@ export default function MasterTeacherCalendar() {
                                 <path strokeLinecap="round" strokeLinejoin="round" d="m17 8-5-5-5 5" />
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                               </svg>
-                              {importing ? "Uploading..." : "Upload File"}
+                              {importing ? "Importing..." : "Import Schedule"}
                             </button>
                             <button
                               type="button"
@@ -2607,11 +2614,12 @@ export default function MasterTeacherCalendar() {
                               }`}
                             >
                               <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="m7 10 5 5 5-5" />
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 15V3" />
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 19h14" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M14 2v5a1 1 0 0 0 1 1h5" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 12v6" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="m15 15-3-3-3 3" />
                               </svg>
-                              {templateDownloading ? "Preparing..." : "Download Template"}
+                              {templateDownloading ? "Exporting..." : "Export Template"}
                             </button>
                           </div>
                         )}

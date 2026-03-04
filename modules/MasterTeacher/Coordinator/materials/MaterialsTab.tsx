@@ -20,12 +20,13 @@ export default function MaterialTabContent({
   category,
   requestId,
 }: MaterialTabContentProps) {
-  const { materials, loading, updating, error, approveMaterial, rejectMaterial, refresh } = useCoordinatorMaterials({
+  const { materials, loading, updating, error, approveMaterial, rejectMaterial } = useCoordinatorMaterials({
     subject,
     level: category,
     requestId,
   });
 
+  const [statusFilter, setStatusFilter] = useState<MaterialStatus>("pending");
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [pendingRejectRow, setPendingRejectRow] = useState<CoordinatorMaterialRow | null>(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -118,15 +119,35 @@ export default function MaterialTabContent({
     }
   };
 
+  const statusCounts = useMemo(
+    () =>
+      materials.reduce(
+        (acc, material) => {
+          const key = material.status.toLowerCase() as MaterialStatus;
+          if (key === "pending" || key === "approved" || key === "rejected") {
+            acc[key] += 1;
+          }
+          return acc;
+        },
+        { pending: 0, approved: 0, rejected: 0 } as Record<MaterialStatus, number>,
+      ),
+    [materials],
+  );
+
+  const filteredMaterials = useMemo(
+    () => materials.filter((material) => material.status.toLowerCase() === statusFilter),
+    [materials, statusFilter],
+  );
+
   const groupedMaterials = useMemo(() => {
     const groups: Record<string, CoordinatorMaterialRow[]> = {};
-    materials.forEach((m) => {
+    filteredMaterials.forEach((m) => {
       const level = m.level || "Uncategorized";
       if (!groups[level]) groups[level] = [];
       groups[level].push(m);
     });
     return groups;
-  }, [materials]);
+  }, [filteredMaterials]);
 
   if (loading) {
     return (
@@ -155,12 +176,52 @@ export default function MaterialTabContent({
 
   return (
     <div className="space-y-8">
-      <div className="flex justify-between items-center mb-2">
+      <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-md font-black text-[#013300]/50 uppercase tracking-[0.2em]">
-          SUBMISSIONS ({materials.length})
+          SUBMISSIONS ({filteredMaterials.length})
         </p>
-        {error && <span className="text-xs text-red-600 font-medium">{error}</span>}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex flex-wrap items-center gap-2 rounded-xl border border-gray-100 bg-white p-1">
+            {(
+              [
+                { value: "pending", label: "Pending" },
+                { value: "approved", label: "Approved" },
+                { value: "rejected", label: "Rejected" },
+              ] as Array<{ value: MaterialStatus; label: string }>
+            ).map((item) => {
+              const isActive = statusFilter === item.value;
+              return (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => setStatusFilter(item.value)}
+                  className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                    isActive
+                      ? "bg-[#013300] text-white shadow"
+                      : "text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  <span>{item.label}</span>
+                  <span
+                    className={`rounded-full px-1.5 py-0.5 text-[0.65rem] ${
+                      isActive ? "bg-white/20 text-white" : "bg-gray-100 text-gray-700"
+                    }`}
+                  >
+                    {statusCounts[item.value]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {error && <span className="text-xs text-red-600 font-medium">{error}</span>}
+        </div>
       </div>
+
+      {materials.length > 0 && filteredMaterials.length === 0 && (
+        <div className="rounded-xl border border-gray-100 bg-gray-50/70 px-4 py-6 text-center text-sm text-gray-500">
+          No {statusFilter} materials in this category yet.
+        </div>
+      )}
 
       <div className="flex flex-col gap-10">
         {Object.entries(groupedMaterials).map(([level, items]) => (
@@ -178,7 +239,7 @@ export default function MaterialTabContent({
                 const dateInfo = formatDate(material.createdAt);
                 return (
                     <div
-                    key={material.id}
+                    key={`${material.source}-${material.status}-${material.id}-${material.requestId ?? "none"}-${material.createdAt}`}
                     className="group flex flex-row items-center justify-between w-full bg-white border border-gray-100 rounded-xl p-4 hover:shadow-md hover:border-[#013300]/20 transition-all duration-300"
                     >
                     <div className="flex items-center gap-4 min-w-0">

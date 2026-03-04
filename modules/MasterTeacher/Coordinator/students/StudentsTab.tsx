@@ -11,6 +11,7 @@ import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import TableList from "@/components/Common/Tables/TableList";
 import KebabMenu from "@/components/Common/Menus/KebabMenu";
+import SortMenu, { type SortMenuItem } from "@/components/Common/Menus/SortMenu";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 import { normalizeMaterialSubject, type MaterialSubject } from "@/lib/materials/shared";
 
@@ -22,8 +23,6 @@ const PHONEMIC_LEVELS_BY_SUBJECT: Record<MaterialSubject, string[]> = {
   Math: ["Not Proficient", "Low Proficient", "Nearly Proficient", "Proficient", "Highly Proficient"],
 };
 
-const ALL_PHONEMIC = "All Levels";
-
 // Normalize grade values to numeric strings ("1"-"6")
 const normalizeGradeLabel = (value?: string | null): string | undefined => {
   if (!value) return undefined;
@@ -34,24 +33,18 @@ const normalizeGradeLabel = (value?: string | null): string | undefined => {
   return String(parsed);
 };
 
-const hashLrnForDisplay = (lrn?: string | null): string => {
-  if (!lrn) return "N/A";
-  const normalized = lrn.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
-  if (!normalized) return "N/A";
-  let hash = 2166136261;
-  for (let i = 0; i < normalized.length; i += 1) {
-    hash ^= normalized.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-    hash >>>= 0;
-  }
-  return `#${hash.toString(16).toUpperCase().padStart(8, "0")}`;
-};
-
 const normalizeLrn = (lrn?: string | null): string | null => {
   if (!lrn) return null;
   const digits = lrn.replace(/\D/g, "").slice(0, 12);
   if (digits.length !== 12) return null;
   return `${digits.slice(0, 6)}-${digits.slice(6)}`;
+};
+
+const maskLrnForDisplay = (lrn?: string | null): string => {
+  const normalized = normalizeLrn(lrn);
+  if (!normalized) return "N/A";
+  const digits = normalized.replace(/\D/g, "");
+  return `${digits.slice(0, 2)}****-****${digits.slice(-2)}`;
 };
 
 const resolveStudentPhonemic = (
@@ -254,87 +247,67 @@ const transformApiRecord = (record: any): CoordinatorStudent => {
   };
 };
 
-const ExportIcon = () => (
+const ImportStudentsIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" d="m7 10 5 5 5-5" />
     <path strokeLinecap="round" strokeLinejoin="round" d="M12 15V3" />
-    <path strokeLinecap="round" strokeLinejoin="round" d="M5 19h14" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="m7 10 5 5 5-5" />
   </svg>
 );
 
-interface CustomDropdownProps {
-  options: string[];
-  value: string;
-  onChange: (value: string) => void;
-  className?: string;
-}
+const ExportStudentListIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v12" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="m17 8-5-5-5 5" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+  </svg>
+);
 
-const CustomDropdown = ({ options, value, onChange, className = "" }: CustomDropdownProps) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+const ExportTemplateIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M14 2v5a1 1 0 0 0 1 1h5" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 12v6" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="m15 15-3-3-3 3" />
+  </svg>
+);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
+type StudentSortKey =
+  | "name_asc"
+  | "name_desc"
+  | "lrn_asc"
+  | "lrn_desc"
+  | "phonemic_low_high"
+  | "phonemic_high_low";
 
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+const STUDENT_SORT_ITEMS: SortMenuItem<StudentSortKey>[] = [
+  { value: "name_asc", label: "Name (A-Z)" },
+  { value: "name_desc", label: "Name (Z-A)" },
+  { type: "separator", id: "name-lrn" },
+  { value: "lrn_asc", label: "LRN (Asc)" },
+  { value: "lrn_desc", label: "LRN (Desc)" },
+  { type: "separator", id: "lrn-phonemic" },
+  { value: "phonemic_low_high", label: "Phonemic Level (Low->High)" },
+  { value: "phonemic_high_low", label: "Phonemic Level (High->Low)" },
+];
 
-  const handleOptionClick = (option: string) => {
-    onChange(option);
-    setIsOpen(false);
-  };
-
-  return (
-    <div className={`relative inline-block ${className}`} ref={dropdownRef}>
-      <button
-        type="button"
-        className="flex items-center justify-between px-3 py-1.5 text-sm font-medium text-gray-700 cursor-pointer focus:outline-none border border-gray-300 rounded bg-white whitespace-nowrap"
-        onClick={() => setIsOpen(!isOpen)}
-      >
-        {value}
-        <svg 
-          className={`ml-2 h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-          fill="currentColor" 
-          viewBox="0 0 20 20"
-        >
-          <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
-        </svg>
-      </button>
-      
-      {isOpen && (
-        <div className="absolute z-50 mt-1 right-0 left-auto bg-white border border-gray-300 rounded-md shadow-lg min-w-full w-max overflow-hidden">
-          {options.map((option) => (
-            <div
-              key={option}
-              className={`px-4 py-2 cursor-pointer transition-colors ${
-                option === value
-                  ? "bg-[#013300] text-white"
-                  : "text-gray-700 hover:bg-gray-100"
-              }`}
-              onClick={() => handleOptionClick(option)}
-            >
-              {option}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
+const DEFAULT_STUDENT_SORT: StudentSortKey = "name_asc";
 
 interface StudentTabProps {
   searchTerm: string;
   onMetaChange?: (meta: { subject: MaterialSubject; gradeLevel: string | null; students: CoordinatorStudent[] }) => void;
+  onAssignStudents?: () => void;
+  assignStudentsDisabled?: boolean;
 }
 
 type CoordinatorStudentFormInput = CreateStudentPayload;
 
-export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps) {
+export default function StudentTab({
+  searchTerm,
+  onMetaChange,
+  onAssignStudents,
+  assignStudentsDisabled = false,
+}: StudentTabProps) {
   const [subject, setSubject] = useState<MaterialSubject>(SUBJECT_FALLBACK);
   const [gradeLevel, setGradeLevel] = useState<string | null>(null);
   const [students, setStudents] = useState<CoordinatorStudent[]>([]);
@@ -351,14 +324,16 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedStudents, setSelectedStudents] = useState<Set<string>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
-  const [filter, setFilter] = useState({ phonemic: ALL_PHONEMIC });
+  const [sortBy, setSortBy] = useState<StudentSortKey>(DEFAULT_STUDENT_SORT);
   const [duplicateLrn, setDuplicateLrn] = useState<string | null>(null);
   const [duplicateStudent, setDuplicateStudent] = useState<CoordinatorStudent | null>(null);
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [crossGradeLrn, setCrossGradeLrn] = useState<string | null>(null);
   const [crossGradeStudentName, setCrossGradeStudentName] = useState<string | null>(null);
   const [showCrossGradeModal, setShowCrossGradeModal] = useState(false);
+  const [visibleLrnIds, setVisibleLrnIds] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const lrnRevealTimersRef = useRef<Record<string, number>>({});
 
   const userProfile = useMemo(() => getStoredUserProfile(), []);
   const userId = useMemo(() => {
@@ -370,6 +345,37 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
     }
     return null;
   }, [userProfile]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(lrnRevealTimersRef.current).forEach((timerId) => window.clearTimeout(timerId));
+      lrnRevealTimersRef.current = {};
+    };
+  }, []);
+
+  const handleRevealLrn = useCallback((rowId: string) => {
+    if (!rowId) return;
+
+    setVisibleLrnIds((prev) => {
+      const next = new Set(prev);
+      next.add(rowId);
+      return next;
+    });
+
+    const existingTimer = lrnRevealTimersRef.current[rowId];
+    if (existingTimer) {
+      window.clearTimeout(existingTimer);
+    }
+
+    lrnRevealTimersRef.current[rowId] = window.setTimeout(() => {
+      setVisibleLrnIds((prev) => {
+        const next = new Set(prev);
+        next.delete(rowId);
+        return next;
+      });
+      delete lrnRevealTimersRef.current[rowId];
+    }, 3000);
+  }, []);
 
   const fetchSubject = useCallback(async (): Promise<CoordinatorAssignment> => {
     if (!userId) {
@@ -781,39 +787,63 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
 
   // Filter students based on search term and phonemic level
   const filteredStudents = students.filter((student) => {
-    const studentPhonemic = resolveStudentPhonemic(student, subject);
-    const matchPhonemic =
-      filter.phonemic === ALL_PHONEMIC ||
-      normalizePhonemicLabel(studentPhonemic) === normalizePhonemicLabel(filter.phonemic);
     const matchSearch = searchTerm === "" || 
       student.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       student.studentId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       student.grade?.toString().includes(searchTerm.toLowerCase()) ||
       student.section?.toLowerCase().includes(searchTerm.toLowerCase());
       
-    return matchPhonemic && matchSearch;
+    return matchSearch;
   });
 
   const phonemicOrder = useMemo(() => buildPhonemicOrder(subject), [subject]);
 
   const sortedStudents = useMemo(() => {
     const fallbackIndex = phonemicOrder.size + 1;
+    const compareName = (a: CoordinatorStudent, b: CoordinatorStudent): number =>
+      formatStudentDisplayName(a).localeCompare(formatStudentDisplayName(b), undefined, { sensitivity: "base" });
+    const normalizeSortableLrn = (student: CoordinatorStudent): string | null => {
+      const normalized = normalizeLrn(student.lrn);
+      return normalized ? normalized.replace(/\D/g, "") : null;
+    };
+
     return [...filteredStudents].sort((a, b) => {
+      if (sortBy === "name_asc") {
+        return compareName(a, b);
+      }
+      if (sortBy === "name_desc") {
+        return compareName(b, a);
+      }
+
+      if (sortBy === "lrn_asc" || sortBy === "lrn_desc") {
+        const aLrn = normalizeSortableLrn(a);
+        const bLrn = normalizeSortableLrn(b);
+        if (aLrn && bLrn && aLrn !== bLrn) {
+          return sortBy === "lrn_asc" ? aLrn.localeCompare(bLrn) : bLrn.localeCompare(aLrn);
+        }
+        if (aLrn && !bLrn) return -1;
+        if (!aLrn && bLrn) return 1;
+        return compareName(a, b);
+      }
+
       const aLabel = normalizePhonemicLabel(resolveStudentPhonemic(a, subject));
       const bLabel = normalizePhonemicLabel(resolveStudentPhonemic(b, subject));
       const aIndex = phonemicOrder.get(aLabel) ?? fallbackIndex;
       const bIndex = phonemicOrder.get(bLabel) ?? fallbackIndex;
-      if (aIndex !== bIndex) return aIndex - bIndex;
-      return formatStudentDisplayName(a).localeCompare(formatStudentDisplayName(b));
+      if (aIndex !== bIndex) {
+        return sortBy === "phonemic_low_high" ? aIndex - bIndex : bIndex - aIndex;
+      }
+      return compareName(a, b);
     });
-  }, [filteredStudents, phonemicOrder, subject]);
+  }, [filteredStudents, phonemicOrder, sortBy, subject]);
 
   const tableRows = useMemo(() => (
     sortedStudents.map((student, idx) => ({
       ...student,
       no: idx + 1,
       name: formatStudentDisplayName(student),
-      hashedLrn: hashLrnForDisplay(student.lrn),
+      fullLrn: normalizeLrn(student.lrn) ?? "N/A",
+      maskedLrn: maskLrnForDisplay(student.lrn),
       phonemic: resolveStudentPhonemic(student, subject),
     }))
   ), [sortedStudents, subject]);
@@ -827,7 +857,7 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
     const exportData = tableRows.map((student) => ({
       "No#": student.no,
       "Student ID": student.studentId ?? "",
-      "LRN (Hashed)": student.hashedLrn,
+      "LRN (Masked)": student.maskedLrn,
       "Full Name": student.name ?? "",
       Phonemic: student.phonemic ?? "",
       Grade: student.grade ?? "",
@@ -1107,6 +1137,10 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
   };
 
   const actionsDisabled = saving || loading;
+  const hasActiveSortOrFilter = sortBy !== DEFAULT_STUDENT_SORT;
+  const handleClearAll = () => {
+    setSortBy(DEFAULT_STUDENT_SORT);
+  };
 
   return (
     <div>
@@ -1118,16 +1152,6 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
         {error && <span className="text-sm text-red-600">{error}</span>}
         
         <div className="flex flex-row sm:flex-row sm:items-center gap-3 ">
-          <div className="inline-flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5 w-fit">
-            <span className="text-sm text-gray-700 whitespace-nowrap">Phonemic:</span>
-            <CustomDropdown 
-              options={[ALL_PHONEMIC, ...getPhonemicLevels(subject)]}
-              value={filter.phonemic}
-              onChange={(value) => setFilter({ phonemic: value })}
-              className="w-auto"
-            />
-          </div>
-          
           <div className="flex items-center gap-2">
           {selectMode ? (
             <>
@@ -1144,93 +1168,127 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
               )}
             </>
           ) : (
-            <KebabMenu
-              small
-              align="right"
-              renderItems={(close) => (
-                <div className="py-1">
-                  <button
-                    disabled={actionsDisabled}
-                    onClick={() => {
-                      if (actionsDisabled) return;
-                      setShowModal(true);
-                      close();
-                    }}
-                    className={`w-full px-4 py-2 text-left text-sm text-[#013300] flex items-center gap-2 ${actionsDisabled ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50"}`}
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                    </svg>
-                    Add Student
-                  </button>
-                  <button
-                    disabled={actionsDisabled}
-                    onClick={() => {
-                      if (actionsDisabled) return;
-                      fileInputRef.current?.click();
-                      close();
-                    }}
-                    className={`w-full px-4 py-2 text-left text-sm text-[#013300] flex items-center gap-2 ${actionsDisabled ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50"}`}
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v12" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="m17 8-5-5-5 5" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                    </svg>
-                    Upload File
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!filteredStudents.length) {
-                        alert("No students available to export.");
-                        return;
-                      }
-                      handleExport();
-                      close();
-                    }}
-                    className={`flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[#013300] ${
-                      filteredStudents.length === 0 || actionsDisabled
-                        ? "opacity-40 cursor-not-allowed"
-                        : "hover:bg-gray-50"
-                    }`}
-                    aria-disabled={filteredStudents.length === 0 || actionsDisabled}
-                  >
-                    <ExportIcon />
-                    Export to Excel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const link = document.createElement('a');
-                      link.href = '/masterteacher/coordinator/students/Student List Template.xlsx';
-                      link.download = 'Student List Template.xlsx';
-                      link.click();
-                      close();
-                    }}
-                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[#013300] hover:bg-gray-50"
-                  >
-                    <ExportIcon />
-                    Download Template
-                  </button>
-                  <button
-                    disabled={actionsDisabled}
-                    onClick={() => {
-                      if (actionsDisabled) return;
-                      handleEnterSelectMode();
-                      close();
-                    }}
-                    className={`mt-1 w-full px-4 py-2 text-left text-sm text-[#013300] flex items-center gap-2 ${actionsDisabled ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50"}`}
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <rect x="3" y="3" width="18" height="18" rx="2" />
-                      <path d="M9 12l2 2 4-4" />
-                    </svg>
-                    Select
-                  </button>
-                </div>
-              )}
-            />
+            <>
+              <SortMenu
+                small
+                align="right"
+                value={sortBy}
+                items={STUDENT_SORT_ITEMS}
+                onChange={setSortBy}
+                onClearAll={handleClearAll}
+                clearAllDisabled={!hasActiveSortOrFilter}
+                disabled={loading}
+                iconOnly
+                buttonLabel="Sort"
+                buttonAriaLabel="Open sort options"
+              />
+              <KebabMenu
+                small
+                align="right"
+                renderItems={(close) => (
+                  <div className="py-1">
+                    <button
+                      disabled={actionsDisabled}
+                      onClick={() => {
+                        if (actionsDisabled) return;
+                        setShowModal(true);
+                        close();
+                      }}
+                      className={`w-full px-4 py-2 text-left text-sm text-[#013300] flex items-center gap-2 ${actionsDisabled ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50"}`}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                      </svg>
+                      Add Students
+                    </button>
+                    <button
+                      disabled={actionsDisabled}
+                      onClick={() => {
+                        if (actionsDisabled) return;
+                        fileInputRef.current?.click();
+                        close();
+                      }}
+                      className={`w-full px-4 py-2 text-left text-sm text-[#013300] flex items-center gap-2 ${actionsDisabled ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50"}`}
+                    >
+                      <ImportStudentsIcon />
+                      Import Students
+                    </button>
+                    <div className="my-1 border-t border-gray-200" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!filteredStudents.length) {
+                          alert("No students available to export.");
+                          return;
+                        }
+                        handleExport();
+                        close();
+                      }}
+                      className={`flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[#013300] ${
+                        filteredStudents.length === 0 || actionsDisabled
+                          ? "opacity-40 cursor-not-allowed"
+                          : "hover:bg-gray-50"
+                      }`}
+                      aria-disabled={filteredStudents.length === 0 || actionsDisabled}
+                    >
+                      <ExportStudentListIcon />
+                      Export Student List
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const link = document.createElement("a");
+                        link.href = "/masterteacher/coordinator/students/Student List Template.xlsx";
+                        link.download = "Student List Template.xlsx";
+                        link.click();
+                        close();
+                      }}
+                      className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[#013300] hover:bg-gray-50"
+                    >
+                      <ExportTemplateIcon />
+                      Export Template
+                    </button>
+                    <div className="my-1 border-t border-gray-200" />
+                    <button
+                      disabled={actionsDisabled || assignStudentsDisabled || !onAssignStudents}
+                      onClick={() => {
+                        if (actionsDisabled || assignStudentsDisabled || !onAssignStudents) return;
+                        onAssignStudents();
+                        close();
+                      }}
+                      className={`w-full px-4 py-2 text-left text-sm text-[#013300] flex items-center gap-2 ${
+                        actionsDisabled || assignStudentsDisabled || !onAssignStudents
+                          ? "opacity-50 cursor-not-allowed"
+                          : "hover:bg-gray-50"
+                      }`}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                        <circle cx="9" cy="7" r="4" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16 3.13a4 4 0 0 1 0 7.75" />
+                      </svg>
+                      Assign Students
+                    </button>
+                    <button
+                      disabled={actionsDisabled}
+                      onClick={() => {
+                        if (actionsDisabled) return;
+                        handleEnterSelectMode();
+                        close();
+                      }}
+                      className={`mt-1 w-full px-4 py-2 text-left text-sm text-[#013300] flex items-center gap-2 ${actionsDisabled ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50"}`}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                        <path d="M9 12l2 2 4-4" />
+                      </svg>
+                      Select
+                    </button>
+                  </div>
+                )}
+              />
+            </>
           )}
           <input
             ref={fileInputRef}
@@ -1272,8 +1330,40 @@ export default function StudentTab({ searchTerm, onMetaChange }: StudentTabProps
       <TableList
         columns={[
           { key: "no", title: "No#" },
-          { key: "studentId", title: "Student ID" },
-          { key: "hashedLrn", title: "LRN" },
+          {
+            key: "maskedLrn",
+            title: "LRN",
+            render: (row: any) => {
+              const rowId = String(row.id ?? row.studentId ?? "");
+              const isVisible = rowId ? visibleLrnIds.has(rowId) : false;
+              const displayValue = isVisible ? (row.fullLrn ?? "N/A") : (row.maskedLrn ?? "N/A");
+              const canReveal = Boolean(row.fullLrn && row.fullLrn !== "N/A");
+
+              return (
+                <div className="inline-flex items-center gap-2">
+                  <span>{displayValue}</span>
+                  {canReveal && (
+                    <button
+                      type="button"
+                      onClick={() => handleRevealLrn(rowId)}
+                      className="inline-flex items-center justify-center rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-[#013300]"
+                      title="Show full LRN for 3 seconds"
+                      aria-label="Show full LRN for 3 seconds"
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"
+                        />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              );
+            },
+          },
           { key: "name", title: "Full Name" },
           { key: "phonemic", title: "Phonemic" },
         ]}

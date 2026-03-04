@@ -107,9 +107,9 @@ export default function StudentDetailModal({ show, onClose, student, onEdit }: S
         </div>
       </ModalSection>
 
-      <ModalSection title="Assessment Level Details">
+      <ModalSection title="Assessment Level">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <ModalInfoItem label="Subject Assigned" value={student.subjectAssigned || 'N/A'} />
+          <ModalInfoItem label="Subject" value={student.subjectAssigned || 'N/A'} />
           <ModalInfoItem 
             label="Phonemic" 
             value={

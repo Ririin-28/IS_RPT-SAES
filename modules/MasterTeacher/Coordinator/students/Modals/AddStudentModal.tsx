@@ -54,6 +54,7 @@ const READING_LEVELS = [
   "Non-Reader",
   "Syllable",
   "Word",
+  "Phrase",
   "Sentence",
   "Paragraph",
 ];
