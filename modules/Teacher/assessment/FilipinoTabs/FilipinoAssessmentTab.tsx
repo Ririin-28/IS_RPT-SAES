@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
+import AssessmentActionIconButton from "@/components/Common/Buttons/AssessmentActionIconButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import TableList from "@/components/Common/Tables/TableList";
@@ -11,6 +12,7 @@ import DeleteConfirmationModal from "../Modals/DeleteConfirmationModal";
 import UpdateConfirmationModal from "../Modals/UpdateConfirmationModal";
 import QrCodeModal from "../Modals/QrCodeModal";
 import { cloneResponses, type QuizResponse } from "../types";
+import { downloadPrintableQuizPdf } from "@/lib/assessments/printable";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 import {
   createAssessment,
@@ -197,7 +199,6 @@ const formatDateTime = (value: string) => {
     : parsed.toLocaleDateString("en-PH", {
       month: "short",
       day: "numeric",
-      year: "numeric",
       hour: "2-digit",
       minute: "2-digit"
     });
@@ -588,6 +589,14 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
     setIsQrModalOpen(true);
   };
 
+  const handleDownloadQuiz = (quiz: FilipinoQuiz) => {
+    downloadPrintableQuizPdf({
+      quiz,
+      subjectLabel: "Filipino",
+      levelLabel: quiz.phonemicLevel,
+    });
+  };
+
   const handleDeleteSelected = () => {
     if (selectedQuizzes.size === 0) return;
     setShowDeleteModal(true);
@@ -764,7 +773,6 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
               </span>
             )
           },
-          { key: "phonemicLevel", title: "Phonemic" },
           {
             key: "startDate",
             title: "Start",
@@ -774,15 +782,6 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
             key: "endDate",
             title: "End",
             render: (row: TableRow) => formatDateTime(row.endDate ?? row.schedule),
-          },
-          {
-            key: "responses",
-            title: "Responses",
-            render: (row: TableRow) => {
-              const submitted = row.submittedCount ?? 0;
-              const assigned = row.assignedCount ?? 0;
-              return assigned > 0 ? `${submitted}/${assigned}` : submitted;
-            },
           },
           {
             key: "status",
@@ -801,17 +800,14 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
         data={rows}
         actions={(row: TableRow) => (
           <div className="flex gap-2">
-            <UtilityButton
-              small
+            <AssessmentActionIconButton
+              action="edit"
               onClick={() => handleEditQuiz(row)}
               disabled={isSaving || (row.submittedCount ?? 0) > 0}
-              title={(row.submittedCount ?? 0) > 0 ? "Cannot edit quiz with responses" : "Edit quiz"}
-            >
-              Edit
-            </UtilityButton>
-            <UtilityButton small onClick={() => handleViewResponses(row)}>
-              Summary
-            </UtilityButton>
+              title={(row.submittedCount ?? 0) > 0 ? "Cannot edit quiz with responses" : undefined}
+            />
+            <AssessmentActionIconButton action="summary" onClick={() => handleViewResponses(row)} />
+            <AssessmentActionIconButton action="download" onClick={() => handleDownloadQuiz(row)} />
             {row.quizCode && (
               <UtilityButton
                 small

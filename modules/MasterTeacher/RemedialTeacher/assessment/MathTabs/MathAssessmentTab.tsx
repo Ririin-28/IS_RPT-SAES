@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
+import AssessmentActionIconButton from "@/components/Common/Buttons/AssessmentActionIconButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import TableList from "@/components/Common/Tables/TableList";
@@ -10,6 +11,7 @@ import QrCodeModal from "@/modules/Teacher/assessment/Modals/QrCodeModal";
 import AddQuizModal, { type QuizData, type Student as QuizStudent, type Question as ModalQuestion, type Section as ModalSection } from "../Modals/AddQuizModal";
 import ViewResponsesModal from "../Modals/ViewResponsesModal";
 import { cloneResponses, type QuizResponse } from "../types";
+import { downloadPrintableQuizPdf } from "@/lib/assessments/printable";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 import {
   createAssessment,
@@ -209,7 +211,6 @@ const formatDateTime = (value: string) => {
     : parsed.toLocaleDateString("en-PH", {
       month: "short",
       day: "numeric",
-      year: "numeric",
       hour: "2-digit",
       minute: "2-digit"
     });
@@ -506,6 +507,14 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
     setIsQrModalOpen(true);
   };
 
+  const handleDownloadQuiz = (quiz: MathQuiz) => {
+    downloadPrintableQuizPdf({
+      quiz,
+      subjectLabel: "Math",
+      levelLabel: quiz.mathLevel,
+    });
+  };
+
   const [selectMode, setSelectMode] = useState(false);
   const [selectedQuizzes, setSelectedQuizzes] = useState<Set<number>>(new Set());
   const [isResponsesOpen, setIsResponsesOpen] = useState(false);
@@ -755,15 +764,6 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
             render: (row: TableRow) => formatDateTime(row.endDate ?? row.schedule),
           },
           {
-            key: "responses",
-            title: "Responses",
-            render: (row: TableRow) => {
-              const submitted = row.submittedCount ?? 0;
-              const assigned = row.assignedCount ?? 0;
-              return assigned > 0 ? `${submitted}/${assigned}` : submitted;
-            },
-          },
-          {
             key: "status",
             title: "Status",
             render: (row: TableRow) => {
@@ -780,17 +780,14 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
         data={rows}
         actions={(row: TableRow) => (
           <div className="flex gap-2">
-            <UtilityButton
-              small
+            <AssessmentActionIconButton
+              action="edit"
               onClick={() => handleEditQuiz(row)}
               disabled={isSaving || (row.submittedCount ?? 0) > 0}
-              title={(row.submittedCount ?? 0) > 0 ? "Cannot edit quiz with responses" : "Edit quiz"}
-            >
-              Edit
-            </UtilityButton>
-            <UtilityButton small onClick={() => handleViewResponses(row)}>
-              Summary
-            </UtilityButton>
+              title={(row.submittedCount ?? 0) > 0 ? "Cannot edit quiz with responses" : undefined}
+            />
+            <AssessmentActionIconButton action="summary" onClick={() => handleViewResponses(row)} />
+            <AssessmentActionIconButton action="download" onClick={() => handleDownloadQuiz(row)} />
             {row.quizCode && (
               <UtilityButton
                 small

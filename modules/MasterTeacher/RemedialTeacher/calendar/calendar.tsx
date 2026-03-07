@@ -19,9 +19,16 @@ interface Activity {
 }
 
 type WeeklySubjectSchedule = {
+  Monday?: string;
+  Tuesday?: string;
+  Wednesday?: string;
+  Thursday?: string;
+  Friday?: string;
   startTime?: string;
   endTime?: string;
 };
+
+const SCHEDULE_WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"] as const;
 
 const getSubjectIndicator = (subject: string | null | undefined): string | null => {
   if (!subject) {
@@ -253,9 +260,31 @@ export default function MasterTeacherCalendar() {
   const normalizeWeeklySubjectSchedule = (value: unknown): WeeklySubjectSchedule => {
     const record = value as Record<string, unknown> | null;
     return {
+      Monday: typeof record?.Monday === "string" ? record.Monday.trim() : "",
+      Tuesday: typeof record?.Tuesday === "string" ? record.Tuesday.trim() : "",
+      Wednesday: typeof record?.Wednesday === "string" ? record.Wednesday.trim() : "",
+      Thursday: typeof record?.Thursday === "string" ? record.Thursday.trim() : "",
+      Friday: typeof record?.Friday === "string" ? record.Friday.trim() : "",
       startTime: normalizeScheduleTime(record?.startTime),
       endTime: normalizeScheduleTime(record?.endTime),
     };
+  };
+
+  const getScheduledSubjectForDate = (
+    schedule: WeeklySubjectSchedule | null,
+    date: Date,
+  ): string | null => {
+    if (!schedule) {
+      return null;
+    }
+    const weekday = date.toLocaleDateString("en-US", { weekday: "long" });
+    if (!SCHEDULE_WEEKDAYS.includes(weekday as (typeof SCHEDULE_WEEKDAYS)[number])) {
+      return null;
+    }
+
+    const scheduleWeekday = weekday as (typeof SCHEDULE_WEEKDAYS)[number];
+    const subject = schedule[scheduleWeekday];
+    return typeof subject === "string" && subject.trim() ? subject.trim() : null;
   };
 
   const formatTimeLabel = (time: string | null | undefined): string => {
@@ -318,7 +347,12 @@ export default function MasterTeacherCalendar() {
           const dayActivities = activities.filter(
             (a) => a.date.getDate() === day && a.date.getMonth() === month && a.date.getFullYear() === year
           );
-          const subjectColor = dayActivities.length ? getSubjectColor(dayActivities[0].subject) : "border-gray-100";
+          const scheduledSubject = getScheduledSubjectForDate(weeklySubjectSchedule, currentDay);
+          const subjectColor = dayActivities.length
+            ? getSubjectColor(dayActivities[0].subject)
+            : scheduledSubject?.toLowerCase().includes("assessment")
+              ? getSubjectColor(scheduledSubject)
+              : "border-gray-100";
 
           days.push(
             <div

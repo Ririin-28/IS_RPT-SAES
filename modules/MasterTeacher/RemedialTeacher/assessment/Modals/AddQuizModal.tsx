@@ -2,10 +2,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Flatpickr from "react-flatpickr";
 import type { Options as FlatpickrOptions } from "flatpickr/dist/types/options";
+import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 import BaseModal, { ModalSection, ModalLabel } from "@/components/Common/Modals/BaseModal";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
-import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 
 export interface Student {
   id: string;
@@ -63,6 +63,29 @@ const MOCK_STUDENTS: Student[] = [
 
 const DATE_TIME_ALT_INPUT_CLASS =
   "flatpickr-alt-input w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-[#013300]";
+
+const FIELD_INPUT_CLASS =
+  "w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-[#013300] focus:ring-1 focus:ring-[#013300]";
+
+const FIELD_TEXTAREA_CLASS = `${FIELD_INPUT_CLASS} resize-y min-h-[88px]`;
+
+const READONLY_INPUT_CLASS =
+  "w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600";
+
+const FIELD_SELECT_CLASS =
+  "w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-[#013300] focus:ring-1 focus:ring-[#013300]";
+
+const INLINE_ACTION_CLASS =
+  "text-sm font-medium text-gray-600 transition hover:text-[#013300]";
+
+const DESTRUCTIVE_ACTION_CLASS =
+  "text-sm font-medium text-red-600 transition hover:text-red-800";
+
+const FLAT_ACTION_BUTTON_CLASS =
+  "inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition hover:border-gray-400 hover:bg-gray-50";
+
+const ICON_ACTION_BUTTON_CLASS =
+  "inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-500 transition hover:border-gray-300 hover:bg-gray-50 hover:text-gray-700";
 
 const formatDateForPickerValue = (date: Date) => {
   const pad = (value: number) => value.toString().padStart(2, "0");
@@ -505,17 +528,17 @@ export default function AddQuizModal({ isOpen, show, onClose, onSave, initialDat
       title={getModalTitle()}
       footer={footer}
     >
-      <form id={formId} onSubmit={handleSubmit} className="space-y-6">
+      <form id={formId} onSubmit={handleSubmit} className="space-y-8">
         {/* Quiz Details Section */}
         <ModalSection title="Quiz Details">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
             <div className="space-y-1">
               <ModalLabel required>Quiz Title</ModalLabel>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm"
+                className={FIELD_INPUT_CLASS}
                 placeholder="Enter quiz title"
                 required
               />
@@ -527,7 +550,7 @@ export default function AddQuizModal({ isOpen, show, onClose, onSave, initialDat
                 type="text"
                 value={level}
                 disabled
-                className="w-full bg-gray-50 border border-gray-300 text-gray-600 rounded-md px-3 py-2 text-sm"
+                className={READONLY_INPUT_CLASS}
               />
             </div>
 
@@ -536,7 +559,7 @@ export default function AddQuizModal({ isOpen, show, onClose, onSave, initialDat
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                className="w-full bg-white border border-gray-300 text-black rounded-md px-3 py-2 text-sm"
+                className={FIELD_TEXTAREA_CLASS}
                 rows={3}
                 placeholder="Enter quiz description"
               />
@@ -582,45 +605,37 @@ export default function AddQuizModal({ isOpen, show, onClose, onSave, initialDat
 
         {/* Questions Section */}
         <ModalSection title="Questions & Answers">
-          <div className="space-y-6">
+          <div className="space-y-8">
+            <div className="flex flex-col gap-3 border-b border-gray-200 pb-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-gray-500">
+                Organize your quiz by section, then add questions under each section.
+              </p>
+              <button type="button" onClick={addSection} className={FLAT_ACTION_BUTTON_CLASS}>
+                <Plus className="h-4 w-4" strokeWidth={2.25} />
+                Add Section
+              </button>
+            </div>
+
             {sections.map((section, sectionIndex) => {
               const sectionQuestions = questionsBySection[section.id] ?? [];
 
               return (
-                <div key={section.id} className="rounded-lg border border-gray-200 bg-white">
-                  <div className="flex flex-col gap-4 border-b border-gray-200 p-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="flex-1 space-y-3">
-                      <div className="space-y-1">
-                        <ModalLabel required>Section {sectionIndex + 1} Title</ModalLabel>
-                        <input
-                          type="text"
-                          value={section.title}
-                          onChange={(event) => updateSection(section.id, "title", event.target.value)}
-                          className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-[#013300]"
-                          placeholder="Enter section title"
-                          required
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <ModalLabel>Section Description (optional)</ModalLabel>
-                        <textarea
-                          value={section.description ?? ""}
-                          onChange={(event) => updateSection(section.id, "description", event.target.value)}
-                          className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-[#013300]"
-                          rows={2}
-                          placeholder="Add context for this section"
-                        />
-                      </div>
+                <div key={section.id} className="border-b border-gray-200 pb-8 last:border-b-0 last:pb-0">
+                  <div className="flex flex-col gap-4 pb-5 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="space-y-1">
+                      <h4 className="text-base font-semibold text-gray-900">Section {sectionIndex + 1}</h4>
+                      <p className="text-sm text-gray-500">{sectionQuestions.length} question{sectionQuestions.length === 1 ? "" : "s"}</p>
                     </div>
-                    <div className="flex flex-row gap-2 sm:flex-col sm:items-end">
-                      <UtilityButton type="button" onClick={() => addQuestionToSection(section.id)} small>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button type="button" onClick={() => addQuestionToSection(section.id)} className={FLAT_ACTION_BUTTON_CLASS}>
+                        <Plus className="h-4 w-4" strokeWidth={2.25} />
                         Add Question
-                      </UtilityButton>
+                      </button>
                       {sections.length > 1 && (
                         <button
                           type="button"
                           onClick={() => removeSection(section.id)}
-                          className="text-sm font-medium text-red-600 hover:text-red-800"
+                          className={DESTRUCTIVE_ACTION_CLASS}
                         >
                           Remove Section
                         </button>
@@ -628,149 +643,175 @@ export default function AddQuizModal({ isOpen, show, onClose, onSave, initialDat
                     </div>
                   </div>
 
-                  <div className="space-y-4 p-4">
+                  <div className="grid grid-cols-1 gap-4 pb-6 md:grid-cols-2">
+                    <div className="space-y-1">
+                      <div className="space-y-1">
+                        <ModalLabel required>Section Title</ModalLabel>
+                        <input
+                          type="text"
+                          value={section.title}
+                          onChange={(event) => updateSection(section.id, "title", event.target.value)}
+                          className={FIELD_INPUT_CLASS}
+                          placeholder="Enter section title"
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <ModalLabel>Section Description</ModalLabel>
+                        <textarea
+                          value={section.description ?? ""}
+                          onChange={(event) => updateSection(section.id, "description", event.target.value)}
+                          className={`${FIELD_TEXTAREA_CLASS} min-h-19`}
+                          rows={2}
+                          placeholder="Add context for this section"
+                        />
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
                     {sectionQuestions.length === 0 ? (
-                      <p className="text-sm text-gray-500">
+                      <p className="rounded-md border border-dashed border-gray-300 px-4 py-5 text-sm text-gray-500">
                         No questions in this section yet. Click "Add Question" to begin.
                       </p>
                     ) : (
                       sectionQuestions.map((question, qIndex) => {
                         const globalIndex = questions.findIndex((q) => q.id === question.id);
                         return (
-                          <div key={question.id} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-                            <div className="mb-4 flex items-start justify-between">
-                              <h5 className="font-medium text-gray-700">Question {qIndex + 1}</h5>
-                              <div className="flex items-center gap-2">
+                          <div key={question.id} className="rounded-md border border-gray-200 bg-white px-4 py-4">
+                            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                              <div>
+                                <h5 className="text-sm font-semibold text-gray-900">Question {qIndex + 1}</h5>
+                                <p className="text-xs uppercase tracking-[0.12em] text-gray-400">{question.type.replace("-", " ")}</p>
+                              </div>
+                              <div className="flex items-center gap-4">
                                 <button
                                   type="button"
                                   onClick={() => moveQuestion(question.id, "up")}
-                                  className="text-xs font-medium text-gray-500 hover:text-gray-700"
+                                  className={ICON_ACTION_BUTTON_CLASS}
                                   aria-label="Move question up"
+                                  title="Move question up"
                                 >
-                                  ↑
+                                  <ChevronUp className="h-4 w-4" strokeWidth={2.25} />
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => moveQuestion(question.id, "down")}
-                                  className="text-xs font-medium text-gray-500 hover:text-gray-700"
+                                  className={ICON_ACTION_BUTTON_CLASS}
                                   aria-label="Move question down"
+                                  title="Move question down"
                                 >
-                                  ↓
+                                  <ChevronDown className="h-4 w-4" strokeWidth={2.25} />
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => removeQuestion(globalIndex)}
-                                  className="text-sm font-medium text-red-600 hover:text-red-800"
+                                  className={`${ICON_ACTION_BUTTON_CLASS} text-red-600 hover:border-red-200 hover:bg-red-50 hover:text-red-700`}
+                                  aria-label="Remove question"
+                                  title="Remove question"
                                 >
-                                  Remove
+                                  <Trash2 className="h-4 w-4" strokeWidth={2.25} />
                                 </button>
                               </div>
                             </div>
 
-                            <div className="space-y-4">
-                              {/* Question Type */}
-                              <div className="space-y-1">
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                              <div className="space-y-1 md:max-w-xs">
                                 <ModalLabel>Question Type</ModalLabel>
                                 <select
                                   value={question.type}
                                   onChange={(event) => updateQuestion(globalIndex, 'type', event.target.value)}
-                                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                                  className={FIELD_SELECT_CLASS}
                                 >
                                   <option value="multiple-choice">Multiple Choice</option>
                                   <option value="true-false">True/False</option>
                                   <option value="short-answer">Short Answer</option>
                                 </select>
                               </div>
-
-                              {/* Question Text */}
-                              <div className="space-y-1">
+                              <div className="space-y-1 md:max-w-35">
+                                <ModalLabel required>Points</ModalLabel>
+                                <input
+                                  type="number"
+                                  value={question.points}
+                                  onChange={(event) => updateQuestion(globalIndex, 'points', Number(event.target.value))}
+                                  className={FIELD_INPUT_CLASS}
+                                  min="1"
+                                  required
+                                />
+                              </div>
+                              <div className="space-y-1 md:col-span-2">
                                 <ModalLabel required>Question Text</ModalLabel>
                                 <textarea
                                   value={question.question}
                                   onChange={(event) => updateQuestion(globalIndex, 'question', event.target.value)}
-                                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                                  className={FIELD_TEXTAREA_CLASS}
                                   rows={3}
                                   placeholder="Enter your question"
                                   required
                                 />
                               </div>
 
-                              {/* Options for Multiple Choice */}
                               {question.type === 'multiple-choice' && question.options && (
-                                <div className="space-y-1">
+                                <div className="space-y-3 md:col-span-2">
                                   <ModalLabel required>Options & Correct Answer</ModalLabel>
-                                  <div className="space-y-2">
+                                  <div className="space-y-3">
                                     {question.options.map((option, oIndex) => (
-                                      <div key={oIndex} className="flex items-center gap-3">
+                                      <label key={oIndex} className="flex items-center gap-3 rounded-md border border-gray-200 px-3 py-2">
                                         <input
                                           type="radio"
                                           name={`correct-${globalIndex}`}
                                           checked={question.correctAnswer === option}
                                           onChange={() => updateQuestion(globalIndex, 'correctAnswer', option)}
-                                          className="text-blue-600 focus:ring-blue-500"
+                                          className="h-4 w-4 border-gray-300 text-[#013300] focus:ring-[#013300]"
                                         />
+                                        <span className="text-sm font-medium text-gray-500">{String.fromCharCode(65 + oIndex)}.</span>
                                         <input
                                           type="text"
                                           value={option}
                                           onChange={(event) => updateOption(globalIndex, oIndex, event.target.value)}
-                                          className="flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                                          className={`${FIELD_INPUT_CLASS} border-0 px-0 py-0 focus:ring-0`}
                                           placeholder={`Option ${oIndex + 1}`}
                                           required
                                         />
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Options for True/False */}
-                              {question.type === 'true-false' && question.options && (
-                                <div className="space-y-1">
-                                  <ModalLabel required>Select Correct Answer</ModalLabel>
-                                  <div className="flex gap-4">
-                                    {question.options.map((option, oIndex) => (
-                                      <label key={oIndex} className="flex items-center gap-2">
-                                        <input
-                                          type="radio"
-                                          name={`correct-${globalIndex}`}
-                                          checked={question.correctAnswer === option}
-                                          onChange={() => updateQuestion(globalIndex, 'correctAnswer', option)}
-                                          className="text-blue-600 focus:ring-blue-500"
-                                        />
-                                        <span className="text-sm font-medium text-gray-700">{option}</span>
                                       </label>
                                     ))}
                                   </div>
                                 </div>
                               )}
 
-                              {/* Correct Answer for Short Answer */}
+                              {question.type === 'true-false' && question.options && (
+                                <div className="space-y-2 md:col-span-2">
+                                  <ModalLabel required>Select Correct Answer</ModalLabel>
+                                  <div className="flex flex-wrap gap-6">
+                                    {question.options.map((option, oIndex) => (
+                                      <label key={oIndex} className="flex items-center gap-2 text-sm text-gray-700">
+                                        <input
+                                          type="radio"
+                                          name={`correct-${globalIndex}`}
+                                          checked={question.correctAnswer === option}
+                                          onChange={() => updateQuestion(globalIndex, 'correctAnswer', option)}
+                                          className="h-4 w-4 border-gray-300 text-[#013300] focus:ring-[#013300]"
+                                        />
+                                        <span>{option}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
                               {question.type === 'short-answer' && (
-                                <div className="space-y-1">
+                                <div className="space-y-1 md:col-span-2">
                                   <ModalLabel required>Correct Answer</ModalLabel>
                                   <input
                                     type="text"
                                     value={question.correctAnswer}
                                     onChange={(event) => updateQuestion(globalIndex, 'correctAnswer', event.target.value)}
-                                    className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                                    className={FIELD_INPUT_CLASS}
                                     placeholder="Enter correct answer"
                                     required
                                   />
                                 </div>
                               )}
-
-                              {/* Points */}
-                              <div className="space-y-1">
-                                <ModalLabel required>Points</ModalLabel>
-                                <input
-                                  type="number"
-                                  value={question.points}
-                                  onChange={(event) => updateQuestion(globalIndex, 'points', Number(event.target.value))}
-                                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
-                                  min="1"
-                                  required
-                                />
-                              </div>
                             </div>
                           </div>
                         );
@@ -780,12 +821,6 @@ export default function AddQuizModal({ isOpen, show, onClose, onSave, initialDat
                 </div>
               );
             })}
-
-            <div className="flex justify-end">
-              <UtilityButton type="button" onClick={addSection} small>
-                + Add Section
-              </UtilityButton>
-            </div>
           </div>
 
           {questions.length === 0 && (

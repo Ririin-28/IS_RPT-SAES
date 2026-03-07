@@ -48,7 +48,7 @@ interface AddStudentModalProps {
 const PHONE_FORMAT_REGEX = /^09\d{2}-\d{3}-\d{4}$/;
 const LRN_REGEX = /^\d{6}-\d{6}$/;
 const GRADE_OPTIONS = ["1", "2", "3", "4", "5", "6"];
-const SECTION_OPTIONS = ["A", "B", "C", "D", "E", "F"];
+const DEFAULT_SECTION_OPTIONS = ["A", "B", "C", "D", "E", "F"];
 const RELATIONSHIP_OPTIONS = ["Mother", "Father", "Grandmother", "Grandfather", "Aunt", "Uncle", "Guardian", "Other"];
 const READING_LEVELS = [
   "Non-Reader",
@@ -87,6 +87,8 @@ export default function AddStudentModal({
     reset,
     formState: { errors, isSubmitting: formSubmitting },
   } = form;
+  const [sectionConfigByGrade, setSectionConfigByGrade] = useState<Record<string, string[]>>({});
+  const [sectionConfigLoading, setSectionConfigLoading] = useState(false);
 
   const activePhonemicField = useMemo<keyof AddStudentFormValues>(() => {
     const normalized = String(subjectLabel || "").toLowerCase().trim();
@@ -123,20 +125,23 @@ export default function AddStudentModal({
   });
 
   const formatPhoneValue = (input: string) => {
-    // Keep digits only
+    // Keep digits only.
     const digitsOnly = input.replace(/\D/g, "");
+    if (!digitsOnly) return "";
 
-    // Remove leading 0 if duplicated
+    // Preserve delete/backspace behavior for short partial inputs.
+    if (digitsOnly === "0") return "0";
+    if (digitsOnly === "9" || digitsOnly === "99" || digitsOnly === "09") return "09";
+
     let local = digitsOnly;
-    if (local.startsWith("09") && local.length > 2) {
-      local = "09" + local.slice(2).replace(/^0+/, '');
-    } else if (local.startsWith("9") && local.length >= 10) {
+    if (local.startsWith("09")) {
+      local = "09" + local.slice(2);
+    } else if (local.startsWith("9")) {
+      // Missing leading zero (e.g., 9XXXXXXXXX) -> normalize to 09XXXXXXXXX.
       local = "09" + local.slice(1);
     } else {
-      local = local.replace(/^0+/, '');
-      if (local.length > 0) {
-        local = "09" + local;
-      }
+      // Any other starting digits are treated as trailing digits after 09.
+      local = "09" + local.replace(/^0+/, "");
     }
 
     // Limit to 11 digits (09 + 9 digits)
@@ -159,8 +164,34 @@ export default function AddStudentModal({
 
   const phoneWatch = watch("guardianContact") || "";
   const lrnWatch = watch("lrn") || "";
+  const gradeWatch = watch("grade") || "";
+  const sectionWatch = watch("section") || "";
   const [displayPhone, setDisplayPhone] = useState("");
   const [lrnLookupLoading, setLrnLookupLoading] = useState(false);
+
+  const resolveGradeKey = (value: string | null | undefined): string | null => {
+    const raw = String(value ?? "").trim();
+    if (!raw) return null;
+    const match = raw.match(/\d+/);
+    if (!match) return null;
+    const grade = match[0];
+    return GRADE_OPTIONS.includes(grade) ? grade : null;
+  };
+
+  const selectedGradeKey = useMemo(() => {
+    const fixed = resolveGradeKey(gradeLabel);
+    if (fixed) return fixed;
+    return resolveGradeKey(gradeWatch);
+  }, [gradeLabel, gradeWatch]);
+
+  const availableSectionOptions = useMemo(() => {
+    if (!selectedGradeKey) return DEFAULT_SECTION_OPTIONS;
+    const configured = sectionConfigByGrade[selectedGradeKey] ?? [];
+    const normalized = configured
+      .map((section) => String(section ?? "").trim())
+      .filter((section) => section.length > 0);
+    return normalized.length > 0 ? normalized : DEFAULT_SECTION_OPTIONS;
+  }, [sectionConfigByGrade, selectedGradeKey]);
 
   const formatLrnValue = (input: string) => {
     const digits = input.replace(/\D/g, "").slice(0, 12);
@@ -181,6 +212,49 @@ export default function AddStudentModal({
   useEffect(() => {
     setDisplayPhone(formatPhoneValue(phoneWatch));
   }, [phoneWatch]);
+
+  useEffect(() => {
+    if (!show) return;
+
+    const controller = new AbortController();
+    const loadSectionConfig = async () => {
+      setSectionConfigLoading(true);
+      try {
+        const response = await fetch("/api/super_admin/section-config", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.data || typeof payload.data !== "object") {
+          return;
+        }
+        setSectionConfigByGrade(payload.data as Record<string, string[]>);
+      } catch (error) {
+        if ((error as { name?: string } | null)?.name !== "AbortError") {
+          console.error("Failed to load section configuration", error);
+        }
+      } finally {
+        setSectionConfigLoading(false);
+      }
+    };
+
+    loadSectionConfig();
+
+    return () => {
+      controller.abort();
+    };
+  }, [show]);
+
+  useEffect(() => {
+    const selected = String(sectionWatch).trim();
+    if (!selected) return;
+    const hasMatch = availableSectionOptions.some(
+      (option) => option.toLowerCase() === selected.toLowerCase()
+    );
+    if (!hasMatch) {
+      setValue("section", "", { shouldValidate: true, shouldDirty: true });
+    }
+  }, [availableSectionOptions, sectionWatch, setValue]);
 
   useEffect(() => {
     if (!show || isEditing) return;
@@ -297,26 +371,8 @@ export default function AddStudentModal({
         )}
         
         <ModalSection title="Personal Details">
-          {/* 1st Row: Student ID and Role (disabled) */}
+          {/* 1st Row: LRN and Role (disabled) */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="space-y-1">
-              <ModalLabel>Student ID</ModalLabel>
-              <input
-                className="w-full cursor-not-allowed rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-500"
-                value="Auto-generated"
-                disabled
-                aria-disabled
-              />
-            </div>
-            <div className="space-y-1">
-              <ModalLabel>Role</ModalLabel>
-              <input
-                className="w-full cursor-not-allowed rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-500"
-                value="Student"
-                disabled
-                aria-disabled
-              />
-            </div>
             <div className="space-y-1">
               <ModalLabel required>LRN</ModalLabel>
               <input
@@ -336,6 +392,15 @@ export default function AddStudentModal({
               {lrnLookupLoading && !errors.lrn && (
                 <span className="text-xs text-emerald-700">Checking LRN...</span>
               )}
+            </div>
+            <div className="space-y-1">
+              <ModalLabel>Role</ModalLabel>
+              <input
+                className="w-full cursor-not-allowed rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-500"
+                value="Student"
+                disabled
+                aria-disabled
+              />
             </div>
           </div>
 
@@ -437,13 +502,14 @@ export default function AddStudentModal({
               <select
                 className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
                 {...register("section", { required: "Section is required" })}
+                disabled={sectionConfigLoading && availableSectionOptions.length === 0}
               >
                 <option value="" disabled>
-                  Select section
+                  {sectionConfigLoading ? "Loading sections..." : "Select section"}
                 </option>
-                {SECTION_OPTIONS.map((section) => (
+                {availableSectionOptions.map((section) => (
                   <option key={section} value={section}>
-                    Section {section}
+                    {section}
                   </option>
                 ))}
               </select>

@@ -1,4 +1,3 @@
-
 import { predictStudentScore } from "@/lib/ml/server-inference";
 import { getStudentFeatures } from "@/lib/ml/dataset";
 
@@ -10,114 +9,259 @@ export type SessionMetrics = {
   responseTimeAvg?: number;
   overallAverage: number;
   phonemicLevel?: string;
+  difficultWords?: string[];
+  strongWords?: string[];
+  sessionTexts?: string[];
+};
+
+type ReadingQualityBand = "Poor" | "Fair" | "Average" | "Good" | "Excellent";
+type ReadingLevel = "Non-Reader" | "Syllable" | "Word" | "Phrase" | "Sentence" | "Paragraph";
+type ReadingIssue = "silent_letters" | "long_words" | "vowel_a" | "general_decoding";
+
+const toFiniteNumber = (value: number | null | undefined): number | null => {
+  if (typeof value !== "number" || Number.isNaN(value)) return null;
+  return Number.isFinite(value) ? value : null;
+};
+
+const clampPercent = (value: number | null, fallback = 0): number => {
+  if (value === null) return fallback;
+  if (value < 0) return 0;
+  if (value > 100) return 100;
+  return value;
+};
+
+const clampNonNegative = (value: number | null, fallback = 0): number => {
+  if (value === null) return fallback;
+  return value < 0 ? 0 : value;
+};
+
+const toFirstName = (value: string | null | undefined): string => {
+  const trimmed = (value ?? "").trim();
+  if (!trimmed) return "Student";
+
+  let candidate = trimmed;
+  if (trimmed.includes(",")) {
+    const parts = trimmed.split(",").map((part) => part.trim()).filter(Boolean);
+    candidate = parts[1] ?? parts[0] ?? trimmed;
+  }
+
+  const [firstToken] = candidate.split(/\s+/);
+  const cleaned = (firstToken ?? "").replace(/^[^a-zA-Z0-9]+|[^a-zA-Z0-9]+$/g, "");
+  return cleaned || "Student";
+};
+
+const tokenizeWords = (value: string | null | undefined): string[] => {
+  const raw = (value ?? "").trim().toLowerCase();
+  if (!raw) return [];
+  return raw
+    .replace(/[^a-zA-Z\s']/g, " ")
+    .split(/\s+/)
+    .map((word) => word.trim())
+    .filter((word) => word.length >= 3);
+};
+
+const uniqueWords = (values: Array<string | null | undefined>, limit = 6): string[] => {
+  const output: string[] = [];
+  const seen = new Set<string>();
+
+  for (const raw of values) {
+    const word = (raw ?? "").trim();
+    if (!word) continue;
+    const key = word.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push(word);
+    if (output.length >= limit) break;
+  }
+
+  return output;
+};
+
+const joinWords = (words: string[]): string => {
+  if (!words.length) return "";
+  if (words.length === 1) return words[0];
+  if (words.length === 2) return `${words[0]} and ${words[1]}`;
+  return `${words[0]}, ${words[1]}, and ${words[2]}`;
+};
+
+const getQualityBand = (overallAverage: number): ReadingQualityBand => {
+  if (overallAverage >= 90) return "Excellent";
+  if (overallAverage >= 80) return "Good";
+  if (overallAverage >= 70) return "Average";
+  if (overallAverage >= 60) return "Fair";
+  return "Poor";
+};
+
+const inferReadingLevel = (
+  accuracy: number,
+  readingSpeedWpm: number,
+  qualityBand: ReadingQualityBand,
+): ReadingLevel => {
+  if (qualityBand === "Poor" || accuracy < 55 || readingSpeedWpm < 30) return "Non-Reader";
+  if (qualityBand === "Fair" || accuracy < 65 || readingSpeedWpm < 45) return "Syllable";
+  if (accuracy < 75 || readingSpeedWpm < 60) return "Word";
+  if (accuracy < 82 || readingSpeedWpm < 80) return "Phrase";
+  if (accuracy < 90 || readingSpeedWpm < 100) return "Sentence";
+  return "Paragraph";
+};
+
+const SILENT_LETTER_PATTERN = /^(kn|wr|gn|ps|pt|pn|rh)|mb$|bt$|mn$|lk$|stle$/i;
+
+const inferReadingIssue = (
+  difficultWords: string[],
+  accuracy: number,
+  readingSpeedWpm: number,
+): ReadingIssue => {
+  if (difficultWords.some((word) => SILENT_LETTER_PATTERN.test(word))) {
+    return "silent_letters";
+  }
+
+  const longWordsCount = difficultWords.filter((word) => word.length >= 8).length;
+  if (longWordsCount >= 2 || (accuracy < 78 && readingSpeedWpm >= 95)) {
+    return "long_words";
+  }
+
+  const wordsWithA = difficultWords.filter((word) => /a/i.test(word)).length;
+  if (wordsWithA >= 2) {
+    return "vowel_a";
+  }
+
+  return "general_decoding";
+};
+
+const pickFallbackWords = (
+  preferred: string[],
+  backup: string[],
+  sessionTexts: string[],
+): string[] => {
+  const preferredSet = uniqueWords(preferred, 3);
+  if (preferredSet.length >= 2) return preferredSet;
+
+  const backupSet = uniqueWords(backup, 3);
+  if (backupSet.length >= 2) return backupSet;
+
+  const textWords = uniqueWords(
+    sessionTexts.flatMap((text) => tokenizeWords(text).filter((word) => word.length >= 5)),
+    3,
+  );
+  return textWords.length ? textWords : ["practice words"];
+};
+
+const pickOpener = (overallAverage: number, accuracy: number, readingSpeedWpm: number): string => {
+  const openers = [
+    "Nice progress today",
+    "Good effort today",
+    "You improved today",
+    "Great focus today",
+  ];
+  const score = Math.max(0, Math.round(overallAverage + accuracy + readingSpeedWpm));
+  return openers[score % openers.length];
+};
+
+const generateReadingInsight = (metrics: SessionMetrics, studentName?: string): string => {
+  const name = toFirstName(studentName);
+  const overallAverage = clampPercent(toFiniteNumber(metrics.overallAverage), 0);
+  const accuracy = clampPercent(toFiniteNumber(metrics.accuracyAvg), overallAverage);
+  const readingSpeedWpm = clampNonNegative(toFiniteNumber(metrics.readingSpeedAvg), 0);
+  const qualityBand = getQualityBand(overallAverage);
+  const level = inferReadingLevel(accuracy, readingSpeedWpm, qualityBand);
+  const sessionTexts = Array.isArray(metrics.sessionTexts) ? metrics.sessionTexts.filter(Boolean) : [];
+
+  const difficultWords = uniqueWords(metrics.difficultWords ?? [], 8);
+  const strongWords = uniqueWords(metrics.strongWords ?? [], 8);
+
+  const strengthExamples = pickFallbackWords(strongWords, difficultWords, sessionTexts);
+  const struggleExamples = pickFallbackWords(difficultWords, strongWords, sessionTexts);
+  const issue = inferReadingIssue(struggleExamples, accuracy, readingSpeedWpm);
+
+  const sentenceOne = `${pickOpener(overallAverage, accuracy, readingSpeedWpm)}, ${name} is now at the ${level} level with ${qualityBand} performance.`;
+  const sentenceTwo = `${name} is doing ${qualityBand}, especially in reading hard words like ${joinWords(strengthExamples)}.`;
+
+  let sentenceThree = `${name} should continue guided reading 2 times a day.`;
+  if (issue === "silent_letters") {
+    sentenceThree = `But ${name} still struggles with silent letters like ${joinWords(struggleExamples)}, so ${name} should read silent-letter word lists and short stories 2 times a day.`;
+  } else if (issue === "long_words") {
+    sentenceThree = `But ${name} still struggles with long words like ${joinWords(struggleExamples)} and sometimes mumbles, so ${name} should practice syllable chunking and tongue twisters 2 times a day.`;
+  } else if (issue === "vowel_a") {
+    sentenceThree = `But ${name} still struggles with words with letter A like ${joinWords(struggleExamples)}, so ${name} should practice A-sound word drills and read short stories 2 times a day.`;
+  } else {
+    sentenceThree = `But ${name} still struggles with tricky words like ${joinWords(struggleExamples)}, so ${name} should read guided stories and repeat hard words 2 times a day.`;
+  }
+
+  return `${sentenceOne} ${sentenceTwo} ${sentenceThree}`;
 };
 
 export async function generateAiInsight(
-  studentId: string, 
+  studentId: string,
   metrics: SessionMetrics,
   studentName?: string,
-  subject: "English" | "Filipino" | "Math" = "English"
+  subject: "English" | "Filipino" | "Math" = "English",
 ): Promise<string> {
-  const name = studentName?.split(" ")[0] || "The student";
-  
-  // 1. Get Predictive Context
+  if (subject !== "Math") {
+    return generateReadingInsight(metrics, studentName);
+  }
+
+  const name = toFirstName(studentName);
   const features = await getStudentFeatures(studentId);
   let riskLevel = "Unknown";
   let trend = "stable";
 
   if (features) {
-    // Simple trend heuristic: higher avg than last session?
-    // We don't have trend explicitly in features yet, but we can infer from 'avgScore' vs current session.
     const avgHistorical = features[2];
     if (metrics.overallAverage > avgHistorical + 5) trend = "improving";
     else if (metrics.overallAverage < avgHistorical - 5) trend = "declining";
-    
-    // Server-side Prediction
+
     const result = await predictStudentScore(features);
     if (result !== null) {
       riskLevel = result < 75 ? "High" : "Low";
     }
   }
 
-  // 2. Identify Strengths & Weaknesses (Rule-Based + Hybrid)
   const strengths: string[] = [];
   const weaknesses: string[] = [];
 
-  if (subject === "Math") {
-    // Math Specific Analysis
-    if (metrics.accuracyAvg >= 85) strengths.push("problem solving accuracy");
-    else if (metrics.accuracyAvg < 75) weaknesses.push("calculation accuracy");
+  if (metrics.accuracyAvg >= 85) strengths.push("problem solving accuracy");
+  else if (metrics.accuracyAvg < 75) weaknesses.push("calculation accuracy");
 
-    if ((metrics.responseTimeAvg ?? 10) <= 5) strengths.push("speed and efficiency");
-    else if ((metrics.responseTimeAvg ?? 0) > 10) weaknesses.push("processing speed");
+  if ((metrics.responseTimeAvg ?? 10) <= 5) strengths.push("speed and efficiency");
+  else if ((metrics.responseTimeAvg ?? 0) > 10) weaknesses.push("processing speed");
 
-  } else {
-    // English/Filipino (Reading) Analysis
-    if ((metrics.pronunciationAvg ?? 0) >= 85) strengths.push("clear pronunciation");
-    else if ((metrics.pronunciationAvg ?? 0) < 75) weaknesses.push("pronunciation accuracy");
-    
-    if (metrics.accuracyAvg >= 85) strengths.push("word recognition");
-    else if (metrics.accuracyAvg < 75) weaknesses.push("decoding complex words");
-
-    if ((metrics.readingSpeedAvg ?? 0) >= 100) strengths.push("reading fluency");
-    else if ((metrics.readingSpeedAvg ?? 0) < 60) weaknesses.push("reading pace");
-  }
-
-  // Trend Analysis
   if (trend === "improving") strengths.push("consistent progress");
   if (trend === "declining") weaknesses.push("recent performance regression");
 
-  // 3. Construct Narrative
-  // Intro based on Risk
   let intro = "";
   if (riskLevel === "High") {
-    intro = `${name} is currently at risk of falling behind in the upcoming assessment.`;
+    intro = `${name} may need extra support in the next assessment.`;
   } else if (riskLevel === "Low") {
-    intro = `${name} is on track to meet proficiency standards.`;
+    intro = `${name} is on track in this math session.`;
   } else {
-    intro = `${name} has completed the session.`;
+    intro = `${name} has finished this math session.`;
   }
 
-  // Body: Strengths/Weaknesses
   let body = "";
   if (strengths.length > 0 && weaknesses.length > 0) {
-    body = `While ${name} demonstrates strength in ${strengths[0]}, they struggle with ${weaknesses[0]}.`;
+    body = `${name} shows strength in ${strengths[0]} but still needs work on ${weaknesses[0]}.`;
   } else if (strengths.length > 0) {
-    body = `${name} shows excellent ${strengths.join(" and ")}.`;
+    body = `${name} did well in ${strengths.join(" and ")}.`;
   } else if (weaknesses.length > 0) {
-    body = `${name} needs significant improvement in ${weaknesses.join(" and ")}.`;
+    body = `${name} needs more practice in ${weaknesses.join(" and ")}.`;
   } else {
-    body = "Performance is balanced, with no major outliers.";
+    body = "Performance is balanced for this session.";
   }
 
-  // Recommendation
   let recommendation = "";
-  if (subject === "Math") {
-    if (weaknesses.includes("processing speed")) {
-      recommendation = "We recommend daily timed drills to improve calculation speed.";
-    } else if (weaknesses.includes("calculation accuracy")) {
-      recommendation = "Review fundamental concepts and practice untimed problems to build accuracy.";
-    } else if (riskLevel === "High") {
-      recommendation = "Intensive remedial sessions focusing on core headers are advised.";
-    } else {
-      recommendation = "Continue with the current practice set to maintain proficiency.";
-    }
+  if (weaknesses.includes("processing speed")) {
+    recommendation = `${name} should do short timed drills 2 times a day.`;
+  } else if (weaknesses.includes("calculation accuracy")) {
+    recommendation = `${name} should review basic operations and practice slowly before timed work.`;
+  } else if (riskLevel === "High") {
+    recommendation = `${name} should attend guided remedial practice this week.`;
   } else {
-    // Reading Recommendations
-    if (weaknesses.includes("reading pace")) {
-      recommendation = "We recommend timed reading drills to build automaticity.";
-    } else if (weaknesses.includes("pronunciation accuracy")) {
-      recommendation = "Focus on phonemic segmentation exercises.";
-    } else if (riskLevel === "High") {
-      recommendation = "Additional remedial sessions are strongly advised to bridge learning gaps.";
-    } else {
-      recommendation = "Maintain the current practice schedule to reinforce these gains.";
-    }
+    recommendation = `${name} should continue the current math practice routine.`;
   }
-  
-  // Improvement Note
+
   if (trend === "improving") {
-    recommendation += " The recent upward trend is encouraging.";
+    recommendation += " Recent progress is encouraging.";
   }
 
   return `${intro} ${body} ${recommendation}`;

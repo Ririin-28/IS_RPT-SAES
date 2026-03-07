@@ -138,6 +138,7 @@ export type RemedialSessionSlide = {
   flashcard_index?: number | null;
   expected_text?: string | null;
   transcription?: string | null;
+  reading_tutor_feedback?: string | null;
   pronunciation_score?: number | null;
   accuracy_score?: number | null;
   fluency_score?: number | null;
@@ -419,6 +420,7 @@ export async function getRemedialSessionTimeline(
       ${columnOrNull("flashcard_index")},
       ${columnOrNull("expected_text")},
       ${columnOrNull("transcription")},
+      ${columnOrNull("reading_tutor_feedback")},
       ${columnOrNull("pronunciation_score")},
       ${accuracySelect},
       ${columnOrNull("fluency_score")},
@@ -442,6 +444,7 @@ export async function getRemedialSessionTimeline(
       flashcard_index: row.flashcard_index ?? null,
       expected_text: row.expected_text ?? null,
       transcription: row.transcription ?? null,
+      reading_tutor_feedback: row.reading_tutor_feedback ?? null,
       pronunciation_score: toNumberValue(row.pronunciation_score),
       accuracy_score: toNumberValue(row.accuracy_score),
       fluency_score: toNumberValue(row.fluency_score),

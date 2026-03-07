@@ -13,6 +13,7 @@ type SlidePerformance = {
   readingSpeedWpm: number;
   slideAverage: number;
   transcription?: string | null;
+  readingTutorFeedback?: string | null;
 };
 
 type SaveRemedialSessionPayload = {
@@ -71,6 +72,75 @@ function parseGradeLevelValue(value: string | number | null | undefined): number
   return null;
 }
 
+function tokenizeReadingWords(value: string | null | undefined): string[] {
+  const raw = (value ?? "").trim().toLowerCase();
+  if (!raw) return [];
+  return raw
+    .replace(/[^a-zA-Z\s']/g, " ")
+    .split(/\s+/)
+    .map((word) => word.trim())
+    .filter((word) => word.length >= 3);
+}
+
+function uniqueWords(values: string[], limit = 10): string[] {
+  const output: string[] = [];
+  const seen = new Set<string>();
+  for (const word of values) {
+    const trimmed = (word ?? "").trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push(trimmed);
+    if (output.length >= limit) break;
+  }
+  return output;
+}
+
+function collectReadingWordSignals(
+  slides: Array<{
+    expectedText: string | null;
+    transcription: string | null;
+    accuracyScore: number | null;
+    slideAverage: number | null;
+  }>,
+): { difficultWords: string[]; strongWords: string[]; sessionTexts: string[] } {
+  const difficultWords: string[] = [];
+  const strongWords: string[] = [];
+  const sessionTexts: string[] = [];
+
+  for (const slide of slides) {
+    const expectedText = normalizeText(slide.expectedText ?? "");
+    if (expectedText) sessionTexts.push(expectedText);
+
+    const expectedWords = tokenizeReadingWords(expectedText);
+    const spokenWords = new Set(tokenizeReadingWords(slide.transcription ?? ""));
+    const missingWords = expectedWords.filter((word) => !spokenWords.has(word));
+    const hardWords = expectedWords.filter((word) => word.length >= 5);
+
+    const accuracy = slide.accuracyScore ?? 0;
+    const averageScore = slide.slideAverage ?? 0;
+    if (accuracy < 80 || averageScore < 80) {
+      difficultWords.push(...missingWords);
+      if (!missingWords.length) {
+        difficultWords.push(...hardWords.slice(0, 2));
+      }
+    }
+    if (accuracy >= 85 && averageScore >= 80) {
+      strongWords.push(...hardWords.slice(0, 2));
+    }
+  }
+
+  const dedupedDifficult = uniqueWords(difficultWords, 10);
+  const dedupedStrong = uniqueWords(strongWords, 10);
+  const dedupedTexts = uniqueWords(sessionTexts, 20);
+  return {
+    difficultWords: dedupedDifficult,
+    strongWords: dedupedStrong,
+    sessionTexts: dedupedTexts,
+  };
+}
+
 
 
 export async function POST(request: NextRequest) {
@@ -114,6 +184,8 @@ export async function POST(request: NextRequest) {
         readingSpeedWpm: toNumber(slide.readingSpeedWpm),
         slideAverage: toNumber(slide.slideAverage),
         transcription: typeof slide.transcription === "string" ? slide.transcription : null,
+        readingTutorFeedback:
+          typeof slide.readingTutorFeedback === "string" ? slide.readingTutorFeedback : null,
       }))
       .filter((slide) =>
         slide.flashcardIndex !== null &&
@@ -236,7 +308,7 @@ export async function POST(request: NextRequest) {
         );
 
         const performanceValues: Array<
-          [number, number, string | null, number, number, number, number, number, number, string | null]
+          [number, number, string | null, number, number, number, number, number, number, string | null, string | null]
         > = validatedSlides.map((slide) => [
           sessionId,
           slide.flashcardIndex as number,
@@ -248,12 +320,13 @@ export async function POST(request: NextRequest) {
           slide.readingSpeedWpm as number,
           slide.slideAverage as number,
           slide.transcription,
+          slide.readingTutorFeedback,
         ]);
 
-        const placeholders = performanceValues.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
+        const placeholders = performanceValues.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
         await connection.query(
           `INSERT INTO student_remedial_flashcard_performance
-           (session_id, flashcard_index, expected_text, pronunciation_score, accuracy_score, fluency_score, completeness_score, reading_speed_wpm, slide_average, transcription)
+           (session_id, flashcard_index, expected_text, pronunciation_score, accuracy_score, fluency_score, completeness_score, reading_speed_wpm, slide_average, transcription, reading_tutor_feedback)
            VALUES ${placeholders}`,
           performanceValues.flat(),
         );
@@ -269,6 +342,21 @@ export async function POST(request: NextRequest) {
         const validSubject = ["English", "Filipino", "Math"].includes(subjectName) 
           ? (subjectName as "English" | "Filipino" | "Math") 
           : "English";
+        const [studentRows] = await connection.query<RowDataPacket[]>(
+          "SELECT first_name, last_name FROM student WHERE student_id = ? LIMIT 1",
+          [studentId],
+        );
+        const studentFirstName = typeof studentRows[0]?.first_name === "string" ? studentRows[0].first_name.trim() : "";
+        const studentLastName = typeof studentRows[0]?.last_name === "string" ? studentRows[0].last_name.trim() : "";
+        const studentDisplayName = [studentFirstName, studentLastName].filter(Boolean).join(" ").trim() || undefined;
+        const readingWordSignals = collectReadingWordSignals(
+          validatedSlides.map((slide) => ({
+            expectedText: slide.expectedText ?? null,
+            transcription: slide.transcription ?? null,
+            accuracyScore: slide.accuracyScore,
+            slideAverage: slide.slideAverage,
+          })),
+        );
 
         const aiRemarks = await generateAiInsight(
           String(studentId),
@@ -278,8 +366,11 @@ export async function POST(request: NextRequest) {
             accuracyAvg,
             readingSpeedAvg,
             fluencyScore: average(validatedSlides.map(s => s.fluencyScore as number)),
+            difficultWords: readingWordSignals.difficultWords,
+            strongWords: readingWordSignals.strongWords,
+            sessionTexts: readingWordSignals.sessionTexts,
           },
-          undefined,
+          studentDisplayName,
           validSubject
         );
 
@@ -478,7 +569,7 @@ export async function GET(request: NextRequest) {
 
       const [slideRows] = await connection.query<RowDataPacket[]>(
         `SELECT flashcard_index, expected_text, pronunciation_score, accuracy_score, fluency_score,
-                completeness_score, reading_speed_wpm, slide_average, transcription
+                completeness_score, reading_speed_wpm, slide_average, transcription, reading_tutor_feedback
          FROM student_remedial_flashcard_performance
          WHERE session_id = ?
          ORDER BY flashcard_index ASC`,
@@ -506,6 +597,7 @@ export async function GET(request: NextRequest) {
             readingSpeedWpm: Number(row.reading_speed_wpm) || 0,
             slideAverage: Number(row.slide_average) || 0,
             transcription: row.transcription ?? null,
+            readingTutorFeedback: row.reading_tutor_feedback ?? null,
           })),
         },
       };

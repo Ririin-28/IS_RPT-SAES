@@ -275,16 +275,23 @@ export default function TeacherRemedial() {
                   </div>
               </div>
 
-              {/*---------------------------------List Content---------------------------------*/}
-              <div className="flex-1 min-h-0 px-4 sm:px-6 pb-4 sm:pb-6 pt-4 overflow-y-auto">
-                 <ScheduledActivitiesList 
-                    activities={scheduleActivities} 
-                    subject={subject} 
-                    loading={scheduleLoading} 
+              {/* Scrollable Content Section */}
+              <div className="flex-1 overflow-hidden flex flex-col relative custom-scrollbar overflow-y-auto">
+                {/* Schedule Section */}
+                <div className="px-4 pt-4 sm:px-6 sm:pt-6 pb-2">
+                  <h2 className="text-lg font-bold text-gray-800">Scheduled Activities ({subject})</h2>
+                </div>
+
+                <div className="flex-1 min-h-0 px-4 sm:px-6 pb-4 sm:pb-6">
+                  <ScheduledActivitiesList
+                    activities={scheduleActivities}
+                    subject={subject}
+                    loading={scheduleLoading}
                     error={scheduleError}
                     onPlay={handlePlayClick}
                     validatingActivityId={validatingActivityId}
-                />
+                  />
+                </div>
               </div>
             </div>
           </div>

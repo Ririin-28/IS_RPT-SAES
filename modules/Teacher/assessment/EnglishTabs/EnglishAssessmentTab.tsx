@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
+import AssessmentActionIconButton from "@/components/Common/Buttons/AssessmentActionIconButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import TableList from "@/components/Common/Tables/TableList";
@@ -11,6 +12,7 @@ import DeleteConfirmationModal from "../Modals/DeleteConfirmationModal";
 import UpdateConfirmationModal from "../Modals/UpdateConfirmationModal";
 import QrCodeModal from "../Modals/QrCodeModal";
 import { cloneResponses, type QuizResponse } from "../types";
+import { downloadPrintableQuizPdf } from "@/lib/assessments/printable";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 import {
   createAssessment,
@@ -176,7 +178,6 @@ const formatDateTime = (value: string) => {
     : parsed.toLocaleDateString("en-PH", {
       month: "short",
       day: "numeric",
-      year: "numeric",
       hour: "2-digit",
       minute: "2-digit"
     });
@@ -658,6 +659,14 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
     setIsQrModalOpen(true);
   };
 
+  const handleDownloadQuiz = (quiz: Quiz) => {
+    downloadPrintableQuizPdf({
+      quiz,
+      subjectLabel: "English",
+      levelLabel: quiz.phonemicLevel,
+    });
+  };
+
   type TableRow = Quiz & { no: number };
   const rows: TableRow[] = quizzes.map((quiz, index) => ({
     ...quiz,
@@ -736,7 +745,6 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
               </span>
             )
           },
-          { key: "phonemicLevel", title: "Phonemic" },
           {
             key: "startDate",
             title: "Start",
@@ -746,21 +754,6 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
             key: "endDate",
             title: "End",
             render: (row: TableRow) => formatDateTime(row.endDate ?? row.schedule),
-          },
-          {
-            key: "responses",
-            title: "Responses",
-            render: (row: TableRow) => {
-              const submitted = row.submittedCount ?? 0;
-              const assigned = row.assignedCount ?? 0;
-              return (
-                <div className="flex flex-col">
-                  <span className="font-semibold text-gray-700">
-                    {assigned > 0 ? `${submitted}/${assigned}` : submitted}
-                  </span>
-                </div>
-              );
-            },
           },
           {
             key: "status",
@@ -779,18 +772,15 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
         data={rows}
         actions={(row: TableRow) => (
           <div className="flex gap-2">
-            <UtilityButton
-              small
+            <AssessmentActionIconButton
+              action="edit"
               onClick={() => handleEditQuiz(row)}
               disabled={isSaving || (row.submittedCount ?? 0) > 0}
-              title={(row.submittedCount ?? 0) > 0 ? "Cannot edit quiz with submissions" : "Edit Quiz"}
+              title={(row.submittedCount ?? 0) > 0 ? "Cannot edit quiz with submissions" : undefined}
               className={(row.submittedCount ?? 0) > 0 ? "bg-[#6c8f6c]! text-white! opacity-80 cursor-not-allowed hover:bg-[#6c8f6c]! border-[#6c8f6c]!" : ""}
-            >
-              Edit
-            </UtilityButton>
-            <UtilityButton small onClick={() => handleViewResponses(row)}>
-              Summary
-            </UtilityButton>
+            />
+            <AssessmentActionIconButton action="summary" onClick={() => handleViewResponses(row)} />
+            <AssessmentActionIconButton action="download" onClick={() => handleDownloadQuiz(row)} />
             {row.quizCode && (
               <UtilityButton
                 small
