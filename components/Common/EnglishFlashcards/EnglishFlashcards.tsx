@@ -719,8 +719,8 @@ export default function EnglishFlashcards({
   const [isTutorCardPlaying, setIsTutorCardPlaying] = useState(false);
   const [recognizedText, setRecognizedText] = useState("");
   const [liveTranscription, setLiveTranscription] = useState("");
-  const [feedback, setFeedback] = useState("");
-  const [statusMessage, setStatusMessage] = useState("");
+  const [, setFeedback] = useState("");
+  const [, setStatusMessage] = useState("");
   const [metrics, setMetrics] = useState<any>(null);
   const [wordFeedback, setWordFeedback] = useState<WordFeedback[]>([]);
   const liveAccuracyScore =
@@ -1899,7 +1899,7 @@ export default function EnglishFlashcards({
       activeRecognizerStopRef.current = null;
       browserRecognitionRef.current = null;
     }
-  }, [computeScores, current, recognizedText, sentence, startAudioAnalyser, stopAudioAnalyser, upsertSessionScore]);
+  }, [buildTutorFeedback, computeScores, current, recognizedText, sentence, speakTutorFeedback, startAudioAnalyser, stopAudioAnalyser, upsertSessionScore]);
 
   const handleMicrophone = async () => {
     if (!sentence.trim()) return;

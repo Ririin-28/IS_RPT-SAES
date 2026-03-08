@@ -338,6 +338,7 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
   const lrnRevealTimersRef = useRef<Record<string, number>>({});
   const [playLoadingId, setPlayLoadingId] = useState<string | null>(null);
   const [promoteLoadingId, setPromoteLoadingId] = useState<string | null>(null);
+  const [promotionRecommendationRefreshKey, setPromotionRecommendationRefreshKey] = useState(0);
 
   const userProfile = useMemo(() => getStoredUserProfile(), []);
   const userId = useMemo(() => {
@@ -691,6 +692,14 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
         return;
       }
 
+      const currentLevel = String(
+        subject === "English"
+          ? selectedStudent?.englishPhonemic ?? selectedStudent?.english ?? ""
+          : subject === "Filipino"
+            ? selectedStudent?.filipinoPhonemic ?? selectedStudent?.filipino ?? ""
+            : selectedStudent?.mathProficiency ?? selectedStudent?.math ?? "",
+      ).trim();
+
       setPromoteLoadingId(String(studentId));
       try {
         const response = await fetch("/api/teacher/remedial/students/promote-phonemic", {
@@ -699,6 +708,7 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
           body: JSON.stringify({
             studentId: String(studentId),
             subject,
+            currentLevel,
             requestedBy: userId,
           }),
         });
@@ -710,33 +720,42 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
 
         const nextLevel = payload?.nextLevel?.level_name ?? payload?.nextLevel?.levelName ?? "";
         if (nextLevel) {
+          const applyPromotedLevel = (entry: any) => {
+            if (!entry) {
+              return entry;
+            }
+            if (subject === "English") {
+              return {
+                ...entry,
+                englishPhonemic: nextLevel,
+                english: nextLevel,
+              };
+            }
+            if (subject === "Filipino") {
+              return {
+                ...entry,
+                filipinoPhonemic: nextLevel,
+                filipino: nextLevel,
+              };
+            }
+            return {
+              ...entry,
+              mathProficiency: nextLevel,
+              math: nextLevel,
+            };
+          };
+
           setStudents((prev) =>
             prev.map((entry: any) => {
               const entryId = entry?.studentId ?? entry?.id;
               if (String(entryId) !== String(studentId)) {
                 return entry;
               }
-              if (subject === "English") {
-                return {
-                  ...entry,
-                  englishPhonemic: nextLevel,
-                  english: nextLevel,
-                };
-              }
-              if (subject === "Filipino") {
-                return {
-                  ...entry,
-                  filipinoPhonemic: nextLevel,
-                  filipino: nextLevel,
-                };
-              }
-              return {
-                ...entry,
-                mathProficiency: nextLevel,
-                math: nextLevel,
-              };
+              return applyPromotedLevel(entry);
             })
           );
+          setSelectedStudent((prev: any) => applyPromotedLevel(prev));
+          setPromotionRecommendationRefreshKey((prev) => prev + 1);
         }
       } catch (error) {
         alert(error instanceof Error ? error.message : "Failed to promote student.");
@@ -798,6 +817,13 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
           setSelectedStudent(null);
         }}
         student={selectedStudent}
+        reportHref={
+          selectedStudent
+            ? `/MasterTeacher/RemedialTeacher/report/filipino/students/${encodeURIComponent(String(selectedStudent.studentId ?? selectedStudent.id ?? ""))}`
+            : undefined
+        }
+        promotionRecommendationApiPath="/api/teacher/remedial/students/promotion-readiness"
+        promotionRecommendationRefreshKey={promotionRecommendationRefreshKey}
         onPromote={handlePromoteFromModal}
         promoteLoading={
           !selectedStudent ||

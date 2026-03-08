@@ -1,11 +1,104 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
 import BaseModal, { ModalSection, ModalInfoItem } from "@/components/Common/Modals/BaseModal";
+
+type PromotionSubject = "English" | "Filipino" | "Math";
+
+type PromotionRecommendation = {
+  subject: PromotionSubject;
+  status: "ready" | "not_ready" | "insufficient_data";
+  trend: "up" | "down" | "neutral";
+  canPromote: boolean;
+  threshold: number;
+  requiredSessions: number;
+  qualifyingStreak: number;
+  recentAverages: number[];
+  message: string;
+};
+
+const PROMOTION_SUBJECTS: PromotionSubject[] = ["English", "Filipino", "Math"];
+
+const getTrendIcon = (trend: PromotionRecommendation["trend"]) => {
+  if (trend === "up") {
+    return (
+      <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M16 7h5v5" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="m21 7-7.5 7.5-4-4L3 17" />
+      </svg>
+    );
+  }
+
+  if (trend === "down") {
+    return (
+      <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M16 17h5v-5" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="m21 17-7.5-7.5-4 4L3 7" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14" />
+    </svg>
+  );
+};
+
+const getRecommendationTone = (recommendation?: PromotionRecommendation | null) => {
+  if (!recommendation) {
+    return {
+      card: "border-gray-200 bg-white",
+      action: "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed",
+      heading: "text-gray-600",
+      body: "text-gray-500",
+    };
+  }
+
+  if (recommendation.status === "ready") {
+    return {
+      card: "border-emerald-200 bg-emerald-50/50",
+      action: "border-emerald-200 bg-emerald-50 text-emerald-900 hover:bg-emerald-100",
+      heading: "text-emerald-800",
+      body: "text-emerald-900/80",
+    };
+  }
+
+  if (recommendation.status === "not_ready") {
+    return {
+      card: "border-amber-200 bg-amber-50/40",
+      action: "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed",
+      heading: "text-amber-800",
+      body: "text-amber-900/85",
+    };
+  }
+
+  return {
+    card: "border-slate-200 bg-slate-50/70",
+    action: "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed",
+    heading: "text-slate-700",
+    body: "text-slate-600",
+  };
+};
+
+const getRecommendationHeadline = (recommendation?: PromotionRecommendation | null) => {
+  if (!recommendation || recommendation.status === "insufficient_data") {
+    return "Needs more data";
+  }
+  return recommendation.status === "ready" ? "Ready to promote" : "Not ready yet";
+};
 
 interface StudentDetailModalProps {
   show: boolean;
   onClose: () => void;
   student: any;
-  onPromote?: (subject: "English" | "Filipino" | "Math") => void;
+  onPromote?: (subject: PromotionSubject) => void;
   promoteLoading?: boolean;
+  reportHref?: string;
+  promotionRecommendationApiPath?: string;
+  promotionRecommendationRefreshKey?: number;
 }
 
 export default function StudentDetailModal({
@@ -14,11 +107,86 @@ export default function StudentDetailModal({
   student,
   onPromote,
   promoteLoading = false,
+  reportHref,
+  promotionRecommendationApiPath,
+  promotionRecommendationRefreshKey = 0,
 }: StudentDetailModalProps) {
+  const [recommendations, setRecommendations] = useState<Record<PromotionSubject, PromotionRecommendation> | null>(null);
+  const [recommendationLoading, setRecommendationLoading] = useState(false);
+  const [recommendationError, setRecommendationError] = useState<string | null>(null);
+  const [pendingPromotionSubject, setPendingPromotionSubject] = useState<PromotionSubject | null>(null);
+
+  const studentId = String(student?.studentId ?? student?.id ?? "").trim();
+  const studentName = useMemo(() => {
+    const firstName = String(student?.firstName ?? student?.first_name ?? "").trim();
+    const lastName = String(student?.lastName ?? student?.last_name ?? "").trim();
+    const fallbackName = String(student?.name ?? "").trim();
+    return `${firstName} ${lastName}`.trim() || fallbackName || "this student";
+  }, [student]);
+
+  useEffect(() => {
+    setPendingPromotionSubject(null);
+
+    if (!show || !studentId || !onPromote || !promotionRecommendationApiPath) {
+      setRecommendations(null);
+      setRecommendationError(null);
+      setRecommendationLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const loadRecommendations = async () => {
+      setRecommendationLoading(true);
+      setRecommendationError(null);
+      try {
+        const query = new URLSearchParams({
+          studentId,
+          englishLevel: String(student?.englishPhonemic ?? student?.english ?? "").trim(),
+          filipinoLevel: String(student?.filipinoPhonemic ?? student?.filipino ?? "").trim(),
+          mathLevel: String(student?.mathProficiency ?? student?.math ?? "").trim(),
+        });
+        const response = await fetch(
+          `${promotionRecommendationApiPath}?${query.toString()}`,
+          { signal: controller.signal },
+        );
+
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.success || !payload?.recommendations) {
+          throw new Error(payload?.error ?? "Unable to evaluate promotion readiness.");
+        }
+
+        setRecommendations(payload.recommendations as Record<PromotionSubject, PromotionRecommendation>);
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setRecommendations(null);
+        setRecommendationError(
+          error instanceof Error ? error.message : "Unable to evaluate promotion readiness.",
+        );
+      } finally {
+        if (!controller.signal.aborted) {
+          setRecommendationLoading(false);
+        }
+      }
+    };
+
+    void loadRecommendations();
+    return () => controller.abort();
+  }, [show, studentId, student, onPromote, promotionRecommendationApiPath, promotionRecommendationRefreshKey]);
+
   if (!show || !student) return null;
 
   const footer = (
     <div className="flex flex-wrap gap-3 justify-end">
+      {reportHref && (
+        <Link
+          href={reportHref}
+          className="border border-[#013300] text-[#013300] px-6 py-2 rounded-lg hover:bg-[#013300]/5 transition-colors font-medium"
+        >
+          View Report
+        </Link>
+      )}
       <button
         onClick={onClose}
         className="bg-[#013300] text-white px-6 py-2 rounded-lg hover:bg-[#013300]/90 transition-colors font-medium"
@@ -117,42 +285,108 @@ export default function StudentDetailModal({
 
       {onPromote && (
         <ModalSection title="Promote Level">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            {[
-              { subject: "English", level: student.englishPhonemic ?? student.english ?? "" },
-              { subject: "Filipino", level: student.filipinoPhonemic ?? student.filipino ?? "" },
-              { subject: "Math", level: student.mathProficiency ?? student.math ?? "" },
-            ].map((item) => {
+          <div className="space-y-3">
+            {recommendationError && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {recommendationError}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            {PROMOTION_SUBJECTS.map((subject) => {
+              const item = {
+                subject,
+                level:
+                  subject === "English"
+                    ? student.englishPhonemic ?? student.english ?? ""
+                    : subject === "Filipino"
+                      ? student.filipinoPhonemic ?? student.filipino ?? ""
+                      : student.mathProficiency ?? student.math ?? "",
+              };
+              const recommendation = recommendations?.[subject] ?? null;
+              const tone = getRecommendationTone(recommendation);
               const levelLabel = String(item.level ?? "").trim();
               const isAvailable = levelLabel.length > 0 && levelLabel.toLowerCase() !== "n/a";
-              const isDisabled = promoteLoading || !isAvailable;
+              const isDisabled =
+                promoteLoading ||
+                recommendationLoading ||
+                !isAvailable ||
+                !recommendation?.canPromote;
+              const statusLabel = recommendationLoading
+                ? "Checking"
+                : recommendation?.status === "ready"
+                  ? "Ready"
+                  : recommendation?.status === "not_ready"
+                    ? "Not Ready"
+                    : "Needs Data";
+              const actionLabel = recommendationLoading
+                ? "Checking..."
+                : promoteLoading
+                  ? "Promoting..."
+                  : recommendation?.canPromote
+                    ? "Promote"
+                    : "Locked";
               return (
-                <button
+                <div
                   key={item.subject}
-                  type="button"
-                  onClick={() => onPromote(item.subject as "English" | "Filipino" | "Math")}
-                  disabled={isDisabled}
-                  className={`flex items-center justify-between rounded-xl border px-4 py-3 text-left transition ${
-                    isDisabled
-                      ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed"
-                      : "border-emerald-200 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
-                  }`}
+                  className={`flex flex-col gap-3 rounded-xl border px-4 py-3 text-left ${tone.card}`}
                 >
-                  <div className="flex flex-col">
-                    <span className="text-sm font-semibold">{item.subject}</span>
-                    <span className="text-xs text-gray-500">
-                      {isAvailable ? `Current: ${levelLabel}` : "No level available"}
+                  <div className="flex items-center gap-3">
+                    <span className={`shrink-0 ${tone.heading}`}>
+                      {recommendationLoading ? (
+                        <span className="inline-block h-4 w-4 animate-spin rounded-full border border-current border-t-transparent" />
+                      ) : (
+                        getTrendIcon(recommendation?.trend ?? "neutral")
+                      )}
                     </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-semibold text-gray-900">{item.subject}</div>
+                      <div className={`text-sm font-bold ${tone.heading}`}>
+                        {recommendationLoading ? "Checking promotion readiness..." : getRecommendationHeadline(recommendation)}
+                      </div>
+                    </div>
                   </div>
-                  <span className="text-xs font-semibold">
-                    {promoteLoading ? "Promoting..." : "Promote"}
-                  </span>
-                </button>
+
+                  <div className="space-y-1">
+                    <p className={`text-sm leading-6 ${tone.body}`}>
+                      {recommendationLoading
+                        ? "Evaluating the latest remedial session averages..."
+                        : recommendation?.message ?? "Promotion readiness is unavailable."}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setPendingPromotionSubject(item.subject)}
+                    disabled={isDisabled}
+                    className={`flex items-center justify-center rounded-lg border px-3 py-2 text-xs font-semibold transition ${tone.action}`}
+                  >
+                    {actionLabel}
+                  </button>
+                </div>
               );
             })}
+            </div>
           </div>
         </ModalSection>
       )}
+      <ConfirmationModal
+        isOpen={Boolean(pendingPromotionSubject)}
+        onClose={() => setPendingPromotionSubject(null)}
+        onConfirm={() => {
+          if (!pendingPromotionSubject) {
+            return;
+          }
+          setPendingPromotionSubject(null);
+          onPromote?.(pendingPromotionSubject);
+        }}
+        title="Confirm Promotion"
+        message={
+          pendingPromotionSubject
+            ? `Promote ${studentName} to the next ${pendingPromotionSubject} level? ${recommendations?.[pendingPromotionSubject]?.message ?? ""}`
+            : ""
+        }
+      />
     </BaseModal>
   );
 }

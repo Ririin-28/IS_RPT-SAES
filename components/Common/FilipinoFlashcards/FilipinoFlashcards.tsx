@@ -723,8 +723,8 @@ export default function FilipinoFlashcards({
   const [isTutorCardPlaying, setIsTutorCardPlaying] = useState(false);
   const [recognizedText, setRecognizedText] = useState("");
   const [liveTranscription, setLiveTranscription] = useState("");
-  const [feedback, setFeedback] = useState("");
-  const [statusMessage, setStatusMessage] = useState("");
+  const [, setFeedback] = useState("");
+  const [, setStatusMessage] = useState("");
   const [metrics, setMetrics] = useState<any>(null);
   const [wordFeedback, setWordFeedback] = useState<WordFeedback[]>([]);
   const liveAccuracyScore =
@@ -1901,7 +1901,7 @@ export default function FilipinoFlashcards({
       activeRecognizerStopRef.current = null;
       browserRecognitionRef.current = null;
     }
-  }, [computeScores, current, recognizedText, sentence, startAudioAnalyser, stopAudioAnalyser, upsertSessionScore]);
+  }, [buildTutorFeedback, computeScores, current, recognizedText, sentence, speakTutorFeedback, startAudioAnalyser, stopAudioAnalyser, upsertSessionScore]);
 
   const handleMicrophone = async () => {
     if (!sentence.trim()) return;
@@ -2494,7 +2494,7 @@ export default function FilipinoFlashcards({
             <div>
               <h2 className="text-2xl font-bold text-black">System Feedback</h2>
             </div>
-            <p className="mt-3 text-md text-slate-700 leading-relaxed">
+            <div className="mt-3 text-md text-slate-700 leading-relaxed">
               {isLoadingInsight ? (
                 <div className="flex items-center gap-2 text-slate-500 animate-pulse">
                   <span className="h-4 w-4 rounded-full bg-slate-300" />
@@ -2503,7 +2503,7 @@ export default function FilipinoFlashcards({
               ) : (
                 aiInsight || "No insights generated."
               )}
-            </p>
+            </div>
 
           </div>
 
@@ -2518,7 +2518,7 @@ export default function FilipinoFlashcards({
                   setTeacherFeedback(event.target.value);
                   if (teacherFeedbackError) setTeacherFeedbackError(null);
                 }}
-                className="mt-3 w-full min-h-[120px] rounded-2xl border border-emerald-200 px-4 py-3 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"
+                className="mt-3 w-full min-h-30 rounded-2xl border border-emerald-200 px-4 py-3 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"
                 placeholder="Write your feedback on the student's performance."
                 required
               />

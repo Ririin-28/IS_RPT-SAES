@@ -1,4 +1,7 @@
+"use client";
+
 import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import { generateQrCodeDataUrl, buildAccessUrl } from "@/lib/assessments/utils";
@@ -17,6 +20,11 @@ export default function QrCodeModal({
     quizCode,
 }: QrCodeModalProps) {
     const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
 
     useEffect(() => {
         if (isOpen && quizCode) {
@@ -25,11 +33,21 @@ export default function QrCodeModal({
         }
     }, [isOpen, quizCode]);
 
-    if (!isOpen) return null;
+    useEffect(() => {
+        if (!mounted || !isOpen) return undefined;
+        const { overflow } = document.body.style;
+        document.body.style.overflow = "hidden";
+        return () => {
+            document.body.style.overflow = overflow;
+        };
+    }, [mounted, isOpen]);
 
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+    if (!isOpen || !mounted) return null;
+
+    return createPortal(
+        <div className="fixed inset-0 z-9999 flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" aria-hidden="true" />
+            <div className="relative z-10000 bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
                 {/* Header */}
                 <div className="bg-[#013300] px-6 py-4 flex justify-between items-center bg-linear-to-r from-green-900 to-[#013300]">
                     <h3 className="text-white font-bold text-lg truncate pr-4">
@@ -95,6 +113,7 @@ export default function QrCodeModal({
                     <UtilityButton onClick={onClose} className="bg-[#013300]! hover:bg-green-900!">Close</UtilityButton>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }

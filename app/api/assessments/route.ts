@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { type RowDataPacket, type ResultSetHeader } from "mysql2/promise";
+import { type PoolConnection, type RowDataPacket, type ResultSetHeader } from "mysql2/promise";
 import { runWithConnection } from "@/lib/db";
 import {
   buildAccessUrl,
@@ -8,6 +8,11 @@ import {
   generateUniqueQuizCode,
   normalizeQuestionType,
 } from "../../../lib/assessments/utils";
+import {
+  isAssessmentRangeWithinLimit,
+  isFixedAssessmentStartTime,
+  MAX_ASSESSMENT_SPAN_DAYS,
+} from "@/lib/assessments/schedule-utils";
 
 export const dynamic = "force-dynamic";
 
@@ -16,11 +21,21 @@ type IncomingChoice = {
   isCorrect?: boolean;
 };
 
+type IncomingSection = {
+  id?: string;
+  title: string;
+  description?: string;
+};
+
 type IncomingQuestion = {
   questionText: string;
   questionType: string;
   points: number;
   choices?: IncomingChoice[];
+  correctAnswerText?: string | null;
+  sectionId?: string | null;
+  sectionTitle?: string | null;
+  sectionDescription?: string | null;
 };
 
 type AssessmentPayload = {
@@ -36,10 +51,47 @@ type AssessmentPayload = {
   startTime: string;
   endTime: string;
   isPublished: boolean;
+  sections?: IncomingSection[];
   questions: IncomingQuestion[];
 };
 
-const resolveSubjectId = async (connection: any, subjectName?: string | null) => {
+const resolveSectionMetadata = (question: IncomingQuestion, sections: IncomingSection[] = []) => {
+  const sectionById = new Map<string, IncomingSection>();
+  sections.forEach((section) => {
+    if (section.id) {
+      sectionById.set(section.id, section);
+    }
+  });
+
+  const matchedSection = question.sectionId ? sectionById.get(question.sectionId) : undefined;
+  return {
+    sectionId: question.sectionId ?? null,
+    sectionTitle: (matchedSection?.title ?? question.sectionTitle ?? "").trim() || null,
+    sectionDescription: (matchedSection?.description ?? question.sectionDescription ?? "").trim() || null,
+  };
+};
+
+const ensureQuestionSectionColumns = async (connection: PoolConnection) => {
+  const [columns] = await connection.query<RowDataPacket[]>("SHOW COLUMNS FROM `assessment_questions`");
+  const columnNames = new Set(columns.map((column) => String(column.Field)));
+  const alterations: string[] = [];
+
+  if (!columnNames.has("section_key")) {
+    alterations.push("ADD COLUMN `section_key` varchar(100) NULL AFTER `question_order`");
+  }
+  if (!columnNames.has("section_title")) {
+    alterations.push("ADD COLUMN `section_title` varchar(255) NULL AFTER `section_key`");
+  }
+  if (!columnNames.has("section_description")) {
+    alterations.push("ADD COLUMN `section_description` text NULL AFTER `section_title`");
+  }
+
+  if (alterations.length > 0) {
+    await connection.query(`ALTER TABLE \`assessment_questions\` ${alterations.join(", ")}`);
+  }
+};
+
+const resolveSubjectId = async (connection: PoolConnection, subjectName?: string | null) => {
   if (!subjectName) return null;
   const normalized = subjectName.trim().toLowerCase();
   const [rows] = await connection.query(
@@ -51,7 +103,7 @@ const resolveSubjectId = async (connection: any, subjectName?: string | null) =>
 };
 
 const resolvePhonemicId = async (
-  connection: any,
+  connection: PoolConnection,
   subjectId: number | null,
   phonemicLevel?: string | null,
 ) => {
@@ -65,7 +117,7 @@ const resolvePhonemicId = async (
 };
 
 const resolveGradeId = async (
-  connection: any,
+  connection: PoolConnection,
   createdBy: string,
   creatorRole: string,
 ) => {
@@ -151,6 +203,7 @@ const resolveGradeId = async (
 
 const mapAssessmentRows = (rows: RowDataPacket[]) => {
   const assessments = new Map<number, any>();
+  const sectionSeenByAssessment = new Map<number, Set<string>>();
 
   rows.forEach((row) => {
     const assessmentId = Number(row.assessment_id);
@@ -171,11 +224,31 @@ const mapAssessmentRows = (rows: RowDataPacket[]) => {
         quizCode: row.quiz_code ?? null,
         qrToken: row.qr_token ?? null,
         submittedCount: Number(row.submitted_count ?? 0),
+        assignedCount: Number(row.assigned_count ?? 0),
+        sections: [],
         questions: [],
       });
     }
 
     const assessment = assessments.get(assessmentId);
+    const sectionId = String(row.section_key ?? "").trim();
+    const sectionTitle = String(row.section_title ?? "").trim();
+    const sectionDescription = String(row.section_description ?? "").trim();
+
+    if (sectionId && sectionTitle) {
+      const seen = sectionSeenByAssessment.get(assessmentId) ?? new Set<string>();
+      const sectionKey = `${sectionId}::${sectionTitle.toLowerCase()}`;
+      if (!seen.has(sectionKey)) {
+        assessment.sections.push({
+          id: sectionId,
+          title: sectionTitle,
+          description: sectionDescription,
+        });
+        seen.add(sectionKey);
+        sectionSeenByAssessment.set(assessmentId, seen);
+      }
+    }
+
     if (row.question_id) {
       let question = assessment.questions.find((q: any) => q.id === String(row.question_id));
       if (!question) {
@@ -184,8 +257,11 @@ const mapAssessmentRows = (rows: RowDataPacket[]) => {
           type: row.question_type,
           question: row.question_text,
           options: [],
-          correctAnswer: "",
+          correctAnswer: row.correct_answer_text ?? "",
           points: Number(row.points ?? 1),
+          sectionId: sectionId || undefined,
+          sectionTitle: sectionTitle || undefined,
+          sectionDescription: sectionDescription || undefined,
         };
         assessment.questions.push(question);
       }
@@ -200,6 +276,11 @@ const mapAssessmentRows = (rows: RowDataPacket[]) => {
   });
 
   return Array.from(assessments.values());
+};
+
+const getColumnNames = async (connection: PoolConnection, tableName: string) => {
+  const [columns] = await connection.query<RowDataPacket[]>(`SHOW COLUMNS FROM ${tableName}`);
+  return new Set(columns.map((column) => String(column.Field).toLowerCase()));
 };
 
 export async function GET(request: NextRequest) {
@@ -231,22 +312,45 @@ export async function GET(request: NextRequest) {
         params.push(Number(phonemicId));
       }
 
-      // Resolve teacher_id if we are filtering by creatorId (assuming it's a teacher)
-      let teacherId = null;
+      let assigneeId = null;
+      let assignmentColumn: "teacher_id" | "remedial_role_id" | null = null;
       if (creatorId && creatorRole === 'teacher') {
         const [tRows] = await connection.query("SELECT teacher_id FROM teacher WHERE user_id = ?", [creatorId]);
         if ((tRows as RowDataPacket[]).length > 0) {
-          teacherId = (tRows as RowDataPacket[])[0].teacher_id;
+          assigneeId = (tRows as RowDataPacket[])[0].teacher_id;
+          assignmentColumn = "teacher_id";
+        }
+      } else if (creatorId && creatorRole === 'remedial_teacher') {
+        const [rRows] = await connection.query<RowDataPacket[]>(
+          `SELECT rh.remedial_role_id
+           FROM mt_remedialteacher_handled rh
+           INNER JOIN master_teacher mt ON mt.master_teacher_id = rh.master_teacher_id
+           WHERE mt.user_id = ?
+           LIMIT 1`,
+          [creatorId]
+        );
+        if (rRows.length > 0) {
+          assigneeId = rRows[0].remedial_role_id;
+          assignmentColumn = "remedial_role_id";
         }
       }
 
-      console.log(`[AssessmentsAPI] Creator: ${creatorId}, Role: ${creatorRole}, Resolved TeacherId: ${teacherId}`);
+      console.log(`[AssessmentsAPI] Creator: ${creatorId}, Role: ${creatorRole}, Resolved AssigneeId: ${assigneeId}, AssignmentColumn: ${assignmentColumn}`);
 
       const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
-      const escapedTeacherId = teacherId ? connection.escape(teacherId) : "''";
+      const escapedAssigneeId = assigneeId ? connection.escape(assigneeId) : "''";
+      const assignmentColumns = await getColumnNames(connection, "student_teacher_assignment").catch(() => new Set<string>());
+      const subjectAssignmentFilter = assignmentColumns.has("subject_id")
+        ? " AND sta.subject_id = a.subject_id"
+        : "";
+      const gradeAssignmentFilter = assignmentColumns.has("grade_id")
+        ? " AND (a.grade_id IS NULL OR sta.grade_id = a.grade_id)"
+        : "";
+      const phonemicAssignmentFilter = assignmentColumns.has("phonemic_id")
+        ? " AND (a.phonemic_id IS NULL OR sta.phonemic_id = a.phonemic_id)"
+        : "";
 
-      // We explicitly check if we have a resolved teacherId.
-      const submittedCountQuery = teacherId
+      const submittedCountQuery = assigneeId && assignmentColumn
         ? `(
             SELECT COUNT(DISTINCT aa.attempt_id)
             FROM assessment_attempts aa
@@ -254,8 +358,11 @@ export async function GET(request: NextRequest) {
             JOIN student s ON s.student_id = sta.student_id
             WHERE aa.assessment_id = a.assessment_id
               AND aa.status IN ('submitted','graded')
-              AND sta.teacher_id = ${escapedTeacherId}
+              AND sta.${assignmentColumn} = ${escapedAssigneeId}
               AND sta.is_active = 1
+              ${subjectAssignmentFilter}
+              ${gradeAssignmentFilter}
+              ${phonemicAssignmentFilter}
               AND (aa.student_id = sta.student_id OR (aa.lrn IS NOT NULL AND aa.lrn = s.lrn))
            )`
         : `(
@@ -265,8 +372,16 @@ export async function GET(request: NextRequest) {
               AND aa.status IN ('submitted','graded')
            )`;
 
-      const assignedCountQuery = teacherId
-        ? `(SELECT COUNT(*) FROM student_teacher_assignment sta WHERE sta.teacher_id = ${escapedTeacherId} AND sta.is_active = 1)`
+      const assignedCountQuery = assigneeId && assignmentColumn
+        ? `(
+            SELECT COUNT(*)
+            FROM student_teacher_assignment sta
+            WHERE sta.${assignmentColumn} = ${escapedAssigneeId}
+              AND sta.is_active = 1
+              ${subjectAssignmentFilter}
+              ${gradeAssignmentFilter}
+              ${phonemicAssignmentFilter}
+          )`
         : `0`;
 
       const [rows] = await connection.query<RowDataPacket[]>(
@@ -278,6 +393,9 @@ export async function GET(request: NextRequest) {
           q.question_type,
           q.points,
           q.question_order,
+          q.section_key,
+          q.section_title,
+          q.section_description,
           q.correct_answer_text,
           c.choice_id,
           c.choice_text,
@@ -319,9 +437,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "At least one question is required." }, { status: 400 });
     }
 
+    if (!isFixedAssessmentStartTime(payload.startTime)) {
+      return NextResponse.json(
+        { success: false, error: "Assessment start time must be fixed to 8:00 AM on the selected date." },
+        { status: 400 },
+      );
+    }
+
+    if (!isAssessmentRangeWithinLimit(payload.startTime, payload.endTime)) {
+      return NextResponse.json(
+        { success: false, error: `Assessment end time must be within ${MAX_ASSESSMENT_SPAN_DAYS} days of the start date.` },
+        { status: 400 },
+      );
+    }
+
     return await runWithConnection(async (connection) => {
       await connection.beginTransaction();
       try {
+        await ensureQuestionSectionColumns(connection);
         const subjectId = payload.subjectId ?? (await resolveSubjectId(connection, payload.subjectName));
         const gradeId = payload.gradeId ?? (await resolveGradeId(connection, payload.createdBy, payload.creatorRole));
 
@@ -332,13 +465,11 @@ export async function POST(request: NextRequest) {
 
         const phonemicId = payload.phonemicId ?? (await resolvePhonemicId(connection, subjectId ?? null, payload.phonemicLevel));
 
-        let quizCode: string | null = null;
-        let qrToken: string | null = null;
+        const quizCode: string | null = await generateUniqueQuizCode(connection);
+        const qrToken: string | null = generateQrToken();
         let qrCodeDataUrl: string | null = null;
 
         if (payload.isPublished) {
-          quizCode = await generateUniqueQuizCode(connection);
-          qrToken = generateQrToken();
           const accessUrl = buildAccessUrl(quizCode, qrToken);
           qrCodeDataUrl = await generateQrCodeDataUrl(accessUrl);
         }
@@ -369,23 +500,27 @@ export async function POST(request: NextRequest) {
         for (let i = 0; i < payload.questions.length; i += 1) {
           const question = payload.questions[i];
           const questionType = normalizeQuestionType(question.questionType);
+          const sectionMeta = resolveSectionMetadata(question, payload.sections ?? []);
 
-          let correctAnswerText: string | null = null;
-          // For short answer, look for explicit correct answer if provided in a "choices" array or potentially a direct field (though payload def only has choices)
-          // Based on previous mapAssessmentRows, short answer correct text was stored in assessment_question_choices sometimes? 
-          // But now we have a dedicated column.
-          if (questionType === "short_answer" && question.choices && question.choices.length > 0) {
-            correctAnswerText = question.choices[0].choiceText;
-          } else if (questionType !== "short_answer" && Array.isArray(question.choices)) {
-            // For other types, we still use choices table, but maybe also populate this for easy access if needed?
-            // Let's stick to using it for short_answer primarily as requested by schema implication
-          }
+          const correctAnswerText = questionType === "short_answer"
+            ? question.correctAnswerText?.trim() || question.choices?.[0]?.choiceText?.trim() || null
+            : null;
 
           const [questionResult] = await connection.query<ResultSetHeader>(
             `INSERT INTO assessment_questions
-              (assessment_id, question_text, question_type, points, question_order, correct_answer_text, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, NOW())`,
-            [assessmentId, question.questionText, questionType, question.points ?? 1, i + 1, correctAnswerText],
+              (assessment_id, question_text, question_type, points, question_order, section_key, section_title, section_description, correct_answer_text, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+            [
+              assessmentId,
+              question.questionText,
+              questionType,
+              question.points ?? 1,
+              i + 1,
+              sectionMeta.sectionId,
+              sectionMeta.sectionTitle,
+              sectionMeta.sectionDescription,
+              correctAnswerText,
+            ],
           );
 
           const questionId = questionResult.insertId;

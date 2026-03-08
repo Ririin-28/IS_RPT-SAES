@@ -22,6 +22,11 @@ type Props = {
   onPlay?: (activity: CalendarActivity) => void;
   playLinkBuilder?: (activity: CalendarActivity) => string;
   validatingActivityId?: string | null;
+  renderTitle?: (
+    activity: CalendarActivity,
+    options: { isCurrentAnchor: boolean },
+  ) => React.ReactNode;
+  renderActions?: (activity: CalendarActivity) => React.ReactNode;
 };
 
 const normalizeCalendarSubject = (value: string | null | undefined): string | null => {
@@ -83,6 +88,35 @@ const isSameDate = (left: Date, right: Date): boolean =>
   left.getMonth() === right.getMonth() &&
   left.getDate() === right.getDate();
 
+type ScheduleStatus = "upcoming" | "today" | "completed";
+
+const getScheduleStatus = (activityDate: Date, today = new Date()): ScheduleStatus => {
+  const normalizedActivityDate = new Date(activityDate.getFullYear(), activityDate.getMonth(), activityDate.getDate());
+  const normalizedToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+  if (isSameDate(normalizedActivityDate, normalizedToday)) {
+    return "today";
+  }
+
+  return normalizedActivityDate.getTime() > normalizedToday.getTime() ? "upcoming" : "completed";
+};
+
+const getScheduleStatusLabel = (status: ScheduleStatus): string => {
+  if (status === "today") return "Today";
+  if (status === "upcoming") return "Upcoming";
+  return "Completed";
+};
+
+const getScheduleStatusTone = (status: ScheduleStatus): string => {
+  if (status === "today") {
+    return "border border-[#013300]/15 bg-[#013300]/8 text-[#013300]";
+  }
+  if (status === "upcoming") {
+    return "border border-sky-200 bg-sky-50 text-sky-700";
+  }
+  return "border border-gray-200 bg-gray-100 text-gray-500";
+};
+
 const getActivityDayIndex = (activity: CalendarActivity): number => {
   const normalizedDay = String(activity.day ?? "")
     .toLowerCase()
@@ -93,7 +127,7 @@ const getActivityDayIndex = (activity: CalendarActivity): number => {
   return activity.date.getDay();
 };
 
-export default function ScheduledActivitiesList({ activities, subject, loading, error, onEdit, onPlay, validatingActivityId }: Props) {
+export default function ScheduledActivitiesList({ activities, subject, loading, error, onEdit, onPlay, validatingActivityId, renderTitle, renderActions }: Props) {
   const filteredSchedule = useMemo(() => {
     return activities
       .filter((activity) => {
@@ -274,41 +308,67 @@ export default function ScheduledActivitiesList({ activities, subject, loading, 
                   const day = activity.date.toLocaleDateString("en-PH", { day: "numeric" });
                   const weekday = activity.date.toLocaleDateString("en-PH", { weekday: "short" });
                   const isCurrentAnchor = currentAnchorId === String(activity.id);
+                  const scheduleStatus = getScheduleStatus(activity.date);
 
                   return (
                     <div
                       key={activity.id}
                       ref={registerActivityRef(String(activity.id))}
-                      className={`group flex flex-row items-center justify-between w-full bg-white border rounded-xl p-4 hover:shadow-lg hover:border-[#013300]/30 transition-all duration-300 ${
-                        isCurrentAnchor ? "border-[#013300]/30 ring-2 ring-[#013300]/10" : "border-gray-200"
+                      className={`group flex flex-row items-center justify-between w-full rounded-xl p-4 transition-all duration-300 ${
+                        isCurrentAnchor
+                          ? "current-schedule-card border border-[#013300] bg-[#013300] shadow-[0_16px_36px_-24px_rgba(1,51,0,0.45)]"
+                          : "border border-gray-200 hover:border-[#013300]/30 hover:shadow-lg"
                       }`}
                     >
                       <div className="flex items-center gap-4 min-w-0">
                         {/* Date Box */}
-                        <div className="shrink-0 flex flex-col items-center justify-center w-12 h-14 bg-[#013300]/5 text-[#013300] rounded-lg border border-[#013300]/10">
+                        <div
+                          className={`shrink-0 flex h-14 w-12 flex-col items-center justify-center rounded-lg border ${
+                            isCurrentAnchor
+                              ? "border-white/15 bg-white/10 text-white"
+                              : "border-[#013300]/10 bg-[#013300]/5 text-[#013300]"
+                          }`}
+                        >
                           <span className="text-[0.65rem] font-bold uppercase tracking-wide leading-none">{month}</span>
                           <span className="text-xl font-extrabold leading-none mt-0.5">{day}</span>
                         </div>
 
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="mb-1 flex flex-wrap items-center gap-2">
                             {normalizedSubject && (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[0.6rem] font-bold uppercase tracking-wider bg-gray-100 text-gray-600">
+                              <span
+                                className={`inline-flex items-center rounded px-1.5 py-0.5 text-[0.6rem] font-bold uppercase tracking-wider ${
+                                  isCurrentAnchor ? "bg-white/12 text-white" : "bg-gray-100 text-gray-600"
+                                }`}
+                              >
                                 {normalizedSubject}
                               </span>
                             )}
-                            <span className="text-[0.65rem] font-medium text-gray-400 uppercase">
+                            <span className={`text-[0.65rem] font-medium uppercase ${isCurrentAnchor ? "text-white/70" : "text-gray-400"}`}>
                               {weekday}
                             </span>
+                            {isCurrentAnchor && (
+                              <span
+                                className={`inline-flex items-center rounded-full px-2 py-0.5 text-[0.62rem] font-semibold uppercase tracking-[0.14em] ${getScheduleStatusTone(
+                                  scheduleStatus,
+                                )}`}
+                              >
+                                {getScheduleStatusLabel(scheduleStatus)}
+                              </span>
+                            )}
                           </div>
 
-                          <h4 className="text-sm font-bold text-gray-900 truncate leading-tight transition-colors">
-                            {activity.title}
+                          <h4
+                            className={`truncate text-sm font-bold leading-tight transition-colors ${
+                              isCurrentAnchor ? "text-white" : "text-gray-900"
+                            }`}
+                          >
+                            {renderTitle ? renderTitle(activity, { isCurrentAnchor }) : activity.title}
                           </h4>
 
                           {timeLabel && (
-                            <div className="mt-1 flex items-center gap-1.5 text-xs text-gray-500 font-medium">
-                              <svg className="w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <div className={`mt-1 flex items-center gap-1.5 text-xs font-medium ${isCurrentAnchor ? "text-white/80" : "text-gray-500"}`}>
+                              <svg className={`h-3.5 w-3.5 ${isCurrentAnchor ? "text-white/70" : "text-gray-400"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                               </svg>
                               {timeLabel}
@@ -317,16 +377,17 @@ export default function ScheduledActivitiesList({ activities, subject, loading, 
                         </div>
                       </div>
 
-                      {(onEdit || onPlay) && (
+                      {(renderActions || onEdit || onPlay) && (
                         <div className="ml-4 shrink-0 flex gap-2">
-                          {onEdit && (
+                          {renderActions ? renderActions(activity) : null}
+                          {!renderActions && onEdit && (
                             <div className="relative inline-block">
                               <UtilityButton small onClick={() => onEdit(activity)} className="py-2! px-4!">
                                 Edit
                               </UtilityButton>
                             </div>
                           )}
-                          {onPlay && (
+                          {!renderActions && onPlay && (
                             <UtilityButton
                               small
                               onClick={() => onPlay(activity)}
@@ -361,7 +422,7 @@ export default function ScheduledActivitiesList({ activities, subject, loading, 
           <button
             type="button"
             onClick={() => scrollToCurrentAnchor("smooth")}
-            className="pointer-events-auto flex min-w-[172px] flex-col items-center justify-center gap-2 rounded-2xl bg-transparent px-6 py-4 text-center text-[0.95rem] font-medium tracking-[-0.01em] text-slate-900 transition duration-200"
+            className="pointer-events-auto flex min-w-43 flex-col items-center justify-center gap-2 rounded-2xl bg-transparent px-6 py-4 text-center text-[0.95rem] font-medium tracking-[-0.01em] text-slate-900 transition duration-200"
             aria-label={currentAnchor?.mode === "today" ? "Back to current date" : "Back to current day"}
           >
             <span
@@ -392,6 +453,18 @@ export default function ScheduledActivitiesList({ activities, subject, loading, 
           50% {
             transform: translateY(-2px);
           }
+        }
+
+        .current-schedule-card :global(button) {
+          background: rgb(255 255 255 / 0.12) !important;
+          border: 2px solid rgb(255 255 255 / 0.12) !important;
+          color: #ffffff !important;
+          box-shadow: none !important;
+        }
+
+        .current-schedule-card :global(button:hover) {
+          background: rgb(255 255 255 / 0.12) !important;
+          border: 2px solid rgb(255 255 255 / 0.12) !important;
         }
 
         @media (prefers-reduced-motion: reduce) {

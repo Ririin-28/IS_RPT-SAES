@@ -56,6 +56,18 @@ export interface AssessmentPayload {
     sections?: IncomingSection[];
 }
 
+export interface AssessmentScheduleActivity {
+    id: string;
+    title: string;
+    subject: string | null;
+    subjectId?: number | null;
+    gradeId?: number | null;
+    date: Date;
+    day: string | null;
+    startTime: string | null;
+    endTime: string | null;
+}
+
 export async function fetchAssessments(params: FetchParams): Promise<any[]> {
     const searchParams = new URLSearchParams();
     searchParams.set("creatorId", params.creatorId);
@@ -76,6 +88,46 @@ export async function fetchAssessments(params: FetchParams): Promise<any[]> {
     }
 
     return Array.isArray(data.assessments) ? data.assessments : [];
+}
+
+export async function fetchAssessmentSchedule(): Promise<AssessmentScheduleActivity[]> {
+    const response = await fetch("/api/assessments/days", {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+    });
+
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.success) {
+        throw new Error(data?.error ?? "Failed to fetch assessment schedule.");
+    }
+
+    const activities = Array.isArray(data.activities) ? data.activities : [];
+    return activities
+        .map((item: any, index: number): AssessmentScheduleActivity | null => {
+            const rawDate = item.activityDate ?? item.date ?? null;
+            const date = rawDate ? new Date(rawDate) : null;
+            if (!date || Number.isNaN(date.getTime())) {
+                return null;
+            }
+
+            return {
+                id: String(item.id ?? index + 1),
+                title: item.title ?? "Scheduled Assessment",
+                subject: item.subject ?? null,
+                subjectId: Number.isFinite(Number(item.subjectId)) ? Number(item.subjectId) : null,
+                gradeId: Number.isFinite(Number(item.gradeId)) ? Number(item.gradeId) : null,
+                date,
+                day: item.day ?? null,
+                startTime: item.startTime ?? null,
+                endTime: item.endTime ?? null,
+            };
+        })
+        .filter((item: AssessmentScheduleActivity | null): item is AssessmentScheduleActivity => item !== null)
+        .sort(
+            (left: AssessmentScheduleActivity, right: AssessmentScheduleActivity) =>
+                left.date.getTime() - right.date.getTime(),
+        );
 }
 
 export async function createAssessment(payload: AssessmentPayload): Promise<any> {

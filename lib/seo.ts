@@ -1,7 +1,7 @@
 export const siteConfig = {
   name: "RPT-SAES",
   shortName: "RPT-SAES",
-  title: "RPT-SAES | Student Assessment and Evaluation System",
+  title: "RPT-SAES | Remedial Performance Tracker for San Agustin Elementary School",
   description:
     "RPT-SAES helps San Agustin Elementary School manage student assessment, remedial learning, and student progress tracking in one platform.",
   schoolName: "San Agustin Elementary School",

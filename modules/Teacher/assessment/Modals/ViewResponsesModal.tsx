@@ -48,6 +48,25 @@ const formatAnswer = (answer: string | string[] | undefined): string => {
   return answer;
 };
 
+const formatMetric = (value: unknown, fallback = "N/A") => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric.toFixed(1) : fallback;
+};
+
+const getInitials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("") || "--";
+
+const getDifficultyTone = (value: number) => {
+  if (value >= 80) return "bg-emerald-50 text-emerald-700 border border-emerald-100";
+  if (value >= 50) return "bg-amber-50 text-amber-700 border border-amber-100";
+  return "bg-rose-50 text-rose-700 border border-rose-100";
+};
+
 const escapeHtml = (value: string) =>
   value
     .replace(/&/g, "&amp;")
@@ -259,14 +278,11 @@ export default function ViewResponsesModal({
 
   const clampedRate = Math.max(0, Math.min(100, rawRate));
 
-  const donutStyle: CSSProperties = {
-    background: `conic-gradient(#013300 ${clampedRate * 3.6}deg, #e6f4ef ${clampedRate * 3.6}deg)`
+  const completionBarStyle: CSSProperties = {
+    width: `${clampedRate}%`,
   };
 
-  // Calculate average from analysis or fallback
-  const averageScore = analysisData?.summary?.averageScore
-    ? Number(analysisData.summary.averageScore).toFixed(1)
-    : "N/A";
+  const averageScore = formatMetric(analysisData?.summary?.averageScore);
 
   const footer = (
     <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -298,62 +314,68 @@ export default function ViewResponsesModal({
         ) : (
           <>
             <ModalSection title="Summary">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <div className="rounded-lg border border-gray-200 bg-white p-4 flex flex-col gap-3">
-                  <ModalLabel>Total responses</ModalLabel>
-                  <p className="text-3xl font-semibold text-[#013300]">{totalResponsesLabel}</p>
-                  <p className="text-sm text-gray-600">
-                    {responseCount === 1 ? "1 submission" : `${responseCount} submissions`}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-gray-200 bg-white p-4 flex flex-col gap-3">
-                  <ModalLabel>Response rate</ModalLabel>
-                  <div className="flex items-center gap-3">
-                    <div className="relative h-12 w-12 flex-shrink-0">
-                      <div className="h-12 w-12 rounded-full ring-4 ring-emerald-50" style={donutStyle} />
-                      <div className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-[#013300]">
-                        {clampedRate}%
-                      </div>
-                    </div>
-                    <p className="text-sm text-gray-600 leading-tight">
-                      {totalStudents > 0 ? "of assigned students" : "No students assigned"}
+              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                <div className="grid grid-cols-1 divide-y divide-slate-200 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+                  <div className="p-4 sm:p-5">
+                    <ModalLabel>Total responses</ModalLabel>
+                    <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{totalResponsesLabel}</p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      {responseCount === 1 ? "1 submission recorded" : `${responseCount} submissions recorded`}
                     </p>
                   </div>
+                  <div className="p-4 sm:p-5">
+                    <ModalLabel>Response rate</ModalLabel>
+                    <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{clampedRate}%</p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      {totalStudents > 0 ? `${responseCount} of ${totalStudents} assigned students` : "No assigned students yet"}
+                    </p>
+                  </div>
+                  <div className="p-4 sm:p-5">
+                    <ModalLabel>Average score</ModalLabel>
+                    <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{averageScore}</p>
+                    <p className="mt-1 text-sm text-slate-500">points per submission</p>
+                  </div>
                 </div>
-                <div className="rounded-lg border border-gray-200 bg-white p-4 flex flex-col gap-3">
-                  <ModalLabel>Average Score</ModalLabel>
-                  <p className="text-3xl font-semibold text-[#013300]">{averageScore}</p>
-                  <p className="text-sm text-gray-600">points</p>
+                <div className="border-t border-slate-200 bg-slate-50/70 px-4 py-3 sm:px-5">
+                  <div className="flex items-center justify-between text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                    <span>Completion</span>
+                    <span>{clampedRate}%</span>
+                  </div>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
+                    <div className="h-full rounded-full bg-[#013300]" style={completionBarStyle} />
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500">
+                    {totalStudents > 0
+                      ? "Tracks how many assigned students have submitted the assessment."
+                      : "Assign students to start measuring completion."}
+                  </p>
                 </div>
               </div>
             </ModalSection>
 
             {analysisData?.itemAnalysis && analysisData.itemAnalysis.length > 0 && (
               <ModalSection title="Item Analysis">
-                <div className="overflow-x-auto rounded-lg border border-gray-200">
+                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
                   <table className="w-full text-sm text-left">
-                    <thead className="bg-gray-50 text-gray-700 font-semibold border-b border-gray-200">
+                    <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
                       <tr>
-                        <th className="px-4 py-3">Question</th>
-                        <th className="px-4 py-3 w-32 text-center">Correct</th>
-                        <th className="px-4 py-3 w-32 text-center">Difficulty</th>
+                        <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em]">Question</th>
+                        <th className="px-4 py-3 w-32 text-center text-[11px] font-semibold uppercase tracking-[0.14em]">Correct</th>
+                        <th className="px-4 py-3 w-32 text-center text-[11px] font-semibold uppercase tracking-[0.14em]">Difficulty</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100 bg-white">
+                    <tbody className="divide-y divide-slate-100 bg-white">
                       {analysisData.itemAnalysis.map((item: any, idx: number) => (
                         <tr key={idx}>
-                          <td className="px-4 py-3 text-gray-800">
+                          <td className="px-4 py-3 text-slate-800">
                             <div className="line-clamp-2" title={item.text}>{item.text}</div>
-                            <div className="text-xs text-gray-500 mt-1 capitalize">{item.type?.replace('_', ' ')}</div>
+                            <div className="mt-1 text-xs capitalize text-slate-400">{item.type?.replace('_', ' ')}</div>
                           </td>
-                          <td className="px-4 py-3 text-center text-gray-600">
+                          <td className="px-4 py-3 text-center text-slate-600">
                             {item.correctCount}/{item.totalAnswers}
                           </td>
                           <td className="px-4 py-3 text-center">
-                            <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${item.difficultyIndex > 80 ? 'bg-green-100 text-green-800' :
-                              item.difficultyIndex > 50 ? 'bg-yellow-100 text-yellow-800' :
-                                'bg-red-100 text-red-800'
-                              }`}>
+                            <span className={`inline-flex rounded-md px-2.5 py-1 text-xs font-semibold ${getDifficultyTone(Number(item.difficultyIndex))}`}>
                               {Number(item.difficultyIndex).toFixed(0)}%
                             </span>
                           </td>
@@ -371,18 +393,23 @@ export default function ViewResponsesModal({
                   No responses have been submitted yet.
                 </p>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {responses.map((response: any) => (
-                    <div key={response.id} className="rounded-lg border border-gray-200 bg-white p-4">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <p className="text-sm font-semibold text-[#013300]">{response.studentName}</p>
-                          <p className="text-xs text-gray-500">ID: {response.studentId}</p>
+                    <div key={response.id} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold tracking-wide text-slate-600">
+                            {getInitials(response.studentName)}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-slate-900">{response.studentName}</p>
+                            <p className="text-xs text-slate-500">ID: {response.studentId}</p>
+                          </div>
                         </div>
-                        <div className="text-sm text-gray-600">
+                        <div className="text-sm text-slate-500">
                           Submitted {formatDateTime(response.submittedAt)}
                           {typeof response.score !== "undefined" && (
-                            <span className="ml-2 px-2 py-0.5 bg-green-50 text-green-700 rounded font-semibold border border-green-100">
+                            <span className="ml-2 inline-flex rounded-md border border-emerald-100 bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">
                               Score: {response.score}
                             </span>
                           )}

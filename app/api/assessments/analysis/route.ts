@@ -2,6 +2,12 @@ import { NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import { RowDataPacket } from 'mysql2';
 
+const getColumnNames = async (tableName: string) => {
+    const pool = getPool();
+    const [columns] = await pool.query<RowDataPacket[]>(`SHOW COLUMNS FROM ${tableName}`);
+    return new Set(columns.map((column) => String(column.Field).toLowerCase()));
+};
+
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const quizCode = searchParams.get('code');
@@ -56,15 +62,33 @@ export async function GET(request: Request) {
         }
 
         const assignmentColumn = isRemedial ? 'remedial_role_id' : 'teacher_id';
+        const assignmentColumns = await getColumnNames('student_teacher_assignment').catch(() => new Set<string>());
+        const assignmentFilters = [`sta.${assignmentColumn} = ?`, 'sta.is_active = 1'];
+        const assignmentParams: Array<number | string> = [resolvedId];
+
+        if (assignmentColumns.has('subject_id') && assessment.subject_id != null) {
+            assignmentFilters.push('sta.subject_id = ?');
+            assignmentParams.push(Number(assessment.subject_id));
+        }
+
+        if (assignmentColumns.has('grade_id') && assessment.grade_id != null) {
+            assignmentFilters.push('sta.grade_id = ?');
+            assignmentParams.push(Number(assessment.grade_id));
+        }
+
+        if (assignmentColumns.has('phonemic_id') && assessment.phonemic_id != null) {
+            assignmentFilters.push('sta.phonemic_id = ?');
+            assignmentParams.push(Number(assessment.phonemic_id));
+        }
 
         // 2. Get Assigned Students (Active only)
-        // We only care about students assigned to THIS teacher / remedial teacher
+        // We only care about students assigned to this assessment's actual subject / level scope.
         const [assignedStudents] = await pool.query<RowDataPacket[]>(
             `SELECT sta.student_id, s.lrn
              FROM student_teacher_assignment sta
              JOIN student s ON s.student_id = sta.student_id
-             WHERE sta.${assignmentColumn} = ? AND sta.is_active = 1`,
-            [resolvedId]
+             WHERE ${assignmentFilters.join(' AND ')}`,
+            assignmentParams
         );
 
         const assignedStudentIds = assignedStudents.map((s: any) => s.student_id).filter(Boolean);

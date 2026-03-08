@@ -192,41 +192,6 @@ const parseMathQuestion = (question: string): ParsedMathQuestion | null => {
   };
 };
 
-const buildMathTutorSteps = (parsed: ParsedMathQuestion): string[] => {
-  const leftText = formatNumberForSpeech(parsed.left);
-  const rightText = formatNumberForSpeech(parsed.right);
-  const resultText = formatNumberForSpeech(parsed.result);
-
-  switch (parsed.operator) {
-    case "+":
-      return [
-        `Start with ${leftText}.`,
-        `Add ${rightText}.`,
-        `That makes ${resultText}.`,
-      ];
-    case "-":
-      return [
-        `Start with ${leftText}.`,
-        `Take away ${rightText}.`,
-        `That leaves ${resultText}.`,
-      ];
-    case "*":
-      return [
-        `We are multiplying ${leftText} by ${rightText}.`,
-        `Think of ${leftText} groups of ${rightText}.`,
-        `That equals ${resultText}.`,
-      ];
-    case "/":
-      return [
-        `We are dividing ${leftText} by ${rightText}.`,
-        `Split ${leftText} into ${rightText} equal groups.`,
-        `Each group has ${resultText}.`,
-      ];
-    default:
-      return [];
-  }
-};
-
 const buildMathTeachingSteps = (parsed: ParsedMathQuestion): string[] => {
   const leftText = formatNumberForSpeech(parsed.left);
   const rightText = formatNumberForSpeech(parsed.right);
@@ -757,7 +722,7 @@ export default function MathFlashcards({
   const [isTutorAssistOn, setIsTutorAssistOn] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [statusMessage, setStatusMessage] = useState("");
+  const [, setStatusMessage] = useState("");
   const [tutorLanguage, setTutorLanguage] = useState<TutorLanguage>("en");
   const [isTutorCardPlaying, setIsTutorCardPlaying] = useState(false);
   const [tutorGuidance, setTutorGuidance] = useState<string[]>([]);

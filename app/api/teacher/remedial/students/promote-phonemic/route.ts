@@ -12,6 +12,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const studentId = body?.studentId ?? body?.student_id;
     const subjectInput = body?.subject;
+    const currentLevel = body?.currentLevel ?? body?.current_level;
 
     if (!studentId || !subjectInput) {
       return NextResponse.json(
@@ -30,7 +31,9 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await promoteStudentPhonemic(String(studentId), subject);
+    const result = await promoteStudentPhonemic(String(studentId), subject, {
+      currentLevelName: typeof currentLevel === "string" ? currentLevel : null,
+    });
 
     return NextResponse.json({
       success: true,

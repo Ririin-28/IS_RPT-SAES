@@ -1,7 +1,7 @@
 {
   "name": "RPT-SAES Student Quiz",
   "short_name": "RPT Quiz",
-  "description": "Student Assessment and Quiz Platform",
+  "description": "Remedial Performance Tracker for San Agustin Elementary School",
   "start_url": "/PWA",
   "scope": "/PWA/",
   "display": "standalone",

@@ -96,37 +96,41 @@ export default function TeacherAssessment({ language }: TeacherAssessmentProps) 
         <main className="flex-1 overflow-y-auto">
           <div className="p-4 h-full sm:p-5 md:p-6">
             {/*---------------------------------Main Container---------------------------------*/}
-            <div className="relative z-10 h-full min-h-100 overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_20px_45px_-28px_rgba(15,23,42,0.45)] backdrop-blur-xl sm:p-5 md:p-6">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
-                <div className="flex items-center gap-0">
-                  <SecondaryHeader title={subjectHeader} />
-                  <HeaderDropdown
-                    options={[...currentTabOptions]}
-                    value={activeTab}
-                    onChange={(value) => {
-                      if (subject === "English") {
-                        setActiveTab(value as EnglishAssessmentLevel);
-                      } else if (subject === "Filipino") {
-                        setActiveTab(value as FilipinoAssessmentLevel);
-                      } else {
-                        setActiveTab(value as MathAssessmentLevel);
-                      }
-                    }}
-                    className="pl-2"
-                  />
+            <div className="relative z-10 h-full min-h-100 overflow-hidden rounded-2xl border border-white/70 bg-white/45 shadow-[0_20px_45px_-28px_rgba(15,23,42,0.45)] backdrop-blur-xl flex flex-col">
+              <div className="p-4 sm:p-5 border-b border-gray-100 shrink-0">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
+                  <div className="flex items-center gap-0">
+                    <SecondaryHeader title={subjectHeader} />
+                    <HeaderDropdown
+                      options={[...currentTabOptions]}
+                      value={activeTab}
+                      onChange={(value) => {
+                        if (subject === "English") {
+                          setActiveTab(value as EnglishAssessmentLevel);
+                        } else if (subject === "Filipino") {
+                          setActiveTab(value as FilipinoAssessmentLevel);
+                        } else {
+                          setActiveTab(value as MathAssessmentLevel);
+                        }
+                      }}
+                      className="pl-2"
+                    />
+                  </div>
                 </div>
               </div>
 
               {/*---------------------------------Tab Content---------------------------------*/}
-              <div className="mt-1 sm:mt-2">
-                {/* English Assessment */}
-                {subject === "English" && (
-                  <EnglishAssessmentTab level={activeTab as EnglishAssessmentLevel} />
-                )}
-                {/* Filipino Assessment */}
-                {subject === "Filipino" && <FilipinoAssessmentTab level={activeTab as FilipinoAssessmentLevel} />}
-                {/* Math Assessment */}
-                {subject === "Math" && <MathAssessmentTab level={activeTab as MathAssessmentLevel} />}
+              <div className="flex-1 min-h-0 overflow-hidden flex flex-col relative custom-scrollbar overflow-y-auto">
+                <div className="flex-1 min-h-0">
+                  {/* English Assessment */}
+                  {subject === "English" && (
+                    <EnglishAssessmentTab level={activeTab as EnglishAssessmentLevel} />
+                  )}
+                  {/* Filipino Assessment */}
+                  {subject === "Filipino" && <FilipinoAssessmentTab level={activeTab as FilipinoAssessmentLevel} />}
+                  {/* Math Assessment */}
+                  {subject === "Math" && <MathAssessmentTab level={activeTab as MathAssessmentLevel} />}
+                </div>
               </div>
             </div>
           </div>
