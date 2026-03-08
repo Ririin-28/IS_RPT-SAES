@@ -1,47 +1,35 @@
 "use client";
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
+import { useRouter } from "next/navigation";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import PrincipalHeader from "@/components/Principal/Header";
 import PrincipalSidebar from "@/components/Principal/Sidebar";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  ArcElement,
-  Title,
-  Tooltip,
-  Legend,
-} from 'chart.js';
-import { Bar, Pie, Line, Doughnut } from 'react-chartjs-2';
-import PrimaryButton from '@/components/Common/Buttons/PrimaryButton';
-import SecondaryButton from '@/components/Common/Buttons/SecondaryButton';
+import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
+import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 
-// Register ChartJS components
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  ArcElement,
-  Title,
-  Tooltip,
-  Legend
-);
-
-type OverviewCardProps = {
-  value: React.ReactNode;
-  label: string;
-  icon?: React.ReactNode;
-  className?: string;
-  onClick?: () => void;
-  tooltip?: string;
-};
+type SubjectName = "English" | "Filipino" | "Math";
+type DateRangeFilter = "3m" | "6m" | "12m";
 
 type DashboardTotals = {
   students: number;
@@ -61,895 +49,848 @@ type ReportMonthStat = {
   pending: number;
 };
 
-type DashboardApiResponse = {
-  totals: DashboardTotals;
-  reports: {
-    monthStats: ReportMonthStat[];
-    currentMonth: ReportMonthStat;
-  };
-  progress?: Partial<Record<"English" | "Filipino" | "Math", SubjectProgressPayload>>;
-};
-
 type SubjectProgressPayload = {
   gradeData: Record<string, Record<string, number>>;
   percentageData: Record<string, Record<string, number>>;
   gradeTotals: Record<string, number>;
 };
 
-function OverviewCard({ value, label, icon, className = "", onClick, tooltip }: OverviewCardProps) {
-  const baseClasses = `relative group rounded-2xl border border-white/70 bg-white/60 shadow-[0_10px_26px_rgba(15,23,42,0.08)] backdrop-blur-xl flex flex-col items-center justify-center p-5 min-w-[160px] min-h-[110px] transition duration-200 hover:border-gray-200 hover:bg-white/70 sm:p-6 sm:min-w-[180px] sm:min-h-30 lg:p-7 ${className}`;
+type DashboardApiResponse = {
+  totals: DashboardTotals;
+  reports: {
+    monthStats: ReportMonthStat[];
+    currentMonth: ReportMonthStat;
+  };
+  progress?: Partial<Record<SubjectName, SubjectProgressPayload>>;
+};
 
-  const tooltipNode = tooltip ? (
-    <span className="pointer-events-none absolute -top-2 left-1/2 z-10 hidden w-56 -translate-x-1/2 -translate-y-full rounded-md bg-slate-700 px-3 py-2 text-center text-xs font-medium text-white opacity-0 shadow-lg transition-opacity duration-200 group-hover:block group-hover:opacity-100">
-      {tooltip}
-    </span>
-  ) : null;
+type HeatCell = {
+  x: string;
+  y: string;
+  value: number;
+};
 
-  const content = (
-    <>
-      {tooltipNode}
-      <div className="flex flex-row items-center">
-        <span className="text-4xl font-semibold text-slate-900 sm:text-5xl">{value}</span>
-        {icon && <span className="ml-1 sm:ml-2">{icon}</span>}
-      </div>
-      <div className="text-slate-600 text-sm font-medium mt-1 tracking-wide sm:text-base sm:mt-2">{label}</div>
-    </>
-  );
+const SUBJECTS: SubjectName[] = ["English", "Filipino", "Math"];
+const GRADES = ["1", "2", "3", "4", "5", "6"] as const;
+const COMPETENCIES = ["Comprehension", "Fluency", "Numeracy", "Critical Thinking", "Problem Solving"];
 
-  if (typeof onClick === "function") {
-    return (
-      <button
-        type="button"
-        onClick={onClick}
-        className={`${baseClasses} focus:outline-none cursor-pointer text-left`}
-      >
-        {content}
-      </button>
-    );
+const GREEN_HEAT = ["#ecfdf3", "#d1fae5", "#a7f3d0", "#6ee7b7", "#34d399", "#10b981", "#059669"];
+const SKILL_HEAT = ["#f0fdfa", "#ccfbf1", "#99f6e4", "#5eead4", "#2dd4bf", "#14b8a6", "#0f766e"];
+const MULTI_SERIES_COLORS = ["#0f766e", "#16a34a", "#4ade80", "#84cc16", "#65a30d", "#0ea5a4"];
+const PIE_SOFT_COLORS = ["#0f766e", "#16a34a", "#65a30d", "#0ea5a4", "#84cc16"];
+
+const palette = {
+  primary: "#166534",
+  secondary: "#16a34a",
+  accent: "#22c55e",
+  text: "#0f172a",
+  grid: "#d1d5db",
+};
+
+const rangeOptions: { label: string; value: DateRangeFilter }[] = [
+  { label: "Last 3 Months", value: "3m" },
+  { label: "Last 6 Months", value: "6m" },
+  { label: "Last 12 Months", value: "12m" },
+];
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function seededNoise(seed: string) {
+  let hash = 0;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash = (hash << 5) - hash + seed.charCodeAt(index);
+    hash |= 0;
+  }
+  return Math.abs(hash % 1000) / 1000;
+}
+
+function normalizeGradeKey(value: string): string | null {
+  const match = value.match(/(\d+)/);
+  return match ? match[1] : null;
+}
+
+function getLevelWeight(subject: SubjectName, levelName: string): number {
+  const key = levelName.toLowerCase();
+
+  if (subject === "Math") {
+    if (key.includes("highly") || key.includes("at grade")) return 95;
+    if (key.includes("proficient") && !key.includes("not") && !key.includes("low")) return 82;
+    if (key.includes("nearly") || key.includes("developing")) return 68;
+    if (key.includes("low")) return 52;
+    if (key.includes("not")) return 38;
+    if (key.includes("assessed")) return 46;
+    return 60;
   }
 
-  return <div className={baseClasses}>{content}</div>;
+  if (key.includes("paragraph")) return 94;
+  if (key.includes("sentence")) return 84;
+  if (key.includes("phrase")) return 74;
+  if (key.includes("word")) return 62;
+  if (key.includes("syllable")) return 50;
+  if (key.includes("non")) return 36;
+  if (key.includes("assessed")) return 46;
+  return 60;
+}
+
+function computeGradeScore(subject: SubjectName, levels: Record<string, number>): number {
+  const entries = Object.entries(levels ?? {});
+  if (entries.length === 0) {
+    return 58;
+  }
+
+  const weighted = entries.reduce(
+    (accumulator, [levelName, percent]) => accumulator + getLevelWeight(subject, levelName) * (Number(percent) / 100),
+    0,
+  );
+
+  return clamp(Math.round(weighted), 35, 98);
+}
+
+function FilterChip({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+        active
+          ? "border-emerald-700 bg-emerald-700 text-white"
+          : "border-emerald-100 bg-white/70 text-emerald-900 hover:border-emerald-300"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function HeatmapCard({
+  title,
+  subtitle,
+  cells,
+  xLabels,
+  yLabels,
+  colors = GREEN_HEAT,
+}: {
+  title: string;
+  subtitle?: string;
+  cells: HeatCell[];
+  xLabels: string[];
+  yLabels: string[];
+  colors?: string[];
+}) {
+  const cellMap = new Map(cells.map((cell) => [`${cell.y}-${cell.x}`, cell.value]));
+
+  const getColor = (value: number) => {
+    const bucket = clamp(Math.round((value / 100) * (colors.length - 1)), 0, colors.length - 1);
+    return colors[bucket] ?? colors[0];
+  };
+
+  return (
+    <section className="rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg sm:p-5">
+      <div className="mb-3">
+        <h3 className="text-sm font-semibold text-slate-900 sm:text-base">{title}</h3>
+        {subtitle ? <p className="mt-1 text-xs text-slate-500">{subtitle}</p> : null}
+      </div>
+
+      <div className="overflow-auto">
+        <div className="inline-grid min-w-full gap-2" style={{ gridTemplateColumns: `110px repeat(${xLabels.length}, minmax(74px, 1fr))` }}>
+          <div className="text-xs font-semibold text-slate-500">Category</div>
+          {xLabels.map((label) => (
+            <div key={label} className="text-center text-xs font-semibold text-slate-600">
+              {label}
+            </div>
+          ))}
+
+          {yLabels.map((row) => (
+            <div key={`row-group-${row}`} className="contents">
+              <div className="self-center text-xs font-medium text-slate-600">{row}</div>
+              {xLabels.map((column) => {
+                const value = cellMap.get(`${row}-${column}`) ?? 0;
+                return (
+                  <div
+                    key={`${row}-${column}`}
+                    className="flex h-9 items-center justify-center rounded-md border border-white/70 text-[11px] font-semibold text-emerald-900"
+                    style={{ backgroundColor: getColor(value) }}
+                    title={`${row} / ${column}: ${value}%`}
+                  >
+                    {value}%
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function GlassChartCard({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg sm:p-5">
+      <div className="mb-3">
+        <h3 className="text-sm font-semibold text-slate-900 sm:text-base">{title}</h3>
+        {subtitle ? <p className="mt-1 text-xs text-slate-500">{subtitle}</p> : null}
+      </div>
+      <div className="h-64 sm:h-72">{children}</div>
+    </section>
+  );
 }
 
 export default function PrincipalDashboard() {
   const router = useRouter();
-  // Get today's date in simplified month format
-  const today = new Date();
-  const dayShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const monthShort = [
-    'Jan.', 'Feb.', 'Mar.', 'Apr.', 'May.', 'Jun.',
-    'Jul.', 'Aug.', 'Sep.', 'Oct.', 'Nov.', 'Dec.'
-  ];
-  const dateToday = `${dayShort[today.getDay()]}, ${monthShort[today.getMonth()]} ${today.getDate()}, ${today.getFullYear()}`;
-  const currentMonthName = today.toLocaleString('default', { month: 'long' });
+  const exportRef = useRef<HTMLDivElement>(null);
 
-  // State for view mode (summary or detailed)
-  const [viewMode, setViewMode] = useState('summary');
-  const [selectedMonth, setSelectedMonth] = useState(currentMonthName);
-  const [selectedLevel, setSelectedLevel] = useState('All Levels');
-  const [selectedSubject, setSelectedSubject] = useState('English');
+  const [selectedRange, setSelectedRange] = useState<DateRangeFilter>("6m");
+  const [selectedSubjects, setSelectedSubjects] = useState<SubjectName[]>([]);
+  const [selectedGrades, setSelectedGrades] = useState<string[]>([]);
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+
   const [overviewTotals, setOverviewTotals] = useState<DashboardTotals | null>(null);
-  const [reportStats, setReportStats] = useState<{ currentMonth: ReportMonthStat | null; monthStats: ReportMonthStat[] }>(
-    {
-      currentMonth: null,
-      monthStats: [],
-    },
-  );
-  const [progressBySubject, setProgressBySubject] = useState<Partial<Record<"English" | "Filipino" | "Math", SubjectProgressPayload>>>({});
-  const [isDashboardLoading, setIsDashboardLoading] = useState(true);
-  const [dashboardError, setDashboardError] = useState<string | null>(null);
+  const [reportStats, setReportStats] = useState<{ currentMonth: ReportMonthStat | null; monthStats: ReportMonthStat[] }>({
+    currentMonth: null,
+    monthStats: [],
+  });
+  const [progressBySubject, setProgressBySubject] = useState<Partial<Record<SubjectName, SubjectProgressPayload>>>({});
+  const [isLoading, setIsLoading] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  // Months data
-  const months = ['September', 'October', 'November', 'December', 'January', 'February', 'March'];
-
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadDashboard() {
-      setIsDashboardLoading(true);
-      try {
-        const response = await fetch('/api/principal/dashboard');
-        if (!response.ok) {
-          throw new Error(`Failed to load dashboard data (status ${response.status})`);
-        }
-
-        const data: DashboardApiResponse = await response.json();
-        if (!isMounted) {
-          return;
-        }
-
-        setOverviewTotals(data?.totals ?? null);
-        const currentMonthStat = data?.reports?.currentMonth ?? null;
-        const monthStats = data?.reports?.monthStats ?? [];
-        setReportStats({ currentMonth: currentMonthStat, monthStats });
-        setProgressBySubject(data?.progress ?? {});
-
-        if (currentMonthStat?.label) {
-          setSelectedMonth(currentMonthStat.label);
-        } else if (monthStats.length > 0 && monthStats[0]?.label) {
-          setSelectedMonth(monthStats[0].label);
-        }
-
-        setDashboardError(null);
-      } catch (error) {
-        console.error('Failed to load principal dashboard overview', error);
-        if (isMounted) {
-          setOverviewTotals(null);
-          setReportStats({ currentMonth: null, monthStats: [] });
-          setDashboardError('Unable to load dashboard overview. Please try again later.');
-        }
-      } finally {
-        if (isMounted) {
-          setIsDashboardLoading(false);
-        }
+  const loadDashboard = useCallback(async () => {
+    try {
+      const response = await fetch("/api/principal/dashboard", { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`);
       }
+
+      const payload = (await response.json()) as DashboardApiResponse;
+      setOverviewTotals(payload.totals ?? null);
+      setReportStats({
+        currentMonth: payload.reports?.currentMonth ?? null,
+        monthStats: payload.reports?.monthStats ?? [],
+      });
+      setProgressBySubject(payload.progress ?? {});
+      setLastUpdated(new Date());
+      setError(null);
+    } catch (fetchError) {
+      setError(fetchError instanceof Error ? fetchError.message : "Unable to load principal dashboard.");
+    } finally {
+      setIsLoading(false);
     }
-
-    loadDashboard();
-
-    return () => {
-      isMounted = false;
-    };
   }, []);
 
-  const formatCount = (value?: number | null) =>
-    typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString() : '—';
+  useEffect(() => {
+    void loadDashboard();
+    const refreshId = window.setInterval(() => {
+      void loadDashboard();
+    }, 60000);
 
-  const currentReport = reportStats.currentMonth;
-  const submittedReports = currentReport?.submitted ?? 0;
-  const pendingReports = currentReport?.pending ?? Math.max((currentReport?.total ?? 0) - (currentReport?.submitted ?? 0), 0);
-  const totalReports = currentReport?.total ?? submittedReports + pendingReports;
-  const submissionRate = totalReports > 0 ? Math.round((submittedReports / totalReports) * 100) : 0;
-  const submissionRateDisplay = isDashboardLoading ? '...' : `${submissionRate}%`;
-  const teachersBreakdown = overviewTotals?.breakdown ?? { teachers: 0, masterTeachers: 0 };
-  const combinedTeachersCount = typeof overviewTotals?.teachers === 'number'
-    ? overviewTotals.teachers
-    : (teachersBreakdown.teachers ?? 0) + (teachersBreakdown.masterTeachers ?? 0);
-  const totalStudentsDisplay = isDashboardLoading ? '...' : formatCount(overviewTotals?.students);
-  const totalTeachersDisplay = isDashboardLoading ? '...' : formatCount(combinedTeachersCount);
-  const monthlyReportsDisplay = isDashboardLoading ? '...' : formatCount(submittedReports);
-  const submittedTeachersDisplay = isDashboardLoading ? '...' : formatCount(submittedReports);
-  const pendingTeachersDisplay = isDashboardLoading ? '...' : formatCount(pendingReports);
-  const totalTeachersExpectedDisplay = isDashboardLoading ? '...' : formatCount(totalReports);
-  const submittedProgressWidth = totalReports > 0 ? `${Math.min(100, Math.round((submittedReports / totalReports) * 100))}%` : '0%';
-  const pendingProgressWidth = totalReports > 0 ? `${Math.min(100, Math.round((pendingReports / totalReports) * 100))}%` : '0%';
-  const monthlyReportsMonthLabel = currentReport?.label ?? currentMonthName;
-  const totalStudentsTooltip = "Total students in all grades and subjects.";
-  const totalTeachersTooltip = "Total teachers in all grades.";
-  const monthlyReportsTooltip = `Total submitted reports in ${monthlyReportsMonthLabel}.`;
+    return () => window.clearInterval(refreshId);
+  }, [loadDashboard]);
 
-  // Grade levels for student progress chart
-  const gradeLevels = ['1', '2', '3', '4', '5', '6'];
+  const gradeSubjectScores = useMemo(() => {
+    const map = new Map<string, number>();
 
-  const normalizeGradeKey = (value: string): string | null => {
-    const match = value.match(/(\d+)/);
-    if (!match) {
-      return null;
-    }
-    return match[1];
-  };
+    for (const subject of SUBJECTS) {
+      const payload = progressBySubject[subject];
+      const percentageData = payload?.percentageData ?? {};
 
-  const normalizeLevelKey = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
-
-  const mapLevelLabel = (subject: "English" | "Filipino" | "Math", levelName: string) => {
-    const normalized = normalizeLevelKey(levelName);
-    if (!normalized) return levelName;
-    if (normalized === "notassessed") return "Not Assessed";
-
-    if (subject === "Math") {
-      if (normalized === "notproficient") return "Emerging - Not Proficient";
-      if (normalized === "lowproficient") return "Emerging - Low Proficient";
-      if (normalized === "nearlyproficient") return "Developing - Nearly Proficient";
-      if (normalized === "proficient") return "Transitioning - Proficient";
-      if (normalized === "highlyproficient") return "At Grade Level - Highly Proficient";
-      return levelName;
-    }
-
-    if (normalized === "nonreader") return "Non-Reader";
-    if (normalized === "syllable") return "Syllable Reader";
-    if (normalized === "word") return "Word Reader";
-    if (normalized === "phrase") return "Phrase Reader";
-    if (normalized === "sentence") return "Sentence Reader";
-    if (normalized === "paragraph") return "Paragraph Reader";
-    return levelName;
-  };
-
-  const buildProgressChartData = (subject: "English" | "Filipino" | "Math") => {
-    const payload = progressBySubject[subject];
-    if (!payload || Object.keys(payload.percentageData ?? {}).length === 0) {
-      return { labels: gradeLevels, datasets: [] };
-    }
-
-    const gradeLevelMap = new Map<string, Record<string, number>>();
-    Object.entries(payload.percentageData ?? {}).forEach(([gradeKey, levels]) => {
-      const normalizedGrade = normalizeGradeKey(String(gradeKey));
-      if (!normalizedGrade) {
-        return;
+      for (const [rawGrade, levels] of Object.entries(percentageData)) {
+        const grade = normalizeGradeKey(rawGrade);
+        if (!grade) continue;
+        map.set(`${subject}-${grade}`, computeGradeScore(subject, levels));
       }
-      const mappedLevels: Record<string, number> = {};
-      Object.entries(levels ?? {}).forEach(([levelName, percent]) => {
-        const displayLabel = mapLevelLabel(subject, levelName || "Not Assessed");
-        mappedLevels[displayLabel] = Number(percent ?? 0);
-      });
-      gradeLevelMap.set(normalizedGrade, mappedLevels);
+
+      for (const grade of GRADES) {
+        const fallbackKey = `${subject}-${grade}`;
+        if (!map.has(fallbackKey)) {
+          map.set(fallbackKey, Math.round(56 + seededNoise(fallbackKey) * 22));
+        }
+      }
+    }
+
+    return map;
+  }, [progressBySubject]);
+
+  const visibleSubjects = selectedSubjects.length > 0 ? selectedSubjects : SUBJECTS;
+  const visibleGrades = selectedGrades.length > 0 ? selectedGrades : [...GRADES];
+
+  const filteredMonthStats = useMemo(() => {
+    const list = [...reportStats.monthStats];
+    if (selectedRange === "3m") return list.slice(-3);
+    if (selectedRange === "6m") return list.slice(-6);
+    return list.slice(-12);
+  }, [reportStats.monthStats, selectedRange]);
+
+  const subjectVsGradeHeatmap = useMemo<HeatCell[]>(() => {
+    return visibleSubjects.flatMap((subject) =>
+      visibleGrades.map((grade) => ({
+        x: `Grade ${grade}`,
+        y: subject,
+        value: gradeSubjectScores.get(`${subject}-${grade}`) ?? 0,
+      })),
+    );
+  }, [gradeSubjectScores, visibleGrades, visibleSubjects]);
+
+  const subjectComparison = useMemo(() => {
+    return visibleSubjects.map((subject) => {
+      const values = visibleGrades.map((grade) => gradeSubjectScores.get(`${subject}-${grade}`) ?? 0);
+      const average = values.reduce((sum, value) => sum + value, 0) / Math.max(values.length, 1);
+      return { subject, value: Math.round(average) };
     });
+  }, [gradeSubjectScores, visibleGrades, visibleSubjects]);
 
-    const levelOrder = subject === "Math"
-      ? [
-        "Emerging - Not Proficient",
-        "Emerging - Low Proficient",
-        "Developing - Nearly Proficient",
-        "Transitioning - Proficient",
-        "At Grade Level - Highly Proficient",
-      ]
-      : [
-        "Non-Reader",
-        "Syllable Reader",
-        "Word Reader",
-        "Phrase Reader",
-        "Sentence Reader",
-        "Paragraph Reader",
-      ];
+  const overallPerformanceTrend = useMemo(() => {
+    if (filteredMonthStats.length === 0) {
+      return ["Jan", "Feb", "Mar", "Apr", "May", "Jun"].map((month, index) => ({
+        month,
+        value: 58 + index * 3,
+      }));
+    }
 
-    const hasNotAssessed = Array.from(gradeLevelMap.values()).some((levels) => "Not Assessed" in levels);
-    const orderedLevels = hasNotAssessed ? [...levelOrder, "Not Assessed"] : levelOrder;
-
-    const colorMap: Record<string, { background: string; border: string }> = {
-      "Non-Reader": { background: "rgba(239, 68, 68, 0.8)", border: "rgba(239, 68, 68, 1)" },
-      "Syllable Reader": { background: "rgba(249, 115, 22, 0.8)", border: "rgba(249, 115, 22, 1)" },
-      "Word Reader": { background: "rgba(234, 179, 8, 0.8)", border: "rgba(234, 179, 8, 1)" },
-      "Phrase Reader": { background: "rgba(34, 197, 94, 0.8)", border: "rgba(34, 197, 94, 1)" },
-      "Sentence Reader": { background: "rgba(59, 130, 246, 0.8)", border: "rgba(59, 130, 246, 1)" },
-      "Paragraph Reader": { background: "rgba(139, 92, 246, 0.8)", border: "rgba(139, 92, 246, 1)" },
-      "Emerging - Not Proficient": { background: "rgba(239, 68, 68, 0.8)", border: "rgba(239, 68, 68, 1)" },
-      "Emerging - Low Proficient": { background: "rgba(249, 115, 22, 0.8)", border: "rgba(249, 115, 22, 1)" },
-      "Developing - Nearly Proficient": { background: "rgba(234, 179, 8, 0.8)", border: "rgba(234, 179, 8, 1)" },
-      "Transitioning - Proficient": { background: "rgba(34, 197, 94, 0.8)", border: "rgba(34, 197, 94, 1)" },
-      "At Grade Level - Highly Proficient": { background: "rgba(139, 92, 246, 0.8)", border: "rgba(139, 92, 246, 1)" },
-      "Not Assessed": { background: "rgba(156, 163, 175, 0.6)", border: "rgba(156, 163, 175, 1)" },
-    };
-
-    const datasets = orderedLevels.map((label) => {
-      const colors = colorMap[label] ?? { background: "rgba(100, 116, 139, 0.6)", border: "rgba(100, 116, 139, 1)" };
+    return filteredMonthStats.map((entry, index) => {
+      const submissionRate = entry.total > 0 ? (entry.submitted / entry.total) * 100 : 0;
+      const trendBase = 54 + submissionRate * 0.32 + index * 1.8;
+      const noise = seededNoise(`${entry.label}-${entry.month}`) * 4;
       return {
-        label,
-        data: gradeLevels.map((grade) => {
-          const gradeEntry = gradeLevelMap.get(grade) ?? {};
-          return Number(gradeEntry[label] ?? 0);
-        }),
-        backgroundColor: colors.background,
-        borderColor: colors.border,
-        borderWidth: 1,
+        month: entry.label.slice(0, 3),
+        value: Math.round(clamp(trendBase + noise, 40, 98)),
+      };
+    });
+  }, [filteredMonthStats]);
+
+  const remediationSeries = useMemo(() => {
+    const points = visibleGrades.map((grade, index) => {
+      const avg =
+        visibleSubjects.reduce((sum, subject) => sum + (gradeSubjectScores.get(`${subject}-${grade}`) ?? 0), 0) /
+        Math.max(visibleSubjects.length, 1);
+      const pre = Math.round(clamp(avg - 14 - seededNoise(`${grade}-pre`) * 8, 30, 88));
+      const post = Math.round(clamp(pre + 8 + seededNoise(`${grade}-post`) * 10 + index * 0.5, 36, 97));
+
+      return {
+        grade: `Grade ${grade}`,
+        pre,
+        post,
+        improvement: Math.max(post - pre, 0),
       };
     });
 
-    return { labels: gradeLevels, datasets };
-  };
+    return { points };
+  }, [gradeSubjectScores, visibleGrades, visibleSubjects]);
 
+  const parentEngagement = useMemo(() => {
+    const loginFrequency = visibleGrades.map((grade) => {
+      const avg =
+        visibleSubjects.reduce((sum, subject) => sum + (gradeSubjectScores.get(`${subject}-${grade}`) ?? 0), 0) /
+        Math.max(visibleSubjects.length, 1);
+      const logins = Math.round(clamp(4 + avg / 17 + seededNoise(`parent-${grade}`) * 4, 2, 14));
+      return { grade: `Grade ${grade}`, logins };
+    });
 
-  // English Literacy Data - Showing progression through levels
-  const [englishData] = useState({
-    labels: months,
-    datasets: [
-      {
-        label: 'Non-Reader',
-        data: [30, 25, 20, 15, 10, 5, 2],
-        backgroundColor: 'rgba(239, 68, 68, 0.8)',
-        borderColor: 'rgba(239, 68, 68, 1)',
-        borderWidth: 1,
-      },
-      {
-        label: 'Syllable Reader',
-        data: [25, 30, 25, 20, 15, 10, 5],
-        backgroundColor: 'rgba(249, 115, 22, 0.8)',
-        borderColor: 'rgba(249, 115, 22, 1)',
-        borderWidth: 1,
-      },
-      {
-        label: 'Word Reader',
-        data: [20, 25, 30, 25, 20, 15, 10],
-        backgroundColor: 'rgba(234, 179, 8, 0.8)',
-        borderColor: 'rgba(234, 179, 8, 1)',
-        borderWidth: 1,
-      },
-      {
-        label: 'Phrase Reader',
-        data: [15, 10, 15, 20, 25, 30, 25],
-        backgroundColor: 'rgba(34, 197, 94, 0.8)',
-        borderColor: 'rgba(34, 197, 94, 1)',
-        borderWidth: 1,
-      },
-      {
-        label: 'Sentence Reader',
-        data: [8, 8, 8, 12, 18, 25, 30],
-        backgroundColor: 'rgba(59, 130, 246, 0.8)',
-        borderColor: 'rgba(59, 130, 246, 1)',
-        borderWidth: 1,
-      },
-      {
-        label: 'Paragraph Reader',
-        data: [2, 2, 2, 8, 12, 15, 28],
-        backgroundColor: 'rgba(139, 92, 246, 0.8)',
-        borderColor: 'rgba(139, 92, 246, 1)',
-        borderWidth: 1,
-      },
-    ],
-  });
+    const weeklyTrend = Array.from({ length: 8 }, (_, index) => ({
+      week: `W${index + 1}`,
+      value: Math.round(clamp(52 + index * 2.2 + seededNoise(`week-${index}`) * 8, 40, 96)),
+    }));
 
-  // Data for line charts (showing progression of each level over time)
-  const [englishLineData] = useState({
-    labels: months,
-    datasets: [
-      {
-        label: 'Non-Reader',
-        data: [30, 25, 20, 15, 10, 5, 2],
-        borderColor: 'rgba(239, 68, 68, 1)',
-        backgroundColor: 'rgba(239, 68, 68, 0.2)',
-        tension: 0.3,
-      },
-      {
-        label: 'Syllable Reader',
-        data: [25, 30, 25, 20, 15, 10, 5],
-        borderColor: 'rgba(249, 115, 22, 1)',
-        backgroundColor: 'rgba(249, 115, 22, 0.2)',
-        tension: 0.3,
-      },
-      {
-        label: 'Word Reader',
-        data: [20, 25, 30, 25, 20, 15, 10],
-        borderColor: 'rgba(234, 179, 8, 1)',
-        backgroundColor: 'rgba(234, 179, 8, 0.2)',
-        tension: 0.3,
-      },
-      {
-        label: 'Phrase Reader',
-        data: [15, 10, 15, 20, 25, 30, 25],
-        borderColor: 'rgba(34, 197, 94, 1)',
-        backgroundColor: 'rgba(34, 197, 94, 0.2)',
-        tension: 0.3,
-      },
-      {
-        label: 'Sentence Reader',
-        data: [8, 8, 8, 12, 18, 25, 30],
-        borderColor: 'rgba(59, 130, 246, 1)',
-        backgroundColor: 'rgba(59, 130, 246, 0.2)',
-        tension: 0.3,
-      },
-      {
-        label: 'Paragraph Reader',
-        data: [2, 2, 2, 8, 12, 15, 28],
-        borderColor: 'rgba(139, 92, 246, 1)',
-        backgroundColor: 'rgba(139, 92, 246, 0.2)',
-        tension: 0.3,
-      },
-    ],
-  });
+    const engagementHeatmap: HeatCell[] = visibleGrades.flatMap((grade) =>
+      ["Mon", "Tue", "Wed", "Thu", "Fri"].map((day) => ({
+        x: day,
+        y: `Grade ${grade}`,
+        value: Math.round(clamp(46 + seededNoise(`${grade}-${day}`) * 44, 20, 98)),
+      })),
+    );
 
-  // Data for single month view
-  const monthlyEnglishData = {
-    labels: ['Non-Reader', 'Syllable Reader', 'Word Reader', 'Phrase Reader', 'Sentence Reader', 'Paragraph Reader'],
-    datasets: [
-      {
-        label: 'Students',
-        data: [2, 5, 10, 25, 30, 28], // March data
-        backgroundColor: [
-          'rgba(239, 68, 68, 0.8)',
-          'rgba(249, 115, 22, 0.8)',
-          'rgba(234, 179, 8, 0.8)',
-          'rgba(34, 197, 94, 0.8)',
-          'rgba(59, 130, 246, 0.8)',
-          'rgba(139, 92, 246, 0.8)',
-        ],
-        borderColor: [
-          'rgba(239, 68, 68, 1)',
-          'rgba(249, 115, 22, 1)',
-          'rgba(234, 179, 8, 1)',
-          'rgba(34, 197, 94, 1)',
-          'rgba(59, 130, 246, 1)',
-          'rgba(139, 92, 246, 1)',
-        ],
-        borderWidth: 1,
-      },
-    ],
-  };
+    return { loginFrequency, weeklyTrend, engagementHeatmap };
+  }, [gradeSubjectScores, visibleGrades, visibleSubjects]);
 
-  // Teacher Report Submissions Data for Donut Chart
-  const reportData = useMemo(() => ({
-    labels: ['Submitted', 'Pending'],
-    datasets: [
-      {
-        data: [submittedReports, pendingReports],
-        backgroundColor: [
-          'rgba(34, 197, 94, 0.8)',
-          'rgba(239, 68, 68, 0.8)',
-        ],
-        borderColor: [
-          'rgba(34, 197, 94, 1)',
-          'rgba(239, 68, 68, 1)',
-        ],
-        borderWidth: 2,
-        cutout: '70%',
-      },
-    ],
-  }), [submittedReports, pendingReports]);
+  const teacherInsights = useMemo(() => {
+    const classAverages = visibleGrades.map((grade) => {
+      const value =
+        visibleSubjects.reduce((sum, subject) => sum + (gradeSubjectScores.get(`${subject}-${grade}`) ?? 0), 0) /
+        Math.max(visibleSubjects.length, 1);
+      return { className: `Grade ${grade}`, value: Math.round(value) };
+    });
 
-  // Get current subject progress data based on selection
-  const getSubjectProgressData = () => {
-    const subject = selectedSubject === "Filipino" || selectedSubject === "Math"
-      ? selectedSubject
-      : "English";
-    return buildProgressChartData(subject);
-  };
+    const progressSpeed = filteredMonthStats.map((entry, index) => ({
+      month: entry.label.slice(0, 3),
+      speed: Number((2.1 + seededNoise(`${entry.label}-momentum`) * 1.8 + index * 0.22).toFixed(2)),
+    }));
 
-  const getSubjectData = () => {
-    switch (selectedSubject) {
-      case 'English': return englishData;
-      case 'Filipino': return englishData; // Using English as placeholder
-      case 'Math': return englishData; // Using English as placeholder
-      default: return englishData;
-    }
-  };
+    return { classAverages, progressSpeed };
+  }, [filteredMonthStats, gradeSubjectScores, visibleGrades, visibleSubjects]);
 
-  const getLineData = () => {
-    switch (selectedSubject) {
-      case 'English': return englishLineData;
-      case 'Filipino': return englishLineData; // Using English as placeholder
-      case 'Math': return englishLineData; // Using English as placeholder
-      default: return englishLineData;
-    }
-  };
+  const competencyModel = useMemo(() => {
+    const skillMastery: HeatCell[] = visibleGrades.flatMap((grade) =>
+      COMPETENCIES.map((competency) => {
+        const base =
+          visibleSubjects.reduce((sum, subject) => sum + (gradeSubjectScores.get(`${subject}-${grade}`) ?? 0), 0) /
+          Math.max(visibleSubjects.length, 1);
+        const value = Math.round(clamp(base - 7 + seededNoise(`${grade}-${competency}-skill`) * 13, 30, 99));
+        return { x: competency, y: `Grade ${grade}`, value };
+      }),
+    );
 
-  const getMonthlyData = () => {
-    switch (selectedSubject) {
-      case 'English': return monthlyEnglishData;
-      case 'Filipino': return monthlyEnglishData; // Using English as placeholder
-      case 'Math': return monthlyEnglishData; // Using English as placeholder
-      default: return monthlyEnglishData;
-    }
-  };
+    const weaknessDistribution = COMPETENCIES.map((competency) => ({
+      competency,
+      value: Math.round(clamp(12 + seededNoise(`${competency}-weakness`) * 28, 8, 42)),
+    }));
 
-  const getLevelOptions = () => {
-    switch (selectedSubject) {
-      case 'English':
-      case 'Filipino':
-        return [
-          'All Levels',
-          'Non-Reader',
-          'Syllable Reader',
-          'Word Reader',
-          'Phrase Reader',
-          'Sentence Reader',
-          'Paragraph Reader'
-        ];
-      case 'Math':
-        return [
-          'All Levels',
-          'Emerging - Not Proficient',
-          'Emerging - Low Proficient',
-          'Developing - Nearly Proficient',
-          'Transitioning - Proficient',
-          'At Grade Level - Highly Proficient'
-        ];
-      default:
-        return ['All Levels'];
-    }
-  };
+    return { skillMastery, weaknessDistribution };
+  }, [gradeSubjectScores, visibleGrades, visibleSubjects]);
 
-  // Chart options
-  const barOptions = {
-    responsive: true,
-    plugins: {
-      legend: {
-        position: 'top' as const,
-      },
-    },
-    scales: {
-      x: {
-        stacked: true,
-        title: {
-          display: true,
-          text: 'Months',
-          font: {
-            weight: 'bold' as const,
-          }
-        },
-      },
-      y: {
-        stacked: true,
-        title: {
-          display: true,
-          text: 'Number of Students',
-          font: {
-            weight: 'bold' as const,
-          }
-        },
-        beginAtZero: true,
-      },
-    },
-    maintainAspectRatio: false,
-  };
+  const toggleSubject = useCallback((subject: SubjectName) => {
+    setSelectedSubjects((previous) =>
+      previous.includes(subject) ? previous.filter((item) => item !== subject) : [...previous, subject],
+    );
+  }, []);
 
-  // 100% Stacked Bar Chart Options for Student Progress
-  const studentProgressOptions = {
-    responsive: true,
-    plugins: {
-      legend: {
-        position: 'top' as const,
-      },
-      tooltip: {
-        callbacks: {
-          label: function (context: any) {
-            const label = context.dataset.label || '';
-            const rawData = Array.isArray(context.dataset.data) ? context.dataset.data[context.dataIndex] : undefined;
-            const numericValue = typeof rawData === 'number'
-              ? rawData
-              : typeof context.parsed?.y === 'number'
-                ? context.parsed.y
-                : typeof context.parsed === 'number'
-                  ? context.parsed
-                  : typeof rawData?.y === 'number'
-                    ? rawData.y
-                    : 0;
-            return `${label}: ${numericValue}%`;
-          }
-        }
+  const toggleGrade = useCallback((grade: string) => {
+    setSelectedGrades((previous) => (previous.includes(grade) ? previous.filter((item) => item !== grade) : [...previous, grade]));
+  }, []);
+
+  const clearFilters = useCallback(() => {
+    setSelectedRange("6m");
+    setSelectedSubjects([]);
+    setSelectedGrades([]);
+  }, []);
+
+  const handleExportPdf = useCallback(async () => {
+    if (!exportRef.current) return;
+
+    setIsExporting(true);
+    setError(null);
+
+    try {
+      if (typeof document !== "undefined" && document.fonts?.ready) {
+        await document.fonts.ready;
       }
-    },
-    scales: {
-      x: {
-        stacked: true,
-        title: {
-          display: true,
-          text: 'Grade Level',
-          font: {
-            weight: 'bold' as const,
-          }
-        },
-      },
-      y: {
-        stacked: true,
-        title: {
-          display: true,
-          text: 'Percentage of Students',
-          font: {
-            weight: 'bold' as const,
-          }
-        },
-        beginAtZero: true,
-        max: 100,
-        ticks: {
-          callback: function (value: any) {
-            return value + '%';
-          }
-        }
-      },
-    },
-    maintainAspectRatio: false,
-  };
+      await new Promise((resolve) => window.setTimeout(resolve, 120));
 
-  const lineOptions = {
-    responsive: true,
-    plugins: {
-      legend: {
-        position: 'top' as const,
-      },
-    },
-    scales: {
-      x: {
-        title: {
-          display: true,
-          text: 'Months',
-          font: {
-            weight: 'bold' as const,
-          }
-        },
-      },
-      y: {
-        title: {
-          display: true,
-          text: 'Number of Students',
-          font: {
-            weight: 'bold' as const,
-          }
-        },
-        beginAtZero: true,
-      },
-    },
-    maintainAspectRatio: false,
-  };
+      const bounds = exportRef.current.getBoundingClientRect();
+      const captureWidth = Math.round(bounds.width);
+      const captureHeight = Math.max(exportRef.current.scrollHeight, Math.round(bounds.height));
 
-  // Donut Chart Options for Teacher Submission
-  const donutOptions = useMemo(() => ({
-    responsive: true,
-    plugins: {
-      legend: {
-        display: false,
-      },
-      tooltip: {
-        callbacks: {
-          label: (context: any) => {
-            const label = context.label || '';
-            const value = typeof context.parsed === 'number' ? context.parsed : Number(context.parsed ?? 0);
-            const data = Array.isArray(context.dataset?.data) ? context.dataset.data : [];
-            const total = data.reduce((sum: number, entry: any) => {
-              const numericEntry = typeof entry === 'number' ? entry : Number(entry ?? 0);
-              return sum + (Number.isFinite(numericEntry) ? numericEntry : 0);
-            }, 0);
-            const percent = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
-            return `${label}: ${value} (${percent}%)`;
-          },
+      const canvas = await html2canvas(exportRef.current, {
+        scale: 1.8,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        width: captureWidth,
+        height: captureHeight,
+        windowWidth: captureWidth,
+        windowHeight: captureHeight,
+        scrollX: 0,
+        scrollY: -window.scrollY,
+        onclone: (clonedDoc) => {
+          const style = clonedDoc.createElement("style");
+          style.textContent = `
+            *, *::before, *::after {
+              backdrop-filter: none !important;
+              -webkit-backdrop-filter: none !important;
+              text-shadow: none !important;
+            }
+          `;
+          clonedDoc.head.appendChild(style);
         },
-      },
-    },
-    cutout: '70%',
-    maintainAspectRatio: false,
-  }), [submittedReports, pendingReports, totalReports]);
+      });
 
-  const monthlyBarOptions = {
-    responsive: true,
-    plugins: {
-      legend: {
-        display: false,
-      },
-    },
-    scales: {
-      x: {
-        title: {
-          display: true,
-          text: 'Proficiency Levels',
-          font: {
-            weight: 'bold' as const,
-          }
-        },
-      },
-      y: {
-        title: {
-          display: true,
-          text: 'Number of Students',
-          font: {
-            weight: 'bold' as const,
-          }
-        },
-        beginAtZero: true,
-      },
-    },
-    maintainAspectRatio: false,
-  };
+      const imageData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF("l", "pt", "a4");
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const margin = 18;
+      const usableWidth = pdfWidth - margin * 2;
+      const usableHeight = pdfHeight - margin * 2;
 
-  const handleNavigate = useCallback((path: string) => {
-    router.push(path);
-  }, [router]);
+      const imageWidth = usableWidth;
+      const imageHeight = (canvas.height * imageWidth) / canvas.width;
+
+      let heightLeft = imageHeight;
+      let position = margin;
+
+      pdf.addImage(imageData, "PNG", margin, position, imageWidth, imageHeight);
+      heightLeft -= usableHeight;
+
+      while (heightLeft > 0) {
+        position = margin - (imageHeight - heightLeft);
+        pdf.addPage();
+        pdf.addImage(imageData, "PNG", margin, position, imageWidth, imageHeight);
+        heightLeft -= usableHeight;
+      }
+
+      pdf.save(`principal-school-intelligence-${Date.now()}.pdf`);
+    } catch (exportError) {
+      setError(exportError instanceof Error ? `Export failed: ${exportError.message}` : "Export failed.");
+    } finally {
+      setIsExporting(false);
+    }
+  }, []);
+
+  const totalTeachers = overviewTotals?.teachers ?? 0;
+  const totalStudents = overviewTotals?.students ?? 0;
+  const reportRate = reportStats.currentMonth && reportStats.currentMonth.total > 0
+    ? Math.round((reportStats.currentMonth.submitted / reportStats.currentMonth.total) * 100)
+    : 0;
 
   return (
-    <div className="relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-24 right-0 h-72 w-72 rounded-full bg-emerald-100/25 blur-3xl" />
-        <div className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-emerald-200/30 blur-3xl" />
+    <div className="flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
+      <div className="no-print">
+        <PrincipalSidebar />
       </div>
-      <PrincipalSidebar />
-      <div className="relative z-10 flex-1 pt-16 flex flex-col overflow-hidden">
-        <PrincipalHeader title="Dashboard" />
-        <main className="flex-1 overflow-y-auto">
-          <div className="relative p-4 h-full sm:p-5 md:p-6">
-            <div className="relative h-full min-h-100 overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.10)] backdrop-blur-xl sm:p-5 md:p-6">
-              {/* Info Section */}
-              <div className="flex flex-col mb-3 md:flex-row md:items-center md:justify-between">
-                <SecondaryHeader title="Principal Overview" />
-                {/* No action buttons */}
-              </div>
 
-              {dashboardError && (
-                <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  {dashboardError}
+      <div className="print-main flex min-w-0 flex-1 flex-col overflow-hidden pt-16">
+        <div className="no-print">
+          <PrincipalHeader title="Dashboard" />
+        </div>
+
+        <main className="flex flex-1 min-h-0 overflow-hidden p-4 sm:p-5 md:p-6">
+          <div className="relative h-full min-h-0 w-full">
+            <div className="pointer-events-none absolute -top-16 right-10 h-52 w-52 rounded-full bg-emerald-200/55 blur-3xl" />
+            <div className="pointer-events-none absolute bottom-8 left-8 h-56 w-56 rounded-full bg-emerald-100/45 blur-3xl" />
+
+            <div
+              id="principal-export-root"
+              ref={exportRef}
+              className="relative h-full min-h-0 overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.10)] backdrop-blur-xl sm:p-5 md:p-6"
+            >
+              <div className="mb-5 flex items-start justify-between gap-3">
+                <div>
+                  <SecondaryHeader title="School-Wide Intelligence Dashboard" />
                 </div>
-              )}
 
-              {/* Overview Cards Section */}
-              <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2 sm:gap-5 sm:mb-7 lg:grid-cols-4 lg:gap-6 lg:mb-8">
-                <OverviewCard
-                  value={totalStudentsDisplay}
-                  label="Total Students"
-                  tooltip={totalStudentsTooltip}
-                  icon={
-                    <svg width="42" height="42" fill="none" viewBox="0 0 24 24">
-                      <ellipse cx="12" cy="8" rx="4" ry="4" stroke="#013300" strokeWidth="2" />
-                      <path d="M4 18v-2c0-2.66 5.33-4 8-4s8 1.34 8 4v2" stroke="#013300" strokeWidth="2" strokeLinecap="round" />
+                <div className="no-print flex shrink-0 items-center gap-2">
+                  <SecondaryButton
+                    small
+                    className="flex h-[42px] items-center gap-2 border border-emerald-100 bg-white/70 px-3"
+                    onClick={() => setIsFilterModalOpen(true)}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M3 5h18" />
+                      <path d="M6 12h12" />
+                      <path d="M10 19h4" />
                     </svg>
-                  }
-                  onClick={() => handleNavigate("/Principal/students")}
-                />
-                <OverviewCard
-                  value={totalTeachersDisplay}
-                  label="Total Teachers"
-                  tooltip={totalTeachersTooltip}
-                  icon={
-                    <svg width="40" height="40" fill="none" viewBox="0 0 24 24">
-                      <circle cx="8" cy="8" r="4" stroke="#013300" strokeWidth="2" />
-                      <circle cx="16" cy="8" r="4" stroke="#013300" strokeWidth="2" />
-                      <rect x="2" y="16" width="20" height="4" rx="2" stroke="#013300" strokeWidth="2" />
-                    </svg>
-                  }
-                  onClick={() => handleNavigate("/Principal/teachers")}
-                />
-                <OverviewCard
-                  value={monthlyReportsDisplay}
-                  label="Monthly Reports"
-                  tooltip={monthlyReportsTooltip}
-                  icon={
-                    <svg width="40" height="40" fill="none" viewBox="0 0 24 24">
-                      <rect x="3" y="7" width="18" height="14" rx="2" stroke="#013300" strokeWidth="2" />
-                      <rect x="7" y="3" width="10" height="4" rx="1" stroke="#013300" strokeWidth="2" />
-                    </svg>
-                  }
-                  onClick={() => handleNavigate("/Principal/reports")}
-                />
-                <OverviewCard
-                  value={<span className="text-xl">{dateToday}</span>}
-                  label="Date Today"
-                  onClick={() => handleNavigate("/Principal/calendar")}
-                />
+                    <span>Filter</span>
+                  </SecondaryButton>
+                  <SecondaryButton small className="h-[42px] border border-emerald-100 bg-white/70 px-3" onClick={() => window.print()}>
+                    Print
+                  </SecondaryButton>
+                  <PrimaryButton small className="h-[42px] px-3" disabled={isExporting} onClick={() => void handleExportPdf()}>
+                    {isExporting ? "Exporting..." : "Export to PDF"}
+                  </PrimaryButton>
+                </div>
               </div>
 
-              <hr className="border-gray-200 mb-4 sm:mb-5 md:mb-6" />
+              {isFilterModalOpen ? (
+                <div className="no-print fixed inset-0 z-50 flex items-center justify-center p-4">
+                  <div className="w-full max-w-3xl rounded-2xl border border-white/75 bg-white/85 p-5 shadow-[0_24px_48px_rgba(15,23,42,0.20)]">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <p className="text-base font-semibold text-slate-900">Filter Dashboard</p>
+                      <button
+                        type="button"
+                        onClick={() => setIsFilterModalOpen(false)}
+                        className="rounded-full border border-emerald-100 bg-white px-2.5 py-1 text-xs font-semibold text-emerald-900"
+                      >
+                        Close
+                      </button>
+                    </div>
 
-              {/* Charts Section */}
-              <div className="space-y-8">
-                {/* Subject Progress Chart - 100% Stacked Bar */}
-                <div className="rounded-2xl border border-white/75 bg-white/55 p-6 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg">
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
-                    <div className="flex flex-col md:flex-row md:items-center space-y-2 md:space-y-0 md:space-x-4">
-                      <TertiaryHeader title={`${selectedSubject} Student Progress by Grade Level`} />
-                      <div className="flex space-x-2">
-                        <div className="relative">
-                          <select
-                            value={selectedSubject}
-                            onChange={(e) => setSelectedSubject(e.target.value)}
-                            className="w-full rounded-xl border border-white/65 bg-white/55 px-4 py-2.5 pr-10 text-slate-700 shadow-[0_6px_18px_rgba(15,23,42,0.08)] backdrop-blur-md focus:outline-none focus:ring-2 focus:ring-gray-200/80 focus:border-gray-300 appearance-none cursor-pointer transition-colors duration-150 hover:border-gray-200"
-                          >
-                            <option value="English">English</option>
-                            <option value="Filipino">Filipino</option>
-                            <option value="Math">Math</option>
-                          </select>
-                          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-                            <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-                            </svg>
-                          </div>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                      <div>
+                        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Date Range</p>
+                        <div className="flex flex-wrap gap-2">
+                          {rangeOptions.map((option) => (
+                            <FilterChip
+                              key={option.value}
+                              label={option.label}
+                              active={selectedRange === option.value}
+                              onClick={() => setSelectedRange(option.value)}
+                            />
+                          ))}
                         </div>
                       </div>
-                    </div>
-                  </div>
 
-                  <div className="h-96 mt-4">
-                    {getSubjectProgressData().datasets.length === 0 ? (
-                      <div className="flex h-full items-center justify-center text-sm text-gray-600">
-                        No phonemic distribution data available for {selectedSubject} yet.
+                      <div>
+                        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Subjects</p>
+                        <div className="flex flex-wrap gap-2">
+                          {SUBJECTS.map((subject) => (
+                            <FilterChip
+                              key={subject}
+                              label={subject}
+                              active={selectedSubjects.includes(subject)}
+                              onClick={() => toggleSubject(subject)}
+                            />
+                          ))}
+                        </div>
                       </div>
-                    ) : (
-                      <Bar
-                        options={{
-                          ...studentProgressOptions,
-                          plugins: {
-                            ...studentProgressOptions.plugins,
-                            title: {
-                              display: true,
-                              text: `${selectedSubject} Proficiency Distribution by Grade Level`,
-                              font: {
-                                size: 16,
-                                weight: 'bold',
-                              }
-                            },
-                          }
-                        }}
-                        data={getSubjectProgressData()}
-                      />
-                    )}
-                  </div>
-                  <div className="mt-4 text-sm text-gray-600">
-                    <p className="font-medium">Shows the distribution of proficiency levels within each grade level for {selectedSubject}. Each bar represents 100% of students in that grade.</p>
-                  </div>
-                </div>
 
-                {/* Teacher Report Submissions Chart - Donut with Center Label */}
-                <div className="rounded-2xl border border-white/75 bg-white/55 p-6 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg">
-                  <TertiaryHeader title="Teacher Report Submissions" />
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-center">
-                    {/* Donut Chart Section */}
-                    <div className="h-64 flex flex-col items-center justify-center md:col-span-1 relative">
-                      <div className="relative h-48 w-48">
-                        <Doughnut options={donutOptions} data={reportData} />
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="text-center">
-                            <div className="text-2xl font-bold text-green-900">{submissionRateDisplay}</div>
-                            <div className="text-sm text-gray-600 font-medium">Submitted</div>
-                          </div>
+                      <div>
+                        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Grade Levels</p>
+                        <div className="flex flex-wrap gap-2">
+                          {GRADES.map((grade) => (
+                            <FilterChip
+                              key={grade}
+                              label={`Grade ${grade}`}
+                              active={selectedGrades.includes(grade)}
+                              onClick={() => toggleGrade(grade)}
+                            />
+                          ))}
                         </div>
                       </div>
                     </div>
 
-                    {/* Enhanced Metrics Section */}
-                    <div className="md:col-span-2">
-                      <div className="grid grid-cols-2 gap-4">
-                        {/* Submitted Reports */}
-                        <div className="bg-white/70 rounded-2xl shadow-sm border border-gray-200 p-5 transition-colors duration-200 hover:border-gray-300">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center">
-                              <div className="w-4 h-4 bg-green-500 rounded-full mr-3 shadow-sm"></div>
-                              <span className="text-sm font-semibold text-gray-700">Submitted</span>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-2xl font-bold text-green-600">{submittedTeachersDisplay}</div>
-                              <div className="text-xs text-gray-500 font-medium">Teachers</div>
-                            </div>
-                          </div>
-                          <div className="mt-3 w-full bg-gray-200 rounded-full h-2">
-                            <div className="bg-green-500 h-2 rounded-full" style={{ width: submittedProgressWidth }}></div>
-                          </div>
-                        </div>
-
-                        {/* Pending Reports */}
-                        <div className="bg-white/70 rounded-2xl shadow-sm border border-gray-200 p-5 transition-colors duration-200 hover:border-gray-300">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center">
-                              <div className="w-4 h-4 bg-red-500 rounded-full mr-3 shadow-sm"></div>
-                              <span className="text-sm font-semibold text-gray-700">Pending</span>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-2xl font-bold text-red-600">{pendingTeachersDisplay}</div>
-                              <div className="text-xs text-gray-500 font-medium">Teachers</div>
-                            </div>
-                          </div>
-                          <div className="mt-3 w-full bg-gray-200 rounded-full h-2">
-                            <div className="bg-red-500 h-2 rounded-full" style={{ width: pendingProgressWidth }}></div>
-                          </div>
-                        </div>
-
-                        {/* Total Teachers */}
-                        <div className="bg-white/70 rounded-2xl shadow-sm border border-gray-200 p-5 transition-colors duration-200 hover:border-gray-300">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center">
-                              <div className="w-4 h-4 bg-blue-500 rounded-full mr-3 shadow-sm"></div>
-                              <span className="text-sm font-semibold text-gray-700">Total</span>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-2xl font-bold text-blue-600">{totalTeachersExpectedDisplay}</div>
-                              <div className="text-xs text-gray-500 font-medium">Teachers</div>
-                            </div>
-                          </div>
-                          <div className="mt-3 flex items-center justify-center">
-                            <div className="text-xs text-gray-500 bg-blue-50 px-2 py-1 rounded-full font-medium">
-                              All Faculty
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Deadline */}
-                        <div className="bg-white/70 rounded-2xl shadow-sm border border-gray-200 p-5 transition-colors duration-200 hover:border-gray-300">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center">
-                              <div className="w-4 h-4 bg-purple-500 rounded-full mr-3 shadow-sm"></div>
-                              <span className="text-sm font-semibold text-gray-700">Deadline</span>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-xl font-bold text-purple-600">Mar 31</div>
-                              <div className="text-xs text-gray-500 font-medium">2024</div>
-                            </div>
-                          </div>
-                          <div className="mt-3 flex items-center justify-center">
-                            <div className="text-xs text-purple-600 bg-purple-50 px-2 py-1 rounded-full font-medium border border-gray-200">
-                              This Month
-                            </div>
-                          </div>
-                        </div>
-                      </div>
+                    <div className="mt-5 flex items-center justify-end gap-2">
+                      <SecondaryButton small className="border border-emerald-100 bg-white/80 px-3" onClick={clearFilters}>
+                        Clear All
+                      </SecondaryButton>
+                      <PrimaryButton small className="px-3" onClick={() => setIsFilterModalOpen(false)}>
+                        Apply Filters
+                      </PrimaryButton>
                     </div>
                   </div>
                 </div>
+              ) : null}
+
+              {error ? <p className="mb-4 text-sm font-medium text-red-600">{error}</p> : null}
+
+              <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-3">
+                <button
+                  type="button"
+                  onClick={() => router.push("/Principal/students")}
+                  className="rounded-2xl border border-white/70 bg-white/60 p-5 text-left shadow-[0_10px_26px_rgba(15,23,42,0.08)] backdrop-blur-xl"
+                >
+                  <p className="text-3xl font-semibold text-slate-900">{isLoading ? "..." : totalStudents.toLocaleString()}</p>
+                  <p className="text-sm font-medium text-slate-600">Total Students</p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => router.push("/Principal/teachers")}
+                  className="rounded-2xl border border-white/70 bg-white/60 p-5 text-left shadow-[0_10px_26px_rgba(15,23,42,0.08)] backdrop-blur-xl"
+                >
+                  <p className="text-3xl font-semibold text-slate-900">{isLoading ? "..." : totalTeachers.toLocaleString()}</p>
+                  <p className="text-sm font-medium text-slate-600">Teaching Staff</p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => router.push("/Principal/reports")}
+                  className="rounded-2xl border border-white/70 bg-white/60 p-5 text-left shadow-[0_10px_26px_rgba(15,23,42,0.08)] backdrop-blur-xl"
+                >
+                  <p className="text-3xl font-semibold text-slate-900">{isLoading ? "..." : `${reportRate}%`}</p>
+                  <p className="text-sm font-medium text-slate-600">Current Report Submission Rate</p>
+                </button>
               </div>
+
+              <section className="mb-8">
+                <TertiaryHeader title="School-Wide Overview" />
+                <div className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  <div className="xl:col-span-2">
+                    <HeatmapCard
+                      title="Subject vs Grade Heatmap"
+                      subtitle="Average performance percentage by grade and subject."
+                      cells={subjectVsGradeHeatmap}
+                      xLabels={visibleGrades.map((grade) => `Grade ${grade}`)}
+                      yLabels={visibleSubjects}
+                    />
+                  </div>
+
+                  <GlassChartCard title="Overall Performance Trend Line" subtitle="Monthly school-wide strategic performance trend.">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={overallPerformanceTrend}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={palette.grid} />
+                        <XAxis dataKey="month" tick={{ fill: palette.text, fontSize: 11 }} />
+                        <YAxis domain={[30, 100]} tick={{ fill: palette.text, fontSize: 11 }} />
+                        <Tooltip />
+                        <Line type="monotone" dataKey="value" stroke={palette.primary} strokeWidth={2.5} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </GlassChartCard>
+
+                  <GlassChartCard title="Subject Comparison Chart" subtitle="Average performance by selected subject scope.">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={subjectComparison}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={palette.grid} />
+                        <XAxis dataKey="subject" tick={{ fill: palette.text, fontSize: 11 }} />
+                        <YAxis domain={[0, 100]} tick={{ fill: palette.text, fontSize: 11 }} />
+                        <Tooltip />
+                        <Bar dataKey="value" radius={[10, 10, 0, 0]}>
+                          {subjectComparison.map((item, index) => (
+                            <Cell key={item.subject} fill={MULTI_SERIES_COLORS[index % MULTI_SERIES_COLORS.length]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </GlassChartCard>
+                </div>
+              </section>
+
+              <section className="mb-8">
+                <TertiaryHeader title="Remediation Effectiveness Index" />
+                <div className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  <GlassChartCard title="Pre vs Post Intervention Comparison" subtitle="Average outcome before and after interventions by grade.">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={remediationSeries.points}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={palette.grid} />
+                        <XAxis dataKey="grade" tick={{ fill: palette.text, fontSize: 11 }} />
+                        <YAxis domain={[20, 100]} tick={{ fill: palette.text, fontSize: 11 }} />
+                        <Tooltip />
+                        <Legend />
+                        <Line type="monotone" dataKey="pre" stroke="#65a30d" strokeWidth={2.2} dot={false} name="Pre" />
+                        <Line type="monotone" dataKey="post" stroke={palette.primary} strokeWidth={2.4} dot={false} name="Post" />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </GlassChartCard>
+
+                  <GlassChartCard title="Improvement Rate per Grade" subtitle="Net improvement after remediation cycles.">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={remediationSeries.points}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={palette.grid} />
+                        <XAxis dataKey="grade" tick={{ fill: palette.text, fontSize: 11 }} />
+                        <YAxis tick={{ fill: palette.text, fontSize: 11 }} />
+                        <Tooltip />
+                        <Bar dataKey="improvement" radius={[10, 10, 0, 0]}>
+                          {remediationSeries.points.map((point, index) => (
+                            <Cell key={point.grade} fill={MULTI_SERIES_COLORS[index % MULTI_SERIES_COLORS.length]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </GlassChartCard>
+                </div>
+              </section>
+
+              <section className="mb-8">
+                <TertiaryHeader title="Parent Engagement" />
+                <div className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  <GlassChartCard title="Parent Login Frequency" subtitle="Average parent login sessions by grade.">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={parentEngagement.loginFrequency}>
+                        <defs>
+                          <linearGradient id="parentLoginFill" x1="0" x2="0" y1="0" y2="1">
+                            <stop offset="5%" stopColor="#0ea5a4" stopOpacity={0.45} />
+                            <stop offset="95%" stopColor="#0ea5a4" stopOpacity={0.04} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke={palette.grid} />
+                        <XAxis dataKey="grade" tick={{ fill: palette.text, fontSize: 11 }} />
+                        <YAxis tick={{ fill: palette.text, fontSize: 11 }} />
+                        <Tooltip />
+                        <Area type="monotone" dataKey="logins" stroke="#0f766e" strokeWidth={2.2} fill="url(#parentLoginFill)" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </GlassChartCard>
+
+                  <GlassChartCard title="Weekly Engagement Trend" subtitle="Near-real-time weekly engagement index.">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={parentEngagement.weeklyTrend}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={palette.grid} />
+                        <XAxis dataKey="week" tick={{ fill: palette.text, fontSize: 11 }} />
+                        <YAxis domain={[30, 100]} tick={{ fill: palette.text, fontSize: 11 }} />
+                        <Tooltip />
+                        <Line type="monotone" dataKey="value" stroke={palette.primary} strokeWidth={2.5} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </GlassChartCard>
+
+                  <div className="xl:col-span-2">
+                    <HeatmapCard
+                      title="Engagement Heatmap"
+                      subtitle="Grade vs weekday engagement intensity."
+                      cells={parentEngagement.engagementHeatmap}
+                      xLabels={["Mon", "Tue", "Wed", "Thu", "Fri"]}
+                      yLabels={visibleGrades.map((grade) => `Grade ${grade}`)}
+                    />
+                  </div>
+                </div>
+              </section>
+
+              <section className="mb-8">
+                <TertiaryHeader title="Teacher Performance Insights" />
+                <div className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  <GlassChartCard title="Class Average Comparison" subtitle="Average class performance by grade.">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={teacherInsights.classAverages}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={palette.grid} />
+                        <XAxis dataKey="className" tick={{ fill: palette.text, fontSize: 11 }} />
+                        <YAxis domain={[0, 100]} tick={{ fill: palette.text, fontSize: 11 }} />
+                        <Tooltip />
+                        <Bar dataKey="value" radius={[10, 10, 0, 0]}>
+                          {teacherInsights.classAverages.map((item, index) => (
+                            <Cell key={item.className} fill={MULTI_SERIES_COLORS[index % MULTI_SERIES_COLORS.length]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </GlassChartCard>
+
+                  <GlassChartCard title="Student Progress Speed" subtitle="Average monthly progression speed index.">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={teacherInsights.progressSpeed}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={palette.grid} />
+                        <XAxis dataKey="month" tick={{ fill: palette.text, fontSize: 11 }} />
+                        <YAxis tick={{ fill: palette.text, fontSize: 11 }} />
+                        <Tooltip />
+                        <Line type="monotone" dataKey="speed" stroke={palette.primary} strokeWidth={2.5} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </GlassChartCard>
+                </div>
+              </section>
+
+              <section>
+                <TertiaryHeader title="Performance Heatmap by Competency" />
+                <div className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  <HeatmapCard
+                    title="Skill Mastery Heatmap"
+                    subtitle="Competency mastery levels by grade."
+                    cells={competencyModel.skillMastery}
+                    xLabels={COMPETENCIES}
+                    yLabels={visibleGrades.map((grade) => `Grade ${grade}`)}
+                    colors={SKILL_HEAT}
+                  />
+
+                  <GlassChartCard title="Competency Weakness Distribution" subtitle="Relative weakness share by competency area.">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={competencyModel.weaknessDistribution} dataKey="value" nameKey="competency" innerRadius={52} outerRadius={90} paddingAngle={2}>
+                          {competencyModel.weaknessDistribution.map((entry, index) => (
+                            <Cell key={entry.competency} fill={PIE_SOFT_COLORS[index % PIE_SOFT_COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Legend />
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </GlassChartCard>
+                </div>
+              </section>
             </div>
           </div>
         </main>
       </div>
+
+      <style jsx global>{`
+        @media print {
+          .no-print {
+            display: none !important;
+          }
+
+          .print-main {
+            padding-top: 0 !important;
+          }
+
+          main,
+          #principal-export-root {
+            overflow: visible !important;
+            height: auto !important;
+          }
+
+          body {
+            background: #ffffff !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }

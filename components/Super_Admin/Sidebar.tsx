@@ -86,7 +86,7 @@ const SettingsIcon = React.memo(() => (
 // Navigation items with submenus
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", path: "/Super_Admin/dashboard", icon: <DashboardIcon /> },
-  { label: "Global Account Management", path: "/Super_Admin/accounts", icon: <AccountsIcon /> },
+  { label: "Account Center", path: "/Super_Admin/accounts", icon: <AccountsIcon /> },
   { label: "Recovery Center", path: "/Super_Admin/recovery", icon: <ArchiveIcon /> },
   { label: "Critical Logs", path: "/Super_Admin/operations-log", icon: <LogsIcon /> },
   { label: "Settings", path: "/Super_Admin/settings", icon: <SettingsIcon /> },
