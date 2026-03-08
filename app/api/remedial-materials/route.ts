@@ -127,18 +127,46 @@ function collectXmlText(node: unknown, acc: string[]): void {
       if (Array.isArray(value)) {
         value.forEach((entry) => {
           if (typeof entry === "string") {
-            const trimmed = entry.trim();
-            if (trimmed) acc.push(trimmed);
+            const normalized = entry.replace(/\s+/g, " ");
+            if (normalized.trim()) acc.push(normalized);
           }
         });
       } else if (typeof value === "string") {
-        const trimmed = value.trim();
-        if (trimmed) acc.push(trimmed);
+        const normalized = value.replace(/\s+/g, " ");
+        if (normalized.trim()) acc.push(normalized);
       }
       continue;
     }
     collectXmlText(value, acc);
   }
+}
+
+function joinTextParts(parts: string[]): string {
+  const glueLeadingChars = new Set([",", ".", ";", ":", "!", "?", ")", "]", "}", "-", "–", "—"]);
+  const glueTrailingChars = new Set(["(", "[", "{", "-", "–", "—", "/"]);
+
+  let output = "";
+
+  for (const rawPart of parts) {
+    const part = rawPart.trim();
+    if (!part) continue;
+
+    if (!output) {
+      output = part;
+      continue;
+    }
+
+    const firstChar = part[0];
+    const lastOutputChar = output[output.length - 1];
+    const shouldGlue = glueLeadingChars.has(firstChar) || glueTrailingChars.has(lastOutputChar);
+
+    output += shouldGlue ? part : ` ${part}`;
+  }
+
+  return output
+    .replace(/\s+([,.;:!?)}\]])/g, "$1")
+    .replace(/([([{])\s+/g, "$1")
+    .trim();
 }
 
 async function extractSlidesFromPptx(absolutePath: string): Promise<ExtractedSlideText[]> {
@@ -159,7 +187,7 @@ async function extractSlidesFromPptx(absolutePath: string): Promise<ExtractedSli
     const raw = json[slidePath];
     const textParts: string[] = [];
     collectXmlText(raw, textParts);
-    const text = textParts.join(" ").replace(/\s+/g, " ").trim();
+    const text = joinTextParts(textParts);
     slides.push({ slideNumber: Number.isFinite(slideNumber) ? slideNumber : slides.length + 1, text });
   }
 

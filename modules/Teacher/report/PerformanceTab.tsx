@@ -5,6 +5,7 @@ import Link from "next/link";
 import Sidebar from "@/components/Teacher/Sidebar";
 import Header from "@/components/Teacher/Header";
 import type { RemedialSessionSlide, RemedialSessionTimelineItem } from "@/lib/performance";
+import { composeRuleBasedSlideFeedbackParagraph } from "@/lib/performance/insights";
 
 type StudentDetails = {
   student_id?: string | number | null;
@@ -184,48 +185,60 @@ export default function PerformanceTab({ student, sessions, subjectLabel, backHr
                                       {overall}
                                     </span>
                                   </div>
-                                  <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Per-Slide Average</p>
+                                  <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Per-Slide Feedback</p>
                                   <div className="mt-3 overflow-x-auto">
                                     <table className="min-w-full text-sm text-left text-slate-700">
                                       <thead className="bg-green-50 text-[#013300]">
                                         <tr>
                                           <th className="px-3 py-2 font-semibold">Slide</th>
-                                          <th className="px-3 py-2 font-semibold">Pronunciation</th>
                                           <th className="px-3 py-2 font-semibold">Accuracy</th>
-                                          <th className="px-3 py-2 font-semibold">Fluency</th>
-                                          <th className="px-3 py-2 font-semibold">Completeness</th>
                                           <th className="px-3 py-2 font-semibold">WPM</th>
                                           <th className="px-3 py-2 font-semibold">Average</th>
+                                          <th className="px-3 py-2 font-semibold">Feedback</th>
                                         </tr>
                                       </thead>
                                       <tbody className="divide-y divide-green-50">
                                         {session.slides.length === 0 ? (
                                           <tr>
-                                            <td className="px-3 py-3 text-slate-500" colSpan={7}>
+                                            <td className="px-3 py-3 text-slate-500" colSpan={5}>
                                               No slides recorded for this session.
                                             </td>
                                           </tr>
                                         ) : (
-                                          session.slides.map((slide) => (
-                                            <tr key={String(slide.performance_id ?? `${sessionId}-${slide.flashcard_index}`)}>
-                                              <td className="px-3 py-2 font-semibold text-[#013300]">
-                                                {typeof slide.flashcard_index === "number" ? slide.flashcard_index + 1 : "—"}
-                                              </td>
-                                              <td className="px-3 py-2">{formatScore(slide.pronunciation_score)}</td>
-                                              <td className="px-3 py-2">{formatScore(slide.accuracy_score)}</td>
-                                              <td className="px-3 py-2">{formatScore(slide.fluency_score)}</td>
-                                              <td className="px-3 py-2">{formatScore(slide.completeness_score)}</td>
-                                              <td className="px-3 py-2">{typeof slide.reading_speed_wpm === "number" ? slide.reading_speed_wpm : "—"}</td>
-                                              <td className="px-3 py-2 font-semibold text-[#013300]">{formatSlideAverage(slide)}</td>
-                                            </tr>
-                                          ))
+                                          session.slides.map((slide) => {
+                                            const storedFeedback = (slide.reading_tutor_feedback ?? "").trim();
+                                            const slideFeedback = storedFeedback || composeRuleBasedSlideFeedbackParagraph({
+                                              accuracyScore: slide.accuracy_score ?? null,
+                                              readingSpeedWpm: slide.reading_speed_wpm ?? null,
+                                              slideAverage: slide.slide_average ?? null,
+                                            });
+
+                                            return (
+                                              <tr key={String(slide.performance_id ?? `${sessionId}-${slide.flashcard_index}`)}>
+                                                <td className="px-3 py-2 font-semibold text-[#013300]">
+                                                  {typeof slide.flashcard_index === "number" ? slide.flashcard_index + 1 : "—"}
+                                                </td>
+                                                <td className="px-3 py-2">{formatScore(slide.accuracy_score)}</td>
+                                                <td className="px-3 py-2">{typeof slide.reading_speed_wpm === "number" ? Math.round(slide.reading_speed_wpm) : "—"}</td>
+                                                <td className="px-3 py-2 font-semibold text-[#013300]">{formatSlideAverage(slide)}</td>
+                                                <td className="px-3 py-2">{slideFeedback}</td>
+                                              </tr>
+                                            );
+                                          })
                                         )}
                                       </tbody>
                                     </table>
                                   </div>
                                   <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Remarks</p>
-                                  <div className="mt-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-[#013300]">
-                                    {session.ai_remarks?.trim() || "No AI remarks available."}
+                                  <div className="mt-2 space-y-2">
+                                    <div className="rounded-lg bg-green-50 px-3 py-2 text-sm text-[#013300]">
+                                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">AI Remarks</p>
+                                      <p className="mt-1">{session.ai_remarks?.trim() || "No AI remarks available."}</p>
+                                    </div>
+                                    <div className="rounded-lg bg-green-50 px-3 py-2 text-sm text-[#013300]">
+                                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Teacher Remarks</p>
+                                      <p className="mt-1">{session.teacher_notes?.trim() || "No teacher remarks available."}</p>
+                                    </div>
                                   </div>
                                 </div>
                               )}
@@ -244,3 +257,4 @@ export default function PerformanceTab({ student, sessions, subjectLabel, backHr
     </div>
   );
 }
+

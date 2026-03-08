@@ -94,6 +94,33 @@ const normalizeParentIdentifier = (value: unknown): string | null => {
   return text.length ? text : null;
 };
 
+const normalizeStudentIdentifier = (value: unknown): string | null => {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return text.length ? text : null;
+};
+
+const extractLrnDigits = (value: unknown): string | null => {
+  if (value === null || value === undefined) return null;
+  const digits = String(value).replace(/\D/g, "");
+  return digits.length === 12 ? digits : null;
+};
+
+const formatCanonicalLrn = (digits: string): string => `${digits.slice(0, 6)}-${digits.slice(6)}`;
+
+const buildLrnLookupKeys = (value: unknown): string[] => {
+  if (value === null || value === undefined) return [];
+  const raw = String(value).trim();
+  if (!raw) return [];
+  const keys = new Set<string>([raw]);
+  const digits = extractLrnDigits(raw);
+  if (digits) {
+    keys.add(digits);
+    keys.add(formatCanonicalLrn(digits));
+  }
+  return Array.from(keys);
+};
+
 const subjectIdCache = new Map<string, number>();
 
 type PhonemicLevelLookup = Map<number, Map<string, number>>;
@@ -529,12 +556,17 @@ export async function insertStudents(
       const uniqueValues = (values: string[]) => Array.from(new Set(values.filter((value) => value.length > 0)));
 
       const lrnCandidates: string[] = [];
+      const studentIdentifierCandidates: string[] = [];
       const parentEmails: string[] = [];
       const parentPhones: string[] = [];
       const parentUsernames: string[] = [];
       const parentUserCodes: string[] = [];
 
       for (const student of students) {
+        const studentIdentifier = normalizeStudentIdentifier(student.studentIdentifier);
+        if (studentIdentifier) {
+          studentIdentifierCandidates.push(studentIdentifier);
+        }
         const lrn = trimValue(student.lrn);
         if (lrn) {
           lrnCandidates.push(lrn);
@@ -549,6 +581,7 @@ export async function insertStudents(
       }
 
       const existingStudentsByLrn = new Map<string, { studentId: string; parentId: string | null }>();
+      const existingStudentsByIdentifier = new Map<string, { studentId: string; parentId: string | null }>();
       const parentIdByStudentId = new Map<string, string>();
       const parentUserByParentId = new Map<string, number>();
       const userByEmail = new Map<string, number>();
@@ -558,10 +591,83 @@ export async function insertStudents(
       const parentByEmail = new Map<string, { parentId: string; userId: number | null }>();
       const parentByPhone = new Map<string, { parentId: string; userId: number | null }>();
       const parentByUserId = new Map<number, string>();
+      const missingParentStudentIds = new Set<string>();
+      const cacheExistingStudent = (
+        studentIdValue: unknown,
+        parentIdValue: unknown,
+        lrnValue?: unknown,
+        studentIdentifierValue?: unknown,
+      ): { studentId: string; parentId: string | null } | null => {
+        const normalizedStudentId = normalizeStudentIdentifier(studentIdValue);
+        if (!normalizedStudentId) {
+          return null;
+        }
 
-      const lrnList = uniqueValues(lrnCandidates);
+        const normalizedParentId = normalizeParentIdentifier(parentIdValue);
+        const existingEntry = existingStudentsByIdentifier.get(normalizedStudentId) ?? null;
+        const entry = existingEntry ?? { studentId: normalizedStudentId, parentId: null as string | null };
+        if (normalizedParentId) {
+          entry.parentId = normalizedParentId;
+        }
+
+        existingStudentsByIdentifier.set(normalizedStudentId, entry);
+        const normalizedIdentifier = normalizeStudentIdentifier(studentIdentifierValue);
+        if (normalizedIdentifier) {
+          existingStudentsByIdentifier.set(normalizedIdentifier, entry);
+        }
+        for (const key of buildLrnLookupKeys(lrnValue)) {
+          existingStudentsByLrn.set(key, entry);
+        }
+
+        if (!entry.parentId) {
+          missingParentStudentIds.add(entry.studentId);
+        }
+
+        return entry;
+      };
+
+      const identifierList = uniqueValues(studentIdentifierCandidates);
+      if (identifierList.length && studentColumns.has("student_id")) {
+        const selectCols = ["student_id"];
+        if (studentColumns.has("student_identifier")) {
+          selectCols.push("student_identifier");
+        }
+        if (studentColumns.has("lrn")) {
+          selectCols.push("lrn");
+        }
+        if (studentColumns.has("parent_id")) {
+          selectCols.push("parent_id");
+        }
+
+        const placeholders = identifierList.map(() => "?").join(", ");
+        const whereClauses = [`student_id IN (${placeholders})`];
+        const whereValues: string[] = [...identifierList];
+        if (studentColumns.has("student_identifier")) {
+          whereClauses.push(`student_identifier IN (${placeholders})`);
+          whereValues.push(...identifierList);
+        }
+
+        const [rows] = await connection.query<RowDataPacket[]>(
+          `SELECT ${selectCols.join(", ")} FROM \`${STUDENT_TABLE}\` WHERE ${whereClauses.join(" OR ")}`,
+          whereValues,
+        );
+
+        for (const row of rows) {
+          cacheExistingStudent(
+            (row as any).student_id,
+            (row as any).parent_id,
+            (row as any).lrn,
+            (row as any).student_identifier,
+          );
+        }
+      }
+
+      const lrnList = uniqueValues(lrnCandidates.flatMap((candidate) => buildLrnLookupKeys(candidate)));
       if (lrnList.length && studentColumns.has("lrn") && studentColumns.has("student_id")) {
         const selectCols = ["student_id", "lrn"];
+        if (studentColumns.has("student_identifier")) {
+          selectCols.push("student_identifier");
+        }
         if (studentColumns.has("parent_id")) {
           selectCols.push("parent_id");
         }
@@ -571,43 +677,47 @@ export async function insertStudents(
           lrnList,
         );
 
-        const missingParentIds: string[] = [];
         for (const row of rows) {
-          const rowLrn = trimValue((row as any).lrn);
+          cacheExistingStudent(
+            (row as any).student_id,
+            (row as any).parent_id,
+            (row as any).lrn,
+            (row as any).student_identifier,
+          );
+        }
+      }
+
+      if (missingParentStudentIds.size && parentStudentColumns.has("parent_id") && parentStudentColumns.has("student_id")) {
+        const missingParentIds = Array.from(missingParentStudentIds);
+        const studentPlaceholders = missingParentIds.map(() => "?").join(", ");
+        const [linkRows] = await connection.query<RowDataPacket[]>(
+          `SELECT student_id, parent_id FROM parent_student WHERE student_id IN (${studentPlaceholders})`,
+          missingParentIds,
+        );
+        for (const row of linkRows) {
           const studentId = trimValue((row as any).student_id);
-          if (!rowLrn || !studentId) continue;
-          const parentId = normalizeParentIdentifier((row as any).parent_id) ?? null;
-          existingStudentsByLrn.set(rowLrn, { studentId, parentId });
-          if (!parentId) {
-            missingParentIds.push(studentId);
+          const parentId = normalizeParentIdentifier((row as any).parent_id);
+          if (studentId && parentId) {
+            parentIdByStudentId.set(studentId, parentId);
           }
         }
 
-        if (missingParentIds.length && parentStudentColumns.has("parent_id") && parentStudentColumns.has("student_id")) {
-          const studentPlaceholders = missingParentIds.map(() => "?").join(", ");
-          const [linkRows] = await connection.query<RowDataPacket[]>(
-            `SELECT student_id, parent_id FROM parent_student WHERE student_id IN (${studentPlaceholders})`,
-            missingParentIds,
-          );
-          for (const row of linkRows) {
-            const studentId = trimValue((row as any).student_id);
-            const parentId = normalizeParentIdentifier((row as any).parent_id);
-            if (studentId && parentId) {
-              parentIdByStudentId.set(studentId, parentId);
-            }
-          }
-
-          for (const [lrn, entry] of existingStudentsByLrn.entries()) {
-            if (!entry.parentId) {
-              const inferredParentId = parentIdByStudentId.get(entry.studentId) ?? null;
-              existingStudentsByLrn.set(lrn, { studentId: entry.studentId, parentId: inferredParentId });
-            }
+        const cachedEntries = new Set([
+          ...existingStudentsByLrn.values(),
+          ...existingStudentsByIdentifier.values(),
+        ]);
+        for (const entry of cachedEntries) {
+          if (!entry.parentId) {
+            entry.parentId = parentIdByStudentId.get(entry.studentId) ?? null;
           }
         }
       }
 
       const parentIdCandidates = uniqueValues(
-        Array.from(existingStudentsByLrn.values())
+        Array.from(new Set([
+          ...existingStudentsByLrn.values(),
+          ...existingStudentsByIdentifier.values(),
+        ]))
           .map((entry) => normalizeParentIdentifier(entry.parentId ?? null) ?? "")
           .filter((value) => value.length > 0),
       );
@@ -759,23 +869,62 @@ export async function insertStudents(
         let parentId: string | null = null;
         let parentUserId: number | null = null;
         let studentId: string | null = null;
+        const studentIdentifier = normalizeStudentIdentifier(student.studentIdentifier);
 
         const lrn = trimValue(student.lrn) || null;
-        const existing = lrn ? existingStudentsByLrn.get(lrn) : null;
+        const lrnLookupKeys = lrn ? buildLrnLookupKeys(lrn) : [];
+        const existing =
+          (studentIdentifier ? existingStudentsByIdentifier.get(studentIdentifier) ?? null : null)
+          ?? lrnLookupKeys
+            .map((key) => existingStudentsByLrn.get(key))
+            .find((entry): entry is { studentId: string; parentId: string | null } => Boolean(entry))
+          ?? null;
 
         if (existing) {
           studentId = existing.studentId;
-          parentId = existing.parentId ?? null;
+          parentId = existing.parentId ?? parentIdByStudentId.get(existing.studentId) ?? null;
+          if (parentId && !existing.parentId) {
+            existing.parentId = parentId;
+          }
           if (parentId && parentUserByParentId.has(parentId)) {
             parentUserId = parentUserByParentId.get(parentId) ?? null;
           }
-        } else if (lrn) {
+        } else if (lrn || studentIdentifier) {
           const parentIdSelectable = studentColumns.has("parent_id");
-          const selectCols = parentIdSelectable ? "student_id, parent_id" : "student_id";
-          const [existingRows] = await connection.query<RowDataPacket[]>(
-            `SELECT ${selectCols} FROM \`${STUDENT_TABLE}\` WHERE lrn = ? LIMIT 1`,
-            [lrn],
-          );
+          const selectCols = [
+            "student_id",
+            ...(parentIdSelectable ? ["parent_id"] : []),
+            ...(studentColumns.has("lrn") ? ["lrn"] : []),
+            ...(studentColumns.has("student_identifier") ? ["student_identifier"] : []),
+          ];
+          const whereClauses: string[] = [];
+          const whereValues: string[] = [];
+
+          if (studentIdentifier && studentColumns.has("student_id")) {
+            whereClauses.push("student_id = ?");
+            whereValues.push(studentIdentifier);
+          }
+          if (studentIdentifier && studentColumns.has("student_identifier")) {
+            whereClauses.push("student_identifier = ?");
+            whereValues.push(studentIdentifier);
+          }
+          if (lrn && studentColumns.has("lrn")) {
+            const lrnKeys = uniqueValues(buildLrnLookupKeys(lrn));
+            if (lrnKeys.length === 1) {
+              whereClauses.push("lrn = ?");
+              whereValues.push(lrnKeys[0]);
+            } else if (lrnKeys.length > 1) {
+              whereClauses.push(`lrn IN (${lrnKeys.map(() => "?").join(", ")})`);
+              whereValues.push(...lrnKeys);
+            }
+          }
+
+          const [existingRows] = whereClauses.length > 0
+            ? await connection.query<RowDataPacket[]>(
+              `SELECT ${selectCols.join(", ")} FROM \`${STUDENT_TABLE}\` WHERE ${whereClauses.map((clause) => `(${clause})`).join(" OR ")} LIMIT 1`,
+              whereValues,
+            )
+            : [[] as RowDataPacket[]];
 
           if (Array.isArray(existingRows) && existingRows.length > 0) {
             const found = existingRows[0];
@@ -798,7 +947,12 @@ export async function insertStudents(
               }
             }
             if (studentId) {
-              existingStudentsByLrn.set(lrn, { studentId, parentId });
+              cacheExistingStudent(
+                studentId,
+                parentId,
+                (found as any).lrn ?? lrn,
+                (found as any).student_identifier ?? studentIdentifier,
+              );
             }
             if (parentId && parentColumns.has("user_id")) {
               if (parentUserByParentId.has(parentId)) {
@@ -1130,6 +1284,13 @@ export async function insertStudents(
           if (updateCols.length > 0) {
             const updateSql = `UPDATE \`${STUDENT_TABLE}\` SET ${updateCols.join(", ")} WHERE student_id = ? LIMIT 1`;
             await connection.query(updateSql, [...updateVals, studentId]);
+          }
+        }
+
+        if (studentId) {
+          const cachedEntry = cacheExistingStudent(studentId, parentId, lrn, studentIdentifier);
+          if (cachedEntry) {
+            parentId = cachedEntry.parentId ?? parentId;
           }
         }
 
@@ -1813,18 +1974,38 @@ export async function fetchStudents({
 export async function fetchStudentByLrnAcrossSubjects(lrn: string): Promise<StudentRecordDto | null> {
   const trimmed = lrn.trim();
   if (!trimmed) return null;
+  const canonicalDigits = extractLrnDigits(trimmed);
+  const canonicalFormatted = canonicalDigits ? formatCanonicalLrn(canonicalDigits) : null;
+  const searchTerms = Array.from(
+    new Set(
+      [trimmed, canonicalFormatted, canonicalDigits]
+        .filter((value): value is string => Boolean(value && value.trim().length > 0)),
+    ),
+  );
 
   for (const subject of STUDENT_SUBJECTS) {
-    const result = await fetchStudents({
-      subject,
-      search: trimmed,
-      page: 1,
-      pageSize: 5,
-    });
+    for (const term of searchTerms) {
+      const result = await fetchStudents({
+        subject,
+        search: term,
+        page: 1,
+        pageSize: 25,
+      });
 
-    const match = result.data.find((student) => (student.lrn ?? "").trim() === trimmed);
-    if (match) {
-      return match;
+      const match = result.data.find((student) => {
+        const studentLrn = (student.lrn ?? "").trim();
+        if (!studentLrn) {
+          return false;
+        }
+        if (studentLrn === trimmed) {
+          return true;
+        }
+        const studentDigits = extractLrnDigits(studentLrn);
+        return Boolean(canonicalDigits && studentDigits && canonicalDigits === studentDigits);
+      });
+      if (match) {
+        return match;
+      }
     }
   }
 

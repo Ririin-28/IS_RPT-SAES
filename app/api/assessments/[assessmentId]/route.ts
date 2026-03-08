@@ -4,6 +4,11 @@ import {
   updateAssessmentRecord,
   type AssessmentPayload,
 } from "@/lib/assessments/repository";
+import {
+  isAssessmentRangeWithinLimit,
+  isFixedAssessmentStartTime,
+  MAX_ASSESSMENT_SPAN_DAYS,
+} from "@/lib/assessments/schedule-utils";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +35,20 @@ export async function PUT(request: NextRequest, props: { params: Promise<{ asses
 
     if (!Array.isArray(payload.questions) || payload.questions.length === 0) {
       return NextResponse.json({ success: false, error: "At least one question is required." }, { status: 400 });
+    }
+
+    if (!isFixedAssessmentStartTime(payload.startTime)) {
+      return NextResponse.json(
+        { success: false, error: "Assessment start time must be fixed to 8:00 AM on the selected date." },
+        { status: 400 },
+      );
+    }
+
+    if (!isAssessmentRangeWithinLimit(payload.startTime, payload.endTime)) {
+      return NextResponse.json(
+        { success: false, error: `Assessment end time must be within ${MAX_ASSESSMENT_SPAN_DAYS} days of the start date.` },
+        { status: 400 },
+      );
     }
 
     const updated = await updateAssessmentRecord(parsedId, payload);

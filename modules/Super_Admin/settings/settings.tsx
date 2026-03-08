@@ -18,6 +18,67 @@ const scheduleOptions = ["daily", "weekly"] as const;
 type RetentionOption = (typeof retentionOptions)[number];
 type ScheduleOption = (typeof scheduleOptions)[number];
 type ExportFormat = "sql" | "csv";
+const gradeSectionKeys = ["1", "2", "3", "4", "5", "6"] as const;
+const recommendedSections = ["A", "B", "C", "D", "E", "F"] as const;
+type GradeSectionKey = (typeof gradeSectionKeys)[number];
+type GradeSectionConfig = Record<GradeSectionKey, string[]>;
+
+const buildDefaultSectionConfig = (): GradeSectionConfig => ({
+  "1": ["A", "B", "C", "D", "E", "F"],
+  "2": ["A", "B", "C", "D", "E", "F"],
+  "3": ["A", "B", "C", "D", "E", "F"],
+  "4": ["A", "B", "C", "D", "E", "F"],
+  "5": ["A", "B", "C", "D", "E", "F"],
+  "6": ["A", "B", "C", "D", "E", "F"],
+});
+
+const buildDefaultSectionInputs = (): Record<GradeSectionKey, string> => ({
+  "1": "",
+  "2": "",
+  "3": "",
+  "4": "",
+  "5": "",
+  "6": "",
+});
+
+const normalizeSectionList = (sections: string[]): string[] => {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const section of sections) {
+    const trimmed = String(section ?? "").trim();
+    if (!trimmed) continue;
+    const canonical = trimmed.toLowerCase();
+    if (seen.has(canonical)) continue;
+    seen.add(canonical);
+    normalized.push(trimmed);
+  }
+
+  return normalized;
+};
+
+const normalizeSectionConfig = (raw: unknown): GradeSectionConfig => {
+  const source = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const fallback = buildDefaultSectionConfig();
+
+  return gradeSectionKeys.reduce((acc, grade) => {
+    const candidate = source[grade];
+    const list = Array.isArray(candidate)
+      ? candidate.map((item) => String(item ?? ""))
+      : fallback[grade];
+    const normalized = normalizeSectionList(list);
+    acc[grade] = normalized.length > 0 ? normalized : ["A"];
+    return acc;
+  }, {} as GradeSectionConfig);
+};
+
+const sectionConfigsEqual = (a: GradeSectionConfig, b: GradeSectionConfig): boolean =>
+  gradeSectionKeys.every((grade) => {
+    const left = normalizeSectionList(a[grade]);
+    const right = normalizeSectionList(b[grade]);
+    if (left.length !== right.length) return false;
+    return left.every((value, index) => value === right[index]);
+  });
 
 const formatShortDate = (date: Date) =>
   date.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
@@ -53,6 +114,7 @@ export default function SystemConfiguration() {
   const [backupEditing, setBackupEditing] = useState(false);
   const [themeEditing, setThemeEditing] = useState(false);
   const [landingEditing, setLandingEditing] = useState(false);
+  const [sectionEditing, setSectionEditing] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
   const defaultLandingConfig = useMemo(() => getDefaultLandingConfig(), []);
@@ -66,6 +128,13 @@ export default function SystemConfiguration() {
 
   const [appliedTheme, setAppliedTheme] = useState<ThemeSettings>(() => ({ ...defaultLandingConfig.theme }));
   const [themeSettings, setThemeSettings] = useState<ThemeSettings>(() => ({ ...defaultLandingConfig.theme }));
+  const [appliedSectionConfig, setAppliedSectionConfig] = useState<GradeSectionConfig>(() => buildDefaultSectionConfig());
+  const [sectionConfigDraft, setSectionConfigDraft] = useState<GradeSectionConfig>(() => buildDefaultSectionConfig());
+  const [pendingSectionInputs, setPendingSectionInputs] = useState<Record<GradeSectionKey, string>>(() =>
+    buildDefaultSectionInputs()
+  );
+  const [isSectionConfigLoading, setIsSectionConfigLoading] = useState(false);
+  const [activeSectionGrade, setActiveSectionGrade] = useState<GradeSectionKey>("1");
 
   const [publishedContactDetails, setPublishedContactDetails] = useState<ContactDetails>(() => ({
     ...defaultLandingConfig.contact,
@@ -105,6 +174,22 @@ export default function SystemConfiguration() {
     `cursor-pointer rounded-lg border border-green-200 bg-white px-3 py-2 text-sm text-[#013300] transition hover:bg-green-50 focus:outline-none focus:ring-2 focus:ring-[#013300] ${disabled ? "cursor-not-allowed opacity-50" : ""}`;
 
   const liveCarousel = landingEditing ? carouselDraft : publishedLandingAssets.carouselImages;
+  const sectionCountByGrade = useMemo(
+    () =>
+      gradeSectionKeys.reduce((acc, grade) => {
+        acc[grade] = sectionConfigDraft[grade].filter((value) => String(value).trim().length > 0).length;
+        return acc;
+      }, {} as Record<GradeSectionKey, number>),
+    [sectionConfigDraft]
+  );
+  const totalConfiguredSections = useMemo(
+    () => gradeSectionKeys.reduce((sum, grade) => sum + sectionCountByGrade[grade], 0),
+    [sectionCountByGrade]
+  );
+  const hasSectionChanges = useMemo(
+    () => !sectionConfigsEqual(normalizeSectionConfig(appliedSectionConfig), normalizeSectionConfig(sectionConfigDraft)),
+    [appliedSectionConfig, sectionConfigDraft]
+  );
 
   const parseStoredAsset = (value: string | null | undefined) => {
     if (!value) return null;
@@ -226,9 +311,35 @@ export default function SystemConfiguration() {
     }
   }, [defaultLandingConfig]);
 
+  const loadSectionConfiguration = useCallback(async () => {
+    setIsSectionConfigLoading(true);
+    try {
+      const response = await fetch("/api/super_admin/section-config", { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`Request failed: ${response.status}`);
+      }
+
+      const payload = await response.json();
+      const normalized = normalizeSectionConfig(payload?.data);
+      setAppliedSectionConfig(normalized);
+      setSectionConfigDraft(normalized);
+      setPendingSectionInputs(buildDefaultSectionInputs());
+    } catch (error) {
+      console.error("Failed to load section configuration", error);
+      const fallback = buildDefaultSectionConfig();
+      setAppliedSectionConfig(fallback);
+      setSectionConfigDraft(fallback);
+      setPendingSectionInputs(buildDefaultSectionInputs());
+      setStatusMessage("Unable to load section configuration. Using default sections.");
+    } finally {
+      setIsSectionConfigLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadLandingConfiguration();
-  }, [loadLandingConfiguration]);
+    loadSectionConfiguration();
+  }, [loadLandingConfiguration, loadSectionConfiguration]);
 
   // Database section handlers
   const handleDatabaseEdit = () => setDatabaseEditing(true);
@@ -274,6 +385,131 @@ export default function SystemConfiguration() {
   };
   const handleBackupExport = () => {
     setStatusMessage(`Exporting backups as ${backupSettings.exportFormat.toUpperCase()}…`);
+  };
+
+  // Section configuration handlers
+  const handleSectionEdit = () => {
+    setSectionConfigDraft(normalizeSectionConfig(appliedSectionConfig));
+    setPendingSectionInputs(buildDefaultSectionInputs());
+    setActiveSectionGrade((prev) => (gradeSectionKeys.includes(prev) ? prev : "1"));
+    setSectionEditing(true);
+  };
+
+  const handleSectionCancel = () => {
+    setSectionConfigDraft(normalizeSectionConfig(appliedSectionConfig));
+    setPendingSectionInputs(buildDefaultSectionInputs());
+    setSectionEditing(false);
+    setStatusMessage("Section configuration changes discarded");
+  };
+
+  const handleSectionNameChange = (grade: GradeSectionKey, index: number, value: string) => {
+    if (!sectionEditing) return;
+    setSectionConfigDraft((prev) => {
+      const updated = { ...prev };
+      const list = [...updated[grade]];
+      list[index] = value;
+      updated[grade] = list;
+      return updated;
+    });
+  };
+
+  const handleRemoveSection = (grade: GradeSectionKey, index: number) => {
+    if (!sectionEditing) return;
+    setSectionConfigDraft((prev) => {
+      const updated = { ...prev };
+      const list = [...updated[grade]];
+      list.splice(index, 1);
+      updated[grade] = list;
+      return updated;
+    });
+  };
+
+  const handlePendingInputChange = (grade: GradeSectionKey, value: string) => {
+    if (!sectionEditing) return;
+    setPendingSectionInputs((prev) => ({
+      ...prev,
+      [grade]: value,
+    }));
+  };
+
+  const handleQuickFillSections = (grade: GradeSectionKey) => {
+    if (!sectionEditing) return;
+    setSectionConfigDraft((prev) => {
+      const existing = normalizeSectionList(prev[grade]);
+      const existingSet = new Set(existing.map((item) => item.toLowerCase()));
+      const next = [...existing];
+      for (const candidate of recommendedSections) {
+        if (!existingSet.has(candidate.toLowerCase())) {
+          next.push(candidate);
+        }
+      }
+      return {
+        ...prev,
+        [grade]: next,
+      };
+    });
+  };
+
+  const handleAddSection = (grade: GradeSectionKey) => {
+    if (!sectionEditing) return;
+    const nextValue = pendingSectionInputs[grade]?.trim();
+    if (!nextValue) {
+      setStatusMessage(`Enter a section name before adding to Grade ${grade}.`);
+      return;
+    }
+
+    const isDuplicate = sectionConfigDraft[grade].some(
+      (section) => section.trim().toLowerCase() === nextValue.toLowerCase()
+    );
+    if (isDuplicate) {
+      setStatusMessage(`Section \"${nextValue}\" already exists in Grade ${grade}.`);
+      return;
+    }
+
+    setSectionConfigDraft((prev) => ({
+      ...prev,
+      [grade]: [...prev[grade], nextValue],
+    }));
+
+    setPendingSectionInputs((prev) => ({
+      ...prev,
+      [grade]: "",
+    }));
+  };
+
+  const handleSectionSave = async () => {
+    const normalized = normalizeSectionConfig(sectionConfigDraft);
+    const emptyGrades = gradeSectionKeys.filter((grade) => normalized[grade].length === 0);
+    if (emptyGrades.length > 0) {
+      setStatusMessage(`Each grade needs at least one section. Missing: ${emptyGrades.map((grade) => `Grade ${grade}`).join(", ")}.`);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/super_admin/section-config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "updateSections",
+          sections: normalized,
+        }),
+      });
+
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error ?? "Failed to update section configuration");
+      }
+
+      const saved = normalizeSectionConfig(payload?.data ?? normalized);
+      setAppliedSectionConfig(saved);
+      setSectionConfigDraft(saved);
+      setPendingSectionInputs(buildDefaultSectionInputs());
+      setSectionEditing(false);
+      setStatusMessage("Section configuration saved successfully");
+    } catch (error) {
+      console.error("Failed to save section configuration", error);
+      setStatusMessage("Unable to save section configuration. Please try again.");
+    }
   };
 
   // Theme section handlers
@@ -758,6 +994,173 @@ export default function SystemConfiguration() {
                 </div>
               </section>
               */}
+
+              <section className="mt-6 rounded-lg border border-green-100 bg-green-50/60 p-4 sm:p-5">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold text-[#013300]">Section Configuration</h3>
+                    <p className="text-sm text-gray-600 mt-1">
+                      Configure grade sections with a single focused editor. Changes apply across admin workflows.
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    {!sectionEditing ? (
+                      <SecondaryButton type="button" small onClick={handleSectionEdit}>
+                        Edit
+                      </SecondaryButton>
+                    ) : (
+                      <>
+                        <SecondaryButton type="button" small onClick={handleSectionCancel}>
+                          Cancel
+                        </SecondaryButton>
+                        <PrimaryButton type="button" small onClick={handleSectionSave} disabled={!hasSectionChanges}>
+                          Save changes
+                        </PrimaryButton>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-lg border border-green-100 bg-white px-4 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-green-700">Total sections</p>
+                    <p className="mt-1 text-2xl font-bold text-[#013300]">{totalConfiguredSections}</p>
+                  </div>
+                  <div className="rounded-lg border border-green-100 bg-white px-4 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-green-700">Active grade</p>
+                    <p className="mt-1 text-2xl font-bold text-[#013300]">Grade {activeSectionGrade}</p>
+                  </div>
+                  <div className="rounded-lg border border-green-100 bg-white px-4 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-green-700">Status</p>
+                    <p className="mt-1 text-sm font-semibold text-[#013300]">
+                      {hasSectionChanges ? "Unsaved changes" : "All changes saved"}
+                    </p>
+                  </div>
+                </div>
+
+                {isSectionConfigLoading ? (
+                  <div className="mt-4 rounded-lg border border-green-100 bg-white p-4 text-sm text-gray-600">
+                    Loading section configuration...
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-xl border border-green-100 bg-white p-4 sm:p-5">
+                    <div className="flex flex-wrap gap-2">
+                      {gradeSectionKeys.map((grade) => {
+                        const active = activeSectionGrade === grade;
+                        return (
+                          <button
+                            key={grade}
+                            type="button"
+                            onClick={() => setActiveSectionGrade(grade)}
+                            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                              active
+                                ? "border-[#013300] bg-[#013300] text-white"
+                                : "border-green-200 bg-green-50 text-[#013300] hover:bg-green-100"
+                            }`}
+                          >
+                            <span>Grade {grade}</span>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] ${
+                                active ? "bg-white/20 text-white" : "bg-white text-[#013300]"
+                              }`}
+                            >
+                              {sectionCountByGrade[grade]}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mt-4 rounded-lg border border-green-100 bg-green-50/50 p-4">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <h4 className="text-sm font-semibold text-[#013300]">
+                          Grade {activeSectionGrade} sections
+                        </h4>
+                        {sectionEditing && (
+                          <button
+                            type="button"
+                            onClick={() => handleQuickFillSections(activeSectionGrade)}
+                            className="inline-flex items-center rounded-lg border border-green-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#013300] transition hover:bg-green-100"
+                          >
+                            Add defaults (A-F)
+                          </button>
+                        )}
+                      </div>
+
+                      {!sectionEditing ? (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {sectionConfigDraft[activeSectionGrade].length === 0 ? (
+                            <p className="text-xs text-gray-500">No sections configured yet.</p>
+                          ) : (
+                            sectionConfigDraft[activeSectionGrade].map((section, index) => (
+                              <span
+                                key={`${activeSectionGrade}-view-${index}`}
+                                className="inline-flex items-center rounded-full border border-green-200 bg-white px-3 py-1 text-xs font-semibold text-[#013300]"
+                              >
+                                {section}
+                              </span>
+                            ))
+                          )}
+                        </div>
+                      ) : (
+                        <>
+                          <div className="mt-3 space-y-2">
+                            {sectionConfigDraft[activeSectionGrade].length === 0 && (
+                              <p className="text-xs text-gray-500">No sections configured yet.</p>
+                            )}
+                            {sectionConfigDraft[activeSectionGrade].map((section, index) => (
+                              <div key={`${activeSectionGrade}-${index}`} className="flex items-center gap-2">
+                                <input
+                                  type="text"
+                                  value={section}
+                                  onChange={(event) =>
+                                    handleSectionNameChange(activeSectionGrade, index, event.target.value)
+                                  }
+                                  className="w-full rounded-lg border border-green-200 bg-white px-3 py-2 text-sm text-[#013300] focus:outline-none focus:ring-2 focus:ring-[#013300]"
+                                  placeholder={`Section ${index + 1}`}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveSection(activeSectionGrade, index)}
+                                  className="rounded-lg border border-red-200 bg-red-50 px-2 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100"
+                                  aria-label={`Remove ${section || `section ${index + 1}`} from Grade ${activeSectionGrade}`}
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="mt-3 flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={pendingSectionInputs[activeSectionGrade]}
+                              onChange={(event) =>
+                                handlePendingInputChange(activeSectionGrade, event.target.value)
+                              }
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  event.preventDefault();
+                                  handleAddSection(activeSectionGrade);
+                                }
+                              }}
+                              className="w-full rounded-lg border border-green-200 bg-white px-3 py-2 text-sm text-[#013300] focus:outline-none focus:ring-2 focus:ring-[#013300]"
+                              placeholder={`Add a section for Grade ${activeSectionGrade}`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleAddSection(activeSectionGrade)}
+                              className="rounded-lg border border-green-200 bg-white px-3 py-2 text-xs font-semibold text-[#013300] transition hover:bg-green-100"
+                            >
+                              Add
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </section>
 
               <section className="mt-6 rounded-lg border border-green-100 bg-green-50/60 p-4 sm:p-5">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">

@@ -14,6 +14,9 @@ type AssessmentQuestion = {
   questionText: string;
   type: "multiple_choice" | "true_false" | "short_answer";
   points: number;
+  sectionId?: string | null;
+  sectionTitle?: string;
+  sectionDescription?: string;
   choices?: AssessmentChoice[];
 };
 
@@ -43,6 +46,8 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
   const questions = useMemo(() => assessment.questions ?? [], [assessment.questions]);
 
   const item = questions[current];
+  const activeSectionTitle = item?.sectionTitle?.trim() ?? "";
+  const activeSectionDescription = item?.sectionDescription?.trim() ?? "";
   const isLast = current === questions.length - 1;
   const progress = questions.length > 0 ? ((current + 1) / questions.length) * 100 : 0;
   const optionLabels = ["A", "B", "C", "D", "E", "F"];
@@ -266,6 +271,16 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
                 >
                   {/* Question Section with Speaker */}
                   <div className="text-center relative py-4">
+                    {(activeSectionTitle || activeSectionDescription) && (
+                      <div className="mb-5 rounded-2xl border border-green-100 bg-green-50/70 px-4 py-3 text-left shadow-sm">
+                        {activeSectionTitle ? (
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#013300]/60">{activeSectionTitle}</p>
+                        ) : null}
+                        {activeSectionDescription ? (
+                          <p className="mt-1 text-sm leading-6 text-[#013300]/75">{activeSectionDescription}</p>
+                        ) : null}
+                      </div>
+                    )}
                     <div className="flex items-center justify-center gap-3 mb-2">
                       <h2 className="text-2xl font-black text-[#222] tracking-tight">
                         {item.questionText}

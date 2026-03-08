@@ -8,7 +8,10 @@ import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import TableList from "@/components/Common/Tables/TableList";
 import { buildFlashcardContentKey } from "@/lib/utils/flashcards-storage";
 import { getAiInsightsAction } from "@/app/actions/get-ai-insights";
+import { getSlideFeedbackAction } from "@/app/actions/get-slide-feedback";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
+import { composeRuleBasedSlideFeedbackParagraph } from "@/lib/performance/insights";
+import { translateTutorText, type TutorLanguage } from "@/lib/performance/tutor-language";
 
 const ALLOW_BROWSER_FALLBACK = process.env.NEXT_PUBLIC_ALLOW_SPEECH_FALLBACK === "true";
 
@@ -51,13 +54,23 @@ function levenshtein(a: string, b: string): number {
 
 // Normalize text for English
 function normalizeText(s: string) {
-  return s.replace(/[^a-zA-Z\s']/g, "").toLowerCase().trim();
+  return s
+    .replace(/[–—-]/g, " ")
+    .replace(/[^a-zA-Z\s']/g, "")
+    .replace(/\s+/g, " ")
+    .toLowerCase()
+    .trim();
 }
 
 // English phoneme approximation
 function approxPhonemes(word: string) {
   if (!word) return [];
-  const w = word.toLowerCase().replace(/[^a-z']/g, "");
+  const w = word
+    .toLowerCase()
+    .replace(/[–—-]/g, " ")
+    .replace(/[^a-z'\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
   
   // English vowel sounds and common patterns
   const vowels = ['a','e','i','o','u'];
@@ -194,6 +207,42 @@ const formatStudentName = (value: string): string => {
   return `${last}, ${first}${middleInitial ? ` ${middleInitial}` : ""}${suffix ? `, ${suffix}` : ""}`;
 };
 
+const uniqueWords = (values: Array<string | null | undefined>, limit = 8): string[] => {
+  const output: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of values) {
+    const word = (raw ?? "").trim();
+    if (!word) continue;
+    const key = word.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push(word);
+    if (output.length >= limit) break;
+  }
+  return output;
+};
+
+const getWordSignals = (values: WordFeedback[] | null | undefined): { difficultWords: string[]; strongWords: string[] } => {
+  const safe = Array.isArray(values) ? values : [];
+  const difficultWords = uniqueWords(
+    safe
+      .filter((item) => {
+        const score = typeof item?.accuracyScore === "number" ? item.accuracyScore : null;
+        const errorType = (item?.errorType ?? "").toLowerCase();
+        return (score !== null && score <= 75) || (errorType.length > 0 && errorType !== "none");
+      })
+      .map((item) => item.word),
+    8,
+  );
+  const strongWords = uniqueWords(
+    safe
+      .filter((item) => typeof item?.accuracyScore === "number" && (item.accuracyScore ?? 0) >= 90 && item.word.length >= 4)
+      .map((item) => item.word),
+    8,
+  );
+  return { difficultWords, strongWords };
+};
+
 /* ---------- Student roster & performance storage ---------- */
 
 const BASE_FLASHCARD_CONTENT_KEY = "MASTER_TEACHER_ENGLISH_FLASHCARDS";
@@ -235,6 +284,9 @@ type SessionScore = {
   readingSpeedScore: number;
   averageScore: number;
   transcription?: string | null;
+  readingTutorFeedback?: string | null;
+  difficultWords?: string[] | null;
+  strongWords?: string[] | null;
 };
 
 type WordFeedback = {
@@ -585,6 +637,8 @@ export default function EnglishFlashcards({
   // AI Insights State
   const [aiInsight, setAiInsight] = useState<string | null>(null);
   const [isLoadingInsight, setIsLoadingInsight] = useState(false);
+  const [mlSlideFeedback, setMlSlideFeedback] = useState<string | null>(null);
+  const [isLoadingMlSlideFeedback, setIsLoadingMlSlideFeedback] = useState(false);
 
   useEffect(() => {
     if (showSummary && selectedStudent && sessionScores.length > 0) {
@@ -598,6 +652,17 @@ export default function EnglishFlashcards({
       
       const avg = (values: number[]) =>
        Math.round(values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length));
+      const difficultWords = uniqueWords(
+        sessionScores.flatMap((item) => item.difficultWords ?? []),
+        10,
+      );
+      const strongWords = uniqueWords(
+        sessionScores.flatMap((item) => item.strongWords ?? []),
+        10,
+      );
+      const sessionTexts = sessionScores
+        .map((item) => item.sentence)
+        .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
       
       const metrics = {
           pronunciationAvg: avg(sessionScores.map((item) => item.pronScore ?? 0)),
@@ -605,6 +670,9 @@ export default function EnglishFlashcards({
           fluencyScore: avg(sessionScores.map((item) => item.fluencyScore ?? 0)),
           readingSpeedAvg: avg(sessionScores.map((item) => item.readingSpeedWpm ?? 0)),
           overallAverage: overallAverage,
+          difficultWords,
+          strongWords,
+          sessionTexts,
       };
 
       getAiInsightsAction(String(selectedStudent.id), metrics, selectedStudent.name, "English")
@@ -647,16 +715,92 @@ export default function EnglishFlashcards({
   const [isProcessing, setIsProcessing] = useState(false);
   const [isTutorAssistOn, setIsTutorAssistOn] = useState(true);
   const [, setIsTutorSpeaking] = useState(false);
+  const [tutorLanguage, setTutorLanguage] = useState<TutorLanguage>("en");
+  const [isTutorCardPlaying, setIsTutorCardPlaying] = useState(false);
   const [recognizedText, setRecognizedText] = useState("");
   const [liveTranscription, setLiveTranscription] = useState("");
-  const [feedback, setFeedback] = useState("");
-  const [statusMessage, setStatusMessage] = useState("");
+  const [, setFeedback] = useState("");
+  const [, setStatusMessage] = useState("");
   const [metrics, setMetrics] = useState<any>(null);
   const [wordFeedback, setWordFeedback] = useState<WordFeedback[]>([]);
+  const liveAccuracyScore =
+    typeof metrics?.accuracyScore === "number"
+      ? metrics.accuracyScore
+      : typeof metrics?.correctness === "number"
+        ? metrics.correctness
+        : null;
+  const liveReadingSpeedWpm = typeof metrics?.wpm === "number" ? metrics.wpm : null;
+  const liveAverageScore = typeof metrics?.averageScore === "number" ? metrics.averageScore : null;
   const hasRecordedScoreForCurrent = useMemo(
     () => sessionScores.some((item) => item.cardIndex === current),
     [current, sessionScores],
   );
+
+  useEffect(() => {
+    if (
+      !selectedStudent?.id ||
+      typeof liveAccuracyScore !== "number" ||
+      typeof liveReadingSpeedWpm !== "number" ||
+      typeof liveAverageScore !== "number"
+    ) {
+      setMlSlideFeedback(null);
+      setIsLoadingMlSlideFeedback(false);
+      return;
+    }
+
+    let cancelled = false;
+    const sourceWordFeedback: WordFeedback[] = Array.isArray(metrics?.wordFeedback)
+      ? (metrics.wordFeedback as WordFeedback[])
+      : wordFeedback;
+    const difficultWords = sourceWordFeedback
+      .filter((item) => typeof item?.accuracyScore === "number" && (item.accuracyScore ?? 0) <= 75)
+      .map((item) => item.word)
+      .filter((word) => Boolean((word ?? "").trim()));
+    setIsLoadingMlSlideFeedback(true);
+    getSlideFeedbackAction(String(selectedStudent.id), {
+      studentName: selectedStudent.name ?? null,
+      phonemicLevel: selectedStudent.phonemicLevel ?? null,
+      difficultWords,
+      accuracyScore: liveAccuracyScore,
+      readingSpeedWpm: liveReadingSpeedWpm,
+      slideAverage: liveAverageScore,
+    })
+      .then((result) => {
+        if (cancelled) return;
+        if (result.success && result.feedback) {
+          setMlSlideFeedback(result.feedback);
+          setSessionScores((prev) =>
+            prev.map((item) =>
+              item.cardIndex === current
+                ? { ...item, readingTutorFeedback: result.feedback }
+                : item,
+            ),
+          );
+          return;
+        }
+        setMlSlideFeedback(null);
+      })
+      .catch(() => {
+        if (!cancelled) setMlSlideFeedback(null);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingMlSlideFeedback(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    liveAccuracyScore,
+    liveAverageScore,
+    liveReadingSpeedWpm,
+    metrics?.wordFeedback,
+    current,
+    selectedStudent?.id,
+    selectedStudent?.name,
+    selectedStudent?.phonemicLevel,
+    wordFeedback,
+  ]);
 
   // refs for audio / timing
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -786,6 +930,7 @@ export default function EnglishFlashcards({
         readingSpeedWpm: item.readingSpeedWpm,
         slideAverage: item.averageScore,
         transcription: item.transcription ?? null,
+        readingTutorFeedback: item.readingTutorFeedback ?? null,
       }));
 
       try {
@@ -1161,6 +1306,40 @@ export default function EnglishFlashcards({
     }
   }, [getPreferredFemaleVoice, isTutorAssistOn, speakWithAzureNeural, stopSpeechPlayback]);
 
+  const handleTutorCardSpeak = useCallback(async (text: string, language: TutorLanguage) => {
+    if (!text.trim() || isTutorCardPlaying) return;
+    setIsTutorCardPlaying(true);
+    setStatusMessage("Tutor speaking...");
+    stopSpeechPlayback();
+
+    const locale = language === "tl" ? "fil-PH" : "en-US";
+    const voiceName = language === "tl" ? "fil-PH-BlessicaNeural" : "en-PH-RosaNeural";
+
+    try {
+      await speakWithAzureNeural(text, {
+        voiceName,
+        locale,
+        style: "cheerful",
+        rate: "-6%",
+        sentenceBoundaryMs: 80,
+      });
+    } catch (error) {
+      console.error("Tutor panel speech failed", error);
+      if (ALLOW_BROWSER_FALLBACK && typeof window !== "undefined" && "speechSynthesis" in window) {
+        const utter = new window.SpeechSynthesisUtterance(text);
+        utter.lang = locale;
+        utter.rate = 0.9;
+        utter.pitch = 1;
+        const voice = getPreferredFemaleVoice(locale);
+        if (voice) utter.voice = voice;
+        window.speechSynthesis.speak(utter);
+      }
+    } finally {
+      setStatusMessage("");
+      setIsTutorCardPlaying(false);
+    }
+  }, [getPreferredFemaleVoice, isTutorCardPlaying, speakWithAzureNeural, stopSpeechPlayback]);
+
 
   const handleSpeakFallback = useCallback(() => {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
@@ -1378,12 +1557,22 @@ export default function EnglishFlashcards({
                 slideAverage: number;
                 expectedText?: string | null;
                 transcription?: string | null;
+                readingTutorFeedback?: string | null;
               }>;
             }
           | null;
 
         if (response.ok && payload?.success && payload.found && Array.isArray(payload.slides)) {
           const nextScores: SessionScore[] = payload.slides.map((slide) => ({
+            ...(function () {
+              const sentenceWords = uniqueWords(
+                normalizeText(slide.expectedText ?? "").split(/\s+/).filter((word) => word.length >= 4),
+                6,
+              );
+              const difficultWords = (slide.accuracyScore ?? 0) < 80 ? sentenceWords.slice(0, 3) : [];
+              const strongWords = (slide.accuracyScore ?? 0) >= 85 ? sentenceWords.slice(0, 3) : [];
+              return { difficultWords, strongWords };
+            })(),
             cardIndex: slide.flashcardIndex,
             sentence: slide.expectedText ?? flashcardsData[slide.flashcardIndex]?.sentence ?? "",
             pronScore: slide.pronunciationScore,
@@ -1397,6 +1586,7 @@ export default function EnglishFlashcards({
             ).score,
             averageScore: slide.slideAverage,
             transcription: slide.transcription ?? null,
+            readingTutorFeedback: slide.readingTutorFeedback ?? null,
           }));
 
           setSessionScores(nextScores);
@@ -1449,6 +1639,9 @@ export default function EnglishFlashcards({
         averageScore: number;
         readingSpeedWpm: number;
         transcription?: string | null;
+        readingTutorFeedback?: string | null;
+        difficultWords?: string[] | null;
+        strongWords?: string[] | null;
       },
     ) => {
       setSessionScores((prev) => {
@@ -1464,6 +1657,9 @@ export default function EnglishFlashcards({
           readingSpeedScore: sc.readingSpeedScore,
           averageScore: sc.averageScore,
           transcription: sc.transcription ?? null,
+          readingTutorFeedback: sc.readingTutorFeedback ?? null,
+          difficultWords: sc.difficultWords ?? null,
+          strongWords: sc.strongWords ?? null,
         });
         return next.sort((a, b) => a.cardIndex - b.cardIndex);
       });
@@ -1638,6 +1834,12 @@ export default function EnglishFlashcards({
         const sc = computeScores(sentence, spoken, conf);
         setMetrics(sc);
         const tutorFeedback = buildTutorFeedback(sc.wordFeedback ?? [], sentence, "");
+        const slideTutorFeedback = composeRuleBasedSlideFeedbackParagraph({
+          accuracyScore: sc.correctness,
+          readingSpeedWpm: sc.wpm,
+          slideAverage: sc.averageScore,
+        });
+        const wordSignals = getWordSignals(sc.wordFeedback ?? []);
         setFeedback(tutorFeedback);
         void speakTutorFeedback(tutorFeedback);
         setWordFeedback(sc.wordFeedback ?? []);
@@ -1650,6 +1852,9 @@ export default function EnglishFlashcards({
           averageScore: sc.averageScore,
           readingSpeedWpm: sc.wpm,
           transcription: spoken,
+          readingTutorFeedback: slideTutorFeedback,
+          difficultWords: wordSignals.difficultWords,
+          strongWords: wordSignals.strongWords,
         });
 
         stopAudioAnalyser();
@@ -1694,7 +1899,7 @@ export default function EnglishFlashcards({
       activeRecognizerStopRef.current = null;
       browserRecognitionRef.current = null;
     }
-  }, [computeScores, current, recognizedText, sentence, startAudioAnalyser, stopAudioAnalyser, upsertSessionScore]);
+  }, [buildTutorFeedback, computeScores, current, recognizedText, sentence, speakTutorFeedback, startAudioAnalyser, stopAudioAnalyser, upsertSessionScore]);
 
   const handleMicrophone = async () => {
     if (!sentence.trim()) return;
@@ -1899,6 +2104,12 @@ export default function EnglishFlashcards({
 
       const phonemeHint = buildPhonemeHint(aggregate.phonemes);
       const tutorFeedback = buildTutorFeedback(aggregate.words, sentence, phonemeHint);
+      const slideTutorFeedback = composeRuleBasedSlideFeedbackParagraph({
+        accuracyScore: accuracyScore,
+        readingSpeedWpm: wpmRaw,
+        slideAverage: averageScore,
+      });
+      const wordSignals = getWordSignals(aggregate.words);
 
       const azureMetrics = {
         pronScore,
@@ -1934,6 +2145,9 @@ export default function EnglishFlashcards({
         averageScore: azureMetrics.averageScore,
         readingSpeedWpm: azureMetrics.wpm,
         transcription: spoken,
+        readingTutorFeedback: slideTutorFeedback,
+        difficultWords: wordSignals.difficultWords,
+        strongWords: wordSignals.strongWords,
       });
     } catch (error) {
       console.error("Azure speech recognition failed", error);
@@ -2156,11 +2370,41 @@ export default function EnglishFlashcards({
   };
 
   const wordItems = metrics?.wordFeedback ?? wordFeedback;
+  const currentAccuracyScore = liveAccuracyScore;
+  const currentReadingSpeedWpm = liveReadingSpeedWpm;
+  const currentAverageScore = liveAverageScore;
+  const ruleBasedCurrentSlideParagraph = composeRuleBasedSlideFeedbackParagraph({
+    accuracyScore: currentAccuracyScore,
+    readingSpeedWpm: currentReadingSpeedWpm,
+    slideAverage: currentAverageScore,
+  }, {
+    studentName: selectedStudent?.name ?? null,
+  });
+  const tutorBaseFeedback = typeof currentAverageScore === "number"
+    ? (
+        isLoadingMlSlideFeedback
+          ? "Preparing feedback..."
+          : (mlSlideFeedback ?? ruleBasedCurrentSlideParagraph)
+      )
+    : "Record a slide to generate per-slide feedback.";
+  const tutorFeedback = translateTutorText(tutorBaseFeedback, tutorLanguage);
 
   if (showSummary) {
     const overallAverage = sessionScores.length
       ? Math.round(
           sessionScores.reduce((sum, item) => sum + item.averageScore, 0) /
+            Math.max(1, sessionScores.length),
+        )
+      : 0;
+    const averageAccuracy = sessionScores.length
+      ? Math.round(
+          sessionScores.reduce((sum, item) => sum + item.correctness, 0) /
+            Math.max(1, sessionScores.length),
+        )
+      : 0;
+    const averageReadingSpeedWpm = sessionScores.length
+      ? Math.round(
+          sessionScores.reduce((sum, item) => sum + item.readingSpeedWpm, 0) /
             Math.max(1, sessionScores.length),
         )
       : 0;
@@ -2183,39 +2427,55 @@ export default function EnglishFlashcards({
               <p className="text-3xl sm:text-2xl font-bold text-black">Total Average</p>
               <p className="text-7xl font-bold text-[#013300]">{overallAverage}%</p>
               <p className="text-sm text-slate-600">Based on {sessionScores.length} slide{sessionScores.length === 1 ? "" : "s"} with recorded scores.</p>
+              <div className="mt-1 space-y-2 rounded-2xl border border-emerald-100 bg-emerald-50/60 px-3 py-2.5 text-sm">
+                <p className="flex items-center justify-between gap-2 text-[#013300]">
+                  <span className="font-medium">Accuracy</span>
+                  <span className="font-semibold">{averageAccuracy}%</span>
+                </p>
+                <p className="flex items-center justify-between gap-2 text-[#013300]">
+                  <span className="font-medium">Reading Speed</span>
+                  <span className="font-semibold">{averageReadingSpeedWpm} WPM</span>
+                </p>
+              </div>
             </div>
             <div className="rounded-3xl border border-gray-300 bg-white shadow-md shadow-gray-200 p-6 flex flex-col gap-3 lg:col-span-9 min-h-80">
-              <p className="text-3xl sm:text-2xl font-bold text-black">Per-Slide Average</p>
+              <p className="text-3xl sm:text-2xl font-bold text-black">Per-Slide Feedback</p>
               <div className="overflow-auto -mx-4 px-4">
                 <table className="min-w-full text-sm">
                   <thead>
                     <tr className="text-left text-slate-500">
                       <th className="py-2 pr-3">Slide</th>
-                      <th className="py-2 pr-3">Pronunciation</th>
                       <th className="py-2 pr-3">Accuracy</th>
-                      <th className="py-2 pr-3">Fluency</th>
-                      <th className="py-2 pr-3">Completeness</th>
                       <th className="py-2 pr-3">Reading Speed</th>
                       <th className="py-2 pr-3">Average</th>
+                      <th className="py-2 pr-3">Feedback</th>
                     </tr>
                   </thead>
                   <tbody>
                     {sessionScores.length === 0 ? (
                       <tr>
-                        <td className="py-3 text-slate-600" colSpan={7}>No recorded scores yet.</td>
+                        <td className="py-3 text-slate-600" colSpan={5}>No recorded scores yet.</td>
                       </tr>
                     ) : (
-                      sessionScores.map((item) => (
-                        <tr key={item.cardIndex} className="border-t border-gray-200">
-                          <td className="py-2 pr-3 font-bold text-[#013300]">{item.cardIndex + 1}</td>
-                          <td className="py-2 pr-3 font-base text-[#013300]">{item.pronScore}%</td>
-                          <td className="py-2 pr-3 font-base text-[#013300]">{item.correctness}%</td>
-                          <td className="py-2 pr-3 font-base text-[#013300]">{typeof item.fluencyScore === "number" ? `${item.fluencyScore}%` : "—"}</td>
-                          <td className="py-2 pr-3 font-base text-[#013300]">{typeof item.completenessScore === "number" ? `${item.completenessScore}%` : "—"}</td>
-                          <td className="py-2 pr-3 font-base text-[#013300]">{item.readingSpeedScore}%</td>
-                          <td className="py-2 pr-3 font-bold text-[#013300]">{item.averageScore}%</td>
-                        </tr>
-                      ))
+                      sessionScores.map((item) => {
+                        const slideFeedback = composeRuleBasedSlideFeedbackParagraph({
+                          accuracyScore: item.correctness,
+                          readingSpeedWpm: item.readingSpeedWpm,
+                          slideAverage: item.averageScore,
+                        }, {
+                          studentName: selectedStudent?.name ?? null,
+                        });
+
+                        return (
+                          <tr key={item.cardIndex} className="border-t border-gray-200">
+                            <td className="py-2 pr-3 font-bold text-[#013300]">{item.cardIndex + 1}</td>
+                            <td className="py-2 pr-3 font-base text-[#013300]">{item.correctness}%</td>
+                            <td className="py-2 pr-3 font-base text-[#013300]">{Math.round(item.readingSpeedWpm)} WPM</td>
+                            <td className="py-2 pr-3 font-bold text-[#013300]">{item.averageScore}%</td>
+                            <td className="py-2 pr-3 text-[#013300]">{slideFeedback}</td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -2327,7 +2587,10 @@ export default function EnglishFlashcards({
             <section className="xl:col-span-8 flex flex-col min-h-0">
               <div className="h-full rounded-3xl border border-white/70 bg-white/45 shadow-[0_20px_45px_-28px_rgba(15,23,42,0.45)] backdrop-blur-xl overflow-hidden flex flex-col">
               <div className={contentContainerClass}>
-                <p className="text-3xl sm:text-4xl lg:text-5xl font-semibold text-[#013300] leading-tight">
+                <p
+                  className="text-3xl sm:text-4xl lg:text-5xl font-semibold text-[#013300] leading-tight"
+                  style={{ fontFamily: "'Century Gothic', CenturyGothic, AppleGothic, sans-serif" }}
+                >
                   {sentence}
                 </p>
                 <div className="w-full max-w-2xl">
@@ -2426,54 +2689,82 @@ export default function EnglishFlashcards({
             </section>
 
             <aside className="xl:col-span-4 flex flex-col gap-4 min-h-0">
-              <div className="rounded-3xl border border-gray-300 bg-white/80 backdrop-blur px-5 py-5 shadow-md shadow-gray-200 flex flex-1 flex-col min-h-0">
-                <h2 className="text-base font-semibold text-[#013300]">Performance Insights</h2>
+              <div className="rounded-3xl border border-white/70 bg-white/55 backdrop-blur-xl px-5 sm:px-6 py-5 sm:py-6 flex flex-1 flex-col min-h-0">
+                <h2 className="text-xl sm:text-2xl font-semibold tracking-tight text-[#013300]">Performance Insights</h2>
                 <div className="mt-4 flex flex-1 flex-col gap-3 min-h-0">
-                  <div className="rounded-2xl border border-gray-300 bg-emerald-50/60 px-3 py-2.5 flex flex-col">
-                    <p className="text-[11px] uppercase tracking-wide text-emerald-800">Live Transcription</p>
-                    <p className="mt-1 text-xs font-medium text-[#013300]">
+                  <div className="rounded-2xl border border-white/70 bg-white/60 backdrop-blur-sm px-4 sm:px-5 py-3.5 flex flex-col">
+                    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#013300]">Reading Transcription</p>
+                    <p className="mt-2.5 text-sm leading-6 text-[#194428]">
                       {liveTranscription || recognizedText || "Waiting for microphone recording."}
                     </p>
                   </div>
 
-                  <dl className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2 auto-rows-fr">
-                    <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col">
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">Pronunciation</dt>
-                      <dd className="text-base font-semibold text-[#013300]">{formatPercentValue(metrics?.pronScore)}</dd>
-                      {renderScoreBar(metrics?.pronScore)}
+                  <div className="rounded-2xl border border-white/70 bg-white/60 backdrop-blur-sm px-4 sm:px-5 py-3.5 text-sm text-[#013300]">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#013300]">Reading Tutor</p>
+                        <button
+                          type="button"
+                          onClick={() => void handleTutorCardSpeak(tutorFeedback, tutorLanguage)}
+                          disabled={isTutorCardPlaying}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
+                          title="Play tutor feedback"
+                          aria-label="Play tutor feedback"
+                        >
+                          <Volume2Icon />
+                        </button>
+                      </div>
+                      <div className="inline-flex items-center rounded-full border border-[#c8d8cf] bg-white/80 p-0.5 self-end sm:self-auto">
+                        <button
+                          type="button"
+                          onClick={() => setTutorLanguage("en")}
+                          className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold transition ${
+                            tutorLanguage === "en"
+                              ? "bg-emerald-100 text-emerald-900"
+                              : "text-slate-500 hover:bg-emerald-50 hover:text-emerald-800"
+                          }`}
+                          title="Switch to English"
+                          aria-label="Switch tutor language to English"
+                        >
+                          E
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTutorLanguage("tl")}
+                          className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold transition ${
+                            tutorLanguage === "tl"
+                              ? "bg-emerald-100 text-emerald-900"
+                              : "text-slate-500 hover:bg-emerald-50 hover:text-emerald-800"
+                          }`}
+                          title="Switch to Filipino"
+                          aria-label="Switch tutor language to Filipino"
+                        >
+                          F
+                        </button>
+                      </div>
                     </div>
-                    <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col">
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">Accuracy</dt>
-                      <dd className="text-base font-semibold text-[#013300]">{formatPercentValue(metrics?.accuracyScore ?? metrics?.correctness)}</dd>
-                      {renderScoreBar(metrics?.accuracyScore ?? metrics?.correctness)}
-                    </div>
-                    <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col">
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">Fluency</dt>
-                      <dd className="text-base font-semibold text-[#013300]">{formatPercentValue(metrics?.fluencyScore)}</dd>
-                      {renderScoreBar(metrics?.fluencyScore)}
-                    </div>
-                    <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col">
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">Completeness</dt>
-                      <dd className="text-base font-semibold text-[#013300]">{formatPercentValue(metrics?.completenessScore)}</dd>
-                      {renderScoreBar(metrics?.completenessScore)}
-                    </div>
-                    <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col">
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">Reading Speed</dt>
-                      <dd className="text-base font-semibold text-[#013300]">
-                        {metrics
-                          ? `${metrics.wpm} WPM${metrics.readingSpeedLabel ? ` (${metrics.readingSpeedLabel})` : ""}`
-                          : "—"}
-                      </dd>
-                      {renderScoreBar(metrics?.readingSpeedScore)}
-                    </div>
-                    <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col">
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">Average</dt>
-                      <dd className="text-base font-semibold text-[#013300]">{formatPercentValue(metrics?.averageScore)}</dd>
-                      {renderScoreBar(metrics?.averageScore)}
-                    </div>
-                  </dl>
-
-                  
+                    <p className="mt-2.5 text-sm leading-6 text-[#194428]">{tutorFeedback}</p>
+                  </div>
+                  <div className="rounded-2xl border border-white/70 bg-white/60 backdrop-blur-sm px-4 py-3.5">
+                    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#013300]">Reading Grades</p>
+                    <dl className="mt-3 grid grid-cols-3 divide-x divide-[#d7e4dc] text-xs">
+                      <div className="px-2 sm:px-4">
+                        <dt className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Accuracy</dt>
+                        <dd className="mt-1 text-base font-semibold text-[#013300]">{formatPercentValue(currentAccuracyScore)}</dd>
+                        {renderScoreBar(currentAccuracyScore)}
+                      </div>
+                      <div className="px-2 sm:px-4">
+                        <dt className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Reading Speed</dt>
+                        <dd className="mt-1 text-base font-semibold text-[#013300]">{metrics?.readingSpeedLabel ?? "-"}</dd>
+                        {renderScoreBar(metrics?.readingSpeedScore)}
+                      </div>
+                      <div className="px-2 sm:px-4">
+                        <dt className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Average</dt>
+                        <dd className="mt-1 text-base font-semibold text-[#013300]">{formatPercentValue(currentAverageScore)}</dd>
+                        {renderScoreBar(currentAverageScore)}
+                      </div>
+                    </dl>
+                  </div>
                 </div>
               </div>
             </aside>
@@ -2508,3 +2799,5 @@ export default function EnglishFlashcards({
     </div>
   );
 }
+
+

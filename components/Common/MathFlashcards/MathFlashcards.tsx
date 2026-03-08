@@ -8,6 +8,7 @@ import TableList from "@/components/Common/Tables/TableList";
 import { buildFlashcardContentKey } from "@/lib/utils/flashcards-storage";
 import { getAiInsightsAction } from "@/app/actions/get-ai-insights";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
+import { translateTutorText, type TutorLanguage } from "@/lib/performance/tutor-language";
 
 const ALLOW_BROWSER_FALLBACK = process.env.NEXT_PUBLIC_ALLOW_SPEECH_FALLBACK === "true";
 
@@ -27,6 +28,7 @@ const MicIcon = () => (
     <rect x="9" y="2" width="6" height="13" rx="3"/>
   </svg>
 );
+
 const PAGE_SIZE = 8;
 
 const normalizeLevelLabel = (value?: string | null): string => {
@@ -188,41 +190,6 @@ const parseMathQuestion = (question: string): ParsedMathQuestion | null => {
     stepVerb,
     result,
   };
-};
-
-const buildMathTutorSteps = (parsed: ParsedMathQuestion): string[] => {
-  const leftText = formatNumberForSpeech(parsed.left);
-  const rightText = formatNumberForSpeech(parsed.right);
-  const resultText = formatNumberForSpeech(parsed.result);
-
-  switch (parsed.operator) {
-    case "+":
-      return [
-        `Start with ${leftText}.`,
-        `Add ${rightText}.`,
-        `That makes ${resultText}.`,
-      ];
-    case "-":
-      return [
-        `Start with ${leftText}.`,
-        `Take away ${rightText}.`,
-        `That leaves ${resultText}.`,
-      ];
-    case "*":
-      return [
-        `We are multiplying ${leftText} by ${rightText}.`,
-        `Think of ${leftText} groups of ${rightText}.`,
-        `That equals ${resultText}.`,
-      ];
-    case "/":
-      return [
-        `We are dividing ${leftText} by ${rightText}.`,
-        `Split ${leftText} into ${rightText} equal groups.`,
-        `Each group has ${resultText}.`,
-      ];
-    default:
-      return [];
-  }
 };
 
 const buildMathTeachingSteps = (parsed: ParsedMathQuestion): string[] => {
@@ -423,6 +390,7 @@ type SessionScore = {
   responseTime: number;
   readingSpeedWpm: number;
   transcription?: string | null;
+  readingTutorFeedback?: string | null;
 };
 
 type EnrichedStudent = StudentRecord & {
@@ -754,7 +722,9 @@ export default function MathFlashcards({
   const [isTutorAssistOn, setIsTutorAssistOn] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [statusMessage, setStatusMessage] = useState("");
+  const [, setStatusMessage] = useState("");
+  const [tutorLanguage, setTutorLanguage] = useState<TutorLanguage>("en");
+  const [isTutorCardPlaying, setIsTutorCardPlaying] = useState(false);
   const [tutorGuidance, setTutorGuidance] = useState<string[]>([]);
   const [showCorrectAnswer, setShowCorrectAnswer] = useState(false);
 
@@ -966,6 +936,40 @@ export default function MathFlashcards({
     }
   }, [getPreferredFemaleVoice, isTutorAssistOn, speakWithAzureNeural, stopSpeechPlayback]);
 
+  const handleTutorCardSpeak = useCallback(async (text: string, language: TutorLanguage) => {
+    if (!text.trim() || isTutorCardPlaying) return;
+    setIsTutorCardPlaying(true);
+    setStatusMessage("Tutor speaking...");
+    stopSpeechPlayback();
+
+    const locale = language === "tl" ? "fil-PH" : "en-US";
+    const voiceName = language === "tl" ? "fil-PH-BlessicaNeural" : "en-PH-RosaNeural";
+
+    try {
+      await speakWithAzureNeural(text, {
+        voiceName,
+        locale,
+        style: "cheerful",
+        rate: "-6%",
+        sentenceBoundaryMs: 80,
+      });
+    } catch (error) {
+      console.error("Tutor panel speech failed", error);
+      if (ALLOW_BROWSER_FALLBACK && typeof window !== "undefined" && "speechSynthesis" in window) {
+        const utter = new window.SpeechSynthesisUtterance(text);
+        utter.lang = locale;
+        utter.rate = 0.9;
+        utter.pitch = 1;
+        const voice = getPreferredFemaleVoice(locale);
+        if (voice) utter.voice = voice;
+        window.speechSynthesis.speak(utter);
+      }
+    } finally {
+      setStatusMessage("");
+      setIsTutorCardPlaying(false);
+    }
+  }, [getPreferredFemaleVoice, isTutorCardPlaying, speakWithAzureNeural, stopSpeechPlayback]);
+
   const handleSpeakFallback = useCallback(() => {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
@@ -1049,7 +1053,11 @@ export default function MathFlashcards({
   }, [stopSpeechPlayback, stopSpeechRecognition]);
 
   const upsertSessionScore = useCallback(
-    (cardIndex: number, questionText: string, sc: { score: number; responseTime: number; transcription?: string | null }) => {
+    (
+      cardIndex: number,
+      questionText: string,
+      sc: { score: number; responseTime: number; transcription?: string | null; readingTutorFeedback?: string | null },
+    ) => {
       setSessionScores((prev) => {
         const next = prev.filter((item) => item.cardIndex !== cardIndex);
         const speedWpm = sc.responseTime > 0 ? Math.round(60 / sc.responseTime) : 0;
@@ -1060,6 +1068,7 @@ export default function MathFlashcards({
           responseTime: sc.responseTime,
           readingSpeedWpm: speedWpm,
           transcription: sc.transcription ?? null,
+          readingTutorFeedback: sc.readingTutorFeedback ?? null,
         });
         return next.sort((a, b) => a.cardIndex - b.cardIndex);
       });
@@ -1277,6 +1286,7 @@ export default function MathFlashcards({
                 slideAverage: number;
                 expectedText?: string | null;
                 transcription?: string | null;
+                readingTutorFeedback?: string | null;
               }>;
             }
           | null;
@@ -1292,6 +1302,7 @@ export default function MathFlashcards({
               responseTime,
               readingSpeedWpm: speedWpm,
               transcription: slide.transcription ?? null,
+              readingTutorFeedback: slide.readingTutorFeedback ?? null,
             };
           });
 
@@ -1375,6 +1386,7 @@ export default function MathFlashcards({
         readingSpeedWpm: item.readingSpeedWpm,
         slideAverage: item.score,
         transcription: item.transcription ?? null,
+        readingTutorFeedback: item.readingTutorFeedback ?? null,
       }));
 
       try {
@@ -1610,6 +1622,14 @@ export default function MathFlashcards({
     return null;
   }
 
+  const latestTranscription = sessionScores.find((item) => item.cardIndex === current)?.transcription ?? null;
+  const liveTranscription = userAnswer.trim() || latestTranscription || "Waiting for answer recording.";
+  const tutorRawText = [feedback.trim(), ...tutorGuidance.map((step) => step.trim())]
+    .filter(Boolean)
+    .join(" ")
+    || "Submit an answer to see how you did.";
+  const tutorFeedback = translateTutorText(tutorRawText, tutorLanguage);
+
   const progressPercent = flashcardsData.length
     ? (showSummary ? 100 : ((current + 1) / flashcardsData.length) * 100)
     : 0;
@@ -1805,7 +1825,10 @@ export default function MathFlashcards({
                 <div className="flex-1 px-6 sm:px-8 lg:px-12 py-6 flex flex-col items-center text-center gap-6">
                   <div className="w-full max-w-4xl rounded-3xl border border-slate-200 bg-white px-6 py-7 shadow-sm text-center">
                     <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-700">Problem</p>
-                    <p className="mt-3 text-3xl sm:text-4xl lg:text-5xl font-semibold text-[#013300] leading-tight">
+                    <p
+                      className="mt-3 text-3xl sm:text-4xl lg:text-5xl font-semibold text-[#013300] leading-tight"
+                      style={{ fontFamily: "'Century Gothic', CenturyGothic, AppleGothic, sans-serif" }}
+                    >
                       {question}
                     </p>
                   </div>
@@ -1904,35 +1927,72 @@ export default function MathFlashcards({
             </section>
 
             <aside className="xl:col-span-4 flex flex-col gap-4 min-h-0">
-              <div className="rounded-3xl border border-gray-300 bg-white/80 backdrop-blur px-5 py-5 shadow-md shadow-gray-200 flex flex-1 flex-col min-h-0">
-                <h2 className="text-base font-semibold text-[#013300]">Performance Insights</h2>
+              <div className="rounded-3xl border border-white/70 bg-white/55 backdrop-blur-xl px-5 sm:px-6 py-5 sm:py-6 flex flex-1 flex-col min-h-0">
+                <h2 className="text-xl sm:text-2xl font-semibold tracking-tight text-[#013300]">Performance Insights</h2>
                 <div className="mt-4 flex flex-1 flex-col gap-3 min-h-0">
-                  <div className="rounded-2xl border border-gray-300 bg-emerald-50/60 px-3 py-2.5 flex flex-col flex-1">
-                    <p className="text-xs uppercase tracking-wide text-emerald-800">Solution Guidance</p>
-                    <p className="mt-1 text-sm font-medium text-[#013300]">
-                      {feedback || "Submit an answer to see how you did."}
-                    </p>
-                    {tutorGuidance.length ? (
-                      <div className="mt-2 space-y-1 text-sm font-medium text-[#013300]">
-                        {tutorGuidance.map((step, index) => (
-                          <p key={`${step}-${index}`}>{index + 1}. {step}</p>
-                        ))}
-                      </div>
-                    ) : null}
+                  <div className="rounded-2xl border border-white/70 bg-white/60 backdrop-blur-sm px-4 sm:px-5 py-3.5 flex flex-col">
+                    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#013300]">Transcription</p>
+                    <p className="mt-2.5 text-sm leading-6 text-[#194428]">{liveTranscription}</p>
                   </div>
-                  <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 auto-rows-fr">
-                    <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col">
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">Result</dt>
+                  <div className="rounded-2xl border border-white/70 bg-white/60 backdrop-blur-sm px-4 sm:px-5 py-3.5 text-sm text-[#013300]">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#013300]">Math Tutor</p>
+                        <button
+                          type="button"
+                          onClick={() => void handleTutorCardSpeak(tutorFeedback, tutorLanguage)}
+                          disabled={isTutorCardPlaying}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/80 text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
+                          title="Play tutor feedback"
+                          aria-label="Play tutor feedback"
+                        >
+                          <Volume2Icon />
+                        </button>
+                      </div>
+                      <div className="inline-flex items-center rounded-full border border-[#c8d8cf] bg-white/80 p-0.5 self-end sm:self-auto">
+                        <button
+                          type="button"
+                          onClick={() => setTutorLanguage("en")}
+                          className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold transition ${
+                            tutorLanguage === "en"
+                              ? "bg-emerald-100 text-emerald-900"
+                              : "text-slate-500 hover:bg-emerald-50 hover:text-emerald-800"
+                          }`}
+                          title="Switch to English"
+                          aria-label="Switch tutor language to English"
+                        >
+                          E
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTutorLanguage("tl")}
+                          className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold transition ${
+                            tutorLanguage === "tl"
+                              ? "bg-emerald-100 text-emerald-900"
+                              : "text-slate-500 hover:bg-emerald-50 hover:text-emerald-800"
+                          }`}
+                          title="Switch to Filipino"
+                          aria-label="Switch tutor language to Filipino"
+                        >
+                          F
+                        </button>
+                      </div>
+                    </div>
+                    <p className="mt-2.5 text-sm leading-6 text-[#194428]">{tutorFeedback}</p>
+                  </div>
+                  <dl className="grid grid-cols-1 gap-2.5 text-sm sm:grid-cols-2 auto-rows-fr">
+                    <div className="rounded-2xl border border-white/70 bg-white/60 backdrop-blur-sm px-4 py-3 h-full flex flex-col">
+                      <dt className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Result</dt>
                       <dd
-                        className={`text-lg font-semibold ${score === 100 ? "text-[#013300]" : score === 0 ? "text-red-600" : "text-[#013300]"
+                        className={`mt-1 text-lg font-semibold ${score === 100 ? "text-[#013300]" : score === 0 ? "text-red-600" : "text-[#013300]"
                           }`}
                       >
                         {score === null ? "—" : score === 100 ? "Correct" : "Wrong"}
                       </dd>
                     </div>
-                    <div className="rounded-2xl border border-gray-300 bg-white px-4 py-3 h-full flex flex-col">
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">Correct answer</dt>
-                      <dd className="text-lg font-semibold text-[#013300]">
+                    <div className="rounded-2xl border border-white/70 bg-white/60 backdrop-blur-sm px-4 py-3 h-full flex flex-col">
+                      <dt className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Correct answer</dt>
+                      <dd className="mt-1 text-lg font-semibold text-[#013300]">
                         {score === 100 && showCorrectAnswer ? correctAnswer : "••••••"}
                       </dd>
                       {score === 100 && (

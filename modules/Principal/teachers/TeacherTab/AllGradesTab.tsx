@@ -1,7 +1,9 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import TableList from "@/components/Common/Tables/TableList";
 import TeacherDetailModal from "../Modals/TeacherDetailModal";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
+import SortMenu, { type SortMenuItem } from "@/components/Common/Menus/SortMenu";
+import { formatTeacherFullName } from "../utils/formatTeacherName";
 
 const sections = ["All Sections", "A", "B", "C"];
 
@@ -11,6 +13,15 @@ interface AllGradesTabProps {
   searchTerm: string;
   gradeFilter?: string;
 }
+
+type TeacherSortKey = "name_asc" | "name_desc";
+
+const DEFAULT_TEACHER_SORT: TeacherSortKey = "name_asc";
+
+const TEACHER_SORT_ITEMS: SortMenuItem<TeacherSortKey>[] = [
+  { value: "name_asc", label: "Name (A-Z)" },
+  { value: "name_desc", label: "Name (Z-A)" },
+];
 
 interface CustomDropdownProps {
   options: string[];
@@ -131,17 +142,28 @@ const matchesGradeFilter = (teacher: any, gradeFilter: string | undefined): bool
 export default function TeacherAllGradesTab({ teachers, setTeachers, searchTerm, gradeFilter = "All Grades" }: AllGradesTabProps) {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedTeacher, setSelectedTeacher] = useState<any>(null);
+  const [sortBy, setSortBy] = useState<TeacherSortKey>(DEFAULT_TEACHER_SORT);
 
   const gradeFilteredTeachers = teachers.filter((teacher: any) => matchesGradeFilter(teacher, gradeFilter));
 
   const filteredTeachers = gradeFilteredTeachers.filter((teacher: any) => {
+    const displayName = formatTeacherFullName(teacher).toLowerCase();
     const matchSearch = searchTerm === "" || 
-      teacher.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      displayName.includes(searchTerm.toLowerCase()) ||
       teacher.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       teacher.teacherId?.toLowerCase().includes(searchTerm.toLowerCase());
       
     return matchSearch;
   });
+
+  const sortedTeachers = useMemo(() => {
+    const compareName = (a: any, b: any) =>
+      formatTeacherFullName(a).localeCompare(formatTeacherFullName(b), undefined, { sensitivity: "base" });
+
+    const list = [...filteredTeachers];
+    list.sort((a, b) => (sortBy === "name_asc" ? compareName(a, b) : compareName(b, a)));
+    return list;
+  }, [filteredTeachers, sortBy]);
 
   const handleShowDetails = (teacher: any) => {
     setSelectedTeacher(teacher);
@@ -152,8 +174,17 @@ export default function TeacherAllGradesTab({ teachers, setTeachers, searchTerm,
     <div>
       <div className="flex flex-row justify-between items-center mb-4">
         <p className="text-gray-600 text-md font-medium">
-          Total: {gradeFilteredTeachers.length}
+          Total: {sortedTeachers.length}
         </p>
+        <SortMenu
+          small
+          iconOnly
+          align="right"
+          value={sortBy}
+          items={TEACHER_SORT_ITEMS}
+          onChange={setSortBy}
+          buttonAriaLabel="Open teacher sort options"
+        />
       </div>
       
       <TeacherDetailModal
@@ -165,13 +196,13 @@ export default function TeacherAllGradesTab({ teachers, setTeachers, searchTerm,
       <TableList
         columns={[
           { key: "no", title: "No#" },
-          { key: "teacherId", title: "Teacher ID" },
           { key: "name", title: "Full Name" },
           { key: "email", title: "Email" },
           { key: "contactNumber", title: "Contact Number" },
         ]}
-  data={filteredTeachers.map((teacher: any, idx: number) => ({
+  data={sortedTeachers.map((teacher: any, idx: number) => ({
           ...teacher,
+          name: formatTeacherFullName(teacher),
           no: idx + 1,
         }))}
         actions={(row: any) => (

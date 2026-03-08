@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { RowDataPacket, ResultSetHeader } from "mysql2/promise";
+import type { PoolConnection, RowDataPacket, ResultSetHeader } from "mysql2/promise";
 import { runWithConnection } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +21,9 @@ type QuestionRow = RowDataPacket & {
 	question_type: string;
 	points: number;
 	question_order: number;
+	section_key?: string | null;
+	section_title?: string | null;
+	section_description?: string | null;
 };
 
 type ChoiceRow = RowDataPacket & {
@@ -61,6 +64,11 @@ const assertAssessmentIsActive = (assessment: AssessmentRow) => {
 const buildStudentName = (student: StudentRow) =>
 	[student.first_name, student.middle_name, student.last_name].filter(Boolean).join(" ").trim();
 
+const getQuestionColumns = async (connection: PoolConnection) => {
+	const [columns] = await connection.query<RowDataPacket[]>("SHOW COLUMNS FROM `assessment_questions`");
+	return new Set(columns.map((column) => String(column.Field).toLowerCase()));
+};
+
 export async function GET() {
 	return NextResponse.json({ success: false, error: "Use POST to access an assessment." }, { status: 405 });
 }
@@ -85,6 +93,12 @@ export async function POST(request: NextRequest) {
 		}
 
 		const result = await runWithConnection(async (connection) => {
+			const questionColumns = await getQuestionColumns(connection).catch(() => new Set<string>());
+			const hasSectionColumns =
+				questionColumns.has("section_key") &&
+				questionColumns.has("section_title") &&
+				questionColumns.has("section_description");
+
 			const [assessmentRows] = await connection.query<AssessmentRow[]>(
 				`SELECT assessment_id, title, description, start_time, end_time, qr_token, is_published
 				 FROM assessments
@@ -133,7 +147,7 @@ export async function POST(request: NextRequest) {
 			}
 
 			const [questionRows] = await connection.query<QuestionRow[]>(
-				`SELECT question_id, assessment_id, question_text, question_type, points, question_order
+				`SELECT question_id, assessment_id, question_text, question_type, points, question_order${hasSectionColumns ? ", section_key, section_title, section_description" : ""}
 				 FROM assessment_questions
 				 WHERE assessment_id = ?
 				 ORDER BY question_order ASC, question_id ASC`,
@@ -197,6 +211,9 @@ export async function POST(request: NextRequest) {
 						questionText: question.question_text,
 						type: question.question_type,
 						points: Number(question.points ?? 1),
+						sectionId: hasSectionColumns ? question.section_key ?? null : null,
+						sectionTitle: hasSectionColumns ? question.section_title ?? "" : "",
+						sectionDescription: hasSectionColumns ? question.section_description ?? "" : "",
 						choices: choicesByQuestion.get(question.question_id) ?? [],
 					})),
 				},

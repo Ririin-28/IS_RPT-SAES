@@ -10,17 +10,30 @@ import {
 const COORDINATOR_HANDLED_TABLE = "mt_coordinator_handled" as const;
 const REMEDIAL_HANDLED_TABLE = "mt_remedialteacher_handled" as const;
 
-const resolveCoordinatorRoleId = async (masterTeacherId: string): Promise<string | null> => {
+const resolveCoordinatorRoleId = async (masterTeacherId: string, userId: number): Promise<string | null> => {
   const columns = await getTableColumns(COORDINATOR_HANDLED_TABLE).catch(() => new Set<string>());
-  if (!columns.size || !columns.has("coordinator_role_id") || !columns.has("master_teacher_id")) {
+  if (!columns.size || !columns.has("coordinator_role_id")) {
+    return null;
+  }
+
+  const whereParts: string[] = ["coordinator_role_id IS NOT NULL"];
+  const params: Array<string | number> = [];
+
+  if (columns.has("user_id") && Number.isFinite(userId)) {
+    whereParts.push("user_id = ?");
+    params.push(userId);
+  } else if (columns.has("master_teacher_id")) {
+    whereParts.push("master_teacher_id = ?");
+    params.push(masterTeacherId);
+  } else {
     return null;
   }
 
   const [rows] = await query<RowDataPacket[]>(
     `SELECT coordinator_role_id FROM ${COORDINATOR_HANDLED_TABLE}
-     WHERE master_teacher_id = ? AND coordinator_role_id IS NOT NULL
+     WHERE ${whereParts.join(" AND ")}
      LIMIT 1`,
-    [masterTeacherId],
+    params,
   );
 
   const value = rows[0]?.coordinator_role_id;
@@ -62,7 +75,7 @@ export async function POST(request: NextRequest) {
   }
 
   const [coordinatorRoleId, remedialRoleId] = await Promise.all([
-    resolveCoordinatorRoleId(session.masterTeacherId),
+    resolveCoordinatorRoleId(session.masterTeacherId, session.userId),
     resolveRemedialRoleId(session.masterTeacherId),
   ]);
 

@@ -48,16 +48,15 @@ export default function BaseModal({
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
-      <div className={`relative z-[10000] bg-white rounded-lg shadow-xl w-full ${maxWidthClasses[maxWidth]} max-h-[95vh] overflow-y-auto`}>
-        {/* Modal Header with green background */}
-        <div className="bg-[#013300] text-white rounded-t-lg p-6">
+    <div className="fixed inset-0 z-9999 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/35 backdrop-blur-[2px]" aria-hidden="true" />
+      <div className={`relative z-10000 w-full ${maxWidthClasses[maxWidth]} max-h-[95vh] overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-[0_20px_60px_-24px_rgba(15,23,42,0.35)]`}>
+        <div className=" bg-[#013300] px-6 py-5 rounded-t-2xl">
           <div className="flex justify-between items-center">
-            <h2 className="text-xl font-semibold">{title}</h2>
+            <h2 className="text-xl font-semibold text-white tracking-tight">{title}</h2>
             <button
               onClick={onClose}
-              className="text-white hover:text-gray-200 transition-colors p-1 rounded-full hover:bg-[#015500]"
+              className="rounded-full p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
               aria-label="Close modal"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -67,14 +66,12 @@ export default function BaseModal({
           </div>
         </div>
 
-        {/* Modal Content */}
-        <div className="p-6 space-y-6">
+        <div className="px-6 py-5 space-y-6">
           {children}
         </div>
 
-        {/* Modal Footer */}
         {footer && (
-          <div className="flex justify-end gap-3 pt-4 border-t mt-6 px-6 pb-6">
+          <div className="flex justify-end gap-3 border-t border-gray-200 bg-gray-50/70 px-6 py-4 rounded-b-2xl">
             {footer}
           </div>
         )}
@@ -88,7 +85,9 @@ export default function BaseModal({
 export function ModalSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="space-y-4">
-      <h3 className="text-lg font-medium text-gray-900">{title}</h3>
+      <div className="border-b border-gray-200 pb-2">
+        <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-gray-800">{title}</h3>
+      </div>
       {children}
     </div>
   );

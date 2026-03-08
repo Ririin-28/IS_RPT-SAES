@@ -13,6 +13,16 @@ const SUBJECT_TABLE = "subject";
 const MT_HANDLED_TABLE = "mt_coordinator_handled";
 const USERS_TABLE = "users";
 // const PRINCIPAL_TABLE_CANDIDATES = ["principal", "principals", "principal_info", "principal_profile", "principal_profiles"] as const;
+const ID_COLUMN_CANDIDATES = ["request_id", "activity_id", "id"] as const;
+
+const pickColumn = (columns: Set<string>, candidates: readonly string[]): string | null => {
+  for (const candidate of candidates) {
+    if (columns.has(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+};
 
 type UpdateAction = "approve" | "reject";
 
@@ -254,12 +264,28 @@ export async function PATCH(request: NextRequest) {
       "submitted_at",
     ];
     const requestCols = await getTableColumns(REQUEST_REMEDIAL_TABLE).catch(() => new Set<string>());
+    const requestIdColumn = pickColumn(requestCols, ID_COLUMN_CANDIDATES);
 
     if (normalizedAction === "approve") {
       const approvedCols = await getTableColumns(APPROVED_REMEDIAL_TABLE).catch(() => new Set<string>());
+      const approvedIdColumn = pickColumn(approvedCols, ID_COLUMN_CANDIDATES);
       const insertCols = baseColumns.filter((col) => approvedCols.has(col) && requestCols.has(col));
-      const selectCols = insertCols.map((col) => (col === "status" ? `"Approved"` : `r.${col}`));
+      if (approvedIdColumn && requestIdColumn && !insertCols.includes(approvedIdColumn)) {
+        insertCols.unshift(approvedIdColumn);
+      }
+      const selectCols = insertCols.map((col) => {
+        if (col === "status") {
+          return `"Approved"`;
+        }
+        if (approvedIdColumn && requestIdColumn && col === approvedIdColumn) {
+          return `r.${requestIdColumn}`;
+        }
+        return `r.${col}`;
+      });
       const dedupeChecks: string[] = [];
+      if (approvedIdColumn && requestIdColumn) {
+        dedupeChecks.push(`a.${approvedIdColumn} = r.${requestIdColumn}`);
+      }
       if (approvedCols.has("schedule_date") && requestCols.has("schedule_date")) {
         dedupeChecks.push("a.schedule_date = r.schedule_date");
       }
@@ -282,8 +308,12 @@ export async function PATCH(request: NextRequest) {
       await query<ResultSetHeader>(insertSql, requestIds);
     } else {
       const rejectedCols = await getTableColumns(REJECTED_REMEDIAL_TABLE).catch(() => new Set<string>());
+      const rejectedIdColumn = pickColumn(rejectedCols, ID_COLUMN_CANDIDATES);
       const rejectionReason = payload?.rejectionReason ? String(payload.rejectionReason).trim() : "Rejected by principal";
       const insertCols = baseColumns.filter((col) => rejectedCols.has(col) && requestCols.has(col));
+      if (rejectedIdColumn && requestIdColumn && !insertCols.includes(rejectedIdColumn)) {
+        insertCols.unshift(rejectedIdColumn);
+      }
       const extraCols: string[] = [];
       const selectExtras: string[] = [];
       if (rejectedCols.has("rejection_reason")) {
@@ -299,12 +329,37 @@ export async function PATCH(request: NextRequest) {
         selectExtras.push("NOW()");
       }
       const allCols = [...insertCols, ...extraCols];
-      const selectCols = insertCols.map((col) => (col === "status" ? `"Rejected"` : `r.${col}`));
+      const selectCols = insertCols.map((col) => {
+        if (col === "status") {
+          return `"Rejected"`;
+        }
+        if (rejectedIdColumn && requestIdColumn && col === rejectedIdColumn) {
+          return `r.${requestIdColumn}`;
+        }
+        return `r.${col}`;
+      });
+      const dedupeChecks: string[] = [];
+      if (rejectedIdColumn && requestIdColumn) {
+        dedupeChecks.push(`rr.${rejectedIdColumn} = r.${requestIdColumn}`);
+      }
+      if (rejectedCols.has("schedule_date") && requestCols.has("schedule_date")) {
+        dedupeChecks.push("rr.schedule_date = r.schedule_date");
+      }
+      if (rejectedCols.has("subject_id") && requestCols.has("subject_id")) {
+        dedupeChecks.push("rr.subject_id = r.subject_id");
+      }
+      if (rejectedCols.has("grade_id") && requestCols.has("grade_id")) {
+        dedupeChecks.push("rr.grade_id = r.grade_id");
+      }
+      const dedupeClause = dedupeChecks.length
+        ? `AND NOT EXISTS (SELECT 1 FROM ${REJECTED_REMEDIAL_TABLE} rr WHERE ${dedupeChecks.join(" AND ")})`
+        : "";
       const insertSql = `
         INSERT INTO ${REJECTED_REMEDIAL_TABLE} (${allCols.join(", ")})
         SELECT ${[...selectCols, ...selectExtras].join(", ")}
         FROM ${REQUEST_REMEDIAL_TABLE} r
         WHERE r.request_id IN (${requestIds.map(() => "?").join(", ")})
+        ${dedupeClause}
       `;
       const params = [...(rejectedCols.has("rejection_reason") ? [rejectionReason] : []), ...(rejectedCols.has("rejected_by") ? [approverName] : [])];
       await query<ResultSetHeader>(insertSql, [...params, ...requestIds]);

@@ -5,36 +5,6 @@ import BaseModal, {
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 
-const parseTimestamp = (value: string | null | undefined): Date | null => {
-  if (!value) {
-    return null;
-  }
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-  const primary = new Date(trimmed);
-  if (!Number.isNaN(primary.getTime())) {
-    return primary;
-  }
-  const fallback = new Date(trimmed.replace(/\s/, "T"));
-  if (!Number.isNaN(fallback.getTime())) {
-    return fallback;
-  }
-  return null;
-};
-
-const formatDateLabel = (value: Date | null): string | null => {
-  if (!value) {
-    return null;
-  }
-  return value.toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-};
-
 interface Activity {
   id: number;
   title: string;
@@ -45,21 +15,34 @@ interface Activity {
   subject?: string;
   day?: string;
   status?: string | null;
-  requestedAt?: string | null;
-  approvedAt?: string | null;
-  approvedBy?: string | null;
-  sourceTable?: string | null;
-  requester?: string | null;
 }
 
 interface ActivityDetailModalProps {
   activity: Activity | null;
   onClose: () => void;
   onDelete?: (id: number) => void;
+  remedialTime?: string | null;
 }
 
-export default function ActivityDetailModal({ activity, onClose, onDelete }: ActivityDetailModalProps) {
+export default function ActivityDetailModal({ activity, onClose, onDelete, remedialTime }: ActivityDetailModalProps) {
   if (!activity) return null;
+  const normalizeStatusLabel = (value: string | null | undefined): string => {
+    const normalized = String(value ?? "").trim().toLowerCase();
+    if (["1", "approved", "accept", "accepted", "granted", "true", "yes", "ok"].includes(normalized)) {
+      return "Approved";
+    }
+    if (["0", "pending", "awaiting", "submitted", "for approval", "waiting"].includes(normalized)) {
+      return "Pending";
+    }
+    if (["rejected", "declined", "denied", "cancelled", "canceled", "void"].includes(normalized)) {
+      return "Declined";
+    }
+    if (!normalized) {
+      return "Pending";
+    }
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  };
+
   const formatGradeLabel = (value: unknown): string => {
     const match = String(value ?? "").match(/(\d+)/);
     const digit = match?.[1] ?? "";
@@ -69,19 +52,12 @@ export default function ActivityDetailModal({ activity, onClose, onDelete }: Act
   const gradeLabel = formatGradeLabel(activity.gradeLevel);
   const subjectLabel = activity.subject ?? activity.title;
   const timeRange = `${activity.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} - ${activity.end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+  const remedialTimeLabel = remedialTime && remedialTime.trim().length > 0 ? remedialTime : timeRange;
   const dayLabel = activity.day ?? activity.date.toLocaleDateString("en-US", { weekday: "long" });
-  const statusLabel = activity.status ?? "Draft";
-  const isLocked = statusLabel.toLowerCase().includes("approve");
-  const statusDisplay = isLocked ? `${statusLabel} (View Only)` : statusLabel;
-  const requestedDate = formatDateLabel(parseTimestamp(activity.requestedAt ?? null));
-  const approvedDate = formatDateLabel(parseTimestamp(activity.approvedAt ?? null));
-  const requestApprovalItems = [
-    { label: "Submitted On", value: requestedDate },
-    { label: "Submitted By", value: activity.requester },
-    { label: "Approved On", value: approvedDate },
-    { label: "Approved By", value: activity.approvedBy },
-  ].filter((entry) => Boolean(entry.value && String(entry.value).trim().length));
-  
+  const statusLabel = normalizeStatusLabel(activity.status);
+  const isLocked = statusLabel === "Approved";
+  const statusDisplay = statusLabel;
+
   return (
     <BaseModal
       show={Boolean(activity)}
@@ -109,7 +85,7 @@ export default function ActivityDetailModal({ activity, onClose, onDelete }: Act
         <div className="grid gap-4 sm:grid-cols-2">
           <ModalInfoItem label="Subject" value={subjectLabel} />
           <ModalInfoItem label="Grade Level" value={gradeLabel} />
-          <ModalInfoItem label="Status" value={statusDisplay} />
+          {!isLocked && <ModalInfoItem label="Status" value={statusDisplay} />}
         </div>
       </ModalSection>
 
@@ -124,19 +100,9 @@ export default function ActivityDetailModal({ activity, onClose, onDelete }: Act
             })}
           />
           <ModalInfoItem label="Day" value={dayLabel} />
-          <ModalInfoItem label="Time Slot" value={timeRange} />
+          <ModalInfoItem label="Time" value={remedialTimeLabel} />
         </div>
       </ModalSection>
-
-      {requestApprovalItems.length > 0 && (
-        <ModalSection title="Request & Approval">
-          <div className="grid gap-4 sm:grid-cols-2">
-            {requestApprovalItems.map((item) => (
-              <ModalInfoItem key={item.label} label={item.label} value={item.value} />
-            ))}
-          </div>
-        </ModalSection>
-      )}
     </BaseModal>
   );
 }

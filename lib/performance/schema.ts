@@ -84,6 +84,7 @@ export async function ensurePerformanceSchema(): Promise<void> {
           reading_speed_wpm DECIMAL(8,2) NOT NULL,
           slide_average DECIMAL(6,2) NOT NULL,
           transcription LONGTEXT NULL,
+          reading_tutor_feedback LONGTEXT NULL,
           created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
           PRIMARY KEY (performance_id),
           INDEX idx_remedial_perf_session (session_id),
@@ -119,6 +120,7 @@ export async function ensurePerformanceSchema(): Promise<void> {
       await ensureTableColumn("student_remedial_flashcard_performance", "reading_speed_wpm", "DECIMAL(8,2) NOT NULL DEFAULT 0");
       await ensureTableColumn("student_remedial_flashcard_performance", "slide_average", "DECIMAL(6,2) NOT NULL DEFAULT 0");
       await ensureTableColumn("student_remedial_flashcard_performance", "transcription", "LONGTEXT NULL");
+      await ensureTableColumn("student_remedial_flashcard_performance", "reading_tutor_feedback", "LONGTEXT NULL");
       await ensureTableColumn("student_remedial_flashcard_performance", "created_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
 
       await ensureTableColumn("student_phonemic_history", "achieved_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");

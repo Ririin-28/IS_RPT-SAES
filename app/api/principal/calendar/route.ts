@@ -155,7 +155,20 @@ export async function GET(request: NextRequest) {
 
     const [rows] = await query<ApprovedRow[]>(sql, gradeId && gradeColumn ? [gradeId] : []);
 
-    const uniqueByDate = new Map<string, { id: string; title: string; submittedBy: string | null; date: string; end: string; type: string }>();
+    const uniqueByDate = new Map<
+      string,
+      {
+        id: string;
+        title: string;
+        submittedBy: string | null;
+        date: string;
+        end: string;
+        type: string;
+        subject: string | null;
+        gradeLevel: string | null;
+        day: string | null;
+      }
+    >();
 
     for (const row of rows) {
       const dateValue = parseDateValue(row.schedule_date);
@@ -175,6 +188,12 @@ export async function GET(request: NextRequest) {
         date: dateValue.toISOString(),
         end: new Date(dateValue.getTime() + 60 * 60 * 1000).toISOString(),
         type: "remedial",
+        subject: row.subject_name ? String(row.subject_name) : null,
+        gradeLevel:
+          row.grade_id !== null && row.grade_id !== undefined && Number.isFinite(Number(row.grade_id))
+            ? `Grade ${Number(row.grade_id)}`
+            : null,
+        day: row.day ? String(row.day) : null,
       });
     }
 

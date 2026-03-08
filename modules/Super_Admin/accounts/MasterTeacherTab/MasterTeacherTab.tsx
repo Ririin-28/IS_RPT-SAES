@@ -5,6 +5,7 @@ import * as XLSX from "xlsx";
 import TableList from "@/components/Common/Tables/TableList";
 import MasterTeacherDetailsModal from "./Modals/MasterTeacherDetailsModal";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
+import SortMenu, { type SortMenuItem } from "@/components/Common/Menus/SortMenu";
 import AccountActionsMenu, { type AccountActionKey } from "../components/AccountActionsMenu";
 import AddMasterTeacherModal, { type AddMasterTeacherFormValues } from "./Modals/AddMasterTeacherModal";
 import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
@@ -15,6 +16,12 @@ import AccountCreatedModal, { type AccountCreatedInfo } from "@/components/Commo
 import { exportAccountRows, MASTER_TEACHER_EXPORT_COLUMNS } from "../utils/export-columns";
 
 const NAME_COLLATOR = new Intl.Collator("en", { sensitivity: "base", numeric: true });
+type TeacherSortKey = "name_asc" | "name_desc";
+const DEFAULT_TEACHER_SORT: TeacherSortKey = "name_asc";
+const TEACHER_SORT_ITEMS: SortMenuItem<TeacherSortKey>[] = [
+  { value: "name_asc", label: "Name (A-Z)" },
+  { value: "name_desc", label: "Name (Z-A)" },
+];
 const COORDINATOR_SUBJECT_OPTIONS = ["English", "Filipino", "Math"] as const;
 type CoordinatorSubject = (typeof COORDINATOR_SUBJECT_OPTIONS)[number];
 
@@ -254,6 +261,7 @@ export default function MasterTeacherTab({ teachers, setTeachers, searchTerm, gr
   const [isArchiving, setIsArchiving] = useState(false);
   const [uploadedPasswords, setUploadedPasswords] = useState<Array<{name: string; email: string; password: string}>>([]);
   const [uploadedAccounts, setUploadedAccounts] = useState<AccountCreatedInfo[] | null>(null);
+  const [sortBy, setSortBy] = useState<TeacherSortKey>(DEFAULT_TEACHER_SORT);
 
   const addMasterTeacherForm = useForm<AddMasterTeacherFormValues>({
     mode: "onTouched",
@@ -329,15 +337,36 @@ export default function MasterTeacherTab({ teachers, setTeachers, searchTerm, gr
     });
   }, [teachers, searchTerm, gradeFilter]);
 
+  const sortedTeachers = useMemo(() => {
+    const list = [...filteredTeachers];
+    list.sort((a, b) => {
+      const nameA = toStringOrNull(a.name);
+      const nameB = toStringOrNull(b.name);
+
+      if (nameA && nameB && nameA !== nameB) {
+        return sortBy === "name_asc"
+          ? NAME_COLLATOR.compare(nameA, nameB)
+          : NAME_COLLATOR.compare(nameB, nameA);
+      }
+      if (nameA && !nameB) return -1;
+      if (!nameA && nameB) return 1;
+
+      const idA = typeof a.userId === "number" ? a.userId : Number.parseInt(String(a.userId ?? 0), 10) || 0;
+      const idB = typeof b.userId === "number" ? b.userId : Number.parseInt(String(b.userId ?? 0), 10) || 0;
+      return idA - idB;
+    });
+    return list;
+  }, [filteredTeachers, sortBy]);
+
   const handleExport = useCallback(() => {
     void exportAccountRows({
-      rows: filteredTeachers,
+      rows: sortedTeachers,
       columns: MASTER_TEACHER_EXPORT_COLUMNS,
       baseFilename: "master-teacher-accounts",
       sheetName: "Master Teacher Accounts",
       emptyMessage: "No master teacher accounts available to export.",
     });
-  }, [filteredTeachers]);
+  }, [sortedTeachers]);
 
   const handleShowDetails = (teacher: any) => {
     setSelectedTeacher(teacher);
@@ -697,12 +726,12 @@ export default function MasterTeacherTab({ teachers, setTeachers, searchTerm, gr
 
   const handleSelectAll = useCallback((checked: boolean) => {
     if (checked) {
-      const keys = new Set(filteredTeachers.map((teacher: any) => getTeacherKey(teacher)));
+      const keys = new Set(sortedTeachers.map((teacher: any) => getTeacherKey(teacher)));
       setSelectedTeacherKeys(keys);
       return;
     }
     setSelectedTeacherKeys(new Set());
-  }, [filteredTeachers, getTeacherKey]);
+  }, [getTeacherKey, sortedTeachers]);
 
   const handleCancelSelect = useCallback(() => {
     setSelectMode(false);
@@ -822,9 +851,18 @@ export default function MasterTeacherTab({ teachers, setTeachers, searchTerm, gr
     <div>
       <div className="flex flex-row justify-between items-center mb-4 gap-4">
         <p className="text-gray-600 text-md font-medium">
-          Total: {filteredTeachers.length}
+          Total: {sortedTeachers.length}
         </p>
         <div className="flex items-center gap-3">
+          <SortMenu
+            small
+            iconOnly
+            align="right"
+            value={sortBy}
+            items={TEACHER_SORT_ITEMS}
+            onChange={setSortBy}
+            buttonAriaLabel="Open master teacher sort options"
+          />
           {selectMode ? (
             <>
               <SecondaryButton small onClick={handleCancelSelect}>
@@ -846,7 +884,7 @@ export default function MasterTeacherTab({ teachers, setTeachers, searchTerm, gr
               buttonAriaLabel="Open Master Teacher actions"
               exportConfig={{
                 onExport: handleExport,
-                disabled: filteredTeachers.length === 0,
+                disabled: sortedTeachers.length === 0,
               }}
               downloadPasswordsConfig={{
                 onDownload: handleDownloadPasswords,
@@ -938,7 +976,7 @@ export default function MasterTeacherTab({ teachers, setTeachers, searchTerm, gr
             render: (row: any) => row.lastLoginDisplay ?? "—",
           },
         ]}
-        data={filteredTeachers.map((teacher, idx) => ({
+        data={sortedTeachers.map((teacher, idx) => ({
           ...teacher,
           id: getTeacherKey(teacher),
           no: idx + 1,

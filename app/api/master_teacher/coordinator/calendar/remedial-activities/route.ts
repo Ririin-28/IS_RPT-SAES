@@ -9,12 +9,15 @@ const WEEKLY_SUBJECT_TABLE = "weekly_subject_schedule";
 const MT_HANDLED_TABLE = "mt_coordinator_handled";
 const REMEDIAL_QUARTER_TABLE = "remedial_quarter";
 const REQUEST_REMEDIAL_TABLE = "request_remedial_schedule";
+const SUBJECT_TABLE_CANDIDATES = ["subjects", "subject"] as const;
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"] as const;
 
 type IncomingActivity = {
   title?: string | null;
   date?: string | null;
+  day?: string | null;
+  subject?: string | null;
 };
 
 type QuarterRow = RowDataPacket & {
@@ -34,6 +37,126 @@ const toText = (value: unknown): string | null => {
   if (value === null || value === undefined) return null;
   const trimmed = String(value).trim();
   return trimmed.length ? trimmed : null;
+};
+
+const normalizeSubjectLookupKey = (value: string): string =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const addSubjectLookupAlias = (map: Map<string, number>, key: string, subjectId: number) => {
+  const trimmed = key.trim();
+  if (!trimmed.length) return;
+  if (!map.has(trimmed)) {
+    map.set(trimmed, subjectId);
+  }
+};
+
+const addCommonSubjectAliases = (map: Map<string, number>, normalizedName: string, subjectId: number) => {
+  if (normalizedName.includes("english")) {
+    addSubjectLookupAlias(map, "english", subjectId);
+  }
+  if (normalizedName.includes("filipino")) {
+    addSubjectLookupAlias(map, "filipino", subjectId);
+  }
+  if (normalizedName.includes("math") || normalizedName.includes("mathematics")) {
+    addSubjectLookupAlias(map, "math", subjectId);
+    addSubjectLookupAlias(map, "mathematics", subjectId);
+  }
+  if (normalizedName.includes("assessment")) {
+    addSubjectLookupAlias(map, "assessment", subjectId);
+  }
+};
+
+const resolveSubjectLookup = async (): Promise<{ table: string; idColumn: string; nameColumn: string } | null> => {
+  for (const table of SUBJECT_TABLE_CANDIDATES) {
+    const columns = await getTableColumns(table).catch(() => new Set<string>());
+    if (!columns.size) continue;
+    const idColumn = columns.has("subject_id") ? "subject_id" : columns.has("id") ? "id" : null;
+    const nameColumn = columns.has("name")
+      ? "name"
+      : columns.has("subject_name")
+      ? "subject_name"
+      : null;
+    if (idColumn && nameColumn) {
+      return { table, idColumn, nameColumn };
+    }
+  }
+  return null;
+};
+
+const loadSubjectNameMap = async (): Promise<Map<string, number>> => {
+  const map = new Map<string, number>();
+  const lookup = await resolveSubjectLookup();
+  if (!lookup) return map;
+
+  const [rows] = await query<RowDataPacket[]>(
+    `SELECT ${lookup.idColumn} AS subject_id, ${lookup.nameColumn} AS subject_name FROM ${lookup.table}`,
+  );
+  for (const row of rows) {
+    const id = toNumber(row.subject_id);
+    const name = toText(row.subject_name);
+    if (id && name) {
+      const lowered = name.toLowerCase();
+      const normalized = normalizeSubjectLookupKey(name);
+      addSubjectLookupAlias(map, lowered, id);
+      addSubjectLookupAlias(map, normalized, id);
+      addCommonSubjectAliases(map, normalized, id);
+    }
+  }
+  return map;
+};
+
+const resolveProvidedSubjectId = (
+  providedSubjectName: string | null,
+  subjectNameMap: Map<string, number>,
+): number | null => {
+  if (!providedSubjectName) {
+    return null;
+  }
+
+  const lowered = providedSubjectName.toLowerCase();
+  const normalized = normalizeSubjectLookupKey(providedSubjectName);
+  const directMatch =
+    subjectNameMap.get(lowered) ??
+    subjectNameMap.get(normalized) ??
+    null;
+  if (directMatch) {
+    return directMatch;
+  }
+
+  if (normalized.includes("english")) {
+    return subjectNameMap.get("english") ?? null;
+  }
+  if (normalized.includes("filipino")) {
+    return subjectNameMap.get("filipino") ?? null;
+  }
+  if (normalized.includes("math") || normalized.includes("mathematics")) {
+    return subjectNameMap.get("math") ?? subjectNameMap.get("mathematics") ?? null;
+  }
+  if (normalized.includes("assessment")) {
+    return subjectNameMap.get("assessment") ?? null;
+  }
+
+  return null;
+};
+
+const parseActivityDate = (value: string): Date | null => {
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (dateOnlyMatch) {
+    const year = Number(dateOnlyMatch[1]);
+    const month = Number(dateOnlyMatch[2]);
+    const day = Number(dateOnlyMatch[3]);
+    const parsed = new Date(year, month - 1, day, 12, 0, 0, 0);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  }
+
+  const fallback = new Date(value);
+  return Number.isNaN(fallback.getTime()) ? null : fallback;
 };
 
 const resolveSchoolYearFromDate = (date: Date): string => {
@@ -85,9 +208,14 @@ const resolveGradeId = async (gradeId: number | null, gradeLabel: string | null)
   return row?.grade_id ? Number(row.grade_id) : null;
 };
 
-const loadWeeklySubjectMap = async (): Promise<Map<string, number>> => {
+const loadWeeklySubjectMap = async (gradeId: number | null): Promise<Map<string, number>> => {
+  const columns = await getTableColumns(WEEKLY_SUBJECT_TABLE).catch(() => new Set<string>());
+  const hasGradeId = columns.has("grade_id");
   const [rows] = await query<RowDataPacket[]>(
-    `SELECT day_of_week, subject_id FROM ${WEEKLY_SUBJECT_TABLE}`,
+    hasGradeId && gradeId
+      ? `SELECT day_of_week, subject_id FROM ${WEEKLY_SUBJECT_TABLE} WHERE grade_id = ?`
+      : `SELECT day_of_week, subject_id FROM ${WEEKLY_SUBJECT_TABLE}`,
+    hasGradeId && gradeId ? [gradeId] : [],
   );
   const map = new Map<string, number>();
   for (const row of rows) {
@@ -190,10 +318,11 @@ export async function POST(request: NextRequest) {
       gradeBySubject.set(assignment.subject_id, assignment.grade_id);
     }
 
-    const weeklySubjectMap = await loadWeeklySubjectMap();
+    const weeklySubjectMap = await loadWeeklySubjectMap(gradeId);
     if (!weeklySubjectMap.size) {
       return NextResponse.json({ success: false, error: "Weekly subject schedule is not configured yet." }, { status: 400 });
     }
+    const subjectNameMap = await loadSubjectNameMap();
 
     const submittedBy = String(session.masterTeacherId ?? session.userId ?? "");
     const skipped: Array<{ title: string; reason: string }> = [];
@@ -212,19 +341,26 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      const parsedDate = new Date(dateText);
-      if (Number.isNaN(parsedDate.getTime())) {
+      const parsedDate = parseActivityDate(dateText);
+      if (!parsedDate) {
         skipped.push({ title, reason: "Invalid activity date." });
         continue;
       }
 
-      const weekday = WEEKDAYS[parsedDate.getDay() - 1] ?? null;
+      const incomingDay = toText(activity.day);
+      const weekday =
+        incomingDay && WEEKDAYS.includes(incomingDay as (typeof WEEKDAYS)[number])
+          ? incomingDay
+          : WEEKDAYS[parsedDate.getDay() - 1] ?? null;
       if (!weekday) {
         skipped.push({ title, reason: "Invalid weekday." });
         continue;
       }
 
-      const subjectId = weeklySubjectMap.get(weekday);
+      const weeklySubjectId = weeklySubjectMap.get(weekday) ?? null;
+      const providedSubjectName = toText(activity.subject);
+      const providedSubjectId = resolveProvidedSubjectId(providedSubjectName, subjectNameMap);
+      const subjectId = providedSubjectId ?? weeklySubjectId;
       if (!subjectId) {
         skipped.push({ title, reason: `No subject assigned for ${weekday}.` });
         continue;
@@ -244,7 +380,7 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      const scheduleDate = parsedDate.toISOString().slice(0, 10);
+      const scheduleDate = `${parsedDate.getFullYear()}-${String(parsedDate.getMonth() + 1).padStart(2, "0")}-${String(parsedDate.getDate()).padStart(2, "0")}`;
       const [existing] = await query<RowDataPacket[]>(
         `SELECT request_id FROM ${REQUEST_REMEDIAL_TABLE}
          WHERE quarter_id = ? AND schedule_date = ? AND subject_id = ? AND grade_id = ? AND title = ? AND submitted_by = ?

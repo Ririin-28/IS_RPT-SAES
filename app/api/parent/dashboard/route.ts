@@ -10,6 +10,8 @@ const STUDENT_PHONEMIC_HISTORY_TABLE = "student_phonemic_history" as const;
 const STUDENT_REMEDIAL_SESSION_TABLE = "student_remedial_session" as const;
 const STUDENT_REMEDIAL_FLASHCARD_PERFORMANCE_TABLE = "student_remedial_flashcard_performance" as const;
 const STUDENT_TEACHER_ASSIGNMENT_TABLE = "student_teacher_assignment" as const;
+const PERFORMANCE_RECORDS_TABLE = "performance_records" as const;
+const REMARKS_TABLE = "remarks" as const;
 const TEACHER_TABLE = "teacher" as const;
 const USERS_TABLE = "users" as const;
 
@@ -550,6 +552,8 @@ export async function GET(request: Request) {
     const historyColumns = await safeGetColumns(STUDENT_PHONEMIC_HISTORY_TABLE);
     const sessionColumns = await safeGetColumns(STUDENT_REMEDIAL_SESSION_TABLE);
     const performanceColumns = await safeGetColumns(STUDENT_REMEDIAL_FLASHCARD_PERFORMANCE_TABLE);
+    const performanceRecordColumns = await safeGetColumns(PERFORMANCE_RECORDS_TABLE);
+    const remarksColumns = await safeGetColumns(REMARKS_TABLE);
     const assignmentColumns = await safeGetColumns(STUDENT_TEACHER_ASSIGNMENT_TABLE);
     const teacherColumns = await safeGetColumns(TEACHER_TABLE);
     const userColumns = await safeGetColumns(USERS_TABLE);
@@ -602,6 +606,35 @@ export async function GET(request: Request) {
     const sessionRows: RowDataPacket[] = [];
     if (sessionColumns.has("student_id") && sessionColumns.has("subject_id")) {
       const commentColumn = pickColumn(sessionColumns, SESSION_TEACHER_COMMENT_COLUMNS);
+      const canLoadTeacherNotesFromRemarks =
+        sessionColumns.has("session_id") &&
+        performanceRecordColumns.has("record_id") &&
+        performanceRecordColumns.has("student_id") &&
+        performanceRecordColumns.has("metadata") &&
+        remarksColumns.has("performance_record_id") &&
+        remarksColumns.has("teacher_notes");
+      const approvedScheduleFallback = sessionColumns.has("approved_schedule_id")
+        ? `
+            OR (
+              JSON_EXTRACT(pr.metadata, '$.sessionId') IS NULL
+              AND JSON_UNQUOTE(JSON_EXTRACT(pr.metadata, '$.approvedScheduleId')) = CAST(s.approved_schedule_id AS CHAR)
+            )
+          `
+        : "";
+      const teacherNotesSelect = canLoadTeacherNotesFromRemarks
+        ? `(
+            SELECT r.teacher_notes
+            FROM ${PERFORMANCE_RECORDS_TABLE} pr
+            INNER JOIN ${REMARKS_TABLE} r ON r.performance_record_id = pr.record_id
+            WHERE pr.student_id = s.student_id
+              AND (
+                JSON_UNQUOTE(JSON_EXTRACT(pr.metadata, '$.sessionId')) = CAST(s.session_id AS CHAR)
+                ${approvedScheduleFallback}
+              )
+            ORDER BY pr.record_id DESC, r.remark_id DESC
+            LIMIT 1
+          ) AS teacher_notes`
+        : "NULL AS teacher_notes";
       const selectParts = [
         "session_id",
         "subject_id",
@@ -610,6 +643,7 @@ export async function GET(request: Request) {
         sessionColumns.has("completed_at") ? "completed_at" : "NULL AS completed_at",
         sessionColumns.has("created_at") ? "created_at" : "NULL AS created_at",
         commentColumn ? `${commentColumn} AS teacher_comment` : "NULL AS teacher_comment",
+        teacherNotesSelect,
       ];
       const performanceFilter = performanceColumns.has("session_id")
         ? `AND EXISTS (SELECT 1 FROM ${STUDENT_REMEDIAL_FLASHCARD_PERFORMANCE_TABLE} p WHERE p.session_id = s.session_id)`
@@ -770,7 +804,7 @@ export async function GET(request: Request) {
       const teacherName = teacherId ? teacherNames.get(teacherId) ?? `Teacher ${teacherId}` : "—";
 
       const aiRecommendation = sanitizeText(session?.ai_remarks) ?? "—";
-      const teacherComments = sanitizeText(session?.teacher_comment) ?? "—";
+      const teacherComments = sanitizeText(session?.teacher_notes) ?? sanitizeText(session?.teacher_comment) ?? "—";
 
       progressDetails[subjectName] = {
         currentLevel: currentLabel,

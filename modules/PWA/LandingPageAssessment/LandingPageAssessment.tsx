@@ -34,6 +34,14 @@ export default function LandingPageAssessment() {
   const html5CtorRef = useRef<any | null>(null);
   const scannerContainerId = "html5-qr-scanner";
 
+  const formatStudentLrn = useCallback((value: string) => {
+    const digits = value.replace(/\D/g, "").slice(0, 12);
+    if (digits.length <= 6) {
+      return digits;
+    }
+    return `${digits.slice(0, 6)}-${digits.slice(6)}`;
+  }, []);
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -426,9 +434,11 @@ export default function LandingPageAssessment() {
                 <label className="block text-sm font-bold text-[#013300]/80 mb-2">Student LRN</label>
                 <input
                   type="text"
-                  placeholder="Enter LRN"
+                  placeholder="000000-000000"
                   value={studentId}
-                  onChange={(e) => setStudentId(e.target.value)}
+                  onChange={(e) => setStudentId(formatStudentLrn(e.target.value))}
+                  inputMode="numeric"
+                  maxLength={13}
                   className="w-full px-4 py-3.5 rounded-xl border-2 border-[#013300]/20 shadow-sm focus:border-[#013300] focus:ring-0 outline-none transition-all bg-white text-[#013300] placeholder-gray-400 text-center font-bold text-lg"
                 />
               </div>

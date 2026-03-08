@@ -458,19 +458,6 @@ export default function MasterTeacherStudents() {
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
                 <SecondaryHeader title={headerTitle} />
                 <div className="flex flex-col gap-3 w-full sm:w-auto mt-4 sm:mt-0 sm:flex-row sm:items-center">
-                  <PrimaryButton
-                    type="button"
-                    small
-                    onClick={handleOpenAssignmentModal}
-                    disabled={
-                      teachersLoading
-                      || assignmentStatus.loading
-                      || totalTeachers === 0
-                      || totalStudents === 0
-                    }
-                  >
-                    Auto-Assign Students
-                  </PrimaryButton>
                   <div className="relative flex-1 sm:flex-initial">
                     <input
                       type="text"
@@ -496,6 +483,13 @@ export default function MasterTeacherStudents() {
                 <StudentTab
                   searchTerm={searchTerm}
                   onMetaChange={handleMetaChange}
+                  onAssignStudents={handleOpenAssignmentModal}
+                  assignStudentsDisabled={
+                    teachersLoading
+                    || assignmentStatus.loading
+                    || totalTeachers === 0
+                    || totalStudents === 0
+                  }
                 />
               </div>
             </div>

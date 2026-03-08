@@ -12,6 +12,7 @@ import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import TableList from "@/components/Common/Tables/TableList";
 import KebabMenu from "@/components/Common/Menus/KebabMenu";
+import SortMenu, { type SortMenuItem } from "@/components/Common/Menus/SortMenu";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
 import BodyText from "@/components/Common/Texts/BodyText";
@@ -20,6 +21,43 @@ import { getStoredUserProfile } from "@/lib/utils/user-profile";
 import { resolveRemedialPlayTarget } from "@/lib/utils/remedial-play";
 
 const sections = ["All Sections", "A", "B", "C"];
+const PHONEMIC_LEVELS = ["Non-Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"];
+
+type StudentSortKey =
+  | "name_asc"
+  | "name_desc"
+  | "lrn_asc"
+  | "lrn_desc"
+  | "phonemic_low_high"
+  | "phonemic_high_low";
+
+const DEFAULT_STUDENT_SORT: StudentSortKey = "name_asc";
+
+const STUDENT_SORT_ITEMS: SortMenuItem<StudentSortKey>[] = [
+  { value: "name_asc", label: "Name (A-Z)" },
+  { value: "name_desc", label: "Name (Z-A)" },
+  { type: "separator", id: "name-lrn" },
+  { value: "lrn_asc", label: "LRN (Asc)" },
+  { value: "lrn_desc", label: "LRN (Desc)" },
+  { type: "separator", id: "lrn-phonemic" },
+  { value: "phonemic_low_high", label: "Phonemic Level (Low->High)" },
+  { value: "phonemic_high_low", label: "Phonemic Level (High->Low)" },
+];
+
+const normalizePhonemic = (value: unknown): string => String(value ?? "").trim().toLowerCase();
+const normalizeLrn = (lrn?: string | null): string | null => {
+  if (!lrn) return null;
+  const digits = lrn.replace(/\D/g, "").slice(0, 12);
+  if (digits.length !== 12) return null;
+  return `${digits.slice(0, 6)}-${digits.slice(6)}`;
+};
+
+const maskLrnForDisplay = (lrn?: string | null): string => {
+  const normalized = normalizeLrn(lrn);
+  if (!normalized) return "N/A";
+  const digits = normalized.replace(/\D/g, "");
+  return `${digits.slice(0, 2)}****-****${digits.slice(-2)}`;
+};
 
 // Define types for name parts
 type NameParts = {
@@ -224,9 +262,13 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
   const [selectedStudents, setSelectedStudents] = useState<Set<number>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
   const [filter, setFilter] = useState({ section: "All Sections" });
+  const [sortBy, setSortBy] = useState<StudentSortKey>(DEFAULT_STUDENT_SORT);
+  const [visibleLrnIds, setVisibleLrnIds] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const lrnRevealTimersRef = useRef<Record<string, number>>({});
   const [playLoadingId, setPlayLoadingId] = useState<string | null>(null);
   const [promoteLoadingId, setPromoteLoadingId] = useState<string | null>(null);
+  const [promotionRecommendationRefreshKey, setPromotionRecommendationRefreshKey] = useState(0);
 
   const userProfile = useMemo(() => getStoredUserProfile(), []);
   const userId = useMemo(() => {
@@ -238,6 +280,13 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
     }
     return null;
   }, [userProfile]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(lrnRevealTimersRef.current).forEach((timerId) => window.clearTimeout(timerId));
+      lrnRevealTimersRef.current = {};
+    };
+  }, []);
   
 
   // React Hook Form setup
@@ -308,16 +357,83 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
     });
   }, [students, filter.section, searchTerm]);
 
-  // Sort students A-Z by Surname, FirstName, Middle Initials
+  const phonemicOrder = useMemo(() => {
+    const order = new Map<string, number>();
+    PHONEMIC_LEVELS.forEach((level, index) => {
+      order.set(normalizePhonemic(level), index);
+    });
+    return order;
+  }, []);
+
   const sortedStudents = useMemo(() => {
+    const fallbackIndex = phonemicOrder.size + 1;
     const list = [...filteredStudents];
-    list.sort((a, b) => {
+    const compareName = (a: any, b: any): number => {
       const aKey = buildNameSortKey(a);
       const bKey = buildNameSortKey(b);
       return aKey.localeCompare(bKey, undefined, { sensitivity: "base" });
+    };
+    const normalizeSortableLrn = (student: any): string | null => {
+      const raw = String(student?.lrn ?? "").replace(/\D/g, "");
+      return raw.length > 0 ? raw : null;
+    };
+    const getStudentPhonemicValue = (student: any): string =>
+      String(student?.filipinoPhonemic ?? student?.filipino ?? "").trim();
+
+    list.sort((a, b) => {
+      if (sortBy === "name_asc") return compareName(a, b);
+      if (sortBy === "name_desc") return compareName(b, a);
+
+      if (sortBy === "lrn_asc" || sortBy === "lrn_desc") {
+        const aLrn = normalizeSortableLrn(a);
+        const bLrn = normalizeSortableLrn(b);
+        if (aLrn && bLrn && aLrn !== bLrn) {
+          return sortBy === "lrn_asc" ? aLrn.localeCompare(bLrn) : bLrn.localeCompare(aLrn);
+        }
+        if (aLrn && !bLrn) return -1;
+        if (!aLrn && bLrn) return 1;
+        return compareName(a, b);
+      }
+
+      const aIndex = phonemicOrder.get(normalizePhonemic(getStudentPhonemicValue(a))) ?? fallbackIndex;
+      const bIndex = phonemicOrder.get(normalizePhonemic(getStudentPhonemicValue(b))) ?? fallbackIndex;
+      if (aIndex !== bIndex) {
+        return sortBy === "phonemic_low_high" ? aIndex - bIndex : bIndex - aIndex;
+      }
+      return compareName(a, b);
     });
     return list;
-  }, [filteredStudents]);
+  }, [filteredStudents, phonemicOrder, sortBy]);
+
+  const hasActiveSortOrFilter = sortBy !== DEFAULT_STUDENT_SORT || filter.section !== "All Sections";
+  const handleClearAll = () => {
+    setSortBy(DEFAULT_STUDENT_SORT);
+    setFilter({ section: "All Sections" });
+  };
+
+  const handleRevealLrn = (rowId: string) => {
+    if (!rowId) return;
+
+    setVisibleLrnIds((prev) => {
+      const next = new Set(prev);
+      next.add(rowId);
+      return next;
+    });
+
+    const existingTimer = lrnRevealTimersRef.current[rowId];
+    if (existingTimer) {
+      window.clearTimeout(existingTimer);
+    }
+
+    lrnRevealTimersRef.current[rowId] = window.setTimeout(() => {
+      setVisibleLrnIds((prev) => {
+        const next = new Set(prev);
+        next.delete(rowId);
+        return next;
+      });
+      delete lrnRevealTimersRef.current[rowId];
+    }, 3000);
+  };
 
   const handleExport = () => {
     if (sortedStudents.length === 0) {
@@ -495,13 +611,21 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
     void run();
   };
 
-  const handlePromoteFromModal = () => {
+  const handlePromoteFromModal = (subject: "English" | "Filipino" | "Math") => {
     const run = async () => {
       const studentId = selectedStudent?.studentId ?? selectedStudent?.id ?? "";
       if (!studentId) {
         alert("Student ID is missing.");
         return;
       }
+
+      const currentLevel = String(
+        subject === "English"
+          ? selectedStudent?.englishPhonemic ?? selectedStudent?.english ?? ""
+          : subject === "Filipino"
+            ? selectedStudent?.filipinoPhonemic ?? selectedStudent?.filipino ?? ""
+            : selectedStudent?.mathProficiency ?? selectedStudent?.math ?? "",
+      ).trim();
 
       setPromoteLoadingId(String(studentId));
       try {
@@ -510,7 +634,8 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             studentId: String(studentId),
-            subject: "Filipino",
+            subject,
+            currentLevel,
             requestedBy: userId,
           }),
         });
@@ -522,19 +647,42 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
 
         const nextLevel = payload?.nextLevel?.level_name ?? payload?.nextLevel?.levelName ?? "";
         if (nextLevel) {
+          const applyPromotedLevel = (entry: any) => {
+            if (!entry) {
+              return entry;
+            }
+            if (subject === "English") {
+              return {
+                ...entry,
+                englishPhonemic: nextLevel,
+                english: nextLevel,
+              };
+            }
+            if (subject === "Filipino") {
+              return {
+                ...entry,
+                filipinoPhonemic: nextLevel,
+                filipino: nextLevel,
+              };
+            }
+            return {
+              ...entry,
+              mathProficiency: nextLevel,
+              math: nextLevel,
+            };
+          };
+
           setStudents((prev) =>
             prev.map((entry: any) => {
               const entryId = entry?.studentId ?? entry?.id;
               if (String(entryId) !== String(studentId)) {
                 return entry;
               }
-              return {
-                ...entry,
-                filipinoPhonemic: nextLevel,
-                filipino: nextLevel,
-              };
+              return applyPromotedLevel(entry);
             })
           );
+          setSelectedStudent((prev: any) => applyPromotedLevel(prev));
+          setPromotionRecommendationRefreshKey((prev) => prev + 1);
         }
       } catch (error) {
         alert(error instanceof Error ? error.message : "Failed to promote student.");
@@ -563,6 +711,17 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
               className="min-w-[120px]"
             />
           </div>
+          <SortMenu
+            small
+            iconOnly
+            align="right"
+            value={sortBy}
+            items={STUDENT_SORT_ITEMS}
+            onChange={setSortBy}
+            onClearAll={handleClearAll}
+            clearAllDisabled={!hasActiveSortOrFilter}
+            buttonAriaLabel="Open sort options"
+          />
         </div>
       </div>
 
@@ -585,8 +744,15 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
           setSelectedStudent(null);
         }}
         student={selectedStudent}
+        reportHref={
+          selectedStudent
+            ? `/Teacher/report/filipino/students/${encodeURIComponent(String(selectedStudent.studentId ?? selectedStudent.id ?? ""))}`
+            : undefined
+        }
+        promotionRecommendationApiPath="/api/teacher/students/promotion-readiness"
+        promotionRecommendationRefreshKey={promotionRecommendationRefreshKey}
         onPromote={handlePromoteFromModal}
-        promoteDisabled={
+        promoteLoading={
           !selectedStudent ||
           promoteLoadingId === String(selectedStudent?.studentId ?? selectedStudent?.id ?? "")
         }
@@ -596,15 +762,48 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
       <TableList
         columns={[
           { key: "no", title: "No#" },
-          { key: "studentId", title: "Student ID" },
-          { key: "lrn", title: "LRN" },
+          {
+            key: "maskedLrn",
+            title: "LRN",
+            render: (row: any) => {
+              const rowId = String(row.id ?? row.studentId ?? "");
+              const isVisible = rowId ? visibleLrnIds.has(rowId) : false;
+              const displayValue = isVisible ? (row.fullLrn ?? "N/A") : (row.maskedLrn ?? "N/A");
+              const canReveal = Boolean(row.fullLrn && row.fullLrn !== "N/A");
+
+              return (
+                <div className="inline-flex items-center gap-2">
+                  <span>{displayValue}</span>
+                  {canReveal && (
+                    <button
+                      type="button"
+                      onClick={() => handleRevealLrn(rowId)}
+                      className="inline-flex items-center justify-center rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-[#013300]"
+                      title="Show full LRN for 3 seconds"
+                      aria-label="Show full LRN for 3 seconds"
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"
+                        />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              );
+            },
+          },
           { key: "name", title: "Full Name" },
           { key: "phonemic", title: "Phonemic" },
         ]}
         data={sortedStudents.map((student, idx) => ({
           ...student,
           name: formatStudentDisplayName(student), // Display as "Surname, FirstName M.I."
-          lrn: student.lrn ?? "",
+          fullLrn: normalizeLrn(student.lrn) ?? "N/A",
+          maskedLrn: maskLrnForDisplay(student.lrn),
           phonemic: student.filipinoPhonemic ?? student.filipino ?? "",
           no: idx + 1,
         }))}

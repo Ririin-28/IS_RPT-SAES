@@ -58,6 +58,25 @@ const formatAnswer = (answer: string | string[] | undefined): string => {
   return answer;
 };
 
+const formatMetric = (value: unknown, fallback = "N/A") => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric.toFixed(1) : fallback;
+};
+
+const getInitials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("") || "--";
+
+const getDifficultyTone = (value: number) => {
+  if (value >= 80) return "bg-emerald-50 text-emerald-700 border border-emerald-100";
+  if (value >= 50) return "bg-amber-50 text-amber-700 border border-amber-100";
+  return "bg-rose-50 text-rose-700 border border-rose-100";
+};
+
 const escapeHtml = (value: string) =>
   value
     .replace(/&/g, "&amp;")
@@ -256,9 +275,11 @@ export default function ViewResponsesModal({
 
   const clampedRate = Math.max(0, Math.min(100, rawRate));
 
-  const donutStyle: CSSProperties = {
-    background: `conic-gradient(#013300 ${clampedRate * 3.6}deg, #e6f4ef ${clampedRate * 3.6}deg)`
+  const completionBarStyle: CSSProperties = {
+    width: `${clampedRate}%`,
   };
+
+  const averageScore = formatMetric(analysisData?.summary?.averageScore);
 
   const footer = (
     <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -284,68 +305,73 @@ export default function ViewResponsesModal({
     >
       <div className="space-y-6">
         <ModalSection title="Summary">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="rounded-lg border border-gray-200 bg-white p-4 flex flex-col gap-3">
-              <ModalLabel>Total responses</ModalLabel>
-              <p className="text-3xl font-semibold text-[#013300]">{totalResponsesLabel}</p>
-              <p className="text-sm text-gray-600">
-                {responseCount === 1 ? "1 submission collected." : `${responseCount} submissions collected.`}
-              </p>
-              {totalStudents === 0 && (
-                <p className="text-xs text-gray-500">Assign students to track response completion.</p>
-              )}
-            </div>
-            <div className="rounded-lg border border-gray-200 bg-white p-4 flex flex-col gap-3">
-              <ModalLabel>Response rate</ModalLabel>
-              <div className="mt-3 flex items-center gap-4">
-                <div className="relative h-20 w-20">
-                  <div className="h-20 w-20 rounded-full ring-8 ring-emerald-50" style={donutStyle} />
-                  <div className="absolute inset-3 flex flex-col items-center justify-center rounded-full bg-white">
-                    <span className="text-lg font-semibold text-[#013300]">{clampedRate}%</span>
-                    <span className="text-[10px] uppercase tracking-wide text-gray-400">responses</span>
-                  </div>
-                </div>
-                <p className="flex-1 text-sm text-gray-600">
-                  {totalStudents > 0
-                    ? `${responseCount} of ${totalStudents} students responded.`
-                    : "Add students to calculate the completion rate."}
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <div className="grid grid-cols-1 divide-y divide-slate-200 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+              <div className="p-4 sm:p-5">
+                <ModalLabel>Total responses</ModalLabel>
+                <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{totalResponsesLabel}</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  {responseCount === 1 ? "1 submission recorded" : `${responseCount} submissions recorded`}
                 </p>
               </div>
+              <div className="p-4 sm:p-5">
+                <ModalLabel>Response rate</ModalLabel>
+                <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{clampedRate}%</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  {totalStudents > 0 ? `${responseCount} of ${totalStudents} assigned students` : "No assigned students yet"}
+                </p>
+              </div>
+              <div className="p-4 sm:p-5">
+                <ModalLabel>Average score</ModalLabel>
+                <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{averageScore}</p>
+                <p className="mt-1 text-sm text-slate-500">points per submission</p>
+              </div>
+            </div>
+            <div className="border-t border-slate-200 bg-slate-50/70 px-4 py-3 sm:px-5">
+              <div className="flex items-center justify-between text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                <span>Completion</span>
+                <span>{clampedRate}%</span>
+              </div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
+                <div className="h-full rounded-full bg-[#013300]" style={completionBarStyle} />
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                {totalStudents > 0
+                  ? "Tracks how many assigned students have submitted the assessment."
+                  : "Assign students to start measuring completion."}
+              </p>
             </div>
           </div>
         </ModalSection>
 
         {analysisData?.itemAnalysis && analysisData.itemAnalysis.length > 0 && (
           <ModalSection title="Item Analysis">
-            <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
               <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-[#013300] text-white">
+                <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
                   <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Question</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Type</th>
-                    <th scope="col" className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider">Correct / Total</th>
-                    <th scope="col" className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider">Difficulty Index</th>
+                    <th scope="col" className="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.14em]">Question</th>
+                    <th scope="col" className="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.14em]">Type</th>
+                    <th scope="col" className="px-6 py-3 text-center text-[11px] font-semibold uppercase tracking-[0.14em]">Correct / Total</th>
+                    <th scope="col" className="px-6 py-3 text-center text-[11px] font-semibold uppercase tracking-[0.14em]">Difficulty</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200 bg-white">
+                <tbody className="divide-y divide-slate-100 bg-white">
                   {analysisData.itemAnalysis.map((item) => (
                     <tr key={item.questionId}>
-                      <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                      <td className="px-6 py-4 text-sm font-medium text-slate-900">
                         {item.text.length > 50 ? `${item.text.substring(0, 50)}...` : item.text}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-500 capitalize">
+                      <td className="px-6 py-4 text-sm capitalize text-slate-500">
                         {item.type.replace('_', ' ')}
                       </td>
-                      <td className="px-6 py-4 text-center text-sm text-gray-900">
-                        <span className="font-semibold text-emerald-600">{item.correctCount}</span>
-                        <span className="text-gray-400 mx-1">/</span>
-                        <span className="text-gray-600">{item.totalAnswers}</span>
+                      <td className="px-6 py-4 text-center text-sm text-slate-700">
+                        <span className="font-semibold text-slate-900">{item.correctCount}</span>
+                        <span className="mx-1 text-slate-300">/</span>
+                        <span>{item.totalAnswers}</span>
                       </td>
                       <td className="px-6 py-4 text-center">
-                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
-                          ${item.difficultyIndex >= 75 ? 'bg-green-100 text-green-800' :
-                            item.difficultyIndex >= 40 ? 'bg-yellow-100 text-yellow-800' :
-                              'bg-red-100 text-red-800'}`}>
+                        <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-xs font-semibold ${getDifficultyTone(item.difficultyIndex)}`}>
                           {item.difficultyIndex.toFixed(1)}%
                         </span>
                       </td>
@@ -363,35 +389,40 @@ export default function ViewResponsesModal({
               No responses have been submitted yet. Share the quiz to start collecting answers.
             </p>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {responses.map((response) => (
-                <div key={response.id} className="rounded-lg border border-gray-200 bg-white p-4">
-                  <div className="flex flex-col gap-2 border-b border-gray-100 pb-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-[#013300]">{response.studentName}</p>
-                      <p className="text-xs text-gray-500">ID: {response.studentId}</p>
+                <div key={response.id} className="rounded-xl border border-slate-200 bg-white p-4">
+                  <div className="flex flex-col gap-3 border-b border-slate-100 pb-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold tracking-wide text-slate-600">
+                        {getInitials(response.studentName)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-900">{response.studentName}</p>
+                        <p className="text-xs text-slate-500">ID: {response.studentId}</p>
+                      </div>
                     </div>
-                    <div className="text-sm text-gray-600">
+                    <div className="text-sm text-slate-500">
                       Submitted {formatDateTime(response.submittedAt)}
                       {typeof response.score === "number" && (
-                        <span className="ml-2 font-semibold text-[#013300]">Score: {response.score}</span>
+                        <span className="ml-2 inline-flex rounded-md border border-emerald-100 bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">Score: {response.score}</span>
                       )}
                     </div>
                   </div>
 
                   <div className="mt-4 space-y-3">
                     {questions.map((question, index) => (
-                      <div key={question.id} className="rounded-md border border-gray-100 bg-gray-50 p-3">
-                        <p className="text-xs uppercase tracking-wide text-gray-500">
+                      <div key={question.id} className="rounded-lg border border-slate-100 bg-slate-50/70 p-3">
+                        <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">
                           Question {index + 1}
                           {question.sectionTitle ? ` · ${question.sectionTitle}` : ""}
                         </p>
-                        <p className="mt-1 text-sm font-medium text-gray-800">{question.prompt}</p>
-                        <p className="mt-2 text-sm text-gray-700">
-                          <span className="font-medium text-gray-600">Answer:</span> {formatAnswer(response.answers?.[question.id])}
+                        <p className="mt-1 text-sm font-medium text-slate-800">{question.prompt}</p>
+                        <p className="mt-2 text-sm text-slate-700">
+                          <span className="font-medium text-slate-500">Answer:</span> {formatAnswer(response.answers?.[question.id])}
                         </p>
                         {question.correctAnswer && (
-                          <p className="mt-1 text-xs text-gray-500">
+                          <p className="mt-1 text-xs text-slate-500">
                             Correct answer: {formatAnswer(Array.isArray(question.correctAnswer) ? question.correctAnswer : String(question.correctAnswer))}
                           </p>
                         )}

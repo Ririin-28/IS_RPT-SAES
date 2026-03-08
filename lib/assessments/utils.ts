@@ -1,6 +1,6 @@
 import { randomBytes } from 'crypto';
 import QRCode from 'qrcode';
-import { RowDataPacket } from 'mysql2/promise';
+import type { PoolConnection, RowDataPacket } from 'mysql2/promise';
 
 /**
  * Generates a random QR token string.
@@ -14,7 +14,7 @@ export function generateQrToken(): string {
  * Checks against the database to ensure uniqueness.
  * @param connection - The database connection to use for checking uniqueness.
  */
-export async function generateUniqueQuizCode(connection: any): Promise<string> {
+export async function generateUniqueQuizCode(connection: PoolConnection): Promise<string> {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // No I, O, 1, 0
     let code = '';
     let isUnique = false;

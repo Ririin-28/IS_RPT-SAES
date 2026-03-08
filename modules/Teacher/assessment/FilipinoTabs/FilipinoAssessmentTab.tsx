@@ -1,20 +1,23 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
+import AssessmentActionIconButton from "@/components/Common/Buttons/AssessmentActionIconButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
-import TableList from "@/components/Common/Tables/TableList";
-import KebabMenu from "@/components/Common/Menus/KebabMenu";
 import AddQuizModal, { type QuizData, type Student as QuizStudent, type Question as ModalQuestion, type Section as ModalSection } from "../Modals/AddQuizModal";
 import ViewResponsesModal from "../Modals/ViewResponsesModal";
 import DeleteConfirmationModal from "../Modals/DeleteConfirmationModal";
 import UpdateConfirmationModal from "../Modals/UpdateConfirmationModal";
 import QrCodeModal from "../Modals/QrCodeModal";
+import ScheduledActivitiesList, { type CalendarActivity } from "@/modules/Teacher/remedial/ScheduledActivitiesList";
 import { cloneResponses, type QuizResponse } from "../types";
+import { downloadPrintableQuizPdf } from "@/lib/assessments/printable";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
+import { buildQuizDraftFromSchedule, toScheduleDateKey } from "@/lib/assessments/schedule-utils";
 import {
   createAssessment,
   deleteAssessment,
+  fetchAssessmentSchedule,
   fetchAssessments,
   mapQuizQuestionsToPayload,
   updateAssessment,
@@ -197,7 +200,6 @@ const formatDateTime = (value: string) => {
     : parsed.toLocaleDateString("en-PH", {
       month: "short",
       day: "numeric",
-      year: "numeric",
       hour: "2-digit",
       minute: "2-digit"
     });
@@ -521,6 +523,10 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
 
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [qrQuiz, setQrQuiz] = useState<FilipinoQuiz | null>(null);
+  const [draftQuizData, setDraftQuizData] = useState<QuizData | null>(null);
+  const [scheduleActivities, setScheduleActivities] = useState<CalendarActivity[]>([]);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
 
   const quizzes = quizzesByLevel[level] ?? [];
 
@@ -541,12 +547,42 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
     }
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadSchedule = async () => {
+      setScheduleLoading(true);
+      setScheduleError(null);
+      try {
+        const activities = await fetchAssessmentSchedule();
+        if (!cancelled) {
+          setScheduleActivities(activities);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setScheduleActivities([]);
+          setScheduleError(error instanceof Error ? error.message : "Unable to load assessment schedule.");
+        }
+      } finally {
+        if (!cancelled) {
+          setScheduleLoading(false);
+        }
+      }
+    };
+
+    void loadSchedule();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const saveQuizzes = (newQuizzes: FilipinoQuizzesByLevel) => {
     setQuizzesByLevel(newQuizzes);
   };
 
-  const handleCreateQuiz = () => {
+  const handleCreateQuizForActivity = (activity: CalendarActivity) => {
     setEditingQuiz(null);
+    setDraftQuizData(buildQuizDraftFromSchedule("Filipino", level, activity.date, activity.startTime, activity.endTime));
     setIsModalOpen(true);
   };
 
@@ -556,6 +592,7 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
       return;
     }
     setEditingQuiz(quiz);
+    setDraftQuizData(null);
     setIsModalOpen(true);
   };
 
@@ -586,6 +623,14 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
   const handleShowQr = (quiz: FilipinoQuiz) => {
     setQrQuiz(quiz);
     setIsQrModalOpen(true);
+  };
+
+  const handleDownloadQuiz = (quiz: FilipinoQuiz) => {
+    downloadPrintableQuizPdf({
+      quiz,
+      subjectLabel: "Filipino",
+      levelLabel: quiz.phonemicLevel,
+    });
   };
 
   const handleDeleteSelected = () => {
@@ -654,6 +699,7 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
       await loadAssessments(teacherUserId);
       setIsModalOpen(false);
       setEditingQuiz(null);
+      setDraftQuizData(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to save quiz.";
       alert(message);
@@ -686,185 +732,105 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
     setPendingUpdateData(null);
   };
 
-  type TableRow = FilipinoQuiz & { no: number };
-  const rows: TableRow[] = quizzes.map((quiz, index) => ({
-    ...quiz,
-    no: index + 1,
-  }));
+  const quizzesByDate = useMemo(() => {
+    const mapped = new Map<string, FilipinoQuiz>();
+    quizzes.forEach((quiz) => {
+      const key = toScheduleDateKey(quiz.startDate ?? quiz.schedule);
+      if (key && !mapped.has(key)) {
+        mapped.set(key, quiz);
+      }
+    });
+    return mapped;
+  }, [quizzes]);
 
   return (
-    <div>
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 sm:mb-6 md:mb-2 gap-4">
-        <p className="text-gray-600 text-md font-medium">Total Quizzes: {quizzes.length}</p>
-        <div className="flex gap-2">
-          {selectMode ? (
-            <>
-              <SecondaryButton small onClick={() => { setSelectMode(false); setSelectedQuizzes(new Set()); }}>
-                Cancel
-              </SecondaryButton>
-              {selectedQuizzes.size > 0 && (
-                <DangerButton small onClick={handleDeleteSelected} disabled={isSaving}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline mr-1">
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-                    <path d="M3 6h18" />
-                    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                  </svg>
-                  Delete ({selectedQuizzes.size})
-                </DangerButton>
-              )}
-            </>
-          ) : (
-            <KebabMenu
-              small
-              align="right"
-              renderItems={(close) => (
-                <div className="py-1">
-                  <button
-                    onClick={() => {
-                      handleCreateQuiz();
-                      close();
-                    }}
-                    className="w-full px-4 py-2 text-left text-sm text-[#013300] hover:bg-gray-50 flex items-center gap-2"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                    </svg>
-                    Create Quiz
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSelectMode(true);
-                      close();
-                    }}
-                    className="w-full px-4 py-2 text-left text-sm text-[#013300] hover:bg-gray-50 flex items-center gap-2"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <rect x="3" y="3" width="18" height="18" rx="2" />
-                      <path d="M9 12l2 2 4-4" />
-                    </svg>
-                    Select
-                  </button>
-                </div>
-              )}
-            />
-          )}
-        </div>
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="px-4 pt-4 sm:px-6 sm:pt-6 pb-2">
+        <h2 className="text-lg font-bold text-gray-800">Scheduled Assessments (Filipino)</h2>
       </div>
 
-      <TableList
-        columns={[
-          { key: "no", title: "No#" },
-          { key: "title", title: "Title" },
-          {
-            key: "quizCode",
-            title: "Code",
-            render: (row: TableRow) => (
-              <span className="font-mono font-bold text-gray-700 tracking-wider">
-                {row.quizCode || "-"}
+      <div className="flex-1 min-h-0 px-4 sm:px-6 pb-4 sm:pb-6">
+        <ScheduledActivitiesList
+          activities={scheduleActivities}
+          subject="Filipino"
+          loading={scheduleLoading}
+          error={scheduleError}
+          renderTitle={(activity, { isCurrentAnchor }) => {
+            const quiz = quizzesByDate.get(toScheduleDateKey(activity.date) ?? "");
+            return (
+              <span className="flex flex-col gap-1">
+                <span>{quiz?.title ?? `Filipino Assessment (${level})`}</span>
+                {quiz?.quizCode ? (
+                  <span
+                    className={`font-mono text-xs font-semibold uppercase tracking-[0.18em] ${
+                      isCurrentAnchor ? "text-white/85" : "text-slate-500"
+                    }`}
+                  >
+                    Code: {quiz.quizCode}
+                  </span>
+                ) : null}
               </span>
-            )
-          },
-          { key: "phonemicLevel", title: "Phonemic" },
-          {
-            key: "startDate",
-            title: "Start",
-            render: (row: TableRow) => formatDateTime(row.startDate ?? row.schedule),
-          },
-          {
-            key: "endDate",
-            title: "End",
-            render: (row: TableRow) => formatDateTime(row.endDate ?? row.schedule),
-          },
-          {
-            key: "responses",
-            title: "Responses",
-            render: (row: TableRow) => {
-              const submitted = row.submittedCount ?? 0;
-              const assigned = row.assignedCount ?? 0;
-              return assigned > 0 ? `${submitted}/${assigned}` : submitted;
-            },
-          },
-          {
-            key: "status",
-            title: "Status",
-            render: (row: TableRow) => {
-              const status = getQuizScheduleStatus(row);
-              const badgeClass = QUIZ_STATUS_STYLES[status];
+            );
+          }}
+          renderActions={(activity) => {
+            const quiz = quizzesByDate.get(toScheduleDateKey(activity.date) ?? "");
+
+            if (!quiz) {
               return (
-                <span className={`px-2 py-1 rounded-full text-xs font-medium ${badgeClass}`}>
-                  {status}
-                </span>
+                <UtilityButton small onClick={() => handleCreateQuizForActivity(activity)} className="py-2! px-4!">
+                  Create
+                </UtilityButton>
               );
-            },
-          },
-        ]}
-        data={rows}
-        actions={(row: TableRow) => (
-          <div className="flex gap-2">
-            <UtilityButton
-              small
-              onClick={() => handleEditQuiz(row)}
-              disabled={isSaving || (row.submittedCount ?? 0) > 0}
-              title={(row.submittedCount ?? 0) > 0 ? "Cannot edit quiz with responses" : "Edit quiz"}
-            >
-              Edit
-            </UtilityButton>
-            <UtilityButton small onClick={() => handleViewResponses(row)}>
-              Summary
-            </UtilityButton>
-            {row.quizCode && (
-              <UtilityButton
-                small
-                onClick={() => handleShowQr(row)}
-                title="Show QR Code"
-                className="p-1.5!"
-              >
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M4 4H10V10H4V4Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                  <path d="M14 4H20V10H14V4Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                  <path d="M4 14H10V20H4V14Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                  <path d="M14 14H17V17H14V14Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                  <path d="M17 17H20V20H17V20Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                  <path d="M17 14H20V17H17V14Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                  <path d="M14 17H17V20H14V17Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </UtilityButton>
-            )}
-          </div>
-        )}
-        selectable={selectMode}
-        selectedItems={selectedQuizzes}
-        onSelectAll={(checked) => {
-          if (checked) {
-            setSelectedQuizzes(new Set(rows.map(r => r.id)));
-          } else {
-            setSelectedQuizzes(new Set());
-          }
-        }}
-        onSelectItem={(id, checked) => {
-          const newSelected = new Set(selectedQuizzes);
-          if (checked) {
-            newSelected.add(id);
-          } else {
-            newSelected.delete(id);
-          }
-          setSelectedQuizzes(newSelected);
-        }}
-        pageSize={10}
-      />
+            }
+
+            return (
+              <div className="flex gap-2">
+                <AssessmentActionIconButton
+                  action="edit"
+                  onClick={() => handleEditQuiz(quiz)}
+                  disabled={isSaving || (quiz.submittedCount ?? 0) > 0}
+                  title={(quiz.submittedCount ?? 0) > 0 ? "Cannot edit quiz with responses" : undefined}
+                />
+                <AssessmentActionIconButton action="summary" onClick={() => handleViewResponses(quiz)} />
+                <AssessmentActionIconButton action="download" onClick={() => handleDownloadQuiz(quiz)} />
+                {quiz.quizCode && (
+                  <UtilityButton
+                    small
+                    onClick={() => handleShowQr(quiz)}
+                    title="Show QR Code"
+                    className="p-1.5!"
+                  >
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M4 4H10V10H4V4Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M14 4H20V10H14V4Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M4 14H10V20H4V14Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M14 14H17V17H14V14Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M17 17H20V20H17V20Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M17 14H20V17H17V14Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M14 17H17V20H14V17Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </UtilityButton>
+                )}
+              </div>
+            );
+          }}
+        />
+      </div>
 
       {/* Quiz Creation/Editing Modal */}
       <AddQuizModal
         isOpen={isModalOpen}
+        isEditing={Boolean(editingQuiz)}
         onClose={() => {
           if (isSaving) return;
           setIsModalOpen(false);
           setEditingQuiz(null);
+          setDraftQuizData(null);
           setPendingUpdateData(null);
           setIsUpdateConfirmOpen(false);
         }}
         onSave={handleSaveQuiz}
-        initialData={editingQuiz ? mapQuizToModalData(editingQuiz) : undefined}
+        initialData={editingQuiz ? mapQuizToModalData(editingQuiz) : draftQuizData ?? undefined}
         level={level}
         subject="Filipino"
       />

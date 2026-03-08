@@ -250,7 +250,7 @@ export default function EnglishTab({ level, searchTerm = "" }: EnglishTabProps) 
 											<path strokeLinecap="round" strokeLinejoin="round" d="m17 8-5-5-5 5" />
 											<path strokeLinecap="round" strokeLinejoin="round" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
 										</svg>
-										Upload File
+										Import Schedule
 									</button>
 									<button
 										onClick={() => {

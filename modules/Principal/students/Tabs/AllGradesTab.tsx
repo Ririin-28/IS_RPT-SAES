@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import StudentDetailModal from "../Modals/StudentDetailModal";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import TableList from "@/components/Common/Tables/TableList";
+import SortMenu, { type SortMenuItem } from "@/components/Common/Menus/SortMenu";
 
 const sections = ["All Sections", "A", "B", "C"];
 
@@ -91,9 +92,72 @@ const extractGradeNumber = (value: unknown): number | null => {
   return null;
 };
 
+type StudentSortKey =
+  | "name_asc"
+  | "name_desc"
+  | "lrn_asc"
+  | "lrn_desc"
+  | "phonemic_low_high"
+  | "phonemic_high_low";
+
+const DEFAULT_STUDENT_SORT: StudentSortKey = "name_asc";
+
+const STUDENT_SORT_ITEMS: SortMenuItem<StudentSortKey>[] = [
+  { value: "name_asc", label: "Name (A-Z)" },
+  { value: "name_desc", label: "Name (Z-A)" },
+  { type: "separator", id: "name-lrn" },
+  { value: "lrn_asc", label: "LRN (Asc)" },
+  { value: "lrn_desc", label: "LRN (Desc)" },
+  { type: "separator", id: "lrn-phonemic" },
+  { value: "phonemic_low_high", label: "Phonemic Level (Low->High)" },
+  { value: "phonemic_high_low", label: "Phonemic Level (High->Low)" },
+];
+
+const PHONEMIC_LEVELS_ENGLISH = ["Non-Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"];
+const PHONEMIC_LEVELS_MATH = ["Not Proficient", "Low Proficient", "Nearly Proficient", "Proficient", "Highly Proficient"];
+
+const normalizePhonemic = (value: unknown): string => String(value ?? "").trim().toLowerCase();
+const normalizeLrn = (lrn?: string | null): string | null => {
+  if (!lrn) return null;
+  const digits = lrn.replace(/\D/g, "").slice(0, 12);
+  if (digits.length !== 12) return null;
+  return `${digits.slice(0, 6)}-${digits.slice(6)}`;
+};
+
+const maskLrnForDisplay = (lrn?: string | null): string => {
+  const normalized = normalizeLrn(lrn);
+  if (!normalized) return "N/A";
+  const digits = normalized.replace(/\D/g, "");
+  return `${digits.slice(0, 2)}****-****${digits.slice(-2)}`;
+};
+
+const getStudentPhonemicValue = (student: any): string =>
+  String(
+    student?.englishPhonemic ??
+      student?.english_phonemic ??
+      student?.english ??
+      student?.filipinoPhonemic ??
+      student?.filipino_phonemic ??
+      student?.filipino ??
+      student?.mathProficiency ??
+      student?.math_proficiency ??
+      student?.math ??
+      "",
+  ).trim();
+
 export default function AllGradesTab({ students, searchTerm, gradeFilter = "All Grades" }: AllGradesTabProps) {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
+  const [sortBy, setSortBy] = useState<StudentSortKey>(DEFAULT_STUDENT_SORT);
+  const [visibleLrnIds, setVisibleLrnIds] = useState<Set<string>>(new Set());
+  const lrnRevealTimersRef = useRef<Record<string, number>>({});
+
+  useEffect(() => {
+    return () => {
+      Object.values(lrnRevealTimersRef.current).forEach((timerId) => window.clearTimeout(timerId));
+      lrnRevealTimersRef.current = {};
+    };
+  }, []);
 
   const normalizedGradeFilter = gradeFilter === "All Grades" ? null : extractGradeNumber(gradeFilter);
 
@@ -108,22 +172,110 @@ export default function AllGradesTab({ students, searchTerm, gradeFilter = "All 
   const filteredStudents = gradeFilteredStudents.filter((student) => {
     const matchSearch = searchTerm === "" || 
       student.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.studentId?.toLowerCase().includes(searchTerm.toLowerCase());
+      String(student.lrn ?? "").toLowerCase().includes(searchTerm.toLowerCase());
       
     return matchSearch;
   });
+
+  const phonemicOrder = useMemo(() => {
+    const order = new Map<string, number>();
+    [...PHONEMIC_LEVELS_ENGLISH, ...PHONEMIC_LEVELS_MATH].forEach((level, index) => {
+      const key = normalizePhonemic(level);
+      if (!order.has(key)) {
+        order.set(key, index);
+      }
+    });
+    return order;
+  }, []);
+
+  const sortedStudents = useMemo(() => {
+    const fallbackIndex = phonemicOrder.size + 1;
+    const compareName = (a: any, b: any): number =>
+      String(a?.name ?? "").localeCompare(String(b?.name ?? ""), undefined, { sensitivity: "base" });
+    const normalizeSortableLrn = (student: any): string | null => {
+      const raw = String(student?.lrn ?? "").replace(/\D/g, "");
+      return raw.length > 0 ? raw : null;
+    };
+
+    return [...filteredStudents].sort((a, b) => {
+      if (sortBy === "name_asc") {
+        return compareName(a, b);
+      }
+      if (sortBy === "name_desc") {
+        return compareName(b, a);
+      }
+
+      if (sortBy === "lrn_asc" || sortBy === "lrn_desc") {
+        const aLrn = normalizeSortableLrn(a);
+        const bLrn = normalizeSortableLrn(b);
+        if (aLrn && bLrn && aLrn !== bLrn) {
+          return sortBy === "lrn_asc" ? aLrn.localeCompare(bLrn) : bLrn.localeCompare(aLrn);
+        }
+        if (aLrn && !bLrn) return -1;
+        if (!aLrn && bLrn) return 1;
+        return compareName(a, b);
+      }
+
+      const aIndex = phonemicOrder.get(normalizePhonemic(getStudentPhonemicValue(a))) ?? fallbackIndex;
+      const bIndex = phonemicOrder.get(normalizePhonemic(getStudentPhonemicValue(b))) ?? fallbackIndex;
+      if (aIndex !== bIndex) {
+        return sortBy === "phonemic_low_high" ? aIndex - bIndex : bIndex - aIndex;
+      }
+      return compareName(a, b);
+    });
+  }, [filteredStudents, phonemicOrder, sortBy]);
+
+  const hasActiveSort = sortBy !== DEFAULT_STUDENT_SORT;
+  const handleClearAll = () => {
+    setSortBy(DEFAULT_STUDENT_SORT);
+  };
 
   const handleViewDetails = (student: any) => {
     setSelectedStudent(student);
     setShowDetailModal(true);
   };
 
+  const handleRevealLrn = (rowId: string) => {
+    if (!rowId) return;
+
+    setVisibleLrnIds((prev) => {
+      const next = new Set(prev);
+      next.add(rowId);
+      return next;
+    });
+
+    const existingTimer = lrnRevealTimersRef.current[rowId];
+    if (existingTimer) {
+      window.clearTimeout(existingTimer);
+    }
+
+    lrnRevealTimersRef.current[rowId] = window.setTimeout(() => {
+      setVisibleLrnIds((prev) => {
+        const next = new Set(prev);
+        next.delete(rowId);
+        return next;
+      });
+      delete lrnRevealTimersRef.current[rowId];
+    }, 3000);
+  };
+
   return (
     <div>
       <div className="flex flex-row justify-between items-center mb-4">
         <p className="text-gray-700 text-md font-medium">
-          Total: {gradeFilteredStudents.length}
+          Total: {sortedStudents.length}
         </p>
+        <SortMenu
+          small
+          iconOnly
+          align="right"
+          value={sortBy}
+          items={STUDENT_SORT_ITEMS}
+          onChange={setSortBy}
+          onClearAll={handleClearAll}
+          clearAllDisabled={!hasActiveSort}
+          buttonAriaLabel="Open sort options"
+        />
       </div>
 
       <StudentDetailModal
@@ -135,14 +287,50 @@ export default function AllGradesTab({ students, searchTerm, gradeFilter = "All 
       <TableList
         columns={[
           { key: "no", title: "No#" },
-          { key: "studentId", title: "Student ID" },
+          {
+            key: "maskedLrn",
+            title: "LRN",
+            render: (row: any) => {
+              const rowId = String(row.id ?? row.studentId ?? "");
+              const isVisible = rowId ? visibleLrnIds.has(rowId) : false;
+              const displayValue = isVisible ? (row.fullLrn ?? "N/A") : (row.maskedLrn ?? "N/A");
+              const canReveal = Boolean(row.fullLrn && row.fullLrn !== "N/A");
+
+              return (
+                <div className="inline-flex items-center gap-2">
+                  <span>{displayValue}</span>
+                  {canReveal && (
+                    <button
+                      type="button"
+                      onClick={() => handleRevealLrn(rowId)}
+                      className="inline-flex items-center justify-center rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-[#013300]"
+                      title="Show full LRN for 3 seconds"
+                      aria-label="Show full LRN for 3 seconds"
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"
+                        />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              );
+            },
+          },
           { key: "name", title: "Full Name" },
           { key: "grade", title: "Grade" },
-          { key: "section", title: "Section" },
+          { key: "phonemic", title: "Phonemic" },
         ]}
-        data={filteredStudents.map((student: any, idx: number) => ({
+        data={sortedStudents.map((student: any, idx: number) => ({
           ...student,
           no: idx + 1,
+          fullLrn: normalizeLrn(student.lrn) ?? "N/A",
+          maskedLrn: maskLrnForDisplay(student.lrn),
+          phonemic: getStudentPhonemicValue(student),
         }))}
         actions={(row: any) => (
           <UtilityButton small onClick={() => handleViewDetails(row)}>

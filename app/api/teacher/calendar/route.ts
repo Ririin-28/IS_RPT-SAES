@@ -69,8 +69,10 @@ type TeacherActivity = {
   endTime: string | null;
   description: string | null;
   day: string | null;
+  quarter: string | null;
   sourceTable: string;
 };
+
 const toNullableString = (value: unknown): string | null => {
   if (value === null || value === undefined) {
     return null;
@@ -143,35 +145,36 @@ export async function GET(request: NextRequest) {
       : [];
     const [rows] = await query<RowDataPacket[]>(sql, queryParams);
 
-    const activities: TeacherActivity[] = rows.map((row) => {
-      const dayName = row.day ? String(row.day) : null;
-      const activityDate = row.schedule_date ? String(row.schedule_date) : null;
+    const activities: TeacherActivity[] = rows
+      .map((row) => {
+        const activityDate = row.schedule_date ? String(row.schedule_date) : null;
+        const gradeId = row.grade_id != null && Number.isFinite(Number(row.grade_id)) ? Number(row.grade_id) : null;
+        const gradeLabel = gradeId ? `Grade ${gradeId}` : null;
+        const subjectId = row.subject_id != null && Number.isFinite(Number(row.subject_id)) ? Number(row.subject_id) : null;
+        const subjectLabel = row.subject_name
+          ? String(row.subject_name)
+          : subjectId
+          ? `Subject ${subjectId}`
+          : null;
 
-      const gradeId = row.grade_id != null && Number.isFinite(Number(row.grade_id)) ? Number(row.grade_id) : null;
-      const gradeLabel = gradeId ? `Grade ${gradeId}` : null;
-      const subjectId = row.subject_id != null && Number.isFinite(Number(row.subject_id)) ? Number(row.subject_id) : null;
-      const subjectLabel = row.subject_name
-        ? String(row.subject_name)
-        : subjectId
-        ? `Subject ${subjectId}`
-        : null;
-
-      return {
-        id: String(row.request_id),
-        title: row.title ? String(row.title) : null,
-        subject: subjectLabel,
-        subjectId,
-        grade: gradeLabel,
-        gradeId,
-        status: row.status ? String(row.status) : null,
-        activityDate,
-        startTime: null,
-        endTime: null,
-        description: row.description ? String(row.description) : null,
-        day: dayName,
-        sourceTable: APPROVED_REMEDIAL_TABLE,
-      } satisfies TeacherActivity;
-    });
+        return {
+          id: String(row.request_id),
+          title: row.title ? String(row.title) : null,
+          subject: subjectLabel,
+          subjectId,
+          grade: gradeLabel,
+          gradeId,
+          status: row.status ? String(row.status) : null,
+          activityDate,
+          startTime: null,
+          endTime: null,
+          description: row.description ? String(row.description) : null,
+          day: row.day ? String(row.day) : null,
+          quarter: null,
+          sourceTable: APPROVED_REMEDIAL_TABLE,
+        } satisfies TeacherActivity;
+      })
+      .filter((activity) => Boolean(activity.activityDate));
 
     return NextResponse.json({
       success: true,
