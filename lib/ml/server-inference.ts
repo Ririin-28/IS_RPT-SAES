@@ -44,11 +44,11 @@ export async function predictStudentScore(features: number[]): Promise<number | 
        return null; 
     }
 
-    const handler = tf.io.fromMemory(
-        modelJson.modelTopology || modelJson, 
-        weightSpecs,
-        weightsBuffer.buffer
-    );
+    const handler = tf.io.fromMemory({
+      modelTopology: modelJson.modelTopology || modelJson, 
+      weightSpecs: weightSpecs,
+      weightData: weightsBuffer.buffer
+    });
     
     const model = await tf.loadLayersModel(handler);
 

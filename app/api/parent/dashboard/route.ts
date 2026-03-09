@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { getTableColumns, query } from "@/lib/db";
+import { getRemedialSessionTimeline, getStudentAssessmentRecords } from "@/lib/performance";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,7 @@ const STUDENT_SUBJECT_ASSESSMENT_TABLE = "student_subject_assessment" as const;
 const STUDENT_PHONEMIC_HISTORY_TABLE = "student_phonemic_history" as const;
 const STUDENT_REMEDIAL_SESSION_TABLE = "student_remedial_session" as const;
 const STUDENT_REMEDIAL_FLASHCARD_PERFORMANCE_TABLE = "student_remedial_flashcard_performance" as const;
+const APPROVED_REMEDIAL_TABLE = "approved_remedial_schedule" as const;
 const STUDENT_TEACHER_ASSIGNMENT_TABLE = "student_teacher_assignment" as const;
 const PERFORMANCE_RECORDS_TABLE = "performance_records" as const;
 const REMARKS_TABLE = "remarks" as const;
@@ -54,6 +56,11 @@ type AttendanceRowDb = RowDataPacket & {
   status: string | null;
 };
 
+type CompletedAttendanceRowDb = RowDataPacket & {
+  date: string | Date | null;
+  subject_id: number | null;
+};
+
 type AttendanceRow = {
   date: string | Date | null;
   subject: string | null;
@@ -97,6 +104,7 @@ const USER_FIRST_COLUMNS = ["first_name"] as const;
 const USER_MIDDLE_COLUMNS = ["middle_name"] as const;
 const USER_LAST_COLUMNS = ["last_name"] as const;
 const USER_EMAIL_COLUMNS = ["email"] as const;
+const TIMELINE_SUBJECTS = new Set(["English", "Filipino", "Math"]);
 const PHONEMIC_LABEL_COLUMNS = [
   "phonemic_level_name",
   "phonemic_level",
@@ -119,6 +127,8 @@ const SESSION_TEACHER_COMMENT_COLUMNS = [
   "remarks",
   "teacher_feedback",
 ] as const;
+const APPROVED_ID_COLUMN_CANDIDATES = ["request_id", "activity_id", "id"] as const;
+const APPROVED_DATE_COLUMN_CANDIDATES = ["schedule_date", "activity_date", "date"] as const;
 
 type SubjectProgressPayload = {
   currentLevel: string;
@@ -172,6 +182,17 @@ const sanitizeText = (value: unknown): string | null => {
   if (value === null || value === undefined) return null;
   const text = String(value).trim();
   return text.length ? text : null;
+};
+
+const normalizeSubjectName = (value: string | null | undefined): string | null => {
+  const trimmed = sanitizeText(value);
+  if (!trimmed) return null;
+
+  const lower = trimmed.toLowerCase();
+  if (lower === "english") return "English";
+  if (lower === "filipino") return "Filipino";
+  if (lower === "math" || lower === "mathematics") return "Math";
+  return trimmed;
 };
 
 const buildName = (first?: unknown, middle?: unknown, last?: unknown): string | null => {
@@ -463,6 +484,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const userIdParam = url.searchParams.get("userId");
   const selectedStudentIdParam = url.searchParams.get("studentId");
+  const selectedSubjectParam = url.searchParams.get("subject");
 
   if (!userIdParam) {
     return NextResponse.json({ error: "Missing userId query parameter" }, { status: 400 });
@@ -520,24 +542,82 @@ export async function GET(request: Request) {
     const subjectMap = await fetchSubjectMap();
     const phonemicLevels = await fetchPhonemicLevels();
 
-    const [attendanceRows] = await query<AttendanceRowDb[]>(
-      `SELECT sess.session_date AS date, sess.subject_id AS subject_id, ar.status AS status
-       FROM attendance_record ar
-       JOIN attendance_session sess ON sess.session_id = ar.session_id
-       WHERE ar.student_id = ?
-       ORDER BY sess.session_date ASC`,
-      [student.student_id],
-    );
+    const [[explicitAttendanceRows], inferredAttendanceRows] = await Promise.all([
+      query<AttendanceRowDb[]>(
+        `SELECT sess.session_date AS date, sess.subject_id AS subject_id, ar.status AS status
+         FROM attendance_record ar
+         JOIN attendance_session sess ON sess.session_id = ar.session_id
+         WHERE ar.student_id = ?
+         ORDER BY sess.session_date ASC`,
+        [student.student_id],
+      ),
+      (async (): Promise<CompletedAttendanceRowDb[]> => {
+        const sessionColumns = await safeGetColumns(STUDENT_REMEDIAL_SESSION_TABLE);
+        const performanceColumns = await safeGetColumns(STUDENT_REMEDIAL_FLASHCARD_PERFORMANCE_TABLE);
+        const approvedColumns = await safeGetColumns(APPROVED_REMEDIAL_TABLE);
+
+        if (
+          !sessionColumns.has("student_id") ||
+          !sessionColumns.has("session_id") ||
+          !sessionColumns.has("subject_id") ||
+          !sessionColumns.has("completed_at") ||
+          !performanceColumns.has("session_id")
+        ) {
+          return [];
+        }
+
+        const approvedIdColumn = pickColumn(approvedColumns, APPROVED_ID_COLUMN_CANDIDATES);
+        const approvedDateColumn = pickColumn(approvedColumns, APPROVED_DATE_COLUMN_CANDIDATES);
+        const hasApprovedJoin = Boolean(
+          approvedIdColumn &&
+            approvedDateColumn &&
+            sessionColumns.has("approved_schedule_id"),
+        );
+
+        const dateSelect = hasApprovedJoin
+          ? `COALESCE(a.${approvedDateColumn}, s.completed_at)`
+          : "s.completed_at";
+
+        const sql = `
+          SELECT DISTINCT
+            ${dateSelect} AS date,
+            s.subject_id AS subject_id
+          FROM ${STUDENT_REMEDIAL_SESSION_TABLE} s
+          ${hasApprovedJoin ? `LEFT JOIN ${APPROVED_REMEDIAL_TABLE} a ON a.${approvedIdColumn} = s.approved_schedule_id` : ""}
+          WHERE s.student_id = ?
+            AND s.completed_at IS NOT NULL
+            AND EXISTS (
+              SELECT 1
+              FROM ${STUDENT_REMEDIAL_FLASHCARD_PERFORMANCE_TABLE} p
+              WHERE p.session_id = s.session_id
+              LIMIT 1
+            )
+          ORDER BY date ASC
+        `;
+
+        const [rows] = await query<CompletedAttendanceRowDb[]>(sql, [student.student_id]);
+        return rows ?? [];
+      })(),
+    ]);
 
     const attendance = mapAttendance(
       dedupeAttendanceByDate(
-        attendanceRows.map((row) => ({
-          date: row.date,
-          status: row.status,
-          subject: row.subject_id
-            ? subjectMap.get(Number(row.subject_id)) ?? `Subject ${row.subject_id}`
-            : null,
-        })) as AttendanceRow[],
+        [
+          ...explicitAttendanceRows.map((row) => ({
+            date: row.date,
+            status: row.status,
+            subject: row.subject_id
+              ? subjectMap.get(Number(row.subject_id)) ?? `Subject ${row.subject_id}`
+              : null,
+          })),
+          ...inferredAttendanceRows.map((row) => ({
+            date: row.date,
+            status: "present",
+            subject: row.subject_id
+              ? subjectMap.get(Number(row.subject_id)) ?? `Subject ${row.subject_id}`
+              : null,
+          })),
+        ] as AttendanceRow[],
       ),
     );
 
@@ -817,6 +897,22 @@ export async function GET(request: Request) {
       currentLevelBySubject[subjectName] = currentLabel;
     }
 
+    const requestedSubjectName = normalizeSubjectName(selectedSubjectParam);
+    const fallbackSubjectName = normalizeSubjectName(subjects[0] ?? null);
+    const timelineSubjectName =
+      requestedSubjectName && TIMELINE_SUBJECTS.has(requestedSubjectName)
+        ? requestedSubjectName
+        : fallbackSubjectName && TIMELINE_SUBJECTS.has(fallbackSubjectName)
+          ? fallbackSubjectName
+          : null;
+
+    const [sessions, assessments] = timelineSubjectName
+      ? await Promise.all([
+          getRemedialSessionTimeline(String(student.student_id), { subjectName: timelineSubjectName }),
+          getStudentAssessmentRecords(String(student.student_id), { subjectName: timelineSubjectName }),
+        ])
+      : [[], []];
+
     return NextResponse.json({
       parent: {
         parentId: parent.parent_id,
@@ -847,6 +943,9 @@ export async function GET(request: Request) {
       },
       attendance,
       schedule,
+      selectedSubject: timelineSubjectName,
+      sessions,
+      assessments,
     });
   } catch (error) {
     console.error("Failed to load parent dashboard data", error);

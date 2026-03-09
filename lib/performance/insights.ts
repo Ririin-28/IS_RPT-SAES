@@ -1,10 +1,4 @@
-export type ReaderPerformanceLevel =
-  | "Non-Reader"
-  | "Syllable"
-  | "Word"
-  | "Phrase"
-  | "Sentence"
-  | "Paragraph";
+export type ReaderPerformanceLevel = "Non-Reader" | "Syllable" | "Word" | "Phrase" | "Sentence" | "Paragraph";
 
 export type PerformanceQualityBand = "Poor" | "Fair" | "Average" | "Good" | "Excellent";
 
@@ -26,6 +20,16 @@ export type SlidePerformanceInsight = {
   weaknesses: string;
   nextStep: string;
 };
+
+const READING_SPEED_BUCKETS = [
+  { minWpm: 90, label: "Very Fast" },
+  { minWpm: 75, label: "Moderately Fast" },
+  { minWpm: 60, label: "Fast" },
+  { minWpm: 45, label: "Moderate" },
+  { minWpm: 30, label: "Slightly Slow" },
+  { minWpm: 20, label: "Slow" },
+  { minWpm: 0, label: "Very Slow" },
+] as const;
 
 const toFiniteNumber = (value: number | null | undefined): number | null => {
   if (typeof value !== "number" || Number.isNaN(value)) return null;
@@ -53,11 +57,7 @@ export const getQualityBandFromAverage = (slideAverage: number | null | undefine
   return "Poor";
 };
 
-const inferPerformanceLevel = (
-  accuracy: number,
-  readingSpeedWpm: number,
-  qualityBand: PerformanceQualityBand,
-): ReaderPerformanceLevel => {
+const inferPerformanceLevel = (accuracy: number, readingSpeedWpm: number, qualityBand: PerformanceQualityBand): ReaderPerformanceLevel => {
   if (qualityBand === "Poor" || accuracy < 55 || readingSpeedWpm < 30) return "Non-Reader";
   if (qualityBand === "Fair" || accuracy < 65 || readingSpeedWpm < 45) return "Syllable";
   if (accuracy < 75 || readingSpeedWpm < 60) return "Word";
@@ -66,9 +66,7 @@ const inferPerformanceLevel = (
   return "Paragraph";
 };
 
-export const getSlidePerformanceInsight = (
-  input: SlidePerformanceInsightInput,
-): SlidePerformanceInsight => {
+export const getSlidePerformanceInsight = (input: SlidePerformanceInsightInput): SlidePerformanceInsight => {
   const accuracy = clampPercent(toFiniteNumber(input.accuracyScore), 0);
   const readingSpeedWpm = clampNonNegative(toFiniteNumber(input.readingSpeedWpm), 0);
   const average = clampPercent(toFiniteNumber(input.slideAverage), 0);
@@ -112,7 +110,10 @@ const toFirstName = (value: string | null | undefined): string => {
 
   let candidate = trimmed;
   if (trimmed.includes(",")) {
-    const parts = trimmed.split(",").map((part) => part.trim()).filter(Boolean);
+    const parts = trimmed
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean);
     candidate = parts[1] ?? parts[0] ?? trimmed;
   }
 
@@ -160,6 +161,13 @@ const describeSpeed = (value: number): string => {
   return "slow for now";
 };
 
+export const getReadingSpeedLabel = (value: number | null | undefined): string => {
+  const readingSpeedWpm = clampNonNegative(toFiniteNumber(value), 0);
+  const bucket =
+    READING_SPEED_BUCKETS.find((item) => readingSpeedWpm >= item.minWpm) ?? READING_SPEED_BUCKETS[READING_SPEED_BUCKETS.length - 1];
+  return bucket.label;
+};
+
 const describeOverall = (value: number): string => {
   if (value >= 90) return "excellent";
   if (value >= 80) return "great";
@@ -168,19 +176,14 @@ const describeOverall = (value: number): string => {
   return "still improving";
 };
 
-export const composeRuleBasedSlideFeedbackParagraph = (
-  input: SlidePerformanceInsightInput,
-  context?: SlideFeedbackContext,
-): string => {
+export const composeRuleBasedSlideFeedbackParagraph = (input: SlidePerformanceInsightInput, context?: SlideFeedbackContext): string => {
   const insight = getSlidePerformanceInsight(input);
   const accuracy = clampPercent(toFiniteNumber(input.accuracyScore), 0);
   const readingSpeedWpm = clampNonNegative(toFiniteNumber(input.readingSpeedWpm), 0);
   const average = clampPercent(toFiniteNumber(input.slideAverage), 0);
   const firstName = toFirstName(context?.studentName);
   const difficultWords = normalizeWords(context?.difficultWords);
-  const trickyWordsLine = difficultWords.length
-    ? ` like ${joinWordsCasual(difficultWords)}`
-    : "";
+  const trickyWordsLine = difficultWords.length ? ` like ${joinWordsCasual(difficultWords)}` : "";
   const accuracyWord = describeAccuracy(accuracy);
   const speedWord = describeSpeed(readingSpeedWpm);
   const overallWord = describeOverall(average);

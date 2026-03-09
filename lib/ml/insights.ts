@@ -1,5 +1,6 @@
 import { predictStudentScore } from "@/lib/ml/server-inference";
 import { getStudentFeatures } from "@/lib/ml/dataset";
+import { predictFeedbackCategory, getFeedbackTemplate, getEncouragement } from "@/lib/ml/feedback-classifier";
 
 export type SessionMetrics = {
   pronunciationAvg?: number;
@@ -158,37 +159,44 @@ const pickOpener = (overallAverage: number, accuracy: number, readingSpeedWpm: n
   return openers[score % openers.length];
 };
 
-const generateReadingInsight = (metrics: SessionMetrics, studentName?: string): string => {
+const generateReadingInsight = async (metrics: SessionMetrics, studentName?: string): Promise<string> => {
   const name = toFirstName(studentName);
   const overallAverage = clampPercent(toFiniteNumber(metrics.overallAverage), 0);
   const accuracy = clampPercent(toFiniteNumber(metrics.accuracyAvg), overallAverage);
   const readingSpeedWpm = clampNonNegative(toFiniteNumber(metrics.readingSpeedAvg), 0);
-  const qualityBand = getQualityBand(overallAverage);
-  const level = inferReadingLevel(accuracy, readingSpeedWpm, qualityBand);
-  const sessionTexts = Array.isArray(metrics.sessionTexts) ? metrics.sessionTexts.filter(Boolean) : [];
+  
+  // ML-Based Decision Making
+  // The model analyzes accuracy, speed, and overall performance to classify the student's needs.
+  const category = await predictFeedbackCategory(accuracy, readingSpeedWpm, overallAverage);
+  const baseFeedback = getFeedbackTemplate(category, name);
+  const encouragement = getEncouragement(category, name);
 
+  // Rule-Based Evidence Extraction
+  // We supplement the ML strategy with specific examples from the session data.
+  const sessionTexts = Array.isArray(metrics.sessionTexts) ? metrics.sessionTexts.filter(Boolean) : [];
   const difficultWords = uniqueWords(metrics.difficultWords ?? [], 8);
   const strongWords = uniqueWords(metrics.strongWords ?? [], 8);
-
-  const strengthExamples = pickFallbackWords(strongWords, difficultWords, sessionTexts);
   const struggleExamples = pickFallbackWords(difficultWords, strongWords, sessionTexts);
+  const strengthExamples = pickFallbackWords(strongWords, difficultWords, sessionTexts);
   const issue = inferReadingIssue(struggleExamples, accuracy, readingSpeedWpm);
 
-  const sentenceOne = `${pickOpener(overallAverage, accuracy, readingSpeedWpm)}, ${name} is now at the ${level} level with ${qualityBand} performance.`;
-  const sentenceTwo = `${name} is doing ${qualityBand}, especially in reading hard words like ${joinWords(strengthExamples)}.`;
-
-  let sentenceThree = `${name} should continue guided reading 2 times a day.`;
+  let specificAdvice = "";
   if (issue === "silent_letters") {
-    sentenceThree = `But ${name} still struggles with silent letters like ${joinWords(struggleExamples)}, so ${name} should read silent-letter word lists and short stories 2 times a day.`;
+    specificAdvice = `Specifically, practice silent letters like in ${joinWords(struggleExamples)}.`;
   } else if (issue === "long_words") {
-    sentenceThree = `But ${name} still struggles with long words like ${joinWords(struggleExamples)} and sometimes mumbles, so ${name} should practice syllable chunking and tongue twisters 2 times a day.`;
+    specificAdvice = `Try chunking long words like ${joinWords(struggleExamples)}.`;
   } else if (issue === "vowel_a") {
-    sentenceThree = `But ${name} still struggles with words with letter A like ${joinWords(struggleExamples)}, so ${name} should practice A-sound word drills and read short stories 2 times a day.`;
-  } else {
-    sentenceThree = `But ${name} still struggles with tricky words like ${joinWords(struggleExamples)}, so ${name} should read guided stories and repeat hard words 2 times a day.`;
+    specificAdvice = `Review 'A' sounds in words like ${joinWords(struggleExamples)}.`;
+  } else if (difficultWords.length > 0) {
+    specificAdvice = `Review tricky words like ${joinWords(struggleExamples)}.`;
   }
 
-  return `${sentenceOne} ${sentenceTwo} ${sentenceThree}`;
+  let strengthNote = "";
+  if (strongWords.length > 0) {
+    strengthNote = `Also, ${name} did a great job with words like ${joinWords(strengthExamples)}.`;
+  }
+
+  return `${encouragement} ${baseFeedback} ${strengthNote} ${specificAdvice}`;
 };
 
 export async function generateAiInsight(
@@ -198,7 +206,7 @@ export async function generateAiInsight(
   subject: "English" | "Filipino" | "Math" = "English",
 ): Promise<string> {
   if (subject !== "Math") {
-    return generateReadingInsight(metrics, studentName);
+    return await generateReadingInsight(metrics, studentName);
   }
 
   const name = toFirstName(studentName);

@@ -109,7 +109,7 @@ const getScheduleStatusLabel = (status: ScheduleStatus): string => {
 
 const getScheduleStatusTone = (status: ScheduleStatus): string => {
   if (status === "today") {
-    return "border border-[#013300]/15 bg-[#013300]/8 text-[#013300]";
+    return "border border-[#013300]/15 bg-green-50 text-[#013300]";
   }
   if (status === "upcoming") {
     return "border border-sky-200 bg-sky-50 text-sky-700";

@@ -78,7 +78,7 @@ const InstallPWAButton: React.FC = () => {
           }
         }}
         className="flex w-full items-center justify-center rounded-lg bg-green-900 px-6 py-3 text-base font-bold text-white border-0 transition hover:bg-green-800 disabled:opacity-60 disabled:cursor-not-allowed"
-        aria-label="Download RPT-Quiz"
+        aria-label="Download RPT Portal"
         disabled={!canInstall}
       >
         <svg
@@ -94,7 +94,7 @@ const InstallPWAButton: React.FC = () => {
             d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4"
           />
         </svg>
-        <span>Download RPT-Quiz</span>
+        <span>Download RPT Portal</span>
       </button>
 
       <button

@@ -1,6 +1,6 @@
 import { getStudentFeatures } from "@/lib/ml/dataset";
 import { predictStudentScore } from "@/lib/ml/server-inference";
-import { composeRuleBasedSlideFeedbackParagraph } from "@/lib/performance/insights";
+import { predictTutorAction, getTutorTemplate } from "@/lib/ml/tutor-classifier";
 
 export type TensorflowSlideFeedbackInput = {
   studentId: string;
@@ -57,15 +57,11 @@ export async function generateTensorflowSlideFeedback(
   const readingSpeedWpm = Math.max(0, Math.round(input.readingSpeedWpm ?? 0));
   const slideAverage = toScore(input.slideAverage);
   const levelFromInput = mapPhonemicLevelToModelIndex(input.phonemicLevel);
+  const firstName = toFirstName(input.studentName);
 
-  const ruleBasedParagraph = composeRuleBasedSlideFeedbackParagraph({
-    accuracyScore: accuracy,
-    readingSpeedWpm,
-    slideAverage,
-  }, {
-    studentName: input.studentName ?? null,
-    difficultWords: input.difficultWords ?? null,
-  });
+  // 1. ML: Classify the "Tutor Action" needed based on current performance
+  const tutorCategory = await predictTutorAction(accuracy, readingSpeedWpm, slideAverage);
+  const tutorFeedback = getTutorTemplate(tutorCategory, firstName);
 
   let predictedScore: number | null = null;
   try {
@@ -83,13 +79,12 @@ export async function generateTensorflowSlideFeedback(
     predictedScore = null;
   }
 
-  const firstName = toFirstName(input.studentName);
-  const paragraph = typeof predictedScore === "number" && Number.isFinite(predictedScore)
-    ? `${ruleBasedParagraph} Based on recent work, ${firstName} ${buildMlInterpretation(predictedScore)}.`
-    : `${ruleBasedParagraph} With one more guided try, ${firstName} can do better on the next slide.`;
+  const predictiveInsight = typeof predictedScore === "number" && Number.isFinite(predictedScore)
+    ? `Based on recent work, ${firstName} ${buildMlInterpretation(predictedScore)}.`
+    : `With one more guided try, ${firstName} can do better on the next slide.`;
 
   return {
-    paragraph,
+    paragraph: `${tutorFeedback} ${predictiveInsight}`,
     predictedScore: typeof predictedScore === "number" && Number.isFinite(predictedScore)
       ? Math.round(clampScore(predictedScore))
       : null,

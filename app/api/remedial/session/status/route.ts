@@ -80,9 +80,10 @@ export async function POST(request: NextRequest) {
       const studentId = String(row.student_id);
       const hasPerformance = Boolean(row.has_performance);
       const completed = hasPerformance && Boolean(row.completed_at);
+      const current = statusByStudent[studentId] ?? { completed: false, hasProgress: false };
       statusByStudent[studentId] = {
-        completed,
-        hasProgress: hasPerformance,
+        completed: current.completed || completed,
+        hasProgress: current.hasProgress || hasPerformance,
       };
     }
 

@@ -1,9 +1,9 @@
 {
-  "name": "RPT-SAES Student Quiz",
-  "short_name": "RPT Quiz",
-  "description": "Remedial Performance Tracker for San Agustin Elementary School",
+  "name": "RPT-SAES Parent and Student Portal",
+  "short_name": "RPT Portal",
+  "description": "RPT-SAES PWA for parent access and student quiz entry.",
   "start_url": "/PWA",
-  "scope": "/PWA/",
+  "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
   "theme_color": "#013300",

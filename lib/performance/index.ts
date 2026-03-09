@@ -2,7 +2,7 @@ import { getTableColumns, query } from "@/lib/db";
 import { ensurePerformanceSchema } from "./schema";
 import type { RowDataPacket, ResultSetHeader } from "mysql2/promise";
 
-export type ActivityType = 'remedial' | 'academic' | 'flashcard' | 'quiz' | 'other';
+export type ActivityType = "remedial" | "academic" | "flashcard" | "quiz" | "other";
 
 export interface CreateActivityInput {
   type: ActivityType;
@@ -27,36 +27,40 @@ export interface PerformanceRecordInput {
 export async function createActivity(input: CreateActivityInput): Promise<number> {
   await ensurePerformanceSchema();
   const { type, subject, title, description, date } = input;
-  const [result] = await query<ResultSetHeader>(
-    `INSERT INTO activities (type, subject, title, description, date) VALUES (?, ?, ?, ?, ?)`,
-    [type, subject, title, description ?? null, date]
-  );
+  const [result] = await query<ResultSetHeader>(`INSERT INTO activities (type, subject, title, description, date) VALUES (?, ?, ?, ?, ?)`, [
+    type,
+    subject,
+    title,
+    description ?? null,
+    date,
+  ]);
   return result.insertId;
 }
 
 export async function recordPerformance(input: PerformanceRecordInput): Promise<number> {
   await ensurePerformanceSchema();
   const { studentId, activityId, score, totalItems, grade, metadata, remarks, teacherNotes, completedAt } = input;
-  
+
   const [result] = await query<ResultSetHeader>(
     `INSERT INTO performance_records (student_id, activity_id, score, total_items, grade, metadata, completed_at) 
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
     [studentId, activityId, score, totalItems, grade ?? null, JSON.stringify(metadata ?? {}), completedAt ?? new Date()]
   );
-  
+
   const recordId = result.insertId;
 
   if (remarks || teacherNotes) {
-    await query(
-      `INSERT INTO remarks (performance_record_id, content, teacher_notes) VALUES (?, ?, ?)`,
-      [recordId, remarks ?? "", teacherNotes ?? null]
-    );
+    await query(`INSERT INTO remarks (performance_record_id, content, teacher_notes) VALUES (?, ?, ?)`, [
+      recordId,
+      remarks ?? "",
+      teacherNotes ?? null,
+    ]);
   }
 
   return recordId;
 }
 
-export async function getStudentPerformance(studentId: string, options?: { subject?: string, startDate?: Date, endDate?: Date }) {
+export async function getStudentPerformance(studentId: string, options?: { subject?: string; startDate?: Date; endDate?: Date }) {
   await ensurePerformanceSchema();
   let sql = `
     SELECT 
@@ -72,7 +76,7 @@ export async function getStudentPerformance(studentId: string, options?: { subje
     LEFT JOIN remarks r ON pr.record_id = r.performance_record_id
     WHERE pr.student_id = ?
   `;
-  
+
   const params: any[] = [studentId];
 
   if (options?.subject) {
@@ -125,10 +129,7 @@ export interface StudentDetails {
 
 export async function getStudentDetails(studentId: string): Promise<StudentDetails | null> {
   await ensurePerformanceSchema();
-  const [rows] = await query<RowDataPacket[]>(
-    `SELECT * FROM student WHERE student_id = ?`,
-    [studentId]
-  );
+  const [rows] = await query<RowDataPacket[]>(`SELECT * FROM student WHERE student_id = ?`, [studentId]);
   return (rows[0] as unknown as StudentDetails) || null;
 }
 
@@ -165,6 +166,18 @@ export type RemedialSessionTimelineItem = {
   schedule_date?: string | Date | null;
   phonemic_level?: string | null;
   slides: RemedialSessionSlide[];
+};
+
+export type StudentAssessmentRecord = {
+  attempt_id?: number | string | null;
+  assessment_id?: number | string | null;
+  title?: string | null;
+  description?: string | null;
+  phonemic_level?: string | null;
+  total_score?: number | null;
+  total_points?: number | null;
+  status?: string | null;
+  submitted_at?: string | Date | null;
 };
 
 const APPROVED_REMEDIAL_TABLE = "approved_remedial_schedule";
@@ -217,17 +230,16 @@ const resolveSubjectIdByName = async (subjectName: string): Promise<number | nul
     return fallback ?? null;
   }
 
-  const [rows] = await query<RowDataPacket[]>(
-    `SELECT subject_id FROM subject WHERE LOWER(TRIM(${nameColumn})) = LOWER(TRIM(?)) LIMIT 1`,
-    [normalized],
-  );
+  const [rows] = await query<RowDataPacket[]>(`SELECT subject_id FROM subject WHERE LOWER(TRIM(${nameColumn})) = LOWER(TRIM(?)) LIMIT 1`, [
+    normalized,
+  ]);
   const id = Number(rows[0]?.subject_id);
   return Number.isFinite(id) ? id : (fallback ?? null);
 };
 
 export async function getRemedialSessionTimeline(
   studentId: string,
-  options?: { subjectName?: string | null },
+  options?: { subjectName?: string | null }
 ): Promise<RemedialSessionTimelineItem[]> {
   const subjectName = options?.subjectName?.trim() ?? "";
   const subjectId = subjectName ? await resolveSubjectIdByName(subjectName) : null;
@@ -290,32 +302,32 @@ export async function getRemedialSessionTimeline(
   sessionSql += ` ORDER BY COALESCE(s.completed_at, s.created_at) DESC`;
 
   const [sessionRows] = await query<RowDataPacket[]>(sessionSql, params);
-  const sessions = (sessionRows ?? []).map((row): RemedialSessionTimelineItem => ({
-    session_id: row.session_id ?? null,
-    student_id: row.student_id ?? null,
-    approved_schedule_id: row.approved_schedule_id ?? null,
-    subject_id: row.subject_id ?? null,
-    grade_id: row.grade_id ?? null,
-    phonemic_id: row.phonemic_id ?? null,
-    material_id: row.material_id ?? null,
-    overall_average: toNumberValue(row.overall_average),
-    ai_remarks: row.ai_remarks ?? null,
-    teacher_notes: row.teacher_notes ?? null,
-    completed_at: row.completed_at ?? null,
-    created_at: row.created_at ?? null,
-    schedule_title: null,
-    schedule_date: null,
-    phonemic_level: null,
-    slides: [] as RemedialSessionSlide[],
-  }));
+  const sessions = (sessionRows ?? []).map(
+    (row): RemedialSessionTimelineItem => ({
+      session_id: row.session_id ?? null,
+      student_id: row.student_id ?? null,
+      approved_schedule_id: row.approved_schedule_id ?? null,
+      subject_id: row.subject_id ?? null,
+      grade_id: row.grade_id ?? null,
+      phonemic_id: row.phonemic_id ?? null,
+      material_id: row.material_id ?? null,
+      overall_average: toNumberValue(row.overall_average),
+      ai_remarks: row.ai_remarks ?? null,
+      teacher_notes: row.teacher_notes ?? null,
+      completed_at: row.completed_at ?? null,
+      created_at: row.created_at ?? null,
+      schedule_title: null,
+      schedule_date: null,
+      phonemic_level: null,
+      slides: [] as RemedialSessionSlide[],
+    })
+  );
 
   if (!sessions.length) {
     return [];
   }
 
-  const approvedIds = sessions
-    .map((item) => Number(item.approved_schedule_id))
-    .filter((value) => Number.isFinite(value));
+  const approvedIds = sessions.map((item) => Number(item.approved_schedule_id)).filter((value) => Number.isFinite(value));
 
   if (approvedIds.length) {
     const approvedColumns = await getTableColumns(APPROVED_REMEDIAL_TABLE);
@@ -335,7 +347,7 @@ export async function getRemedialSessionTimeline(
         `SELECT ${selectParts.join(", ")}
          FROM ${APPROVED_REMEDIAL_TABLE}
          WHERE ${idColumn} IN (${placeholders})`,
-        approvedIds,
+        approvedIds
       );
 
       const scheduleById = new Map<number, { title: string | null; date: string | Date | null }>();
@@ -359,9 +371,7 @@ export async function getRemedialSessionTimeline(
     }
   }
 
-  const phonemicIds = sessions
-    .map((item) => Number(item.phonemic_id))
-    .filter((value) => Number.isFinite(value));
+  const phonemicIds = sessions.map((item) => Number(item.phonemic_id)).filter((value) => Number.isFinite(value));
 
   if (phonemicIds.length) {
     const phonemicColumns = await getTableColumns(PHONEMIC_LEVEL_TABLE);
@@ -371,7 +381,7 @@ export async function getRemedialSessionTimeline(
         `SELECT phonemic_id, level_name
          FROM ${PHONEMIC_LEVEL_TABLE}
          WHERE phonemic_id IN (${placeholders})`,
-        phonemicIds,
+        phonemicIds
       );
 
       const levelById = new Map<number, string>();
@@ -390,9 +400,7 @@ export async function getRemedialSessionTimeline(
     }
   }
 
-  const sessionIds = sessions
-    .map((item) => Number(item.session_id))
-    .filter((value) => Number.isFinite(value));
+  const sessionIds = sessions.map((item) => Number(item.session_id)).filter((value) => Number.isFinite(value));
 
   if (!sessionIds.length) {
     return sessions;
@@ -431,7 +439,7 @@ export async function getRemedialSessionTimeline(
      FROM student_remedial_flashcard_performance
      WHERE session_id IN (${placeholders})
      ORDER BY session_id DESC, flashcard_index ASC, created_at ASC`,
-    sessionIds,
+    sessionIds
   );
 
   const slidesBySession = new Map<number, RemedialSessionSlide[]>();
@@ -463,19 +471,109 @@ export async function getRemedialSessionTimeline(
     const sid = Number(session.session_id);
     return {
       ...session,
-      slides: Number.isFinite(sid) ? slidesBySession.get(sid) ?? [] : [],
+      slides: Number.isFinite(sid) ? (slidesBySession.get(sid) ?? []) : [],
     };
   });
 }
 
+export async function getStudentAssessmentRecords(
+  studentId: string,
+  options?: { subjectName?: string | null }
+): Promise<StudentAssessmentRecord[]> {
+  const subjectName = options?.subjectName?.trim() ?? "";
+  const subjectId = subjectName ? await resolveSubjectIdByName(subjectName) : null;
 
-export async function getPerformanceSummary(options?: { 
-  studentId?: string, 
-  subject?: string, 
-  type?: ActivityType,
-  startDate?: Date, 
-  endDate?: Date,
-  grade?: string
+  const attemptColumns = await getTableColumns("assessment_attempts").catch(() => new Set<string>());
+  const assessmentColumns = await getTableColumns("assessments").catch(() => new Set<string>());
+  const questionColumns = await getTableColumns("assessment_questions").catch(() => new Set<string>());
+  const phonemicColumns = await getTableColumns(PHONEMIC_LEVEL_TABLE).catch(() => new Set<string>());
+
+  if (!attemptColumns.size || !assessmentColumns.size) {
+    return [];
+  }
+
+  if (!attemptColumns.has("assessment_id") || !attemptColumns.has("student_id")) {
+    return [];
+  }
+
+  const hasPhonemicJoin = assessmentColumns.has("phonemic_id") && phonemicColumns.has("phonemic_id") && phonemicColumns.has("level_name");
+
+  const titleSelect = assessmentColumns.has("title") ? "a.title" : "NULL";
+  const descriptionSelect = assessmentColumns.has("description") ? "a.description" : "NULL";
+  const totalScoreSelect = attemptColumns.has("total_score") ? "aa.total_score" : "NULL";
+  const statusSelect = attemptColumns.has("status") ? "aa.status" : "NULL";
+  const submittedAtSelect = attemptColumns.has("submitted_at")
+    ? "aa.submitted_at"
+    : attemptColumns.has("started_at")
+      ? "aa.started_at"
+      : "NULL";
+  const attemptIdSelect = attemptColumns.has("attempt_id") ? "aa.attempt_id" : "NULL";
+  const phonemicSelect = hasPhonemicJoin ? "pl.level_name" : "NULL";
+  const totalPointsSelect =
+    questionColumns.has("assessment_id") && questionColumns.has("points")
+      ? "(SELECT COALESCE(SUM(aq.points), 0) FROM assessment_questions aq WHERE aq.assessment_id = aa.assessment_id)"
+      : "NULL";
+  const sortColumn = attemptColumns.has("submitted_at")
+    ? "aa.submitted_at"
+    : attemptColumns.has("started_at")
+      ? "aa.started_at"
+      : attemptColumns.has("attempt_id")
+        ? "aa.attempt_id"
+        : "aa.assessment_id";
+
+  let sql = `
+    SELECT
+      ${attemptIdSelect} AS attempt_id,
+      aa.assessment_id,
+      ${titleSelect} AS title,
+      ${descriptionSelect} AS description,
+      ${phonemicSelect} AS phonemic_level,
+      ${totalScoreSelect} AS total_score,
+      ${totalPointsSelect} AS total_points,
+      ${statusSelect} AS status,
+      ${submittedAtSelect} AS submitted_at
+    FROM assessment_attempts aa
+    LEFT JOIN assessments a ON a.assessment_id = aa.assessment_id
+    ${hasPhonemicJoin ? `LEFT JOIN ${PHONEMIC_LEVEL_TABLE} pl ON pl.phonemic_id = a.phonemic_id` : ""}
+    WHERE aa.student_id = ?
+  `;
+
+  const params: Array<string | number> = [studentId];
+
+  if (subjectId && assessmentColumns.has("subject_id")) {
+    sql += ` AND a.subject_id = ?`;
+    params.push(subjectId);
+  }
+
+  if (attemptColumns.has("status")) {
+    sql += ` AND aa.status IN ('submitted', 'graded')`;
+  }
+
+  sql += ` ORDER BY ${sortColumn} DESC`;
+
+  const [rows] = await query<RowDataPacket[]>(sql, params);
+  return (rows ?? []).map(
+    (row): StudentAssessmentRecord => ({
+      attempt_id: row.attempt_id ?? null,
+      assessment_id: row.assessment_id ?? null,
+      title: row.title ?? null,
+      description: row.description ?? null,
+      phonemic_level: row.phonemic_level ?? null,
+      total_score: toNumberValue(row.total_score),
+      total_points: toNumberValue(row.total_points),
+      status: row.status ?? null,
+      submitted_at: row.submitted_at ?? null,
+    })
+  );
+}
+
+export async function getPerformanceSummary(options?: {
+  studentId?: string;
+  subject?: string;
+  type?: ActivityType;
+  startDate?: Date;
+  endDate?: Date;
+  grade?: string;
 }) {
   await ensurePerformanceSchema();
   let sql = `
@@ -493,7 +591,7 @@ export async function getPerformanceSummary(options?: {
     LEFT JOIN remarks r ON pr.record_id = r.performance_record_id
     WHERE 1=1
   `;
-  
+
   const params: any[] = [];
 
   if (options?.studentId) {

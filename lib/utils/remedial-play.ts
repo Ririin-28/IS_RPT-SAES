@@ -36,7 +36,7 @@ type SessionLookup = {
 
 type SessionStatusResponse = {
   success?: boolean;
-  statusByStudent?: Record<string, { completed?: boolean }>;
+  statusByStudent?: Record<string, { completed?: boolean; hasProgress?: boolean }>;
 };
 
 type SubjectLevelsResponse = {
@@ -216,6 +216,27 @@ const isSessionCompleted = async (args: {
   return Boolean(payload?.statusByStudent?.[args.studentId]?.completed);
 };
 
+const isScheduleCompletedForProgress = async (args: {
+  studentId: string;
+  scheduleId: string;
+  subjectId: number;
+}): Promise<boolean | null> => {
+  const response = await fetch("/api/remedial/session/status", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      approvedScheduleId: args.scheduleId,
+      subjectId: args.subjectId,
+      phonemicId: null,
+      studentIds: [args.studentId],
+    }),
+  });
+
+  const payload = (await response.json().catch(() => null)) as SessionStatusResponse | null;
+  if (!response.ok || !payload?.success) return null;
+  return Boolean(payload?.statusByStudent?.[args.studentId]?.completed);
+};
+
 const storeFlashcards = (args: {
   subject: SubjectName;
   activityId: string;
@@ -307,11 +328,10 @@ export const resolveRemedialPlayTarget = async (options: ResolvePlayOptions): Pr
       return { error: "Unable to resolve subject for remedial schedule." };
     }
 
-    const completed = await isSessionCompleted({
+    const completed = await isScheduleCompletedForProgress({
       studentId: options.studentId,
       scheduleId: activity.id,
       subjectId,
-      phonemicId,
     });
 
     if (completed === null) {

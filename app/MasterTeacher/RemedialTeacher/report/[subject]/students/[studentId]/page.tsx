@@ -1,4 +1,4 @@
-import { getRemedialSessionTimeline, getStudentDetails } from "@/lib/performance";
+import { getRemedialSessionTimeline, getStudentAssessmentRecords, getStudentDetails } from "@/lib/performance";
 import PerformanceTab from "@/modules/MasterTeacher/RemedialTeacher/report/PerformanceTab";
 import { SUBJECT_CONFIG, normalizeSubject } from "@/app/api/auth/master_teacher/report/subject-config";
 
@@ -8,24 +8,22 @@ const toSubjectName = (subject: ReturnType<typeof normalizeSubject>) => {
   return "English";
 };
 
-export default async function MasterTeacherReportPerformancePage({
-  params,
-}: {
-  params: Promise<{ subject: string; studentId: string }>;
-}) {
+export default async function MasterTeacherReportPerformancePage({ params }: { params: Promise<{ subject: string; studentId: string }> }) {
   const { subject, studentId } = await params;
   const normalizedSubject = normalizeSubject(subject);
   const subjectLabel = SUBJECT_CONFIG[normalizedSubject].subjectLabel;
 
-  const [student, sessions] = await Promise.all([
+  const [student, sessions, assessments] = await Promise.all([
     getStudentDetails(studentId),
     getRemedialSessionTimeline(studentId, { subjectName: toSubjectName(normalizedSubject) }),
+    getStudentAssessmentRecords(studentId, { subjectName: toSubjectName(normalizedSubject) }),
   ]);
 
   return (
     <PerformanceTab
       student={student}
       sessions={sessions}
+      assessments={assessments}
       subjectLabel={subjectLabel}
       backHref={`/MasterTeacher/RemedialTeacher/report/${normalizedSubject}/students`}
     />

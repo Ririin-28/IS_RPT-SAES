@@ -6,6 +6,7 @@ import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
+import { composeRuleBasedSlideFeedbackParagraph, getReadingSpeedLabel } from "@/lib/performance/insights";
 
 const SUPPORTED_SUBJECTS = ["English", "Filipino", "Math"] as const;
 
@@ -145,7 +146,7 @@ type ChildProfile = {
 type ChildView = ChildProfile & {
   age: number;
   teacher: string;
-  attendance: number;
+  attendance: number | null;
   currentLevel: Record<SupportedSubject, string>;
   progressDetails: Record<SupportedSubject, SubjectProgress>;
 };
@@ -161,6 +162,9 @@ type ParentDashboardResponse = {
   child: ChildProfile;
   attendance: AttendanceSummary;
   schedule: ScheduleEntry[];
+  selectedSubject: string | null;
+  sessions: RemedialSessionTimelineItem[];
+  assessments: StudentAssessmentRecord[];
 };
 
 type ParentDashboardState = {
@@ -171,16 +175,226 @@ type ParentDashboardState = {
   children: ChildProfile[];
   attendance: AttendanceSummary | null;
   schedule: ScheduleEntry[];
+  selectedSubject: string | null;
+  sessions: RemedialSessionTimelineItem[];
+  assessments: StudentAssessmentRecord[];
 };
 
-type NotificationType = {
-  id: string;
-  title: string;
-  message: string;
-  date: string;
-  isRead: boolean;
-  childName: string;
+type RemedialSessionSlide = {
+  performance_id?: number | string | null;
+  flashcard_index?: number | null;
+  reading_tutor_feedback?: string | null;
+  accuracy_score?: number | null;
+  reading_speed_wpm?: number | null;
+  slide_average?: number | null;
 };
+
+type RemedialSessionTimelineItem = {
+  session_id?: number | string | null;
+  overall_average?: number | null;
+  ai_remarks?: string | null;
+  teacher_notes?: string | null;
+  completed_at?: string | Date | null;
+  created_at?: string | Date | null;
+  schedule_title?: string | null;
+  schedule_date?: string | Date | null;
+  phonemic_level?: string | null;
+  slides: RemedialSessionSlide[];
+};
+
+type StudentAssessmentRecord = {
+  attempt_id?: number | string | null;
+  assessment_id?: number | string | null;
+  title?: string | null;
+  description?: string | null;
+  phonemic_level?: string | null;
+  total_score?: number | null;
+  total_points?: number | null;
+  status?: string | null;
+  submitted_at?: string | Date | null;
+};
+
+type SessionSummary = {
+  dateLabel: string;
+  titleLabel: string;
+  phonemicLabel: string;
+  overallLabel: string;
+  slideCountLabel: string;
+};
+
+type TimelineEntry =
+  | {
+      key: string;
+      kind: "assessment";
+      timestamp: number;
+      assessment: StudentAssessmentRecord;
+    }
+  | {
+      key: string;
+      kind: "session";
+      timestamp: number;
+      session: RemedialSessionTimelineItem;
+      summary: SessionSummary;
+    };
+
+type InfoCardProps = {
+  label: string;
+  value: string;
+  hint?: string | null;
+};
+
+type DetailChipProps = {
+  label: string;
+  value: string;
+  emphasized?: boolean;
+};
+
+type RecordBadgeProps = {
+  kind: "assessment" | "session";
+};
+
+type StatusBadgeProps = {
+  value: string;
+};
+
+type NoteCardProps = {
+  label: string;
+  value: string;
+};
+
+const EMPTY_VALUE = "--";
+
+const toTimestamp = (value: string | Date | null | undefined) => {
+  if (!value) return 0;
+  const date = value instanceof Date ? value : new Date(value);
+  const timestamp = date.getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+};
+
+const formatDate = (value: string | Date | null | undefined) => {
+  if (!value) return EMPTY_VALUE;
+
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return EMPTY_VALUE;
+
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+  });
+};
+
+const formatPercent = (value: number | null | undefined) => {
+  if (typeof value !== "number") return EMPTY_VALUE;
+  return `${Math.round(value)}%`;
+};
+
+const formatInteger = (value: number | null | undefined) => {
+  if (typeof value !== "number") return EMPTY_VALUE;
+  return String(Math.round(value));
+};
+
+const formatStatusLabel = (value: string | null | undefined) => {
+  const trimmed = (value ?? "").trim();
+  if (!trimmed) return EMPTY_VALUE;
+
+  return trimmed.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+};
+
+const formatSlideAverage = (slide: RemedialSessionSlide) =>
+  formatPercent(typeof slide.slide_average === "number" ? slide.slide_average : null);
+
+const formatAssessmentScore = (assessment: StudentAssessmentRecord) => {
+  const score = assessment.total_score;
+  const totalPoints = assessment.total_points;
+
+  if (typeof score !== "number") {
+    return { value: EMPTY_VALUE, hint: null as string | null };
+  }
+
+  if (typeof totalPoints === "number" && totalPoints > 0) {
+    const percent = Math.round((score / totalPoints) * 100);
+    return {
+      value: `${percent}%`,
+      hint: `${Math.round(score)} / ${Math.round(totalPoints)} points`,
+    };
+  }
+
+  return {
+    value: formatInteger(score),
+    hint: null as string | null,
+  };
+};
+
+const buildSessionSummary = (session: RemedialSessionTimelineItem): SessionSummary => {
+  const completed = session.completed_at ?? session.created_at;
+  const scheduleDate = session.schedule_date ?? completed;
+
+  return {
+    dateLabel: formatDate(scheduleDate),
+    titleLabel: (session.schedule_title ?? "").trim(),
+    phonemicLabel: (session.phonemic_level ?? "").trim() || EMPTY_VALUE,
+    overallLabel: formatPercent(session.overall_average),
+    slideCountLabel: String(session.slides.length),
+  };
+};
+
+const buildSessionKey = (session: RemedialSessionTimelineItem, index: number) =>
+  String(session.session_id ?? `${session.schedule_date ?? session.completed_at ?? session.created_at ?? "session"}-${index}`);
+
+const buildAssessmentKey = (assessment: StudentAssessmentRecord, index: number) =>
+  String(assessment.attempt_id ?? assessment.assessment_id ?? `${assessment.title ?? "assessment"}-${assessment.submitted_at ?? index}`);
+
+function InfoCard({ label, value, hint }: InfoCardProps) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-1 text-base font-semibold text-slate-900">{value}</p>
+      {hint ? <p className="mt-1 text-xs text-slate-500">{hint}</p> : null}
+    </div>
+  );
+}
+
+function DetailChip({ label, value, emphasized = false }: DetailChipProps) {
+  return (
+    <span
+      className={[
+        "inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium",
+        emphasized ? "border-emerald-200 bg-emerald-50 text-[#013300]" : "border-slate-200 bg-slate-50 text-slate-700",
+      ].join(" ")}
+    >
+      <span className="text-slate-500">{label}</span>
+      <span className="ml-1 font-semibold">{value}</span>
+    </span>
+  );
+}
+
+function RecordBadge({ kind }: RecordBadgeProps) {
+  const classes = kind === "assessment" ? "border-sky-200 bg-sky-50 text-sky-700" : "border-emerald-200 bg-emerald-50 text-[#013300]";
+
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${classes}`}>
+      {kind === "assessment" ? "Assessment" : "Remedial Session"}
+    </span>
+  );
+}
+
+function StatusBadge({ value }: StatusBadgeProps) {
+  const normalized = value.toLowerCase();
+  const classes =
+    normalized === "graded" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700";
+
+  return <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${classes}`}>{value}</span>;
+}
+
+function NoteCard({ label, value }: NoteCardProps) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-2 leading-6">{value}</p>
+    </div>
+  );
+}
 
 function AttendanceCalendar({ attendanceRecords, attendanceRate }: AttendanceCalendarProps) {
   const parseRecordDate = useCallback((value: string | null | undefined) => {
@@ -381,158 +595,6 @@ function AttendanceCalendar({ attendanceRecords, attendanceRate }: AttendanceCal
   );
 }
 
-function NotificationCard() {
-  const [isTranslated, setIsTranslated] = useState(false);
-  const [isClosed, setIsClosed] = useState(false);
-  const profile = useMemo(() => getStoredUserProfile(), []);
-
-  const formatChildName = (fullName: string) => {
-    const parts = fullName.trim().split(/\s+/).filter(Boolean);
-    if (parts.length === 0) return "";
-    if (parts.length === 1) return parts[0];
-    const first = parts[0];
-    const last = parts[parts.length - 1];
-    const middle = parts.slice(1, -1).join(" ").trim();
-    const middleInitial = middle ? `${middle[0].toUpperCase()}.` : "";
-    return [first, middleInitial, last].filter(Boolean).join(" ");
-  };
-
-  const formatDate = (dateString: string) => {
-    try {
-      const [day, month, year] = dateString.split("-").map(Number);
-      const date = new Date(year, month - 1, day);
-      const monthNames = ["Jan.", "Feb.", "Mar.", "Apr.", "May", "Jun.", "Jul.", "Aug.", "Sep.", "Oct.", "Nov.", "Dec."];
-      return `${monthNames[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
-    } catch {
-      return dateString;
-    }
-  };
-
-  const notification: NotificationType = {
-    id: "1",
-    title: "Notifications",
-    message: "Your child, Alon Luan Nadura Ruedas, was marked absent on",
-    date: "01-06-2026",
-    isRead: false,
-    childName: formatChildName("Alon Luan Nadura Ruedas"),
-  };
-
-  const storageKey = useMemo(() => {
-    const userId = profile?.userId ?? "unknown";
-    return `parentNotificationDismissed:${userId}`;
-  }, [profile?.userId]);
-
-  const notificationSignature = useMemo(() => {
-    return [notification.childName, notification.message, notification.date].map(String).join("|");
-  }, [notification.childName, notification.message, notification.date]);
-
-  useEffect(() => {
-    if (notification.isRead) {
-      setIsClosed(true);
-      return;
-    }
-    if (typeof window === "undefined") return;
-    try {
-      const stored = window.localStorage.getItem(storageKey);
-      if (stored === notificationSignature) {
-        setIsClosed(true);
-      }
-    } catch {
-      // Ignore storage access errors (e.g., private mode)
-    }
-  }, [notification.isRead, notificationSignature, storageKey]);
-
-  const handleClose = useCallback(() => {
-    setIsClosed(true);
-    if (typeof window === "undefined") return;
-    try {
-      window.localStorage.setItem(storageKey, notificationSignature);
-    } catch {
-      // Ignore storage access errors (e.g., private mode)
-    }
-  }, [notificationSignature, storageKey]);
-
-  const englishText = {
-    close: "Close",
-    title: "Notifications",
-    message: `Your child, ${notification.childName}, was marked absent on`,
-    date: formatDate(notification.date),
-  };
-
-  const tagalogText = {
-    close: "Isara",
-    title: "Mga Paalala",
-    message: `Ang iyong anak na si ${notification.childName}, ay minarkahang liban noong`,
-    date: formatDate(notification.date),
-  };
-
-  const text = isTranslated ? tagalogText : englishText;
-
-  if (isClosed) return null;
-
-  return (
-    <div className="fixed top-4 right-4 z-50 max-w-md">
-      <div className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
-        <div className="flex justify-between items-center p-4 bg-linear-to-r from-red-50 to-red-100 border-b border-red-200">
-          <h3 className="font-bold text-red-800">{text.title}</h3>
-          <button
-            onClick={handleClose}
-            className="text-gray-500 hover:text-gray-700 font-bold text-lg"
-            aria-label={text.close}
-          >
-            ×
-          </button>
-        </div>
-
-        <div className="p-4">
-          <div className="flex items-start">
-            <div className="shrink-0 mr-3">
-              <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
-                <svg
-                  className="w-6 h-6 text-red-600"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.196 16.5c-.77.833.192 2.5 1.732 2.5z"
-                  />
-                </svg>
-              </div>
-            </div>
-            <div className="flex-1">
-              <p className="text-gray-800 mb-2">
-                {text.message} <span className="font-semibold">{text.date}</span>.
-              </p>
-              <div className="text-xs text-gray-500 mt-1">
-                {isTranslated ? "Nai-post noong Enero 25, 2026" : "Posted on January 25, 2026"}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-2 mt-4 pt-3 border-t border-gray-100">
-            <button
-              onClick={() => setIsTranslated(!isTranslated)}
-              className="px-3 py-1.5 text-sm bg-linear-to-r from-green-50 to-green-100 text-green-800 font-medium rounded-lg hover:from-green-100 hover:to-green-200 transition-all duration-200 border border-gray-200"
-            >
-              {isTranslated ? "Translate to English" : "Isalin sa Tagalog"}
-            </button>
-            <button
-              onClick={handleClose}
-              className="px-4 py-1.5 text-sm bg-gray-100 text-gray-700 font-medium rounded-lg hover:bg-gray-200 transition-colors duration-200"
-            >
-              {text.close}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // Progress Card Component
 function ProgressCard({ title, value, description, icon, color = "green" }: {
   title: string;
@@ -574,7 +636,7 @@ const FALLBACK_CHILD_VIEW: ChildView = {
   section: null,
   age: 0,
   teacher: "—",
-  attendance: 0,
+  attendance: null,
   currentLevel: {
     English: "—",
     Filipino: "—",
@@ -608,17 +670,9 @@ const FALLBACK_CHILD_VIEW: ChildView = {
   },
 };
 
-const FALLBACK_ATTENDANCE_RECORDS: AttendanceRecord[] = [];
-
-const FALLBACK_ATTENDANCE_SUMMARY: AttendanceSummary = {
-  records: [],
-  totalSessions: 0,
-  presentSessions: 0,
-  absentSessions: 0,
-  attendanceRate: null,
-};
-
 const FALLBACK_SCHEDULE: ScheduleEntry[] = [];
+const FALLBACK_SESSIONS: RemedialSessionTimelineItem[] = [];
+const FALLBACK_ASSESSMENTS: StudentAssessmentRecord[] = [];
 
 const isSupportedSubject = (subject: string): subject is SupportedSubject =>
   SUPPORTED_SUBJECTS.includes(subject as SupportedSubject);
@@ -633,6 +687,9 @@ export default function ParentDashboard() {
     children: [],
     attendance: null,
     schedule: [],
+    selectedSubject: null,
+    sessions: [],
+    assessments: [],
   });
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
   const progressSectionRef = useRef<HTMLDivElement | null>(null);
@@ -664,6 +721,7 @@ export default function ParentDashboard() {
         if (selectedChildId) {
           query.set("studentId", selectedChildId);
         }
+        query.set("subject", selectedSubject);
         const response = await fetch(`/api/parent/dashboard?${query.toString()}`, {
           method: "GET",
           signal: controller.signal,
@@ -672,7 +730,7 @@ export default function ParentDashboard() {
         let payload: unknown = null;
         try {
           payload = await response.json();
-        } catch (error) {
+        } catch {
           payload = null;
         }
 
@@ -698,6 +756,9 @@ export default function ParentDashboard() {
           child: data.child,
           attendance: data.attendance,
           schedule: data.schedule,
+          selectedSubject: data.selectedSubject ?? null,
+          sessions: Array.isArray(data.sessions) ? data.sessions : [],
+          assessments: Array.isArray(data.assessments) ? data.assessments : [],
         });
       } catch (error) {
         if (controller.signal.aborted) {
@@ -713,6 +774,9 @@ export default function ParentDashboard() {
           children: [],
           attendance: null,
           schedule: [],
+          selectedSubject: null,
+          sessions: [],
+          assessments: [],
         });
       }
     };
@@ -722,7 +786,7 @@ export default function ParentDashboard() {
     return () => {
       controller.abort();
     };
-  }, [selectedChildId]);
+  }, [selectedChildId, selectedSubject]);
 
   const handleSubjectCardClick = useCallback(
     (subject: SupportedSubject) => {
@@ -735,10 +799,6 @@ export default function ParentDashboard() {
   const handleAttendanceCardClick = useCallback(() => {
     scrollToSection(attendanceSectionRef);
   }, [scrollToSection]);
-
-  const handleChildChange = useCallback((event: React.ChangeEvent<HTMLSelectElement>) => {
-    setSelectedChildId(event.target.value);
-  }, []);
 
   // Get current day for highlighting
   const getCurrentDay = () => {
@@ -798,6 +858,10 @@ export default function ParentDashboard() {
   const childOptions = state.children.length > 0 ? state.children : state.child ? [state.child] : [];
 
   const attendanceRate = attendanceSummary.attendanceRate ?? currentChild.attendance;
+  const attendanceDaysDisplay =
+    attendanceSummary.totalSessions > 0
+      ? `${attendanceSummary.presentSessions}/${attendanceSummary.totalSessions} days`
+      : "--";
 
   useEffect(() => {
     if (subjects.length === 0) {
@@ -811,13 +875,55 @@ export default function ParentDashboard() {
   const currentProgress: SubjectProgress =
     currentChild.progressDetails[selectedSubject] ?? currentChild.progressDetails.English;
 
+  const sessions = state.sessions.length > 0 ? state.sessions : FALLBACK_SESSIONS;
+  const assessments = state.assessments.length > 0 ? state.assessments : FALLBACK_ASSESSMENTS;
+
+  const timelineEntries = useMemo<TimelineEntry[]>(() => {
+    const sessionEntries: TimelineEntry[] = sessions.map((session, index) => {
+      const completed = session.schedule_date ?? session.completed_at ?? session.created_at;
+      return {
+        key: buildSessionKey(session, index),
+        kind: "session",
+        timestamp: toTimestamp(completed),
+        session,
+        summary: buildSessionSummary(session),
+      };
+    });
+
+    const assessmentEntries: TimelineEntry[] = assessments.map((assessment, index) => ({
+      key: buildAssessmentKey(assessment, index),
+      kind: "assessment",
+      timestamp: toTimestamp(assessment.submitted_at),
+      assessment,
+    }));
+
+    return [...assessmentEntries, ...sessionEntries].sort((left, right) => right.timestamp - left.timestamp);
+  }, [assessments, sessions]);
+
+  const firstSessionKey = useMemo(() => timelineEntries.find((entry) => entry.kind === "session")?.key ?? null, [timelineEntries]);
+  const [expandedSessionKey, setExpandedSessionKey] = useState<string | null>(firstSessionKey);
+
+  useEffect(() => {
+    if (!firstSessionKey) {
+      setExpandedSessionKey(null);
+      return;
+    }
+
+    setExpandedSessionKey((current) => {
+      if (!current) return firstSessionKey;
+      return timelineEntries.some((entry) => entry.kind === "session" && entry.key === current) ? current : firstSessionKey;
+    });
+  }, [firstSessionKey, timelineEntries]);
+
+  const assessmentCount = assessments.length;
+  const sessionCount = sessions.length;
+
   return (
     <div className="relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -top-24 right-0 h-72 w-72 rounded-full bg-emerald-100/25 blur-3xl" />
         <div className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-emerald-200/30 blur-3xl" />
       </div>
-      <NotificationCard />
       {/*---------------------------------Main Content---------------------------------*/}
       <div className="relative z-10 w-full pt-16 flex flex-col overflow-hidden">
         <Header
@@ -891,8 +997,8 @@ export default function ParentDashboard() {
               </div>
               <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2 sm:gap-5 sm:mb-7 lg:grid-cols-4 lg:gap-6 lg:mb-8">
                 <OverviewCard
-                  value={`${currentChild.attendance}%`}
-                  label="Attendance Rate"
+                  value={attendanceDaysDisplay}
+                  label="Attendance Days"
                   icon={
                     <svg width="38" height="38" fill="none" viewBox="0 0 24 24">
                       <path d="M12 8V12L15 15M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="#013300" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -946,7 +1052,7 @@ export default function ParentDashboard() {
                       Subject Teacher: {currentProgress.teacher}
                     </h4>
                     <p className="text-sm text-gray-600">
-                      Your child's progress in {selectedSubject} is guided by {currentProgress.teacher}
+                      Your child&apos;s progress in {selectedSubject} is guided by {currentProgress.teacher}
                     </p>
                   </div>
 
@@ -986,14 +1092,216 @@ export default function ParentDashboard() {
 
                     {/* Teacher Feedback */}
                     <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-200">
-                      <h4 className="font-bold text-gray-800">Teacher's Comment</h4>
+                      <h4 className="font-bold text-gray-800">Teacher&apos;s Comment</h4>
                       <p className="mt-2 text-sm leading-relaxed text-gray-700">
                         {currentProgress.teacherComments}
                       </p>
                       <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-green-700">
-                        — {currentProgress.teacher}
+                        - {currentProgress.teacher}
                       </p>
                     </div>
+
+                    {/* Progress Timeline */}
+                    <div className="rounded-xl border border-gray-200 bg-white p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-[#013300]">Progress Timeline ({selectedSubject})</p>
+                          <p className="text-sm text-slate-500">Assessment records and remedial sessions arranged by date.</p>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2 text-xs">
+                          <DetailChip label="All" value={String(timelineEntries.length)} />
+                          <DetailChip label="Assessments" value={String(assessmentCount)} />
+                          <DetailChip label="Sessions" value={String(sessionCount)} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {state.isLoading && (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                        Updating progress timeline...
+                      </div>
+                    )}
+
+                    {timelineEntries.length === 0 ? (
+                      <div className="rounded-lg border border-slate-200 bg-white px-4 py-4 text-sm text-slate-500">
+                        No performance records found for {selectedSubject}.
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <div className="absolute left-4 top-0 h-full w-px bg-slate-200" />
+
+                        <div className="space-y-4">
+                          {timelineEntries.map((entry) => {
+                            if (entry.kind === "assessment") {
+                              const assessment = entry.assessment;
+                              const title = (assessment.title ?? "").trim() || "Untitled Assessment";
+                              const description = (assessment.description ?? "").trim();
+                              const phonemicLabel = (assessment.phonemic_level ?? "").trim() || EMPTY_VALUE;
+                              const statusLabel = formatStatusLabel(assessment.status);
+                              const score = formatAssessmentScore(assessment);
+
+                              return (
+                                <section key={entry.key} className="relative pl-12">
+                                  <span className="absolute left-1.5 top-5 h-5 w-5 rounded-full border-4 border-sky-600 bg-sky-100" />
+
+                                  <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                                    <div className="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
+                                      <div className="space-y-3">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <RecordBadge kind="assessment" />
+                                          <span className="text-sm text-slate-500">{formatDate(assessment.submitted_at)}</span>
+                                        </div>
+
+                                        <div>
+                                          <p className="text-base font-semibold text-slate-900">{title}</p>
+                                          {description ? <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p> : null}
+                                        </div>
+                                      </div>
+
+                                      {statusLabel !== EMPTY_VALUE ? <StatusBadge value={statusLabel} /> : null}
+                                    </div>
+
+                                    <div className="grid gap-3 border-t border-slate-200 px-4 py-4 md:grid-cols-3">
+                                      <InfoCard label="Score" value={score.value} hint={score.hint} />
+                                      <InfoCard label="Status" value={statusLabel} />
+                                      <InfoCard label="Phonemic" value={phonemicLabel} />
+                                    </div>
+                                  </div>
+                                </section>
+                              );
+                            }
+
+                            const { key, session, summary } = entry;
+                            const isExpanded = expandedSessionKey === key;
+
+                            return (
+                              <section key={key} className="relative pl-12">
+                                <span className="absolute left-1.5 top-5 h-5 w-5 rounded-full border-4 border-[#013300] bg-green-100" />
+
+                                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                                  <button
+                                    type="button"
+                                    aria-expanded={isExpanded}
+                                    onClick={() => setExpandedSessionKey((current) => (current === key ? null : key))}
+                                    className="flex w-full flex-col gap-4 px-4 py-4 text-left sm:flex-row sm:items-start sm:justify-between"
+                                  >
+                                    <div className="space-y-3">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <RecordBadge kind="session" />
+                                        <span className="text-sm text-slate-500">{summary.dateLabel}</span>
+                                      </div>
+
+                                      <div>
+                                        <p className="text-base font-semibold text-slate-900">{summary.titleLabel || "Remedial Session"}</p>
+                                      </div>
+
+                                      <div className="flex flex-wrap gap-2">
+                                        <DetailChip label="Phonemic" value={summary.phonemicLabel} />
+                                        <DetailChip label="Average" value={summary.overallLabel} emphasized />
+                                        <DetailChip label="Slides" value={summary.slideCountLabel} />
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 text-sm font-semibold text-[#013300]">
+                                      <span>{isExpanded ? "Hide" : "View"} details</span>
+                                      <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        width="18"
+                                        height="18"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        className={isExpanded ? "rotate-180 transition" : "transition"}
+                                      >
+                                        <path d="m6 9 6 6 6-6" />
+                                      </svg>
+                                    </div>
+                                  </button>
+
+                                  {isExpanded && (
+                                    <div className="border-t border-slate-200 px-4 pb-4 pt-4">
+                                      <div className="grid gap-3 md:grid-cols-3">
+                                        <InfoCard label="Phonemic" value={summary.phonemicLabel} />
+                                        <InfoCard label="Overall Average" value={summary.overallLabel} />
+                                        <InfoCard label="Slides Recorded" value={summary.slideCountLabel} />
+                                      </div>
+
+                                      <div className="mt-4 overflow-hidden rounded-lg border border-slate-200">
+                                        <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+                                          <p className="text-sm font-semibold text-slate-900">Per-Slide Feedback</p>
+                                        </div>
+
+                                        <div className="overflow-x-auto">
+                                          <table className="min-w-full text-left text-sm text-slate-700">
+                                            <thead className="bg-white text-slate-600">
+                                              <tr className="border-b border-slate-200">
+                                                <th className="px-4 py-3 font-semibold">Slide</th>
+                                                <th className="px-4 py-3 font-semibold">Accuracy</th>
+                                                <th className="px-4 py-3 font-semibold">Reading Speed</th>
+                                                <th className="px-4 py-3 font-semibold">Average</th>
+                                                <th className="px-4 py-3 font-semibold">Feedback</th>
+                                              </tr>
+                                            </thead>
+
+                                            <tbody className="divide-y divide-slate-100 bg-white">
+                                              {session.slides.length === 0 ? (
+                                                <tr>
+                                                  <td className="px-4 py-4 text-slate-500" colSpan={5}>
+                                                    No slides recorded for this session.
+                                                  </td>
+                                                </tr>
+                                              ) : (
+                                                session.slides.map((slide) => {
+                                                  const storedFeedback = (slide.reading_tutor_feedback ?? "").trim();
+                                                  const slideFeedback =
+                                                    storedFeedback ||
+                                                    composeRuleBasedSlideFeedbackParagraph({
+                                                      accuracyScore: slide.accuracy_score ?? null,
+                                                      readingSpeedWpm: slide.reading_speed_wpm ?? null,
+                                                      slideAverage: slide.slide_average ?? null,
+                                                    });
+
+                                                  return (
+                                                    <tr key={String(slide.performance_id ?? `${key}-${slide.flashcard_index}`)}>
+                                                      <td className="px-4 py-3 align-top font-semibold text-slate-900">
+                                                        {typeof slide.flashcard_index === "number" ? slide.flashcard_index + 1 : EMPTY_VALUE}
+                                                      </td>
+                                                      <td className="px-4 py-3 align-top">{formatPercent(slide.accuracy_score)}</td>
+                                                      <td className="px-4 py-3 align-top">
+                                                        {typeof slide.reading_speed_wpm === "number"
+                                                          ? getReadingSpeedLabel(slide.reading_speed_wpm)
+                                                          : EMPTY_VALUE}
+                                                      </td>
+                                                      <td className="px-4 py-3 align-top font-semibold text-[#013300]">
+                                                        {formatSlideAverage(slide)}
+                                                      </td>
+                                                      <td className="px-4 py-3 leading-6 text-slate-600">{slideFeedback}</td>
+                                                    </tr>
+                                                  );
+                                                })
+                                              )}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      </div>
+
+                                      <div className="mt-4 grid gap-3 md:grid-cols-2">
+                                        <NoteCard label="AI Remarks" value={session.ai_remarks?.trim() || "No AI remarks available."} />
+                                        <NoteCard label="Teacher Remarks" value={session.teacher_notes?.trim() || "No teacher remarks available."} />
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </section>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
 
                   </div>
                 </div>
@@ -1033,3 +1341,5 @@ export default function ParentDashboard() {
     </div>
   );
 }
+
+

@@ -20,6 +20,7 @@ interface LoginRequestPayload {
   itAdminId?: string | null;
   deviceToken?: string | null;
   deviceName?: string | null;
+  expectedRole?: string | null;
 }
 
 interface UserRow extends RowDataPacket {
@@ -55,6 +56,7 @@ function sanitizeItAdminId(value: unknown): string | null {
 const MAX_EMAIL_LENGTH = 254;
 const MAX_PASSWORD_LENGTH = 256;
 const MAX_DEVICE_FIELD_LENGTH = 200;
+const MAX_EXPECTED_ROLE_LENGTH = 50;
 
 function isSafeText(value: unknown, maxLength: number): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.length <= maxLength;
@@ -91,6 +93,14 @@ function validateLoginPayload(payload: LoginRequestPayload) {
 
   if (payload.deviceName && !isSafeText(payload.deviceName, MAX_DEVICE_FIELD_LENGTH)) {
     return { ok: false, error: "Invalid device name" };
+  }
+
+  if (
+    payload.expectedRole !== undefined &&
+    payload.expectedRole !== null &&
+    !isSafeText(payload.expectedRole, MAX_EXPECTED_ROLE_LENGTH)
+  ) {
+    return { ok: false, error: "Invalid expected role" };
   }
 
   return { ok: true } as const;
@@ -284,7 +294,7 @@ export async function POST(req: Request): Promise<Response> {
       };
 
       try {
-        const { email, password, userId, itAdminId, deviceToken, deviceName } =
+        const { email, password, userId, itAdminId, deviceToken, deviceName, expectedRole } =
           (await req.json()) as LoginRequestPayload;
         const validation = validateLoginPayload({
           email,
@@ -293,6 +303,7 @@ export async function POST(req: Request): Promise<Response> {
           itAdminId,
           deviceToken,
           deviceName,
+          expectedRole,
         });
         if (!validation.ok) {
           return respond(400, { error: validation.error });
@@ -325,6 +336,18 @@ export async function POST(req: Request): Promise<Response> {
         const canonicalRole = resolveCanonicalRole(normalizedRole);
         const responseRole = canonicalRole || normalizedRole || roleForLogic;
         const redirectPath = resolvePortalPath(canonicalRole);
+        const expectedCanonicalRole = expectedRole
+          ? resolveCanonicalRole(normalizeRoleName(expectedRole))
+          : null;
+
+        if (expectedCanonicalRole && canonicalRole !== expectedCanonicalRole) {
+          return respond(403, {
+            error:
+              expectedCanonicalRole === "parent"
+                ? "This account is not registered as a parent."
+                : "This account is not authorized for this portal.",
+          });
+        }
 
         /* ===== Super Admin validation ===== */
         if (roleRequiresItAdminId(roleForLogic)) {

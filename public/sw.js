@@ -1,6 +1,6 @@
-const STATIC_CACHE = 'rpt-quiz-static-v2';
-const RUNTIME_CACHE = 'rpt-quiz-runtime-v2';
-const API_CACHE = 'rpt-quiz-api-v2';
+const STATIC_CACHE = 'rpt-portal-static-v3';
+const RUNTIME_CACHE = 'rpt-portal-runtime-v3';
+const API_CACHE = 'rpt-portal-api-v3';
 
 const STATIC_ASSETS = [
   '/PWA',

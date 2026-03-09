@@ -14,6 +14,7 @@ import { composeRuleBasedSlideFeedbackParagraph } from "@/lib/performance/insigh
 import { translateTutorText, type TutorLanguage } from "@/lib/performance/tutor-language";
 
 const ALLOW_BROWSER_FALLBACK = process.env.NEXT_PUBLIC_ALLOW_SPEECH_FALLBACK === "true";
+const SESSION_EXIT_LOCK_MESSAGE = "Complete the remedial session before leaving this page.";
 
 /* ---------- Icons ---------- */
 const Volume2Icon = () => (
@@ -471,6 +472,8 @@ export default function EnglishFlashcards({
   const [blockedSessionMessage, setBlockedSessionMessage] = useState<string | null>(null);
   const [teacherFeedback, setTeacherFeedback] = useState("");
   const [teacherFeedbackError, setTeacherFeedbackError] = useState<string | null>(null);
+  const navigationAllowedRef = useRef(false);
+  const navigationLockDepthRef = useRef(0);
 
   useEffect(() => {
     if (forceSessionOnly) {
@@ -483,6 +486,59 @@ export default function EnglishFlashcards({
   useEffect(() => {
     setSelectedStudentId(initialStudentId ?? null);
   }, [initialStudentId]);
+
+  const isSessionExitLocked = sessionLockEnabled && view === "session" && selectedStudentId !== null;
+
+  const notifyExitBlocked = useCallback(() => {
+      setBlockedSessionMessage(SESSION_EXIT_LOCK_MESSAGE);
+    }, []);
+
+  useEffect(() => {
+    if (!isSessionExitLocked) {
+      navigationAllowedRef.current = false;
+      navigationLockDepthRef.current = 0;
+      return undefined;
+    }
+
+    const lockUrl = window.location.href;
+    window.history.pushState({ remedialLock: true }, "", lockUrl);
+    navigationLockDepthRef.current += 1;
+
+    const handlePopState = () => {
+      if (navigationAllowedRef.current) return;
+      window.history.pushState({ remedialLock: true }, "", lockUrl);
+      navigationLockDepthRef.current += 1;
+      notifyExitBlocked();
+    };
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (navigationAllowedRef.current) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (navigationAllowedRef.current) return;
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName ?? "";
+      const isEditable = tagName === "INPUT" || tagName === "TEXTAREA" || target?.isContentEditable;
+      const isBrowserBackShortcut = event.key === "BrowserBack" || (event.altKey && event.key === "ArrowLeft");
+      const isBackspaceNavigation = event.key === "Backspace" && !isEditable;
+      if (!isBrowserBackShortcut && !isBackspaceNavigation) return;
+      event.preventDefault();
+      notifyExitBlocked();
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isSessionExitLocked, notifyExitBlocked]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -633,6 +689,7 @@ export default function EnglishFlashcards({
   const [current, setCurrent] = useState(startIndex);
   const [sessionScores, setSessionScores] = useState<SessionScore[]>([]);
   const [showSummary, setShowSummary] = useState(false);
+  const canSaveAndExit = !sessionLockEnabled || showSummary;
 
   // AI Insights State
   const [aiInsight, setAiInsight] = useState<string | null>(null);
@@ -864,6 +921,10 @@ export default function EnglishFlashcards({
   };
 
   const handleStopSession = async () => {
+    if (sessionLockEnabled && !showSummary) {
+      setBlockedSessionMessage(SESSION_EXIT_LOCK_MESSAGE);
+      return;
+    }
     if (showSummary && sessionLockEnabled && !teacherFeedback.trim()) {
       setTeacherFeedbackError("Teacher feedback is required before saving this session.");
       return;
@@ -999,6 +1060,16 @@ export default function EnglishFlashcards({
     synthesizerRef.current?.close();
     synthesizerRef.current = null;
 
+    if (forceSessionOnly && onExit) {
+      navigationAllowedRef.current = true;
+      if (typeof window !== "undefined" && navigationLockDepthRef.current > 0) {
+        window.history.go(-(navigationLockDepthRef.current + 1));
+        return;
+      }
+      onExit();
+      return;
+    }
+
     resetSessionTracking();
     setSessionScores([]);
     setShowSummary(false);
@@ -1006,10 +1077,6 @@ export default function EnglishFlashcards({
     setTeacherFeedback("");
     setTeacherFeedbackError(null);
     if (forceSessionOnly) {
-      if (onExit) {
-        onExit();
-        return;
-      }
       setSelectedStudentId((prev) => prev ?? initialStudentId ?? students[0]?.id ?? null);
       setView("session");
       return;
@@ -1019,6 +1086,15 @@ export default function EnglishFlashcards({
   };
 
   const handleBackToDashboard = () => {
+    if (isSessionExitLocked && !navigationAllowedRef.current) {
+      notifyExitBlocked();
+      return;
+    }
+    if (isSessionExitLocked && typeof window !== "undefined" && navigationLockDepthRef.current > 0) {
+      navigationAllowedRef.current = true;
+      window.history.go(-(navigationLockDepthRef.current + 1));
+      return;
+    }
     if (onExit) {
       onExit();
       return;
@@ -1516,6 +1592,7 @@ export default function EnglishFlashcards({
   );
 
   const handleStartSession = useCallback(async (studentId: string) => {
+    navigationAllowedRef.current = false;
     const selectedStudent = students.find((student) => student.id === studentId);
     const studentLevel = normalizeLevelLabel(selectedStudent?.phonemicLevel ?? "");
     if (expectedPhonemicLevel && studentLevel && expectedPhonemicLevel !== studentLevel) {
@@ -2533,7 +2610,12 @@ export default function EnglishFlashcards({
             <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
               <button
                 onClick={handleStopSession}
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#013300] px-7 py-3 text-sm font-medium text-white shadow-md shadow-gray-200 transition hover:bg-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600 active:scale-95 w-full sm:w-auto"
+                disabled={!canSaveAndExit}
+                className={`inline-flex items-center justify-center gap-2 rounded-full px-7 py-3 text-sm font-medium shadow-md shadow-gray-200 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600 w-full sm:w-auto ${
+                  canSaveAndExit
+                    ? "bg-[#013300] text-white hover:bg-green-800 active:scale-95"
+                    : "cursor-not-allowed bg-[#013300]/50 text-white/80"
+                }`}
               >
                 <span className="h-2 w-2 rounded-full bg-white/70" /> Save &amp; Exit
               </button>
@@ -2781,7 +2863,12 @@ export default function EnglishFlashcards({
               </button>
               <button
                 onClick={handleStopSession}
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#013300] px-7 py-3 text-sm font-medium text-white shadow-md shadow-gray-200 transition hover:bg-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600 active:scale-95 w-full sm:w-auto"
+                disabled={!canSaveAndExit}
+                className={`inline-flex items-center justify-center gap-2 rounded-full px-7 py-3 text-sm font-medium text-white shadow-md shadow-gray-200 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600 w-full sm:w-auto ${
+                  canSaveAndExit
+                    ? "bg-[#013300] hover:bg-green-800 active:scale-95"
+                    : "cursor-not-allowed bg-[#013300]/50 text-white/80"
+                }`}
               >
                 <span className="h-2 w-2 rounded-full bg-white/70" /> Save &amp; Exit
               </button>

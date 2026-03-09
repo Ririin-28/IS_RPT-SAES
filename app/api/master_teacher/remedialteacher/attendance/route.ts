@@ -7,8 +7,11 @@ export const dynamic = "force-dynamic";
 
 const REMEDIAL_QUARTER_TABLE = "remedial_quarter";
 const WEEKLY_SUBJECT_TABLE = "weekly_subject_schedule";
+const APPROVED_REMEDIAL_TABLE = "approved_remedial_schedule";
 const ATTENDANCE_SESSION_TABLE = "attendance_session";
 const ATTENDANCE_RECORD_TABLE = "attendance_record";
+const REMEDIAL_SESSION_TABLE = "student_remedial_session";
+const REMEDIAL_PERFORMANCE_TABLE = "student_remedial_flashcard_performance";
 const PARENT_NOTIFICATIONS_TABLE = "parent_notifications";
 const SUBJECT_TABLE_CANDIDATES = ["subject", "subjects"] as const;
 const MT_REMEDIAL_HANDLED_TABLE = "mt_remedialteacher_handled";
@@ -326,6 +329,51 @@ const normalizeEntries = async (entries: unknown): Promise<NormalizedEntry[]> =>
   return normalized;
 };
 
+const loadCompletedRemedialAttendance = async (args: {
+  subjectId: number;
+  startIso: string;
+  endIso: string;
+  studentIds: string[];
+  allowedMonths: Set<number>;
+  allowedWeekdays: Set<string>;
+}): Promise<Array<{ studentId: string; date: string; present: "Yes" }>> => {
+  const params: Array<string | number> = [args.subjectId, args.startIso, args.endIso];
+  let sql = `
+    SELECT DISTINCT
+      s.student_id,
+      DATE_FORMAT(a.schedule_date, '%Y-%m-%d') AS session_date
+    FROM ${REMEDIAL_SESSION_TABLE} s
+    JOIN ${APPROVED_REMEDIAL_TABLE} a ON a.request_id = s.approved_schedule_id
+    WHERE s.subject_id = ?
+      AND s.completed_at IS NOT NULL
+      AND a.schedule_date BETWEEN ? AND ?
+      AND EXISTS (
+        SELECT 1
+        FROM ${REMEDIAL_PERFORMANCE_TABLE} p
+        WHERE p.session_id = s.session_id
+        LIMIT 1
+      )
+  `;
+
+  if (args.studentIds.length) {
+    sql += ` AND s.student_id IN (${args.studentIds.map(() => "?").join(",")})`;
+    params.push(...args.studentIds);
+  }
+
+  const [rows] = await query<RowDataPacket[]>(sql, params);
+  const records: Array<{ studentId: string; date: string; present: "Yes" }> = [];
+
+  for (const row of rows) {
+    const studentId = row.student_id ? String(row.student_id).trim() : "";
+    const date = row.session_date ? String(row.session_date).slice(0, 10) : "";
+    if (!studentId || !date) continue;
+    if (!isAllowedDate(date, args.allowedMonths, args.allowedWeekdays)) continue;
+    records.push({ studentId, date, present: "Yes" });
+  }
+
+  return records;
+};
+
 const resolveStudentIdFilters = async (rawIds: string[]): Promise<string[]> => {
   const cleaned = rawIds.map((value) => value.trim()).filter((value) => value.length > 0);
   if (!cleaned.length) return [];
@@ -467,8 +515,19 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const [rows] = await query<RowDataPacket[]>(sql, params);
-  const records = rows.map((row) => {
+  const [rows, completedRecords] = await Promise.all([
+    query<RowDataPacket[]>(sql, params),
+    loadCompletedRemedialAttendance({
+      subjectId,
+      startIso: startDate.toISOString().slice(0, 10),
+      endIso: endDate.toISOString().slice(0, 10),
+      studentIds,
+      allowedMonths,
+      allowedWeekdays,
+    }),
+  ]);
+
+  const explicitRecords: Array<{ studentId: string; date: string; present: "Yes" | "No" }> = rows[0].map((row) => {
     const status = row.status ? String(row.status).toLowerCase() : "";
     const present = status === "absent" ? "No" : "Yes";
     const date = row.session_date ? String(row.session_date).slice(0, 10) : "";
@@ -478,6 +537,19 @@ export async function GET(request: NextRequest) {
       present,
     };
   });
+
+  const recordMap = new Map<string, { studentId: string; date: string; present: "Yes" | "No" }>();
+  for (const record of explicitRecords) {
+    recordMap.set(`${record.studentId}::${record.date}`, record);
+  }
+  for (const record of completedRecords) {
+    const key = `${record.studentId}::${record.date}`;
+    if (!recordMap.has(key)) {
+      recordMap.set(key, record);
+    }
+  }
+
+  const records = Array.from(recordMap.values());
 
   return NextResponse.json({ success: true, records });
 }
