@@ -252,7 +252,7 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
   }
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center p-4 text-[#013300] relative overflow-hidden">
+    <div className="relative min-h-dvh w-full overflow-x-hidden overflow-y-auto px-4 py-6 text-[#013300] sm:py-8 md:flex md:items-center md:justify-center">
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(209,255,222,0.45),transparent_20%),radial-gradient(circle_at_bottom_right,rgba(188,240,214,0.35),transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(242,249,245,0.95))]" />
       <div className="pointer-events-none absolute left-[10%] right-[50%] top-32 -z-10 h-56 rounded-3xl bg-linear-to-br from-green-200/50 via-white/40 to-transparent blur-4xl" />
       <div className="pointer-events-none absolute left-[55%] right-[10%] bottom-16 -z-10 h-56 rounded-[40px] bg-linear-to-t from-green-200/60 via-white/35 to-transparent blur-4xl" />
@@ -261,10 +261,10 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
         initial={mounted ? { opacity: 0, y: 20 } : false}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="w-full max-w-md"
+        className="mx-auto w-full max-w-md"
       >
         {completedSummary ? (
-          <div className="bg-white/85 backdrop-blur-sm rounded-3xl shadow-xl w-full border border-green-100/60 p-8">
+          <div className="w-full rounded-3xl border border-green-100/60 bg-white/85 p-5 shadow-xl backdrop-blur-sm sm:p-8">
             <button
               type="button"
               onClick={onBack}
@@ -319,7 +319,7 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
             </PrimaryButton>
           </div>
         ) : (
-          <div className="bg-white/85 backdrop-blur-sm rounded-3xl shadow-xl w-full border-2 border-[#013300] p-8">
+          <div className="w-full rounded-3xl border-2 border-[#013300] bg-white/85 p-5 shadow-xl backdrop-blur-sm sm:p-8">
             <button
               type="button"
               onClick={onBack}
@@ -416,7 +416,7 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
         }
         aria-hidden={!isScanning}
       >
-        <div className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl space-y-3">
+        <div className="max-h-[85dvh] w-full max-w-sm space-y-3 overflow-y-auto rounded-2xl bg-white p-4 shadow-xl">
           <h2 className="text-center text-base font-semibold text-[#1b5e20]">Scan QR Code</h2>
           <div className="overflow-hidden rounded-xl bg-black">
             <div id={scannerContainerId} className="w-full h-64" />

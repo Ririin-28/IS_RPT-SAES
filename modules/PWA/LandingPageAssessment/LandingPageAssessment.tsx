@@ -143,7 +143,7 @@ export default function LandingPageAssessment() {
   }
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center p-4 text-[#013300] relative overflow-hidden">
+    <div className="relative min-h-dvh w-full overflow-x-hidden overflow-y-auto px-4 py-6 text-[#013300] sm:py-8 md:flex md:items-center md:justify-center">
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(209,255,222,0.45),transparent_20%),radial-gradient(circle_at_bottom_right,rgba(188,240,214,0.35),transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(242,249,245,0.95))]" />
       <div className="pointer-events-none absolute left-[10%] right-[50%] top-32 -z-10 h-56 rounded-3xl bg-linear-to-br from-green-200/50 via-white/40 to-transparent blur-4xl" />
       <div className="pointer-events-none absolute left-[55%] right-[10%] bottom-16 -z-10 h-56 rounded-[40px] bg-linear-to-t from-green-200/60 via-white/35 to-transparent blur-4xl" />
@@ -152,10 +152,10 @@ export default function LandingPageAssessment() {
         initial={mounted ? { opacity: 0, y: 20 } : false}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="w-full max-w-4xl"
+        className="mx-auto w-full max-w-4xl"
       >
         {!isStandalone ? (
-          <div className="bg-white/85 backdrop-blur-sm rounded-3xl shadow-xl w-full border-4 border-[#013300] p-8 space-y-6">
+          <div className="w-full space-y-5 rounded-3xl border-4 border-[#013300] bg-white/85 p-5 shadow-xl backdrop-blur-sm sm:p-8 sm:space-y-6">
             <div className="flex flex-col items-center">
               <Image
                 src="/RPT-SAES/RPTLogo.png"
@@ -201,7 +201,7 @@ export default function LandingPageAssessment() {
             </div>
           </div>
         ) : (
-          <div className="relative w-full overflow-hidden rounded-[40px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(246,250,247,0.98))] p-8 shadow-[0_24px_80px_rgba(1,51,0,0.08)] md:p-10">
+          <div className="relative w-full overflow-hidden rounded-[32px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(246,250,247,0.98))] p-5 shadow-[0_24px_80px_rgba(1,51,0,0.08)] sm:rounded-[40px] sm:p-8 md:p-10">
             <div className="pointer-events-none absolute inset-0">
               <div className="absolute -left-20 top-10 h-52 w-52 rounded-full bg-[#dcefe1] blur-3xl" />
               <div className="absolute right-[-4rem] top-[-2rem] h-56 w-56 rounded-full bg-[#eff5d9] blur-3xl" />
@@ -219,26 +219,26 @@ export default function LandingPageAssessment() {
                 height={72}
                 className="h-16 w-16 object-contain drop-shadow-md"
               />
-              <h1 className="mt-4 text-[3rem] font-bold tracking-[-0.05em] text-[#013300] md:text-[3.6rem]">
+              <h1 className="mt-4 text-[2.5rem] font-bold tracking-[-0.05em] text-[#013300] sm:text-[3rem] md:text-[3.6rem]">
                 RPT Portal
               </h1>
-              <p className="mt-3 text-base font-medium text-[#013300]/55 md:text-lg">Choose your space</p>
+              <p className="mt-3 text-sm font-medium text-[#013300]/55 sm:text-base md:text-lg">Choose your space</p>
             </div>
 
             <div className="relative mt-10 grid gap-5 md:grid-cols-2">
               <button
                 type="button"
                 onClick={() => openPortal("parent")}
-                className="group relative overflow-hidden rounded-[32px] border border-[#0d6039]/10 bg-[#0d6039] p-8 text-left text-white transition duration-200 hover:-translate-y-1 hover:shadow-[0_16px_40px_rgba(13,96,57,0.18)]"
+                className="group relative overflow-hidden rounded-[28px] border border-[#0d6039]/10 bg-[#0d6039] p-6 text-left text-white transition duration-200 hover:-translate-y-1 hover:shadow-[0_16px_40px_rgba(13,96,57,0.18)] sm:rounded-[32px] sm:p-8"
               >
                 <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/8" />
                 <div className="pointer-events-none absolute bottom-0 left-0 h-24 w-full bg-gradient-to-t from-black/8 to-transparent" />
-                <div className="relative flex min-h-[280px] flex-col">
+                <div className="relative flex min-h-[240px] flex-col sm:min-h-[280px]">
                   <div className="flex items-center justify-center transition group-hover:scale-[1.02]">
                     <ParentPortalBadge />
                   </div>
                   <div className="mt-auto flex items-end justify-between gap-4">
-                    <h2 className="max-w-[11ch] text-[2.35rem] font-semibold leading-[0.95] tracking-[-0.05em]">
+                    <h2 className="max-w-[11ch] text-[2rem] font-semibold leading-[0.95] tracking-[-0.05em] sm:text-[2.35rem]">
                       Enter as Parent
                     </h2>
                     <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/12 bg-white/10 text-white/90 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5">
@@ -251,16 +251,16 @@ export default function LandingPageAssessment() {
               <button
                 type="button"
                 onClick={() => openPortal("student")}
-                className="group relative overflow-hidden rounded-[32px] border border-[#013300]/10 bg-[linear-gradient(180deg,#f8fbf4_0%,#eef5e8_100%)] p-8 text-left text-[#013300] transition duration-200 hover:-translate-y-1 hover:shadow-[0_16px_40px_rgba(1,51,0,0.10)]"
+                className="group relative overflow-hidden rounded-[28px] border border-[#013300]/10 bg-[linear-gradient(180deg,#f8fbf4_0%,#eef5e8_100%)] p-6 text-left text-[#013300] transition duration-200 hover:-translate-y-1 hover:shadow-[0_16px_40px_rgba(1,51,0,0.10)] sm:rounded-[32px] sm:p-8"
               >
                 <div className="pointer-events-none absolute right-6 top-6 h-24 w-24 rounded-full bg-white/60 blur-2xl" />
                 <div className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-[#dfead6]/50 to-transparent" />
-                <div className="relative flex min-h-[280px] flex-col">
+                <div className="relative flex min-h-[240px] flex-col sm:min-h-[280px]">
                   <div className="flex items-center justify-center transition group-hover:scale-[1.02]">
                     <StudentQuizBadge />
                   </div>
                   <div className="mt-auto flex items-end justify-between gap-4">
-                    <h2 className="max-w-[10ch] text-[2.35rem] font-semibold leading-[0.95] tracking-[-0.05em] text-[#013300]">
+                    <h2 className="max-w-[10ch] text-[2rem] font-semibold leading-[0.95] tracking-[-0.05em] text-[#013300] sm:text-[2.35rem]">
                       Enter RPT Quiz
                     </h2>
                     <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[#013300]/10 bg-white text-[#013300] transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5">

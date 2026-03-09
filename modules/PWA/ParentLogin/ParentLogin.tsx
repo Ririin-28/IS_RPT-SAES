@@ -139,12 +139,12 @@ export default function ParentLogin({ onBack }: ParentLoginProps) {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center p-4 text-[#013300] relative overflow-hidden">
+    <div className="relative min-h-dvh w-full overflow-x-hidden overflow-y-auto px-4 py-6 text-[#013300] sm:py-8 md:flex md:items-center md:justify-center">
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(209,255,222,0.45),transparent_20%),radial-gradient(circle_at_bottom_right,rgba(188,240,214,0.35),transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(242,249,245,0.95))]" />
       <div className="pointer-events-none absolute left-[10%] right-[50%] top-32 -z-10 h-56 rounded-3xl bg-linear-to-br from-green-200/50 via-white/40 to-transparent blur-4xl" />
       <div className="pointer-events-none absolute left-[55%] right-[10%] bottom-16 -z-10 h-56 rounded-[40px] bg-linear-to-t from-green-200/60 via-white/35 to-transparent blur-4xl" />
 
-      <div className="w-full max-w-md rounded-3xl border border-green-100/80 bg-white/90 p-8 shadow-xl backdrop-blur-sm">
+      <div className="mx-auto w-full max-w-md rounded-3xl border border-green-100/80 bg-white/90 p-5 shadow-xl backdrop-blur-sm sm:p-8">
         <button
           type="button"
           onClick={onBack}

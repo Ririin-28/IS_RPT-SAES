@@ -15,7 +15,7 @@ export default function PWALayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="h-screen w-full overflow-hidden bg-white">
+    <div className="min-h-dvh w-full overflow-x-hidden overflow-y-auto bg-white">
       <PWARegister />
       {children}
     </div>

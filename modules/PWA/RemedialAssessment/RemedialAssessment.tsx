@@ -223,8 +223,8 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
   }
 
   return (
-    <div className="min-h-screen w-full bg-linear-to-b from-white to-green-50 flex flex-col items-center p-0 sm:p-4">
-      <div className="w-full max-w-md flex flex-col h-full min-h-screen sm:min-h-0">
+    <div className="min-h-dvh w-full overflow-x-hidden overflow-y-auto bg-linear-to-b from-white to-green-50 px-0 pb-6 sm:p-4">
+      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col sm:min-h-0">
         {/* Quizizz-style Header */}
         <div className="w-full p-4 flex items-center justify-between text-[#013300]">
           <div className="flex items-center gap-2">
@@ -256,10 +256,10 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
-          className="flex-1 flex flex-col p-4"
+          className="flex flex-1 flex-col p-4"
         >
-          <div className="rounded-3xl bg-white shadow-2xl overflow-hidden flex flex-col flex-1 min-h-0">
-            <div className="p-6 sm:p-8 space-y-6 flex-1 flex flex-col overflow-y-auto">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+            <div className="flex flex-1 flex-col space-y-5 overflow-y-auto p-5 sm:p-8 sm:space-y-6">
               <AnimatePresence mode="wait">
                 <motion.div
                   key={item.id}
