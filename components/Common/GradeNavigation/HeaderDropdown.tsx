@@ -75,7 +75,7 @@ const HeaderDropdown = ({ options, value, onChange, className = "", openOnHover 
       </button>
       
       {isOpen && (
-        <div className="absolute z-50 mt-1 left-0 bg-white border border-gray-200 rounded-md shadow-lg w-40 overflow-hidden">
+        <div className="absolute z-50 mt-1 left-0 bg-white border border-gray-200 rounded-md shadow-lg w-41 overflow-hidden">
           {options.map((option) => (
             <div
               key={option}

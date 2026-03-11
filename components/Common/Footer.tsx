@@ -33,7 +33,7 @@ export default function Footer({ schoolDetails }: FooterProps) {
   const facebookLabel = facebookUrl.replace(/^https?:\/\//i, "");
 
   return (
-    <footer id="contacts" className="bg-white pt-5 px-6 md:px-16 text-black">
+    <footer className="bg-white pt-5 px-6 md:px-16 text-black">
       <hr className="border-t border-gray-300 my-4"></hr>
       <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-10 items-start">
         {/* Left: Logos + Description */}

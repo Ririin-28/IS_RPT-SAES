@@ -223,10 +223,10 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
   }
 
   return (
-    <div className="min-h-dvh w-full overflow-x-hidden overflow-y-auto bg-linear-to-b from-white to-green-50 px-0 pb-6 sm:p-4">
-      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col sm:min-h-0">
+    <div className="min-h-dvh w-full overflow-x-hidden overflow-y-auto bg-linear-to-b from-white to-green-50 px-0 pb-4 sm:px-3 sm:pb-6 md:px-4">
+      <div className="mx-auto flex min-h-dvh w-full max-w-[820px] flex-col sm:min-h-0">
         {/* Quizizz-style Header */}
-        <div className="w-full p-4 flex items-center justify-between text-[#013300]">
+        <div className="flex w-full items-center justify-between p-3 text-[#013300] sm:p-4">
           <div className="flex items-center gap-2">
             <div className="bg-green-100 rounded-full px-3 py-1 text-sm font-bold border border-green-200">
               {current + 1} / {questions.length}
@@ -242,7 +242,7 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
         </div>
 
         {/* Progress Bar */}
-        <div className="w-full px-4 mb-4">
+        <div className="mb-4 w-full px-3 sm:px-4">
           <div className="h-2 w-full bg-green-100 rounded-full overflow-hidden">
             <motion.div
               initial={{ width: 0 }}
@@ -256,10 +256,10 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
-          className="flex flex-1 flex-col p-4"
+          className="flex flex-1 flex-col p-3 sm:p-4"
         >
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
-            <div className="flex flex-1 flex-col space-y-5 overflow-y-auto p-5 sm:p-8 sm:space-y-6">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[28px] bg-white shadow-2xl">
+            <div className="flex flex-1 flex-col space-y-5 overflow-y-auto p-4 sm:space-y-6 sm:p-6 md:p-7">
               <AnimatePresence mode="wait">
                 <motion.div
                   key={item.id}
@@ -270,7 +270,7 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
                   className="space-y-6 flex-1 flex flex-col"
                 >
                   {/* Question Section with Speaker */}
-                  <div className="text-center relative py-4">
+                  <div className="relative py-2 text-center sm:py-4">
                     {(activeSectionTitle || activeSectionDescription) && (
                       <div className="mb-5 rounded-2xl border border-green-100 bg-green-50/70 px-4 py-3 text-left shadow-sm">
                         {activeSectionTitle ? (
@@ -282,7 +282,7 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
                       </div>
                     )}
                     <div className="flex items-center justify-center gap-3 mb-2">
-                      <h2 className="text-2xl font-black text-[#222] tracking-tight">
+                      <h2 className="text-xl font-black tracking-tight text-[#222] sm:text-2xl md:text-[1.8rem]">
                         {item.questionText}
                       </h2>
                       <button 
@@ -317,7 +317,7 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
                           key={choice.id}
                           onClick={() => handleChoiceSelect(choice.id)}
                           disabled={isSaving || isSubmitting}
-                          className={`w-full py-6 rounded-2xl text-xl font-black text-white shadow-[0_6px_0_0_rgba(0,0,0,0.2)] active:shadow-none active:translate-y-1 transition-all duration-100 ${
+                          className={`w-full rounded-2xl py-5 text-lg font-black text-white shadow-[0_6px_0_0_rgba(0,0,0,0.2)] transition-all duration-100 active:translate-y-1 active:shadow-none sm:py-6 sm:text-xl ${
                             optionColors[index % optionColors.length]
                           } ${isSaving || isSubmitting ? 'opacity-50 grayscale' : 'hover:brightness-110'}`}
                         >
@@ -335,13 +335,13 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
                           onChange={(event) => setShortAnswer(event.target.value)}
                           rows={4}
                           placeholder="Type your answer here..."
-                          className="w-full rounded-2xl border-4 border-gray-100 bg-gray-50 p-6 text-lg font-bold text-[#222] focus:border-[#461a92] focus:bg-white outline-none transition-all resize-none"
+                          className="w-full resize-none rounded-2xl border-4 border-gray-100 bg-gray-50 p-4 text-lg font-bold text-[#222] outline-none transition-all focus:border-[#461a92] focus:bg-white sm:p-6"
                         />
                       </div>
                       <button
                         onClick={handleShortAnswerNext}
                         disabled={isSaving || isSubmitting || shortAnswer.trim().length === 0}
-                        className="w-full py-5 rounded-2xl text-xl font-black text-white bg-[#46a301] shadow-[0_6px_0_0_rgba(0,0,0,0.2)] active:shadow-none active:translate-y-1 transition-all"
+                        className="w-full rounded-2xl bg-[#46a301] py-5 text-xl font-black text-white shadow-[0_6px_0_0_rgba(0,0,0,0.2)] transition-all active:translate-y-1 active:shadow-none"
                       >
                         {isLast ? "Submit Answer" : "Next Question"}
                       </button>
@@ -360,21 +360,21 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
               initial={{ opacity: 0, scale: 0.5 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 1.5 }}
-              className={`fixed inset-0 z-50 flex items-center justify-center p-6 pointer-events-none`}
+              className={`fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none sm:p-6`}
             >
-              <div className={`rounded-3xl p-8 shadow-2xl text-center transform -rotate-2 ${
+              <div className={`transform rounded-[28px] p-6 text-center shadow-2xl -rotate-2 sm:p-8 ${
                 feedback.type === "streak_milestone" ? "bg-orange-500 text-white" :
                 feedback.type === "streak_loss" ? "bg-blue-600 text-white" :
                 feedback.type === "correct" ? "bg-[#46a301] text-white" : "bg-[#eb103b] text-white"
               }`}>
-                <h3 className="text-4xl font-black mb-2 tracking-tighter uppercase">
+                <h3 className="mb-2 text-3xl font-black tracking-tighter uppercase sm:text-4xl">
                   {feedback.text}
                 </h3>
                 {feedback.subtext && (
-                  <p className="text-xl font-bold opacity-90">{feedback.subtext}</p>
+                  <p className="text-lg font-bold opacity-90 sm:text-xl">{feedback.subtext}</p>
                 )}
                 {!feedback.subtext && (
-                  <p className="text-xl font-bold opacity-90">
+                  <p className="text-lg font-bold opacity-90 sm:text-xl">
                     {feedback.type === "correct" ? "Great job!" : "Try again!"}
                   </p>
                 )}
@@ -384,7 +384,7 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
         </AnimatePresence>
 
         {/* Footer info */}
-        <div className="p-4 flex items-center justify-center gap-4 text-[#011330] text-xs font-bold uppercase tracking-widest">
+        <div className="flex items-center justify-center gap-3 px-4 pb-4 text-center text-[0.65rem] font-bold uppercase tracking-[0.22em] text-[#011330] sm:gap-4 sm:text-xs sm:tracking-widest">
           <span>{assessment.title}</span>
           <span>•</span>
           <span>Best Streak: {bestStreak}</span>

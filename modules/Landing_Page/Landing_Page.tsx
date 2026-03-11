@@ -3,6 +3,22 @@
 import { useEffect, useState, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import {
+  Bot,
+  BrainCircuit,
+  ChartLine,
+  Clock3,
+  ClipboardCheck,
+  ClipboardList,
+  Database,
+  DatabaseZap,
+  Facebook,
+  FileChartLine,
+  Mail,
+  MapPinned,
+  Navigation,
+  Phone,
+} from "lucide-react";
 import RPTLogoTitle from "@/components/Common/RPTLogoTitle";
 import Footer from "@/components/Common/Footer";
 
@@ -32,6 +48,10 @@ const NAV_LINKS = [
   { label: "Contacts", href: "#contacts" },
   { label: "Login", href: "/auth/login", isRoute: true },
 ];
+
+const NAV_SECTION_IDS = NAV_LINKS
+  .filter((item) => !item.isRoute)
+  .map((item) => item.href.replace("#", ""));
 
 type LandingContent = {
   carouselImages: Array<{
@@ -116,48 +136,48 @@ const normalizeLandingContent = (data: ApiLandingPayload | undefined | null): La
 
   const safeCarousel = Array.isArray(data.carouselImages)
     ? data.carouselImages
-        .map((item, index) => {
-          if (!item) return null;
-          const dataUrl = typeof item.dataUrl === "string" ? item.dataUrl : typeof item.image === "string" ? item.image : null;
-          const name = typeof item.name === "string" ? item.name : null;
-          const id = String(item.id ?? index);
-          return { id, dataUrl, name };
-        })
-        .filter((item): item is { id: string; dataUrl: string | null; name: string | null } => Boolean(item))
+      .map((item, index) => {
+        if (!item) return null;
+        const dataUrl = typeof item.dataUrl === "string" ? item.dataUrl : typeof item.image === "string" ? item.image : null;
+        const name = typeof item.name === "string" ? item.name : null;
+        const id = String(item.id ?? index);
+        return { id, dataUrl, name };
+      })
+      .filter((item): item is { id: string; dataUrl: string | null; name: string | null } => Boolean(item))
     : [];
 
   const safeLogo = data.logo
     ? {
-        id: String(data.logo.id ?? "logo"),
-        dataUrl:
-          typeof data.logo.dataUrl === "string"
-            ? data.logo.dataUrl
-            : typeof data.logo.logo === "string"
-              ? data.logo.logo
-              : fallback.logo?.dataUrl ?? null,
-        name: typeof data.logo.name === "string" ? data.logo.name : fallback.logo?.name ?? null,
-      }
+      id: String(data.logo.id ?? "logo"),
+      dataUrl:
+        typeof data.logo.dataUrl === "string"
+          ? data.logo.dataUrl
+          : typeof data.logo.logo === "string"
+            ? data.logo.logo
+            : fallback.logo?.dataUrl ?? null,
+      name: typeof data.logo.name === "string" ? data.logo.name : fallback.logo?.name ?? null,
+    }
     : fallback.logo;
 
   const safeDetails = data.saesDetails
     ? {
-        location: data.saesDetails.location ?? fallback.saesDetails?.location ?? DEFAULT_SCHOOL_DETAILS.location,
-        contact_no: data.saesDetails.contact_no ?? fallback.saesDetails?.contact_no ?? DEFAULT_SCHOOL_DETAILS.contact_no,
-        email: data.saesDetails.email ?? fallback.saesDetails?.email ?? DEFAULT_SCHOOL_DETAILS.email,
-        facebook: data.saesDetails.facebook ?? fallback.saesDetails?.facebook ?? DEFAULT_SCHOOL_DETAILS.facebook,
-      }
+      location: data.saesDetails.location ?? fallback.saesDetails?.location ?? DEFAULT_SCHOOL_DETAILS.location,
+      contact_no: data.saesDetails.contact_no ?? fallback.saesDetails?.contact_no ?? DEFAULT_SCHOOL_DETAILS.contact_no,
+      email: data.saesDetails.email ?? fallback.saesDetails?.email ?? DEFAULT_SCHOOL_DETAILS.email,
+      facebook: data.saesDetails.facebook ?? fallback.saesDetails?.facebook ?? DEFAULT_SCHOOL_DETAILS.facebook,
+    }
     : fallback.saesDetails;
 
   const safePolicy = data.privacyPolicy
     ? {
-        dataUrl:
-          typeof data.privacyPolicy.dataUrl === "string"
-            ? data.privacyPolicy.dataUrl
-            : typeof data.privacyPolicy.file === "string"
-              ? data.privacyPolicy.file
-              : fallback.privacyPolicy?.dataUrl ?? null,
-        name: typeof data.privacyPolicy.name === "string" ? data.privacyPolicy.name : fallback.privacyPolicy?.name ?? null,
-      }
+      dataUrl:
+        typeof data.privacyPolicy.dataUrl === "string"
+          ? data.privacyPolicy.dataUrl
+          : typeof data.privacyPolicy.file === "string"
+            ? data.privacyPolicy.file
+            : fallback.privacyPolicy?.dataUrl ?? null,
+      name: typeof data.privacyPolicy.name === "string" ? data.privacyPolicy.name : fallback.privacyPolicy?.name ?? null,
+    }
     : fallback.privacyPolicy;
 
   return {
@@ -168,9 +188,22 @@ const normalizeLandingContent = (data: ApiLandingPayload | undefined | null): La
   };
 };
 
+const getSectionNavAnchor = (section: HTMLElement) =>
+  section.querySelector<HTMLElement>("[data-nav-anchor='true']") ?? section;
+
+const getSectionScrollTarget = (section: HTMLElement) => {
+  const navAnchor = getSectionNavAnchor(section);
+  const anchorRect = navAnchor.getBoundingClientRect();
+  const anchorCenter = anchorRect.top + window.scrollY + anchorRect.height / 2;
+  const maxScroll = Math.max(document.documentElement.scrollHeight - window.innerHeight, 0);
+
+  return Math.min(Math.max(anchorCenter - window.innerHeight / 2, 0), maxScroll);
+};
+
 export default function Home() {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [mounted, setMounted] = useState(false);
+  const [activeSection, setActiveSection] = useState("home");
   const [landingContent, setLandingContent] = useState<LandingContent>(
     createFallbackLandingContent()
   );
@@ -181,14 +214,17 @@ export default function Home() {
     features: false,
     mobile: false,
     location: false,
+    contacts: false,
   });
-  
+
   const heroRef = useRef(null);
   const aboutRef = useRef(null);
   const missionRef = useRef(null);
   const featuresRef = useRef(null);
   const mobileRef = useRef(null);
   const locationRef = useRef(null);
+  const contactsRef = useRef(null);
+  const activeSectionLockRef = useRef<string | null>(null);
 
   // Mark mounted immediately so LCP is not gated by API latency
   useEffect(() => {
@@ -220,13 +256,43 @@ export default function Home() {
   const HERO_IMAGES = landingContent?.carouselImages
     .filter((img) => typeof img.dataUrl === "string" && img.dataUrl.length > 0)
     .map((img) => img.dataUrl as string) || DEFAULT_HERO_IMAGES;
-  
+
   const slideCount = HERO_IMAGES.length;
   const activeSlide = HERO_IMAGES[currentSlide % slideCount] ?? HERO_IMAGES[0];
+  const schoolContactNo = landingContent?.saesDetails?.contact_no || DEFAULT_SCHOOL_DETAILS.contact_no;
+  const schoolEmail = landingContent?.saesDetails?.email || DEFAULT_SCHOOL_DETAILS.email;
+  const schoolFacebook = landingContent?.saesDetails?.facebook || DEFAULT_SCHOOL_DETAILS.facebook;
+  const schoolFacebookUrl = /^https?:\/\//i.test(schoolFacebook)
+    ? schoolFacebook
+    : `https://${schoolFacebook}`;
+  const contactMethods = [
+    {
+      label: "Phone",
+      value: schoolContactNo,
+      description: "Call the school office directly.",
+      href: `tel:${schoolContactNo.replace(/[^\d+]/g, "")}`,
+      icon: Phone,
+    },
+    {
+      label: "Email",
+      value: schoolEmail,
+      description: "Send school concerns and general inquiries anytime.",
+      href: `mailto:${schoolEmail}`,
+      icon: Mail,
+    },
+    {
+      label: "Facebook",
+      value: schoolFacebook.replace(/^https?:\/\//i, ""),
+      description: "View official announcements and school updates online.",
+      href: schoolFacebookUrl,
+      external: true,
+      icon: Facebook,
+    },
+  ];
 
   useEffect(() => {
     if (!mounted) return;
-    
+
     const timer = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % slideCount);
     }, 5000);
@@ -257,6 +323,7 @@ export default function Home() {
       if (featuresRef.current) observer.observe(featuresRef.current);
       if (mobileRef.current) observer.observe(mobileRef.current);
       if (locationRef.current) observer.observe(locationRef.current);
+      if (contactsRef.current) observer.observe(contactsRef.current);
     }, 100);
 
     return () => {
@@ -264,6 +331,84 @@ export default function Home() {
       observer.disconnect();
     };
   }, [mounted, slideCount]);
+
+  useEffect(() => {
+    if (!mounted) return;
+
+    let ticking = false;
+
+    const updateActiveSection = () => {
+      const nearBottom =
+        window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 120;
+      const lockedSectionId = activeSectionLockRef.current;
+
+      if (lockedSectionId) {
+        const lockedSection = document.getElementById(lockedSectionId);
+
+        if (!lockedSection) {
+          activeSectionLockRef.current = null;
+        } else {
+          const lockedSectionTop = getSectionScrollTarget(lockedSection);
+          const reachedLockedSection =
+            Math.abs(window.scrollY - lockedSectionTop) <= 24 ||
+            (lockedSectionId === "contacts" && nearBottom);
+
+          if (!reachedLockedSection) {
+            setActiveSection(lockedSectionId);
+            ticking = false;
+            return;
+          }
+
+          activeSectionLockRef.current = null;
+        }
+      }
+
+      if (nearBottom) {
+        setActiveSection("contacts");
+        ticking = false;
+        return;
+      }
+
+      const viewportCenter = window.scrollY + window.innerHeight / 2;
+      let currentSection = NAV_SECTION_IDS[0] ?? "home";
+      let closestDistance = Number.POSITIVE_INFINITY;
+
+      NAV_SECTION_IDS.forEach((sectionId) => {
+        const section = document.getElementById(sectionId);
+        if (!section) {
+          return;
+        }
+
+        const navAnchor = getSectionNavAnchor(section);
+        const anchorRect = navAnchor.getBoundingClientRect();
+        const anchorCenter = anchorRect.top + window.scrollY + anchorRect.height / 2;
+        const distanceFromCenter = Math.abs(anchorCenter - viewportCenter);
+
+        if (distanceFromCenter < closestDistance) {
+          closestDistance = distanceFromCenter;
+          currentSection = sectionId;
+        }
+      });
+
+      setActiveSection(currentSection);
+      ticking = false;
+    };
+
+    const handleScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(updateActiveSection);
+    };
+
+    updateActiveSection();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    window.addEventListener("resize", handleScroll);
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("resize", handleScroll);
+    };
+  }, [mounted]);
 
   const goToSlide = (index: number) => {
     setCurrentSlide((index + slideCount) % slideCount);
@@ -277,43 +422,84 @@ export default function Home() {
     goToSlide(currentSlide + 1);
   };
 
+  const scrollToSection = (sectionId: string) => {
+    activeSectionLockRef.current = sectionId;
+    setActiveSection(sectionId);
+
+    const section = document.getElementById(sectionId);
+    if (!section) {
+      activeSectionLockRef.current = null;
+      return;
+    }
+
+    const top = getSectionScrollTarget(section);
+    window.history.replaceState(null, "", `#${sectionId}`);
+    window.scrollTo({
+      top: Math.max(top, 0),
+      behavior: "smooth",
+    });
+  };
+
   // Helper function to determine if section should be visible
   const isSectionVisible = (section: string) => {
     return mounted && visibleSections[section as keyof typeof visibleSections];
   };
   return (
-    <div className="relative min-h-screen overflow-hidden scroll-smooth bg-[#f6faf8] text-[#013300]">
+    <div className="relative min-h-screen overflow-hidden bg-[#f6faf8] text-[#013300]">
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(198,238,216,0.34),transparent_20%),radial-gradient(circle_at_bottom_right,rgba(212,242,225,0.3),transparent_24%),linear-gradient(180deg,rgba(251,254,252,0.98),rgba(244,250,246,0.96))]" />
       <div className="pointer-events-none absolute left-[12%] right-[50%] top-36 -z-10 h-48 rounded-3xl bg-linear-to-br from-green-100/40 via-white/40 to-transparent blur-4xl" />
       <div className="pointer-events-none absolute left-[56%] right-[12%] bottom-12 -z-10 h-48 rounded-[36px] bg-linear-to-t from-green-100/35 via-white/35 to-transparent blur-4xl" />
-      
+
       {/* Navbar - Responsive Organization */}
-      <header className={`fixed inset-x-0 top-4 z-30 flex justify-center px-2 transition-all duration-500 ${
-        mounted ? 'translate-y-0 opacity-100' : '-translate-y-4 opacity-0'
-      }`}>
-        <div className="w-[90%] max-w-8xl rounded-full border border-white/80 bg-white/78 px-5 py-3 shadow-[0_10px_28px_rgba(15,23,42,0.12)] backdrop-blur-xl md:px-8 md:py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+      <header className={`fixed inset-x-0 top-0 z-30 border-b border-white/70 bg-white/88 shadow-[0_10px_28px_rgba(15,23,42,0.08)] backdrop-blur-xl transition-all duration-500 ${mounted ? 'translate-y-0 opacity-100' : '-translate-y-4 opacity-0'
+        }`}>
+        <div className="flex w-full items-center px-6 py-3 md:px-10 md:py-2 lg:px-14">
+          <div className="flex items-center gap-3">
             <RPTLogoTitle small />
           </div>
-          <nav className="hidden md:ml-auto md:flex md:items-center md:gap-8 lg:gap-12">
-            {NAV_LINKS.map((item, index) => (
-              <Link
-                key={item.label}
-                href={item.href}
-                scroll={!item.isRoute}
-                className={`
-                  rounded-full px-2 py-1 text-base font-semibold text-slate-700 transition-colors duration-200 hover:text-[#013300]
+          <nav className="hidden md:flex md:flex-1 md:items-center md:justify-end md:gap-8 lg:gap-12">
+            {NAV_LINKS.map((item) => {
+              if (item.isRoute) {
+                return (
+                  <Link
+                    key={item.label}
+                    href={item.href}
+                    className={`
+                    rounded-full border border-transparent px-4 py-2 text-base font-semibold transition-[background-color,color,border-color,box-shadow,transform,opacity] duration-200
+                    md:text-[15px] lg:text-base
+                    text-slate-700 hover:bg-green-50/80 hover:text-[#013300]
+                    ${mounted ? 'translate-y-0 opacity-100' : '-translate-y-2 opacity-0'}
+                  `}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              }
+
+              const sectionId = item.href.replace("#", "");
+              const isActive = activeSection === sectionId;
+
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  aria-current={isActive ? "location" : undefined}
+                  onClick={() => scrollToSection(sectionId)}
+                  className={`
+                  rounded-full border border-transparent px-4 py-2 text-base font-semibold transition-[background-color,color,border-color,box-shadow,transform,opacity] duration-200
                   md:text-[15px] lg:text-base
+                  ${isActive
+                      ? "bg-[#013300] text-white shadow-[0_10px_22px_rgba(1,51,0,0.18)]"
+                      : "text-slate-700 hover:bg-green-50/80 hover:text-[#013300]"
+                    }
                   ${mounted ? 'translate-y-0 opacity-100' : '-translate-y-2 opacity-0'}
                 `}
-                style={{ transitionDelay: `${index * 100 + 200}ms` }}
-              >
-                {item.label}
-              </Link>
-            ))}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
           </nav>
-          </div>
         </div>
       </header>
 
@@ -321,23 +507,25 @@ export default function Home() {
       <main
         ref={heroRef}
         id="home"
-        className="relative overflow-hidden px-6 py-8 pt-28 md:px-8 md:py-12 md:pt-32 lg:px-12 lg:py-16"
+        className="relative overflow-hidden px-5 py-5 pt-20 md:px-8 md:py-12 md:pt-28 lg:px-12 lg:py-16 lg:pt-20"
       >
         {/* Soft gradients behind the hero */}
-        <div className="absolute inset-x-0 top-12 h-96 bg-linear-to-br from-green-50 via-white to-green-50/60 opacity-80 blur-3xl" />
-        <div className="absolute -top-20 -right-20 h-64 w-64 rounded-full bg-linear-to-br from-green-100/35 to-green-50/25 blur-2xl" />
-        <div className="absolute bottom-0 -left-16 h-56 w-56 rounded-full bg-green-100/35 blur-2xl" />
+        <div className="pointer-events-none absolute inset-x-0 top-12 h-96 bg-linear-to-br from-green-50 via-white to-green-50/60 opacity-80 blur-3xl" />
+        <div className="pointer-events-none absolute -top-20 -right-20 h-64 w-64 rounded-full bg-linear-to-br from-green-100/35 to-green-50/25 blur-2xl" />
+        <div className="pointer-events-none absolute bottom-0 -left-16 h-56 w-56 rounded-full bg-green-100/35 blur-2xl" />
 
-        <div className="relative max-w-7xl mx-auto py-8 grid md:gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:items-center lg:py-16 lg:gap-15">
+        <div
+          data-nav-anchor="true"
+          className="relative mx-auto grid max-w-7xl gap-6 py-4 md:gap-10 md:py-8 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:items-center lg:py-16 lg:gap-15"
+        >
           {/* Text Content */}
           <div
             className={`
-            w-full flex flex-col justify-center items-center text-center lg:-ml-12
+            relative z-10 w-full flex flex-col items-center justify-center text-center lg:-ml-12
             transition-all duration-700 transform
             ${mounted ? 'translate-x-0 opacity-100 scale-100' : '-translate-x-8 opacity-0 scale-95'}
             sm:items-start sm:text-left
             `}
-            style={{ minHeight: "350px" }}
           >
             <div className="flex items-center gap-3 mb-4 md:gap-4 md:mb-6">
               <Image
@@ -348,15 +536,15 @@ export default function Home() {
                 priority
                 className="h-12 w-12 md:h-16 md:w-16 object-contain"
               />
-              <span className="text-lg font-semibold text-[#013300] md:text-xl lg:text-2xl">
+              <span className="text-base font-semibold text-[#013300] md:text-xl lg:text-2xl">
                 San Agustin Elementary School
               </span>
             </div>
-            <p className="text-lg pb-5 md:text-xl font-medium opacity-90">
+            <p className="pb-3 text-base font-medium opacity-90 md:pb-5 md:text-xl">
               Welcome to <span className="font-semibold">RPT-SAES</span>
             </p>
             <h1
-              className="text-3xl font-extrabold text-[#013300] mb-6 leading-tight md:text-4xl lg:text-5xl"
+              className="mb-4 text-3xl font-extrabold leading-tight text-[#013300] md:mb-6 md:text-4xl lg:text-5xl"
             >
               Transforming Remedial
               <br />
@@ -364,7 +552,7 @@ export default function Home() {
             </h1>
             <p
               className={`
-              text-base text-green-900 mb-2 md:text-lg md:mb-2 lg:text-xl lg:mb-2
+              mb-1 text-sm text-green-900 md:mb-2 md:text-lg lg:mb-2 lg:text-xl
               transition-all duration-800 delay-300 transform
               ${mounted ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}
               text-center sm:text-left
@@ -372,17 +560,16 @@ export default function Home() {
             >
               An innovative platform designed to support teachers in managing and tracking student progress in remedial programs.
             </p>
-            <div className={`flex flex-wrap gap-4 mt-4 transition-all duration-800 delay-500 transform ${
-              mounted ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-6 opacity-0 scale-95'
-            } items-center sm:items-start w-full`}>
+            <div className={`flex flex-wrap gap-4 mt-4 transition-all duration-800 delay-500 transform ${mounted ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-6 opacity-0 scale-95'
+              } items-center sm:items-start w-full`}>
               <Link href="/auth/login" className="
-                flex items-center justify-center rounded-xl bg-[#013300] pl-4 pr-2 py-2 text-base font-semibold text-white transition-colors duration-200 hover:bg-[#014a1f]
-                md:pl-4 md:py-3 md:text-lg lg:text-xl
+                inline-flex min-h-12 touch-manipulation items-center justify-center rounded-xl bg-[#013300] px-4 py-3 text-base font-semibold text-white transition-colors duration-200 hover:bg-[#014a1f]
+                md:px-5 md:py-3 md:text-lg lg:text-xl
                 w-full sm:w-auto sm:justify-start
               ">
                 Get Started
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 ml-2 md:w-6 md:h-6">
-                  <path d="m9 18 6-6-6-6"/>
+                  <path d="m9 18 6-6-6-6" />
                 </svg>
               </Link>
             </div>
@@ -391,14 +578,14 @@ export default function Home() {
           {/* Image Carousel with Caption */}
           <div
             className={`
-            w-full mt-4 lg:w-[120%] lg:mt-0 lg:-ml-20
+            relative z-10 w-full mt-2 lg:w-[120%] lg:mt-0 lg:-ml-20
             transition-all duration-800 delay-400 transform
             ${mounted ? 'translate-x-0 opacity-100 scale-100' : 'translate-x-8 opacity-0 scale-95'}
           `}
           >
             <div className="relative isolate">
               <div className="relative overflow-hidden rounded-3xl border border-gray-200/80 bg-white/85 shadow-[0_16px_36px_rgba(15,23,42,0.10)]">
-                <div className="relative h-100 md:h-120 lg:h-125">
+                <div className="relative h-64 sm:h-72 md:h-120 lg:h-125">
                   <div className="absolute inset-0 transition-all duration-700 ease-out opacity-100 scale-100">
                     <Image
                       src={activeSlide}
@@ -435,9 +622,9 @@ export default function Home() {
                 </div>
 
                 <div className="absolute bottom-0 left-0 right-0 rounded-b-3xl bg-linear-to-t from-[#013300]/78 via-[#013300]/35 to-transparent px-6 py-5">
-                <h3 className="text-2xl font-bold text-white md:text-2xl lg:text-2xl">
-                  {"San Agustin Elementary School"}
-                </h3>
+                  <h3 className="text-2xl font-bold text-white md:text-2xl lg:text-2xl">
+                    {"San Agustin Elementary School"}
+                  </h3>
                   <h3 className="text-md font-base text-white pb-2">
                     {landingContent?.saesDetails?.location || "San Agustin Elementary School"}
                   </h3>
@@ -450,9 +637,8 @@ export default function Home() {
                       type="button"
                       onClick={() => goToSlide(index)}
                       aria-label={`Go to slide ${index + 1}`}
-                      className={`h-2.5 w-2.5 rounded-full transition-all duration-300 transform hover:scale-125 ${
-                        index === currentSlide ? "bg-white scale-125" : "bg-white/50 hover:bg-white/80"
-                      }`}
+                      className={`h-2.5 w-2.5 rounded-full transition-all duration-300 transform hover:scale-125 ${index === currentSlide ? "bg-white scale-125" : "bg-white/50 hover:bg-white/80"
+                        }`}
                     />
                   ))}
                 </div>
@@ -469,15 +655,14 @@ export default function Home() {
         className="relative px-6 py-16 md:px-8 md:py-20 lg:px-12 lg:py-24 bg-linear-to-b from-transparent via-green-50/30 to-transparent"
       >
         <div className="mx-auto max-w-7xl">
-          <div className="flex flex-col lg:flex-row lg:items-center gap-12 lg:gap-16">
-            
+          <div data-nav-anchor="true" className="flex flex-col lg:flex-row lg:items-center gap-12 lg:gap-16">
+
             {/* Mission / About Left Column */}
-            <div 
-              ref={missionRef} 
+            <div
+              ref={missionRef}
               id="mission"
-              className={`lg:w-5/12 transition-all duration-1000 transform ${
-                isSectionVisible('mission') ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'
-              }`}
+              className={`lg:order-2 lg:w-5/12 transition-all duration-1000 transform ${isSectionVisible('mission') ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'
+                }`}
             >
               <h2 className="text-3xl font-extrabold text-left text-[#013300] mb-6 leading-tight md:text-4xl lg:text-5xl">
                 Transforming Remedial Education
@@ -486,46 +671,46 @@ export default function Home() {
                 transition-all duration-700 delay-800 transform
                 translate-y-0 opacity-100
               ">
-                Our mission is to enhance the San Agustin Elementary School remedial program by providing teachers with a centralized system that tracks student performance, manages materials, and uses AI-driven analysis to support student learning.
+                Our mission is to enhance the San Agustin Elementary School remedial program by providing teachers with a centralized system that tracks student performance, manages materials, and uses AI-driven remedial to support student learning.
               </p>
             </div>
 
             {/* Key Features Right Column (2x2 Grid) */}
-            <div 
+            <div
               ref={featuresRef}
               id="features"
-              className="lg:w-7/12 grid grid-cols-1 gap-6 sm:grid-cols-2 md:gap-8 mt-8 lg:mt-0"
+              className="lg:order-1 lg:w-7/12 grid grid-cols-1 gap-6 sm:grid-cols-2 md:gap-8 mt-8 lg:mt-0"
             >
               {[
                 {
-                  defaultIcon: "/Landing_Cards/1A.png",
-                  hoverIcon: "/Landing_Cards/1B.png",
+                  icon: Database,
+                  hoverIcon: DatabaseZap,
                   title: "Centralized Repository",
                   desc: "Manage all your remedial materials securely in one unified platform."
                 },
                 {
-                  defaultIcon: "/Landing_Cards/2A.png",
-                  hoverIcon: "/Landing_Cards/2B.png",
+                  icon: ChartLine,
+                  hoverIcon: FileChartLine,
                   title: "Tracking Performance",
                   desc: "Seamlessly record and track student progress in literacy and numeracy."
                 },
                 {
-                  defaultIcon: "/Landing_Cards/3A.png",
-                  hoverIcon: "/Landing_Cards/3B.png",
-                  title: "AI-Driven Analysis",
+                  icon: BrainCircuit,
+                  hoverIcon: Bot,
+                  title: <>AI-Driven <br /> Remedial</>,
                   desc: "Get smart recommendations to easily identify student learning gaps."
                 },
                 {
-                  defaultIcon: "/Landing_Cards/4A.png",
-                  hoverIcon: "/Landing_Cards/4B.png",
-                  title: "Interactive Quizzes",
-                  desc: "Create dynamic digital quizzes to make student learning more engaging."
+                  icon: ClipboardCheck,
+                  hoverIcon: ClipboardList,
+                  title: <>Interactive <br /> Quizzes</>,
+                  desc: "Create digital quizzes to make student learning more engaging."
                 }
               ].map((feature, index) => (
                 <div
                   key={index}
                   className={`
-                    group relative flex flex-col items-start rounded-3xl bg-white p-6
+                    group relative flex h-full flex-col rounded-3xl bg-white p-6
                     border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.02)]
                     transition-all duration-500 ease-out 
                     hover:-translate-y-2 hover:shadow-[0_12px_40px_rgba(1,51,0,0.08)] hover:border-green-100/60
@@ -533,30 +718,32 @@ export default function Home() {
                   `}
                   style={{ transitionDelay: `${isSectionVisible('features') ? index * 120 : 0}ms` }}
                 >
-                  {/* Scaled Up Icon Block */}
-                  <div className="mb-6 flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-green-50 transition-colors duration-500 group-hover:bg-green-100/60">
-                    <div className="relative h-8 w-8">
-                      <Image
-                        src={feature.defaultIcon}
-                        alt={`${feature.title} icon`}
-                        fill
-                        className="object-contain transition-all duration-500 group-hover:opacity-0 group-hover:scale-90"
-                      />
-                      <Image
-                        src={feature.hoverIcon}
-                        alt={`${feature.title} icon highlighted`}
-                        fill
-                        className="absolute inset-0 object-contain opacity-0 scale-90 transition-all duration-500 group-hover:opacity-100 group-hover:scale-100"
-                      />
-                    </div>
-                  </div>
-                  
-                  {/* Restored Typography Size */}
-                  <h3 className="mb-3 text-xl font-bold text-[#013300] leading-tight transition-colors duration-300 group-hover:text-green-800">
-                    {feature.title}
-                  </h3>
-                  
-                  <p className="text-base leading-relaxed text-green-800 opacity-90 transition-colors duration-300 group-hover:text-[#013300]">
+                  {(() => {
+                    const Icon = feature.icon;
+                    const HoverIcon = feature.hoverIcon;
+                    return (
+                      <div className="flex items-start gap-4">
+                        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-green-100 bg-green-50/70 transition-colors duration-500 group-hover:bg-green-100/70">
+                          <div className="relative h-8 w-8">
+                            <Icon
+                              className="absolute inset-0 h-8 w-8 text-[#013300] transition-all duration-300 group-hover:scale-90 group-hover:opacity-0"
+                              strokeWidth={2}
+                            />
+                            <HoverIcon
+                              className="absolute inset-0 h-8 w-8 scale-90 text-green-800 opacity-0 transition-all duration-300 group-hover:scale-100 group-hover:opacity-100"
+                              strokeWidth={2}
+                            />
+                          </div>
+                        </div>
+
+                        <h3 className="pt-1 text-xl font-bold leading-tight text-[#013300] transition-colors duration-300 group-hover:text-green-800">
+                          {feature.title}
+                        </h3>
+                      </div>
+                    );
+                  })()}
+
+                  <p className="mt-5 text-base leading-relaxed text-green-800 opacity-90 transition-colors duration-300 group-hover:text-[#013300]">
                     {feature.desc}
                   </p>
                 </div>
@@ -574,7 +761,10 @@ export default function Home() {
         className="px-6 py-12 md:px-8 md:py-16 lg:px-12 lg:py-20"
       >
         <div className="mb-12 md:mb-16">
-          <div className="flex flex-col items-center justify-center gap-8 md:flex-row md:gap-12 lg:gap-16">
+          <div
+            data-nav-anchor="true"
+            className="flex flex-col items-center justify-center gap-8 md:flex-row md:gap-12 lg:gap-16"
+          >
             <div className="shrink-0 relative">
               <div className={`
                 absolute -top-12 -left-12 w-64 h-64 rounded-full bg-green-100/45 z-0
@@ -583,7 +773,7 @@ export default function Home() {
                 transition-all duration-1000 delay-300
                 ${isSectionVisible('mobile') ? 'scale-100 opacity-100' : 'scale-50 opacity-0'}
               `}></div>
-              
+
               <div className={`
                 absolute -bottom-12 -right-12 w-60 h-60 rounded-full bg-green-100/35 z-0
                 md:-bottom-16 md:-right-16 md:w-80 md:h-80
@@ -591,7 +781,7 @@ export default function Home() {
                 transition-all duration-1000 delay-500
                 ${isSectionVisible('mobile') ? 'scale-100 opacity-100' : 'scale-50 opacity-0'}
               `}></div>
-              
+
               <div className={`
                 absolute top-1/2 -right-14 w-52 h-52 rounded-full bg-green-50/65 transform -translate-y-1/2 z-0
                 md:-right-20 md:w-72 md:h-72
@@ -599,7 +789,7 @@ export default function Home() {
                 transition-all duration-1000 delay-700
                 ${isSectionVisible('mobile') ? 'scale-100 opacity-100' : 'scale-50 opacity-0'}
               `}></div>
-              
+
               <Image
                 width={200}
                 height={400}
@@ -612,7 +802,7 @@ export default function Home() {
                 `}
               />
             </div>
-            
+
             <div
               className={`
               flex flex-col items-center text-center relative z-20
@@ -635,8 +825,8 @@ export default function Home() {
               <h3
                 className="text-3xl font-extrabold text-[#013300] mb-6 leading-tight md:text-4xl lg:text-5xl"
               >
-                Innovation  
-               <br className="hidden md:block" /> in Your Hands
+                Innovation
+                <br className="hidden md:block" /> in Your Hands
               </h3>
               <p
                 className={`
@@ -645,7 +835,7 @@ export default function Home() {
                 ${isSectionVisible('mobile') ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}
               `}
               >
-                Manage remedial programs and 
+                Manage remedial programs and
                 <br className="hidden md:block" /> track student progress directly from your phone.
               </p>
               <div
@@ -686,65 +876,174 @@ export default function Home() {
         className="relative px-6 py-16 md:px-8 md:py-20 lg:px-12 lg:py-24 bg-linear-to-b from-transparent via-green-50/30 to-transparent"
       >
         <div className="mx-auto max-w-7xl">
-          <div className="grid grid-cols-1 gap-10 lg:grid-cols-2 lg:gap-16 lg:items-center">
-            
-            {/* Left Column: Text & Details */}
-            <div 
-              className={`transition-all duration-1000 transform ${
+          <div
+            data-nav-anchor="true"
+            className="grid grid-cols-1 gap-10 lg:grid-cols-[1.02fr_0.98fr] lg:items-center lg:gap-14"
+          >
+            <div
+              className={`lg:order-1 transition-all duration-1000 delay-150 transform ${
                 isSectionVisible('location') ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'
               }`}
             >
-              <h2 className="text-3xl font-extrabold text-[#013300] mb-6 leading-tight md:text-4xl lg:text-5xl">
-                Visit Our Campus
-              </h2>
-              <p className="text-base text-green-900 mb-6 md:text-lg md:mb-6
-                transition-all duration-700 delay-800 transform
-                translate-y-0 opacity-100">
-                We are conveniently located in the heart of Novaliches. Come visit San Agustin Elementary School and see where the learning happens.
-              </p>
-
-              {/* Address Card (Flat UI Style) */}
-              <div className="inline-flex flex-col sm:flex-row items-start sm:items-center gap-6 rounded-[2rem] bg-white px-8 py-6 border border-green-50 transition-transform duration-300 hover:-translate-y-1 w-full sm:w-auto">
-                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-[#f0f7f3] text-[#013300]">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8">
-                    <path fillRule="evenodd" d="m11.54 22.351.07.04.028.016a.76.76 0 0 0 .723 0l.028-.015.071-.041a16.975 16.975 0 0 0 1.144-.742 19.58 19.58 0 0 0 2.683-2.282c1.944-1.99 3.963-4.98 3.963-8.827a8.25 8.25 0 0 0-16.5 0c0 3.846 2.02 6.837 3.963 8.827a19.58 19.58 0 0 0 2.682 2.282 16.975 16.975 0 0 0 1.145.742ZM12 13.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" clipRule="evenodd" />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold text-[#013300] mb-1.5">San Agustin Elementary School</h3>
-                  <p className="text-base text-green-800 leading-relaxed opacity-90">
-                    Heavenly Drive St., San Agustin,<br />
-                    Novaliches, Quezon City
-                  </p>
-                </div>
+              <div className="overflow-hidden rounded-[2rem] border border-green-100 bg-white">
+                <iframe
+                  title="San Agustin Elementary School Location"
+                  src="https://www.google.com/maps?q=San%20Agustin%20Elementary%20School%2C%20G%2C%20P2HP%2B8QG%2C%200%20Susano%20Rd%2C%20Novaliches%2C%20Quezon%20City%2C%20Metro%20Manila%2C%20Philippines&output=embed"
+                  className="h-[360px] w-full border-0 grayscale-[12%] transition-all duration-500 hover:grayscale-0 md:h-[450px]"
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                  allowFullScreen
+                />
               </div>
             </div>
 
-            {/* Right Column: Map (Flat UI Cutout) */}
-            <div 
-              className={`relative h-[350px] w-full overflow-hidden rounded-[2.5rem] bg-green-50 md:h-[450px] transition-all duration-1000 delay-200 transform ${
+            <div
+              className={`lg:order-2 flex flex-col justify-center transition-all duration-1000 transform ${
                 isSectionVisible('location') ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'
               }`}
             >
-              <iframe
-                title="San Agustin Elementary School Location"
-                src="https://www.google.com/maps?q=San%20Agustin%20Elementary%20School%2C%20G%2C%20P2HP%2B8QG%2C%200%20Susano%20Rd%2C%20Novaliches%2C%20Quezon%20City%2C%20Metro%20Manila%2C%20Philippines&output=embed"
-                className="absolute inset-0 h-full w-full border-0 grayscale-[20%] transition-all duration-500 hover:grayscale-0"
-                loading="lazy"
-                referrerPolicy="no-referrer-when-downgrade"
-                allowFullScreen
-              />
+              <h2 className="mt-5 text-3xl font-extrabold text-[#013300] leading-[0.98] md:text-4xl lg:text-[3.5rem]">
+                Visit Our Campus
+              </h2>
+              <p className="mt-5 max-w-xl text-base leading-relaxed text-green-900 md:text-lg">
+                We are conveniently located in the heart of Novaliches. Come visit San Agustin
+                Elementary School and see where the learning happens.
+              </p>
+
+              <div className="mt-4 overflow-hidden rounded-[2rem] border border-gray-100 bg-white">
+                <div className="px-5 py-4 md:px-5">
+                  <div className="flex items-start gap-4">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#f4f8f5] text-[#013300]">
+                      <MapPinned className="h-6 w-6" strokeWidth={2} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-green-700/80">
+                        Campus Address
+                      </p>
+                      <h3 className="mt-2 text-[1.75rem] font-bold leading-tight text-[#013300]">
+                        San Agustin Elementary School
+                      </h3>
+                      <p className="mt-2 text-base leading-relaxed text-green-800/90">
+                        Heavenly Drive St., San Agustin,
+                        <br />
+                        Novaliches, Quezon City
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid border-t border-gray-100 sm:grid-cols-2">
+                  <div className="px-5 py-4 md:px-5 sm:border-r sm:border-gray-100">
+                    <div className="flex items-start gap-4">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#f4f8f5] text-[#013300]">
+                        <Clock3 className="h-[18px] w-[18px]" strokeWidth={2} />
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-green-700/80">
+                          Office Hours
+                        </p>
+                        <p className="mt-2 text-base font-bold text-[#013300] md:text-lg">Monday to Friday</p>
+                        <p className="mt-1 text-sm text-green-900/80">8:00 AM to 5:00 PM</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <a
+                    href="https://www.google.com/maps/search/?api=1&query=San+Agustin+Elementary+School+Novaliches+Quezon+City"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="group border-t border-gray-100 px-5 py-4 transition-colors duration-300 hover:bg-[#fbfdfb] sm:border-t-0 md:px-5"
+                  >
+                    <div className="flex items-start gap-4">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#f4f8f5] text-[#013300] transition-colors duration-300 group-hover:bg-green-100/80">
+                        <Navigation className="h-[18px] w-[18px]" strokeWidth={2} />
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-green-700/80">
+                          Directions
+                        </p>
+                        <p className="mt-2 text-base font-bold text-[#013300] md:text-lg">Get Directions</p>
+                        <p className="mt-1 text-sm text-green-900/80">
+                          Open in Google Maps.
+                        </p>
+                      </div>
+                    </div>
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section
+        ref={contactsRef}
+        id="contacts"
+        className="relative px-6 py-16 md:px-8 md:py-20 lg:px-12 lg:py-24 bg-linear-to-b from-transparent via-green-50/30 to-transparent"
+      >
+        <div className="mx-auto max-w-7xl">
+          <div
+            data-nav-anchor="true"
+            className="grid grid-cols-1 gap-10 lg:grid-cols-[0.88fr_1.12fr] lg:items-center lg:gap-16"
+          >
+            <div
+              className={`transition-all duration-1000 transform ${
+                isSectionVisible("contacts") ? "translate-y-0 opacity-100" : "translate-y-8 opacity-0"
+              }`}
+            >
+              <h2 className="mt-6 text-3xl font-extrabold leading-tight text-[#013300] md:text-4xl lg:text-5xl">
+                Let&apos;s Connect
+              </h2>
+              <p className="mt-5 max-w-2xl text-base leading-relaxed text-green-900 md:text-lg">
+                Reach out for school concerns, remedial updates, or general inquiries about
+                RPT-SAES.
+              </p>
             </div>
 
+            <div
+              className={`flex flex-col gap-4 transition-all duration-1000 delay-150 transform ${
+                isSectionVisible("contacts") ? "translate-y-0 opacity-100" : "translate-y-8 opacity-0"
+              }`}
+            >
+              {contactMethods.map((contact) => (
+                (() => {
+                  const Icon = contact.icon;
+                  return (
+                    <a
+                      key={contact.label}
+                      href={contact.href}
+                      target={contact.external ? "_blank" : undefined}
+                      rel={contact.external ? "noreferrer" : undefined}
+                      className="group flex items-start gap-5 rounded-[1.75rem] border border-gray-100 bg-white px-6 py-6 transition-all duration-300 hover:-translate-y-1 hover:border-green-100"
+                    >
+                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#f0f7f3] text-[#013300] transition-colors duration-300 group-hover:bg-green-100/80">
+                        <Icon className="h-6 w-6" strokeWidth={2} />
+                      </div>
+
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-green-700/80">
+                          {contact.label}
+                        </p>
+                        <p className="mt-3 break-all text-xl font-bold leading-tight text-[#013300] md:text-2xl">
+                          {contact.value}
+                        </p>
+                        <p className="mt-3 text-sm leading-relaxed text-green-900/75">
+                          {contact.description}
+                        </p>
+                      </div>
+                    </a>
+                  );
+                })()
+              ))}
+            </div>
           </div>
         </div>
       </section>
 
       {/* Gradient Transition Section */}
-      <div className={`pointer-events-none h-24 w-full bg-linear-to-b from-transparent to-white/70 transition-opacity duration-1000 ${
-        mounted ? 'opacity-100' : 'opacity-0'
-      }`} />
-      
+      <div className={`pointer-events-none h-24 w-full bg-linear-to-b from-transparent to-white/70 transition-opacity duration-1000 ${mounted ? 'opacity-100' : 'opacity-0'
+        }`} />
+
       <Footer schoolDetails={landingContent?.saesDetails} />
     </div>
   );

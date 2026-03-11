@@ -310,10 +310,10 @@ export default function Login({
         href="/"
         className="absolute top-4 left-4 z-20 flex items-center text-green-900 hover:underline sm:top-6 sm:left-8 lg:top-8 lg:left-12"
       >
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+        <svg width="25" height="25" viewBox="0 0 24 24" fill="none">
           <path d="M15.5 19L9 12L15.5 5" stroke="#013300" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-        <span className="ml-1 text-base font-medium sm:text-lg">Back to Landing Page</span>
+        <span className="ml-1 text-base font-medium sm:text-lg">Back</span>
       </a>
 
       {/* MAIN CONTENT */}

@@ -139,12 +139,12 @@ export default function ParentLogin({ onBack }: ParentLoginProps) {
   };
 
   return (
-    <div className="relative min-h-dvh w-full overflow-x-hidden overflow-y-auto px-4 py-6 text-[#013300] sm:py-8 md:flex md:items-center md:justify-center">
+    <div className="relative min-h-dvh w-full overflow-x-hidden overflow-y-auto px-3 py-4 text-[#013300] sm:px-4 sm:py-6 lg:flex lg:items-center lg:justify-center">
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(209,255,222,0.45),transparent_20%),radial-gradient(circle_at_bottom_right,rgba(188,240,214,0.35),transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(242,249,245,0.95))]" />
       <div className="pointer-events-none absolute left-[10%] right-[50%] top-32 -z-10 h-56 rounded-3xl bg-linear-to-br from-green-200/50 via-white/40 to-transparent blur-4xl" />
       <div className="pointer-events-none absolute left-[55%] right-[10%] bottom-16 -z-10 h-56 rounded-[40px] bg-linear-to-t from-green-200/60 via-white/35 to-transparent blur-4xl" />
 
-      <div className="mx-auto w-full max-w-md rounded-3xl border border-green-100/80 bg-white/90 p-5 shadow-xl backdrop-blur-sm sm:p-8">
+      <div className="mx-auto w-full max-w-[34rem] rounded-[28px] border border-green-100/80 bg-white/90 p-4 shadow-xl backdrop-blur-sm sm:p-6 md:p-7">
         <button
           type="button"
           onClick={onBack}
@@ -159,22 +159,22 @@ export default function ParentLogin({ onBack }: ParentLoginProps) {
             alt="RPT-SAES Logo"
             width={72}
             height={72}
-            className="h-16 w-16 object-contain drop-shadow-md"
+            className="h-14 w-14 object-contain drop-shadow-md sm:h-16 sm:w-16"
           />
-          <h1 className="mt-3 text-3xl font-bold bg-linear-to-r from-green-800 to-[#013300] bg-clip-text text-transparent">
+          <h1 className="mt-3 text-[2rem] font-bold bg-linear-to-r from-green-800 to-[#013300] bg-clip-text text-transparent sm:text-3xl">
             Parent Portal
           </h1>
-          <p className="mt-2 text-sm text-[#013300]/65">
+          <p className="mt-2 max-w-md text-sm leading-6 text-[#013300]/65">
             Sign in with a parent account to open the parent dashboard inside the PWA.
           </p>
         </div>
 
         {isCheckingSession ? (
-          <div className="mt-8 rounded-2xl border border-green-100 bg-green-50/70 px-4 py-5 text-center text-sm font-medium text-[#013300]/75">
+          <div className="mt-6 rounded-2xl border border-green-100 bg-green-50/70 px-4 py-5 text-center text-sm font-medium text-[#013300]/75">
             Checking parent session...
           </div>
         ) : (
-          <form className="mt-8 space-y-4" onSubmit={handleLogin}>
+          <form className="mt-6 space-y-4 sm:mt-7" onSubmit={handleLogin}>
             <div>
               <label htmlFor="parent-email" className="block text-sm font-semibold text-[#013300]/80 mb-2">
                 Parent Email
@@ -185,7 +185,7 @@ export default function ParentLogin({ onBack }: ParentLoginProps) {
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 placeholder="Enter your email address"
-                className="w-full rounded-xl border-2 border-[#013300]/15 bg-white px-4 py-3 text-[#013300] outline-none transition focus:border-[#013300]"
+                className="w-full rounded-xl border-2 border-[#013300]/15 bg-white px-4 py-3.5 text-base text-[#013300] outline-none transition focus:border-[#013300]"
                 autoComplete="email"
                 required
               />
@@ -202,7 +202,7 @@ export default function ParentLogin({ onBack }: ParentLoginProps) {
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   placeholder="Enter your password"
-                  className="w-full rounded-xl border-2 border-[#013300]/15 bg-white px-4 py-3 pr-12 text-[#013300] outline-none transition focus:border-[#013300]"
+                  className="w-full rounded-xl border-2 border-[#013300]/15 bg-white px-4 py-3.5 pr-12 text-base text-[#013300] outline-none transition focus:border-[#013300]"
                   autoComplete="current-password"
                   required
                 />
@@ -226,7 +226,7 @@ export default function ParentLogin({ onBack }: ParentLoginProps) {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full rounded-xl bg-[#013300] px-6 py-3 font-bold text-white transition hover:bg-green-900 disabled:cursor-not-allowed disabled:opacity-70"
+              className="min-h-[52px] w-full rounded-xl bg-[#013300] px-6 py-3 font-bold text-white transition hover:bg-green-900 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {isLoading ? "Signing in..." : "Login as Parent"}
             </button>

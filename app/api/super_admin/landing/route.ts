@@ -112,74 +112,6 @@ const ensureLandingTables = async (connection: Connection | PoolConnection) => {
   landingSchemaPrepared = true;
 };
 
-const seedLandingTablesIfEmpty = async () => {
-  const defaults = getDefaultLandingConfig();
-
-  type CountRow = RowDataPacket & { total: number };
-
-  await runWithConnection(async (connection) => {
-    await connection.beginTransaction();
-    try {
-      await ensureLandingTables(connection);
-      const [imageCountRows] = await connection.query<CountRow[]>(
-        "SELECT COUNT(*) AS total FROM landing_images"
-      );
-      const imageCount = Number(imageCountRows[0]?.total ?? 0);
-      if (imageCount === 0) {
-        for (const image of defaults.carouselImages) {
-          const payload = JSON.stringify({ name: image.name, dataUrl: image.url });
-          await connection.query("INSERT INTO landing_images (image) VALUES (?)", [payload]);
-        }
-      }
-
-      const [logoCountRows] = await connection.query<CountRow[]>(
-        "SELECT COUNT(*) AS total FROM landing_logo"
-      );
-      const logoCount = Number(logoCountRows[0]?.total ?? 0);
-      if (logoCount === 0) {
-        const payload = JSON.stringify({
-          name: defaults.theme.logoFileName ?? "logo.png",
-          dataUrl: defaults.theme.logoUrl,
-        });
-        await connection.query("INSERT INTO landing_logo (logo) VALUES (?)", [payload]);
-      }
-
-      const [detailsCountRows] = await connection.query<CountRow[]>(
-        "SELECT COUNT(*) AS total FROM saes_details"
-      );
-      const detailsCount = Number(detailsCountRows[0]?.total ?? 0);
-      if (detailsCount === 0) {
-        await connection.query(
-          "INSERT INTO saes_details (location, contact_no, email, facebook) VALUES (?, ?, ?, ?)",
-          [
-            defaults.contact.address,
-            defaults.contact.phone,
-            defaults.contact.email,
-            defaults.contact.facebook,
-          ]
-        );
-      }
-
-      const [policyCountRows] = await connection.query<CountRow[]>(
-        "SELECT COUNT(*) AS total FROM privacy_policy"
-      );
-      const policyCount = Number(policyCountRows[0]?.total ?? 0);
-      if (policyCount === 0) {
-        const payload = JSON.stringify({
-          name: defaults.privacyPolicyName,
-          dataUrl: `/${defaults.privacyPolicyName}`,
-        });
-        await connection.query("INSERT INTO privacy_policy (file) VALUES (?)", [payload]);
-      }
-
-      await connection.commit();
-    } catch (error) {
-      await connection.rollback();
-      throw error;
-    }
-  });
-};
-
 const fetchLandingData = async () => {
   type ImageRow = RowDataPacket & { id: number; image: string; created_at: string };
   type LogoRow = RowDataPacket & { id: number; logo: string; created_at: string };
@@ -255,11 +187,19 @@ const fetchLandingData = async () => {
   };
 };
 
+const hasStoredLandingData = (data: Awaited<ReturnType<typeof fetchLandingData>>) =>
+  data.carouselImages.length > 0 || data.logo !== null || data.saesDetails !== null || data.privacyPolicy !== null;
+
 export async function GET() {
   try {
-    await seedLandingTablesIfEmpty();
+    await runWithConnection(async (connection) => {
+      await ensureLandingTables(connection);
+    });
+
     const data = await fetchLandingData();
-    return NextResponse.json({ data });
+    const hasStoredData = hasStoredLandingData(data);
+    const resolvedData = hasStoredData ? data : getFallbackLandingData();
+    return NextResponse.json({ data: resolvedData, fallback: !hasStoredData });
   } catch (error) {
     console.error("Failed to load landing configuration", error);
     if (isDbConnectionError(error)) {

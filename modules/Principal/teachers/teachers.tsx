@@ -90,8 +90,8 @@ export default function PrincipalTeachers() {
                   />
                   <SecondaryHeader title="in" />
                   {activeTab !== "All Grades" && (
-                    <div className="ml-2">
-                      <SecondaryHeader title="Grade" />
+                    <div className="">
+                      <SecondaryHeader title="" />
                     </div>
                   )}
                   <HeaderDropdown

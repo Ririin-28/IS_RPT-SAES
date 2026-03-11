@@ -252,7 +252,7 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
   }
 
   return (
-    <div className="relative min-h-dvh w-full overflow-x-hidden overflow-y-auto px-4 py-6 text-[#013300] sm:py-8 md:flex md:items-center md:justify-center">
+    <div className="relative min-h-dvh w-full overflow-x-hidden overflow-y-auto px-3 py-4 text-[#013300] sm:px-4 sm:py-6 lg:flex lg:items-center lg:justify-center">
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(209,255,222,0.45),transparent_20%),radial-gradient(circle_at_bottom_right,rgba(188,240,214,0.35),transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(242,249,245,0.95))]" />
       <div className="pointer-events-none absolute left-[10%] right-[50%] top-32 -z-10 h-56 rounded-3xl bg-linear-to-br from-green-200/50 via-white/40 to-transparent blur-4xl" />
       <div className="pointer-events-none absolute left-[55%] right-[10%] bottom-16 -z-10 h-56 rounded-[40px] bg-linear-to-t from-green-200/60 via-white/35 to-transparent blur-4xl" />
@@ -261,10 +261,10 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
         initial={mounted ? { opacity: 0, y: 20 } : false}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="mx-auto w-full max-w-md"
+        className="mx-auto w-full max-w-[36rem]"
       >
         {completedSummary ? (
-          <div className="w-full rounded-3xl border border-green-100/60 bg-white/85 p-5 shadow-xl backdrop-blur-sm sm:p-8">
+          <div className="w-full rounded-[28px] border border-green-100/60 bg-white/88 p-4 shadow-xl backdrop-blur-sm sm:p-6 md:p-7">
             <button
               type="button"
               onClick={onBack}
@@ -279,12 +279,12 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
                 alt="RPT-SAES Logo"
                 width={72}
                 height={72}
-                className="h-16 w-16 object-contain drop-shadow-md"
+                className="h-14 w-14 object-contain drop-shadow-md sm:h-16 sm:w-16"
               />
-              <h1 className="text-3xl font-bold bg-linear-to-r from-green-800 to-[#013300] bg-clip-text text-transparent mt-3">
+              <h1 className="mt-3 text-[2rem] font-bold bg-linear-to-r from-green-800 to-[#013300] bg-clip-text text-transparent sm:text-3xl">
                 RPT Quiz
               </h1>
-              <p className="text-[#013300]/70 font-medium mt-1">Student Assessment</p>
+              <p className="mt-1 text-sm font-medium text-[#013300]/70 sm:text-base">Student Assessment</p>
             </div>
 
             <div className="text-center">
@@ -298,16 +298,16 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
               {studentLrn ? <p className="text-xs text-[#013300]/60 mt-1">LRN: {studentLrn}</p> : null}
             </div>
 
-            <div className="mt-6 grid grid-cols-2 gap-3 text-center">
-              <div className="rounded-2xl bg-green-50 border border-green-100 p-4">
+            <div className="mt-6 grid grid-cols-1 gap-3 text-center sm:grid-cols-2">
+              <div className="rounded-2xl border border-green-100 bg-green-50 p-4">
                 <p className="text-xs uppercase tracking-[0.2em] text-[#013300]/50">Score</p>
                 <p className="text-3xl font-bold text-[#013300] mt-2">{completedSummary.score}</p>
               </div>
-              <div className="rounded-2xl bg-green-50 border border-green-100 p-4">
+              <div className="rounded-2xl border border-green-100 bg-green-50 p-4">
                 <p className="text-xs uppercase tracking-[0.2em] text-[#013300]/50">Correct</p>
                 <p className="text-3xl font-bold text-[#013300] mt-2">{completedSummary.correct}</p>
               </div>
-              <div className="rounded-2xl bg-white border border-green-100 p-4 col-span-2">
+              <div className="rounded-2xl border border-green-100 bg-white p-4 sm:col-span-2">
                 <p className="text-xs uppercase tracking-[0.2em] text-[#013300]/50">Incorrect</p>
                 <p className="text-2xl font-semibold text-[#013300] mt-2">{completedSummary.incorrect}</p>
                 <p className="text-xs text-[#013300]/60 mt-1">Out of {completedSummary.total} questions</p>
@@ -319,7 +319,7 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
             </PrimaryButton>
           </div>
         ) : (
-          <div className="w-full rounded-3xl border-2 border-[#013300] bg-white/85 p-5 shadow-xl backdrop-blur-sm sm:p-8">
+          <div className="w-full rounded-[28px] border-2 border-[#013300] bg-white/88 p-4 shadow-xl backdrop-blur-sm sm:p-6 md:p-7">
             <button
               type="button"
               onClick={onBack}
@@ -334,12 +334,12 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
                 alt="RPT-SAES Logo"
                 width={72}
                 height={72}
-                className="h-16 w-16 object-contain drop-shadow-md"
+                className="h-14 w-14 object-contain drop-shadow-md sm:h-16 sm:w-16"
               />
-              <h1 className="text-3xl font-bold bg-linear-to-r from-green-800 to-[#013300] bg-clip-text text-transparent mt-3">
+              <h1 className="mt-3 text-[2rem] font-bold bg-linear-to-r from-green-800 to-[#013300] bg-clip-text text-transparent sm:text-3xl">
                 RPT Quiz
               </h1>
-              <p className="text-[#013300]/70 font-medium mt-1">Student Assessment</p>
+              <p className="mt-1 text-sm font-medium text-[#013300]/70 sm:text-base">Student Assessment</p>
             </div>
 
             <div className="space-y-4">
@@ -347,7 +347,7 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
                 <button
                   type="button"
                   onClick={startScan}
-                  className="w-full mb-3 rounded-xl border-2 border-[#013300]/20 bg-white/70 py-3 text-lg font-bold text-[#013300] shadow-sm transition hover:border-[#013300]/40"
+                  className="mb-3 min-h-[56px] w-full rounded-xl border-2 border-[#013300]/20 bg-white/70 px-4 py-3 text-lg font-bold text-[#013300] shadow-sm transition hover:border-[#013300]/40"
                 >
                   Scan QR Code
                 </button>
@@ -362,7 +362,7 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
                   value={quizCode}
                   onChange={(e) => setQuizCode(e.target.value.toUpperCase())}
                   ref={quizCodeRef}
-                  className="w-full px-4 py-3.5 rounded-xl border-2 border-[#013300]/20 shadow-sm focus:border-[#013300] focus:ring-0 outline-none transition-all bg-white text-[#013300] placeholder-gray-400 text-center font-bold text-lg"
+                  className="w-full rounded-xl border-2 border-[#013300]/20 bg-white px-4 py-3.5 text-center text-lg font-bold text-[#013300] shadow-sm outline-none transition-all placeholder-gray-400 focus:border-[#013300] focus:ring-0"
                 />
               </div>
 
@@ -375,7 +375,7 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
                   onChange={(e) => setStudentId(formatStudentLrn(e.target.value))}
                   inputMode="numeric"
                   maxLength={13}
-                  className="w-full px-4 py-3.5 rounded-xl border-2 border-[#013300]/20 shadow-sm focus:border-[#013300] focus:ring-0 outline-none transition-all bg-white text-[#013300] placeholder-gray-400 text-center font-bold text-lg"
+                  className="w-full rounded-xl border-2 border-[#013300]/20 bg-white px-4 py-3.5 text-center text-lg font-bold text-[#013300] shadow-sm outline-none transition-all placeholder-gray-400 focus:border-[#013300] focus:ring-0"
                 />
               </div>
             </div>
@@ -411,12 +411,15 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
       <div
         className={
           isScanning
-            ? "fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 opacity-100"
-            : "fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 opacity-0 pointer-events-none"
+            ? "fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-3 opacity-100 sm:items-center sm:p-4"
+            : "fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-3 opacity-0 pointer-events-none sm:items-center sm:p-4"
         }
         aria-hidden={!isScanning}
       >
-        <div className="max-h-[85dvh] w-full max-w-sm space-y-3 overflow-y-auto rounded-2xl bg-white p-4 shadow-xl">
+        <div
+          className="max-h-[88dvh] w-full max-w-md space-y-3 overflow-y-auto rounded-[24px] bg-white p-4 shadow-xl sm:rounded-2xl"
+          style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
+        >
           <h2 className="text-center text-base font-semibold text-[#1b5e20]">Scan QR Code</h2>
           <div className="overflow-hidden rounded-xl bg-black">
             <div id={scannerContainerId} className="w-full h-64" />
@@ -436,7 +439,7 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
           <button
             type="button"
             onClick={stopScan}
-            className="w-full rounded-lg bg-gray-100 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-200"
+            className="min-h-[46px] w-full rounded-lg bg-gray-100 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-200"
           >
             Cancel
           </button>
