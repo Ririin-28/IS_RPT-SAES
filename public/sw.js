@@ -1,11 +1,14 @@
-const STATIC_CACHE = 'rpt-portal-static-v3';
-const RUNTIME_CACHE = 'rpt-portal-runtime-v3';
-const API_CACHE = 'rpt-portal-api-v3';
+const STATIC_CACHE = 'rpt-portal-static-v4';
+const RUNTIME_CACHE = 'rpt-portal-runtime-v4';
+const API_CACHE = 'rpt-portal-api-v4';
 
 const STATIC_ASSETS = [
+  '/',
   '/PWA',
   '/manifest.json',
   '/favicon.ico',
+  '/icon512_rounded.png',
+  '/icon512_maskable.png',
   '/offline.html'
 ];
 
@@ -18,6 +21,10 @@ const cacheResponse = async (cacheName, request, response) => {
 const networkFirst = async (request, cacheName, fallbackUrl) => {
   try {
     const response = await fetch(request);
+    if (fallbackUrl && request.mode === 'navigate' && response.status >= 500) {
+      const fallback = await caches.match(fallbackUrl);
+      if (fallback) return fallback;
+    }
     await cacheResponse(cacheName, request, response);
     return response;
   } catch (error) {
@@ -73,8 +80,8 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  if (request.mode === 'navigate' && url.pathname.startsWith('/PWA')) {
-    event.respondWith(networkFirst(request, STATIC_CACHE, '/PWA'));
+  if (request.mode === 'navigate') {
+    event.respondWith(networkFirst(request, STATIC_CACHE, '/offline.html'));
     return;
   }
 

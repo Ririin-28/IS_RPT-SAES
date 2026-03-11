@@ -109,21 +109,6 @@ type CoordinatorStudentResponse = {
 };
 
 type DateRangeFilter = "3m" | "6m" | "12m";
-type AiInsightsResponse = {
-  success: boolean;
-  data?: {
-    weakSkills?: Array<{ skill: string; gap: number }>;
-    interventionPrediction?: Array<{ name: string; predicted: number }>;
-    progressForecast?: Array<{ point: string; actual: number | null; forecast: number | null }>;
-    metadata?: {
-      sessions?: number;
-      materials?: number;
-      flashcards?: number;
-      averageScore?: number;
-    };
-  };
-  error?: string;
-};
 
 type HeatmapPoint = {
   x: string;
@@ -158,17 +143,6 @@ const dashboardSecondary = "#2f7d57";
 const dashboardAccent = "#6da98b";
 const dashboardWarn = "#bc8b5b";
 const dashboardDanger = "#b86b5c";
-
-const chartMultiPalette = [
-  "#2a6a4f",
-  "#3f7d60",
-  "#4f9170",
-  "#5f8fa8",
-  "#7d9f8c",
-  "#9cae93",
-  "#bc8b5b",
-  "#b3b8a3",
-];
 
 const rangeOptions: { label: string; value: DateRangeFilter }[] = [
   { label: "Last 3 Months", value: "3m" },
@@ -295,10 +269,10 @@ export default function MasterTeacherDashboard() {
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [students, setStudents] = useState<StudentRecordDto[]>([]);
-  const [isLoadingStudents, setIsLoadingStudents] = useState(true);
-  const [studentsError, setStudentsError] = useState<string | null>(null);
+  const [, setIsLoadingStudents] = useState(true);
+  const [, setStudentsError] = useState<string | null>(null);
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number | null>(null);
-  const [approvedMaterialsCount, setApprovedMaterialsCount] = useState<number | null>(null);
+  const [, setApprovedMaterialsCount] = useState<number | null>(null);
   const [isLoadingApprovals, setIsLoadingApprovals] = useState(false);
   const [approvalsError, setApprovalsError] = useState<string | null>(null);
   const [gradeCounts, setGradeCounts] = useState<{ students: number; teachers: number } | null>(null);
@@ -310,12 +284,8 @@ export default function MasterTeacherDashboard() {
   const [selectedRange, setSelectedRange] = useState<DateRangeFilter>("6m");
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
-  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
-  const [aiInsights, setAiInsights] = useState<AiInsightsResponse["data"] | null>(null);
-  const [isLoadingAiInsights, setIsLoadingAiInsights] = useState(false);
-  const [aiInsightsError, setAiInsightsError] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = window.setInterval(() => setRefreshTick((prev) => prev + 1), 90_000);
@@ -618,12 +588,6 @@ export default function MasterTeacherDashboard() {
     };
   }, [selectedRange]);
 
-  useEffect(() => {
-    if (!isLoadingStudents && !isLoadingApprovals && !isLoadingGradeCounts) {
-      setLastUpdatedAt(new Date());
-    }
-  }, [isLoadingStudents, isLoadingApprovals, isLoadingGradeCounts, students.length, pendingApprovalsCount, approvedMaterialsCount, gradeCounts?.students, gradeCounts?.teachers]);
-
   const sectionOptions = useMemo(() => {
     const values = Array.from(
       new Set(
@@ -650,59 +614,6 @@ export default function MasterTeacherDashboard() {
       return matchesSection && matchesGrade && matchesDate;
     });
   }, [dateBounds.from, dateBounds.to, selectedGrade, selectedSection, students]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    const loadAiInsights = async () => {
-      const gradeValue = coordinatorProfile?.gradeHandled?.trim();
-      if (!gradeValue || gradeValue.toLowerCase() === "not assigned") {
-        setAiInsights(null);
-        setAiInsightsError("Grade assignment is required for AI insights.");
-        return;
-      }
-
-      const studentIds = filteredStudents.map((student) => student.id).filter(Boolean);
-      if (!studentIds.length) {
-        setAiInsights({ weakSkills: [], interventionPrediction: [], progressForecast: [], metadata: { sessions: 0, materials: 0, flashcards: 0 } });
-        setAiInsightsError(null);
-        return;
-      }
-
-      setIsLoadingAiInsights(true);
-      setAiInsightsError(null);
-      try {
-        const response = await fetch("/api/master_teacher/coordinator/dashboard/ai-insights", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          signal: controller.signal,
-          body: JSON.stringify({
-            subject: selectedSubject,
-            grade: gradeValue,
-            from: dateBounds.from,
-            to: dateBounds.to,
-            studentIds,
-          }),
-        });
-        const payload = (await response.json().catch(() => null)) as AiInsightsResponse | null;
-        if (!response.ok || !payload?.success) {
-          throw new Error(payload?.error ?? "Failed to load AI insights.");
-        }
-        setAiInsights(payload.data ?? null);
-      } catch (error) {
-        if (controller.signal.aborted) return;
-        console.error("Failed to load coordinator AI insights", error);
-        setAiInsights(null);
-        setAiInsightsError(error instanceof Error ? error.message : "Failed to load AI insights.");
-      } finally {
-        if (!controller.signal.aborted) {
-          setIsLoadingAiInsights(false);
-        }
-      }
-    };
-
-    void loadAiInsights();
-    return () => controller.abort();
-  }, [coordinatorProfile?.gradeHandled, dateBounds.from, dateBounds.to, filteredStudents, selectedSubject]);
 
   const metrics = useMemo(() => {
     const base = filteredStudents;
@@ -889,16 +800,6 @@ export default function MasterTeacherDashboard() {
     };
   }, [filteredStudents, selectedSubject]);
 
-  const aiWeakSkillsChart = aiInsights?.weakSkills ?? [];
-  const aiSuggestedCompetencies = useMemo(
-    () =>
-      aiWeakSkillsChart.map((entry) => ({
-        competency: entry.skill,
-        priority: entry.gap,
-      })),
-    [aiWeakSkillsChart],
-  );
-
   const handlePrint = useCallback(() => {
     window.print();
   }, []);
@@ -1081,11 +982,7 @@ export default function MasterTeacherDashboard() {
               {/* Charts Section */}
               <div ref={analyticsRef}>
                 <div className="no-print mb-4 p-1">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">Instruction Dashboard Filters</p>
-                      <p className="text-xs text-slate-500">Subject and grade are locked to your coordinator assignment.</p>
-                    </div>
+                  <div className="flex items-start justify-end gap-3">
                     <div className="flex shrink-0 items-center gap-2">
                       <SecondaryButton
                         small
@@ -1107,11 +1004,7 @@ export default function MasterTeacherDashboard() {
                       </PrimaryButton>
                     </div>
                   </div>
-                  <p className="mt-2 text-xs text-slate-600">
-                    {pdfError
-                      ? pdfError
-                      : `Last updated ${lastUpdatedAt ? lastUpdatedAt.toLocaleTimeString("en-US") : "just now"} • Auto-refreshes every 90 seconds`}
-                  </p>
+                  {pdfError ? <p className="mt-2 text-xs text-red-600">{pdfError}</p> : null}
                 </div>
 
                 {isFilterModalOpen ? (
@@ -1246,61 +1139,6 @@ export default function MasterTeacherDashboard() {
                     </div>
                   </div>
 
-                  <div>
-                    <TertiaryHeader title="Classroom Analytics" />
-                    <div className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-1">
-                      <div className="rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg">
-                        <p className="text-sm font-semibold text-slate-700">Suggested Competency Focus (Based on AI Summary)</p>
-                        <p className="mt-1 text-xs text-slate-500">Prioritized competencies suggested by session AI summaries and remedial content signals.</p>
-                        <div className="mt-3 h-64">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={aiSuggestedCompetencies}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#d1fae5" />
-                              <XAxis dataKey="competency" />
-                              <YAxis domain={[0, 100]} />
-                              <ReTooltip />
-                              <Bar dataKey="priority" radius={[10, 10, 0, 0]}>
-                                {aiSuggestedCompetencies.map((entry, idx) => (
-                                  <Cell key={entry.competency} fill={chartMultiPalette[idx % chartMultiPalette.length]} />
-                                ))}
-                              </Bar>
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <TertiaryHeader title="AI Teaching Assistant Insights" />
-                    <div className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-1">
-                      <div className="rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg">
-                        <p className="text-sm font-semibold text-slate-700">AI-Detected Weak Skills</p>
-                        {aiInsights?.metadata ? (
-                          <p className="mt-1 text-xs text-slate-500">
-                            Based on {aiInsights.metadata.sessions ?? 0} session AI summaries and {aiInsights.metadata.materials ?? 0} remedial content packs.
-                          </p>
-                        ) : null}
-                        <div className="mt-3 h-64">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={aiWeakSkillsChart} layout="vertical">
-                              <CartesianGrid strokeDasharray="3 3" stroke="#d1fae5" />
-                              <XAxis type="number" domain={[0, 100]} />
-                              <YAxis type="category" dataKey="skill" width={130} />
-                              <ReTooltip />
-                              <Bar dataKey="gap" radius={[0, 10, 10, 0]}>
-                                {aiWeakSkillsChart.map((entry, idx) => (
-                                  <Cell key={entry.skill} fill={chartMultiPalette[idx % chartMultiPalette.length]} />
-                                ))}
-                              </Bar>
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-                        {isLoadingAiInsights ? <p className="mt-2 text-xs text-slate-500">Loading AI insights...</p> : null}
-                        {aiInsightsError ? <p className="mt-2 text-xs text-red-600">{aiInsightsError}</p> : null}
-                      </div>
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>

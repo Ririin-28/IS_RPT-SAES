@@ -1,6 +1,5 @@
 // app/PWA/layout.tsx
 import type { Metadata } from 'next';
-import PWARegister from "@/components/PWA/PWARegister";
 
 export const metadata: Metadata = {
   robots: {
@@ -16,7 +15,6 @@ export default function PWALayout({
 }) {
   return (
     <div className="min-h-dvh w-full overflow-x-hidden overflow-y-auto bg-white">
-      <PWARegister />
       {children}
     </div>
   );
