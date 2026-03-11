@@ -4,6 +4,7 @@ import { Inter } from 'next/font/google';
 import { Suspense } from 'react';
 import './globals.css';
 import PWAGuard from '@/components/PWAGuard';
+import NetworkStatusToast from '@/components/Common/NetworkStatusToast';
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister';
 import { getSiteUrl, siteConfig } from '@/lib/seo';
 
@@ -82,6 +83,7 @@ export default function RootLayout({
       <body className={inter.className} suppressHydrationWarning={true}>
         <Suspense fallback={null}>
           <ServiceWorkerRegister />
+          <NetworkStatusToast />
           <PWAGuard>
             {children}
           </PWAGuard>
