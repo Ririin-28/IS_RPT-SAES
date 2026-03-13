@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { getTableColumns, query } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/server/super-admin-auth";
+import { requireItAdmin } from "@/lib/server/it-admin-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -59,7 +59,7 @@ const pickColumn = (columns: Set<string>, candidates: readonly string[]): string
 };
 
 export async function PUT(request: NextRequest) {
-  const auth = await requireSuperAdmin(request, { permission: "super_admin:profile.manage" });
+  const auth = await requireItAdmin(request, { permission: "it_admin:profile.manage" });
   if (!auth.ok) {
     return auth.response;
   }
@@ -138,7 +138,7 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireSuperAdmin(request, { permission: "super_admin:profile.manage" });
+  const auth = await requireItAdmin(request, { permission: "it_admin:profile.manage" });
   if (!auth.ok) {
     return auth.response;
   }

@@ -220,7 +220,7 @@ export default function AddStudentModal({
     const loadSectionConfig = async () => {
       setSectionConfigLoading(true);
       try {
-        const response = await fetch("/api/super_admin/section-config", {
+        const response = await fetch("/api/it_admin/section-config", {
           cache: "no-store",
           signal: controller.signal,
         });
@@ -340,7 +340,7 @@ export default function AddStudentModal({
         Cancel
       </DangerButton>
       <PrimaryButton type="button" onClick={handleSubmit(onSubmit)} disabled={isBusy}>
-        {isBusy ? (isEditing ? "Updating…" : "Adding…") : (isEditing ? "Update Student" : "Add Student")}
+        {isBusy ? (isEditing ? "Updating..." : "Adding...") : (isEditing ? "Update Student" : "Add Student")}
       </PrimaryButton>
     </>
   );

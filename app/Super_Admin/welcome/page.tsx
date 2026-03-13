@@ -1,5 +1,5 @@
-import ITAdminWelcome from "@/modules/Super_Admin/welcome/welcome";
+﻿import { redirect } from "next/navigation";
 
-export default function Welcome() {
-  return <ITAdminWelcome />;
+export default function LegacySuperAdminPage() {
+  redirect("/IT_Admin/welcome");
 }

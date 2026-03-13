@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import ITAdminSidebar from "@/components/Super_Admin/Sidebar";
-import ITAdminHeader from "@/components/Super_Admin/Header";
+import ITAdminSidebar from "@/components/IT_Admin/Sidebar";
+import ITAdminHeader from "@/components/IT_Admin/Header";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
@@ -62,7 +62,7 @@ export default function ITAdminOperationsLog() {
         params.set("entity", entity);
       }
 
-      const response = await fetch(`/api/super_admin/recovery/history?${params.toString()}`, { cache: "no-store" });
+      const response = await fetch(`/api/it_admin/recovery/history?${params.toString()}`, { cache: "no-store" });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(payload?.error ?? `History request failed (${response.status})`);
@@ -160,13 +160,13 @@ export default function ITAdminOperationsLog() {
                             ? JSON.stringify(row.details)
                             : row.details
                               ? String(row.details)
-                              : "—";
+                              : "--";
                         return (
                           <tr key={row.logId} className="border-t border-gray-100">
-                            <td className="px-3 py-2 font-medium">{row.action ?? "—"}</td>
-                            <td className="px-3 py-2">{row.userId ?? "—"}</td>
-                            <td className="px-3 py-2">{row.ipAddress ?? "—"}</td>
-                            <td className="px-3 py-2">{row.createdAt ? new Date(row.createdAt).toLocaleString() : "—"}</td>
+                            <td className="px-3 py-2 font-medium">{row.action ?? "--"}</td>
+                            <td className="px-3 py-2">{row.userId ?? "--"}</td>
+                            <td className="px-3 py-2">{row.ipAddress ?? "--"}</td>
+                            <td className="px-3 py-2">{row.createdAt ? new Date(row.createdAt).toLocaleString() : "--"}</td>
                             <td className="px-3 py-2 max-w-[520px]">
                               <pre className="whitespace-pre-wrap break-words text-xs text-gray-700">{detailsText}</pre>
                             </td>

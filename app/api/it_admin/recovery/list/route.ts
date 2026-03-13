@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { runWithConnection } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/server/super-admin-auth";
+import { requireItAdmin } from "@/lib/server/it-admin-auth";
 import {
   findRecoveryEntity,
   modeFlagColumn,
@@ -23,7 +23,7 @@ function parsePositiveInt(value: string | null, fallback: number, max: number): 
 }
 
 export async function GET(request: NextRequest): Promise<Response> {
-  const auth = await requireSuperAdmin(request, { permission: "super_admin:data.restore" });
+  const auth = await requireItAdmin(request, { permission: "it_admin:data.restore" });
   if (!auth.ok) {
     return auth.response;
   }

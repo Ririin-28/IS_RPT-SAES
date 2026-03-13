@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
-import { requireSuperAdmin } from "@/lib/server/super-admin-auth";
+﻿import { NextRequest, NextResponse } from "next/server";
+import { requireItAdmin } from "@/lib/server/it-admin-auth";
 
 const ROLE_TO_SEGMENT: Record<string, string> = {
-  super_admin: "it_admin",
+  it_admin: "it_admin",
   admin: "it_admin",
   principal: "principal",
   master_teacher: "masterteacher",
@@ -14,7 +14,7 @@ const ROLE_TO_SEGMENT: Record<string, string> = {
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const auth = await requireSuperAdmin(request, { permission: "super_admin:accounts.manage" });
+  const auth = await requireItAdmin(request, { permission: "it_admin:accounts.manage" });
   if (!auth.ok) {
     return auth.response;
   }
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
   const forwardedParams = new URLSearchParams(searchParams);
   forwardedParams.delete("role");
 
-  const targetUrl = new URL(`/api/super_admin/accounts/${segment}`, request.nextUrl.origin);
+  const targetUrl = new URL(`/api/it_admin/accounts/${segment}`, request.nextUrl.origin);
   if (forwardedParams.size > 0) {
     targetUrl.search = forwardedParams.toString();
   }

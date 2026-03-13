@@ -1,5 +1,5 @@
-import ITAdminRecoveryCenter from "@/modules/Super_Admin/recovery/recovery";
+import { redirect } from "next/navigation";
 
 export default function RecoveryCenterPage() {
-  return <ITAdminRecoveryCenter />;
+  redirect("/IT_Admin/archive");
 }

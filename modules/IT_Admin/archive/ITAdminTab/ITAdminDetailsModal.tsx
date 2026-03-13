@@ -22,16 +22,16 @@ export default function ITAdminDetailsModal({ show, onClose, itAdmin }: ITAdminD
     <BaseModal
       show={show}
       onClose={onClose}
-      title="Super Admin Details"
+      title="IT Admin Details"
       maxWidth="2xl"
       footer={footer}
     >
       <ModalSection title="Personal Details">
         <div className="space-y-4">
-          {/* 1st Row: Super Admin ID and Role */}
+          {/* 1st Row: IT Admin ID and Role */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <ModalInfoItem label="Super Admin ID" value={itAdmin.userId || itAdmin.user_id || itAdmin.adminId || itAdmin.itAdminId} />
-            <ModalInfoItem label="Role" value={itAdmin.roleLabel || itAdmin.role || "Super Admin"} />
+            <ModalInfoItem label="IT Admin ID" value={itAdmin.userId || itAdmin.user_id || itAdmin.adminId || itAdmin.itAdminId} />
+            <ModalInfoItem label="Role" value={itAdmin.roleLabel || itAdmin.role || "IT Admin"} />
           </div>
           
           {/* 2nd Row: Full Name with helper text */}
@@ -47,17 +47,17 @@ export default function ITAdminDetailsModal({ show, onClose, itAdmin }: ITAdminD
 
       <ModalSection title="Contact Details">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <ModalInfoItem label="Email" value={itAdmin.email || itAdmin.user_email || itAdmin.contactEmail || "—"} />
+          <ModalInfoItem label="Email" value={itAdmin.email || itAdmin.user_email || itAdmin.contactEmail || "--"} />
           <ModalInfoItem
             label="Phone Number"
-            value={itAdmin.contactNumber || itAdmin.contact_number || itAdmin.contactNo || itAdmin.phoneNumber || itAdmin.phone || itAdmin.mobile || "—"}
+            value={itAdmin.contactNumber || itAdmin.contact_number || itAdmin.contactNo || itAdmin.phoneNumber || itAdmin.phone || itAdmin.mobile || "--"}
           />
         </div>
       </ModalSection>
 
       <ModalSection title="Archive Information">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <ModalInfoItem label="Archived Date" value={itAdmin.archivedDateDisplay || "—"} />
+          <ModalInfoItem label="Archived Date" value={itAdmin.archivedDateDisplay || "--"} />
         </div>
       </ModalSection>
     </BaseModal>

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { FaEye, FaEyeSlash } from "react-icons/fa";
+import { FiChevronLeft } from "react-icons/fi";
 import { clearStoredUserProfile, storeUserProfile } from "@/lib/utils/user-profile";
 
 const DEFAULT_ERROR_MESSAGE = "Unable to sign in with those parent credentials.";
@@ -139,44 +140,42 @@ export default function ParentLogin({ onBack }: ParentLoginProps) {
   };
 
   return (
-    <div className="relative min-h-dvh w-full overflow-x-hidden overflow-y-auto px-3 py-4 text-[#013300] sm:px-4 sm:py-6 lg:flex lg:items-center lg:justify-center">
-      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(209,255,222,0.45),transparent_20%),radial-gradient(circle_at_bottom_right,rgba(188,240,214,0.35),transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(242,249,245,0.95))]" />
-      <div className="pointer-events-none absolute left-[10%] right-[50%] top-32 -z-10 h-56 rounded-3xl bg-linear-to-br from-green-200/50 via-white/40 to-transparent blur-4xl" />
-      <div className="pointer-events-none absolute left-[55%] right-[10%] bottom-16 -z-10 h-56 rounded-[40px] bg-linear-to-t from-green-200/60 via-white/35 to-transparent blur-4xl" />
+    <div className="relative flex min-h-dvh w-full items-center justify-center overflow-x-hidden overflow-y-auto bg-[#edf0ee] px-4 py-6 text-[#013300]">
+      <button
+        type="button"
+        onClick={onBack}
+        className="absolute left-3 top-3 inline-flex items-center gap-1 text-base font-semibold leading-none text-[#013300]/80 transition hover:text-[#013300]"
+        aria-label="Back"
+      >
+        <FiChevronLeft className="h-5 w-5" />
+        <span className="leading-none">Back</span>
+      </button>
 
-      <div className="mx-auto w-full max-w-[34rem] rounded-[28px] border border-green-100/80 bg-white/90 p-4 shadow-xl backdrop-blur-sm sm:p-6 md:p-7">
-        <button
-          type="button"
-          onClick={onBack}
-          className="text-sm font-semibold text-[#013300]/70 hover:text-[#013300]"
-        >
-          Back to portal home
-        </button>
-
-        <div className="mt-4 flex flex-col items-center text-center">
+      <div className="w-full max-w-md rounded-[28px] bg-[#f7f8f7] px-4 pt-6 pb-7">
+        <div className="mx-auto flex w-full max-w-md flex-col items-center text-center">
           <Image
             src="/RPT-SAES/RPTLogo.png"
             alt="RPT-SAES Logo"
             width={72}
             height={72}
-            className="h-14 w-14 object-contain drop-shadow-md sm:h-16 sm:w-16"
+            className="h-14 w-14 object-contain"
           />
-          <h1 className="mt-3 text-[2rem] font-bold bg-linear-to-r from-green-800 to-[#013300] bg-clip-text text-transparent sm:text-3xl">
+          <h1 className="mt-4 text-[2rem] font-bold leading-[1.05] tracking-[-0.03em] text-[#013300] sm:text-3xl">
+            Welcome to the
+            <br />
             Parent Portal
           </h1>
-          <p className="mt-2 max-w-md text-sm leading-6 text-[#013300]/65">
-            Sign in with a parent account to open the parent dashboard inside the PWA.
-          </p>
+          <p className="mt-2 text-sm font-medium text-[#013300]/72 sm:text-base">Sign in to your account</p>
         </div>
 
         {isCheckingSession ? (
-          <div className="mt-6 rounded-2xl border border-green-100 bg-green-50/70 px-4 py-5 text-center text-sm font-medium text-[#013300]/75">
+          <div className="mx-auto mt-7 w-full max-w-md rounded-2xl border border-[#013300]/10 bg-[#f6faf5] px-4 py-5 text-center text-sm font-medium text-[#013300]/75">
             Checking parent session...
           </div>
         ) : (
-          <form className="mt-6 space-y-4 sm:mt-7" onSubmit={handleLogin}>
+          <form className="mx-auto mt-7 w-full max-w-md space-y-4" onSubmit={handleLogin}>
             <div>
-              <label htmlFor="parent-email" className="block text-sm font-semibold text-[#013300]/80 mb-2">
+              <label htmlFor="parent-email" className="block text-sm font-bold text-[#013300]/80 mb-2">
                 Parent Email
               </label>
               <input
@@ -185,14 +184,14 @@ export default function ParentLogin({ onBack }: ParentLoginProps) {
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 placeholder="Enter your email address"
-                className="w-full rounded-xl border-2 border-[#013300]/15 bg-white px-4 py-3.5 text-base text-[#013300] outline-none transition focus:border-[#013300]"
+                className="w-full rounded-2xl border border-[#013300]/13 bg-[#f3f5f4] px-4 py-3.5 text-base text-[#013300] outline-none transition placeholder:text-[#013300]/42 focus:border-[#013300]/45"
                 autoComplete="email"
                 required
               />
             </div>
 
             <div>
-              <label htmlFor="parent-password" className="block text-sm font-semibold text-[#013300]/80 mb-2">
+              <label htmlFor="parent-password" className="block text-sm font-bold text-[#013300]/80 mb-2">
                 Password
               </label>
               <div className="relative">
@@ -202,14 +201,14 @@ export default function ParentLogin({ onBack }: ParentLoginProps) {
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   placeholder="Enter your password"
-                  className="w-full rounded-xl border-2 border-[#013300]/15 bg-white px-4 py-3.5 pr-12 text-base text-[#013300] outline-none transition focus:border-[#013300]"
+                  className="w-full rounded-2xl border border-[#013300]/13 bg-[#f3f5f4] px-4 py-3.5 pr-12 text-base text-[#013300] outline-none transition placeholder:text-[#013300]/42 focus:border-[#013300]/45"
                   autoComplete="current-password"
                   required
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((previous) => !previous)}
-                  className="absolute inset-y-0 right-4 flex items-center text-[#013300]/45 hover:text-[#013300]"
+                  className="absolute inset-y-0 right-4 flex items-center text-[#013300]/35 hover:text-[#013300]"
                   aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? <FaEyeSlash className="h-5 w-5" /> : <FaEye className="h-5 w-5" />}
@@ -218,7 +217,7 @@ export default function ParentLogin({ onBack }: ParentLoginProps) {
             </div>
 
             {errorMessage ? (
-              <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 {errorMessage}
               </div>
             ) : null}
@@ -226,13 +225,13 @@ export default function ParentLogin({ onBack }: ParentLoginProps) {
             <button
               type="submit"
               disabled={isLoading}
-              className="min-h-[52px] w-full rounded-xl bg-[#013300] px-6 py-3 font-bold text-white transition hover:bg-green-900 disabled:cursor-not-allowed disabled:opacity-70"
+              className="min-h-[52px] w-full rounded-2xl bg-[#013300] px-6 py-3 text-base font-bold text-white transition hover:bg-[#024100] disabled:cursor-not-allowed disabled:opacity-70"
             >
               {isLoading ? "Signing in..." : "Login as Parent"}
             </button>
 
-            <div className="text-center text-sm">
-              <Link href="/auth/forgot_password" className="font-semibold text-green-700 hover:text-green-900">
+            <div className="pt-1 text-center text-sm">
+              <Link href="/auth/forgot_password" className="font-semibold text-[#013300]/82 hover:text-[#013300]">
                 Forgot password?
               </Link>
             </div>

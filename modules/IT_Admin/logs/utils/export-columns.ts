@@ -1,8 +1,8 @@
-import { exportRowsToExcel, type ExportColumn } from "@/lib/utils/export-to-excel";
-import { buildAccountsExportFilename } from "@/modules/Super_Admin/accounts/utils/export-columns";
+﻿import { exportRowsToExcel, type ExportColumn } from "@/lib/utils/export-to-excel";
+import { buildAccountsExportFilename } from "@/modules/IT_Admin/accounts/utils/export-columns";
 
 function getLogsExportColumns(rows: any[]): ExportColumn<any>[] {
-  const hasAdmin = rows.some(r => (r.role === "super_admin" || r.role === "admin") && r.itAdminId);
+  const hasAdmin = rows.some(r => (r.role === "it_admin" || r.role === "super_admin" || r.role === "admin") && r.itAdminId);
   const hasPrincipal = rows.some(r => r.role === "principal" && r.principalId);
   const hasMasterTeacher = rows.some(r => r.role === "master_teacher" && r.masterTeacherId);
   const hasTeacher = rows.some(r => r.role === "teacher" && r.teacherId);
@@ -14,7 +14,7 @@ function getLogsExportColumns(rows: any[]): ExportColumn<any>[] {
   ];
 
   if (hasAdmin) {
-    columns.push({ header: "Super Admin ID", accessor: (row) => (row.role === "super_admin" || row.role === "admin") ? (row.itAdminId ?? "") : "" });
+    columns.push({ header: "IT Admin ID", accessor: (row) => (row.role === "it_admin" || row.role === "super_admin" || row.role === "admin") ? (row.itAdminId ?? "") : "" });
   }
   if (hasPrincipal) {
     columns.push({ header: "Principal ID", accessor: (row) => row.role === "principal" ? (row.principalId ?? "") : "" });

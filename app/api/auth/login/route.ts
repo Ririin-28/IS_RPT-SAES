@@ -7,7 +7,7 @@ import { buildMasterTeacherSessionCookie, createMasterTeacherSession } from "@/l
 import { buildTeacherSessionCookie, createTeacherSession } from "@/lib/server/teacher-session";
 import { getTableColumns, runWithConnection } from "@/lib/db";
 import { normalizeRoleName, resolveCanonicalRole, resolvePortalPath, resolveUserRole } from "@/lib/server/role-resolution";
-import { ensureSuperAdminPhaseOneMigration } from "@/lib/server/super-admin-migration";
+import { ensureItAdminPhaseOneMigration } from "@/lib/server/it-admin-migration";
 
 /* =======================
    Types
@@ -148,12 +148,27 @@ function isMissingTableError(error: unknown): boolean {
 
 async function resolveSuperAdminLinkedUserId(
   db: import("mysql2/promise").PoolConnection,
-  superAdminId: string,
+  itAdminId: string,
 ): Promise<number | null> {
+  try {
+    const [itAdmins] = await db.execute<RowDataPacket[]>(
+      "SELECT user_id FROM it_admin WHERE it_admin_id = ? LIMIT 1",
+      [itAdminId],
+    );
+    const linkedUserId = Number(itAdmins[0]?.user_id);
+    if (Number.isFinite(linkedUserId) && linkedUserId > 0) {
+      return linkedUserId;
+    }
+  } catch (error) {
+    if (!isMissingTableError(error)) {
+      throw error;
+    }
+  }
+
   try {
     const [superAdmins] = await db.execute<RowDataPacket[]>(
       "SELECT user_id FROM super_admin WHERE it_admin_id = ? LIMIT 1",
-      [superAdminId],
+      [itAdminId],
     );
     const linkedUserId = Number(superAdmins[0]?.user_id);
     if (Number.isFinite(linkedUserId) && linkedUserId > 0) {
@@ -164,28 +179,13 @@ async function resolveSuperAdminLinkedUserId(
     if (code === "ER_BAD_FIELD_ERROR") {
       const [superAdmins] = await db.execute<RowDataPacket[]>(
         "SELECT user_id FROM super_admin WHERE super_admin_id = ? LIMIT 1",
-        [superAdminId],
+        [itAdminId],
       );
       const linkedUserId = Number(superAdmins[0]?.user_id);
       if (Number.isFinite(linkedUserId) && linkedUserId > 0) {
         return linkedUserId;
       }
     } else if (!isMissingTableError(error)) {
-      throw error;
-    }
-  }
-
-  try {
-    const [itAdmins] = await db.execute<RowDataPacket[]>(
-      "SELECT user_id FROM it_admin WHERE it_admin_id = ? LIMIT 1",
-      [superAdminId],
-    );
-    const linkedUserId = Number(itAdmins[0]?.user_id);
-    if (Number.isFinite(linkedUserId) && linkedUserId > 0) {
-      return linkedUserId;
-    }
-  } catch (error) {
-    if (!isMissingTableError(error)) {
       throw error;
     }
   }
@@ -268,7 +268,7 @@ async function resolveTeacherId(db: import("mysql2/promise").PoolConnection, use
 export async function POST(req: Request): Promise<Response> {
   try {
     return await runWithConnection(async (db) => {
-      await ensureSuperAdminPhaseOneMigration(db);
+      await ensureItAdminPhaseOneMigration(db);
 
       const respond = (
         status: number,
@@ -349,12 +349,12 @@ export async function POST(req: Request): Promise<Response> {
           });
         }
 
-        /* ===== Super Admin validation ===== */
+        /* ===== IT Admin validation ===== */
         if (roleRequiresItAdminId(roleForLogic)) {
           const normalizedItAdminId = sanitizeItAdminId(itAdminId);
           if (!normalizedItAdminId) {
             return respond(401, {
-              error: "Admin login requires Super Admin ID",
+              error: "Admin login requires IT Admin ID",
               requireItAdminId: true,
             });
           }
@@ -406,7 +406,7 @@ export async function POST(req: Request): Promise<Response> {
           cookies.push(buildParentSessionCookie(token, expiresAt));
         }
 
-        if (canonicalRole === "super_admin") {
+        if (canonicalRole === "it_admin") {
           const { token, expiresAt } = await createAdminSession(db, user.user_id, deviceName);
           cookies.push(buildAdminSessionCookie(token, expiresAt));
         }

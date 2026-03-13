@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { getTableColumns, query, tableExists } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/server/super-admin-auth";
+import { deliverAccountCredentialEmail } from "@/lib/server/account-credential-email";
+import { requireItAdmin } from "@/lib/server/it-admin-auth";
 import {
   HttpError,
   createMasterTeacher,
@@ -239,7 +240,7 @@ async function resolveMtCoordinatorTable(): Promise<{ table: string | null; colu
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireSuperAdmin(request, { permission: "super_admin:accounts.manage" });
+  const auth = await requireItAdmin(request, { permission: "it_admin:accounts.manage" });
   if (!auth.ok) {
     return auth.response;
   }
@@ -652,7 +653,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireSuperAdmin(request, { permission: "super_admin:accounts.manage" });
+  const auth = await requireItAdmin(request, { permission: "it_admin:accounts.manage" });
   if (!auth.ok) {
     return auth.response;
   }
@@ -691,12 +692,21 @@ export async function POST(request: NextRequest) {
       teacherId,
     });
 
+    const credentialEmail = await deliverAccountCredentialEmail({
+      email: result.record.email,
+      recipientName: result.record.name,
+      roleLabel: "Master Teacher",
+      temporaryPassword: result.temporaryPassword,
+      secondaryCredentialLabel: "Master Teacher ID",
+      secondaryCredentialValue: result.record.masterTeacherId,
+    });
+
     return NextResponse.json(
       {
         success: true,
         userId: result.userId,
-        temporaryPassword: result.temporaryPassword,
         record: result.record,
+        credentialEmail,
       },
       { status: 201 },
     );

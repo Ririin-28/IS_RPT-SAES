@@ -1,7 +1,7 @@
 import { type RowDataPacket } from "mysql2/promise";
 import { runWithConnection } from "@/lib/db";
 import { normalizeRoleName, resolveCanonicalRole, resolvePortalPath, resolveUserRole } from "@/lib/server/role-resolution";
-import { ensureSuperAdminPhaseOneMigration } from "@/lib/server/super-admin-migration";
+import { ensureItAdminPhaseOneMigration } from "@/lib/server/it-admin-migration";
 
 interface CheckCredentialsPayload {
   email: string;
@@ -26,12 +26,27 @@ function isMissingTableError(error: unknown): boolean {
 
 async function resolveSuperAdminLinkedUserId(
   db: import("mysql2/promise").PoolConnection,
-  superAdminId: string,
+  itAdminId: string,
 ): Promise<number | null> {
+  try {
+    const [itAdmins] = await db.execute<RowDataPacket[]>(
+      "SELECT user_id FROM it_admin WHERE it_admin_id = ? LIMIT 1",
+      [itAdminId],
+    );
+    const linkedUserId = Number(itAdmins[0]?.user_id);
+    if (Number.isFinite(linkedUserId) && linkedUserId > 0) {
+      return linkedUserId;
+    }
+  } catch (error) {
+    if (!isMissingTableError(error)) {
+      throw error;
+    }
+  }
+
   try {
     const [superAdmins] = await db.execute<RowDataPacket[]>(
       "SELECT user_id FROM super_admin WHERE it_admin_id = ? LIMIT 1",
-      [superAdminId],
+      [itAdminId],
     );
     const linkedUserId = Number(superAdmins[0]?.user_id);
     if (Number.isFinite(linkedUserId) && linkedUserId > 0) {
@@ -42,28 +57,13 @@ async function resolveSuperAdminLinkedUserId(
     if (code === "ER_BAD_FIELD_ERROR") {
       const [superAdmins] = await db.execute<RowDataPacket[]>(
         "SELECT user_id FROM super_admin WHERE super_admin_id = ? LIMIT 1",
-        [superAdminId],
+        [itAdminId],
       );
       const linkedUserId = Number(superAdmins[0]?.user_id);
       if (Number.isFinite(linkedUserId) && linkedUserId > 0) {
         return linkedUserId;
       }
     } else if (!isMissingTableError(error)) {
-      throw error;
-    }
-  }
-
-  try {
-    const [itAdmins] = await db.execute<RowDataPacket[]>(
-      "SELECT user_id FROM it_admin WHERE it_admin_id = ? LIMIT 1",
-      [superAdminId],
-    );
-    const linkedUserId = Number(itAdmins[0]?.user_id);
-    if (Number.isFinite(linkedUserId) && linkedUserId > 0) {
-      return linkedUserId;
-    }
-  } catch (error) {
-    if (!isMissingTableError(error)) {
       throw error;
     }
   }
@@ -94,7 +94,7 @@ function sanitizeItAdminId(value: unknown): string | null {
 export async function POST(req: Request): Promise<Response> {
   try {
     return await runWithConnection(async (db) => {
-      await ensureSuperAdminPhaseOneMigration(db);
+      await ensureItAdminPhaseOneMigration(db);
 
       try {
         const { email, password, userId, itAdminId } = (await req.json()) as CheckCredentialsPayload;

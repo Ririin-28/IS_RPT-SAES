@@ -12,7 +12,7 @@ import AccountDeletedModal from "@/components/Common/Modals/AccountDeletedModal"
 import { useArchiveRestoreDelete } from "../Common/useArchiveRestoreDelete";
 import { ensureArchiveRowKey } from "../Common/archiveRowKey";
 import { exportArchiveRows } from "../utils/export-columns";
-import TeacherDetailsModal from "@/modules/Super_Admin/accounts/TeacherTab/Modals/TeacherDetailsModal";
+import TeacherDetailsModal from "@/modules/IT_Admin/accounts/TeacherTab/Modals/TeacherDetailsModal";
 
 const ExportIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -140,7 +140,7 @@ export default function TeacherArchiveTab({
       }
 
       try {
-        const response = await fetch("/api/super_admin/archive/restore", {
+        const response = await fetch("/api/it_admin/archive/restore", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ archiveIds }),
@@ -236,7 +236,7 @@ export default function TeacherArchiveTab({
       }
 
       try {
-        const response = await fetch("/api/super_admin/archive/delete", {
+        const response = await fetch("/api/it_admin/archive/delete", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ archiveIds }),
@@ -530,13 +530,13 @@ export default function TeacherArchiveTab({
               row.user_code ??
               row.userId ??
               row.user_id ??
-              "—",
+              "--",
           },
           { key: "name", title: "Full Name" },
           {
             key: "archivedDate",
             title: "Archived Date",
-            render: (row: any) => row.archivedDateDisplay ?? "—",
+            render: (row: any) => row.archivedDateDisplay ?? "--",
           },
         ]}
         data={tableData}

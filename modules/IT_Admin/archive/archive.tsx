@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import ITAdminSidebar from "@/components/Super_Admin/Sidebar";
-import ITAdminHeader from "@/components/Super_Admin/Header";
+import ITAdminSidebar from "@/components/IT_Admin/Sidebar";
+import ITAdminHeader from "@/components/IT_Admin/Header";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import { FaTimes } from "react-icons/fa";
@@ -11,20 +11,20 @@ import TeacherArchiveTab from "./TeacherTab/TeacherTab";
 import MasterTeacherTab from "./MasterTeacherTab/MasterTeacherTab";
 // Principal Tab
 import PrincipalTab from "./PrincipalTab/PrincipalTab";
-// Super Admin Tab
+// IT Admin Tab
 import ITAdminArchiveTab from "./ITAdminTab/ITAdminTab";
 // Student Tab
 import StudentArchiveTab from "./StudentTab/StudentTab";
 
 const GRADE_OPTIONS = ["All Grades", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"] as const;
-const ACCOUNT_OPTIONS = ["Super Admin", "Principal", "Master Teachers", "Teachers"] as const;
+const ACCOUNT_OPTIONS = ["IT Admin", "Principal", "Master Teachers", "Teachers"] as const;
 
 type AccountOption = (typeof ACCOUNT_OPTIONS)[number];
 
-type ArchiveRoleKey = "super_admin" | "principal" | "master_teacher" | "teacher" | "student";
+type ArchiveRoleKey = "it_admin" | "principal" | "master_teacher" | "teacher" | "student";
 
 const ACCOUNT_TYPE_TO_ROLE: Record<AccountOption, ArchiveRoleKey> = {
-  "Super Admin": "super_admin",
+  "IT Admin": "it_admin",
   Principal: "principal",
   "Master Teachers": "master_teacher",
   Teachers: "teacher",
@@ -58,7 +58,7 @@ const normalizeRoleKey = (role: string | null | undefined): ArchiveRoleKey | nul
     value === "it_admin" ||
     value === "it-admin" ||
     value === "it admin"
-  ) return "super_admin";
+  ) return "it_admin";
   if (value === "principal") return "principal";
   if (value === "master_teacher" || value === "master-teacher" || value === "masterteacher") return "master_teacher";
   if (value === "teacher" || value === "faculty") return "teacher";
@@ -117,7 +117,7 @@ function normalizeIsoTimestamp(value: unknown): string | null {
 
 function formatTimestamp(value: string | null | undefined): string {
   if (!value) {
-    return "—";
+    return "--";
   }
 
   try {
@@ -220,7 +220,7 @@ function normalizeArchiveRecord(record: any): ArchiveEntry {
 
 export default function ITAdminArchive() {
   const [activeTab, setActiveTab] = useState<string>("All Grades");
-  const [accountType, setAccountType] = useState<AccountOption>("Super Admin");
+  const [accountType, setAccountType] = useState<AccountOption>("IT Admin");
   const [accounts, setAccounts] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [archiveRecords, setArchiveRecords] = useState<ArchiveEntry[]>([]);
@@ -246,7 +246,7 @@ export default function ITAdminArchive() {
       setIsLoading(true);
       setError(null);
       try {
-  const response = await fetch("/api/super_admin/archive", {
+  const response = await fetch("/api/it_admin/archive", {
           cache: "no-store",
           signal: controller.signal,
         });
@@ -354,13 +354,13 @@ export default function ITAdminArchive() {
 
               {/*---------------------------------Tab Content---------------------------------*/}
               {isLoading && (
-                <p className="text-sm text-gray-500">Loading archived accounts…</p>
+                <p className="text-sm text-gray-500">Loading archived accounts...</p>
               )}
               {!isLoading && error && (
                 <p className="text-sm text-red-600" role="alert">{error}</p>
               )}
               <div className="mt-4 sm:mt-6">
-                {accountType === "Super Admin" && (
+                {accountType === "IT Admin" && (
                   <ITAdminArchiveTab
                     itAdmins={accounts}
                     setItAdmins={setAccounts}

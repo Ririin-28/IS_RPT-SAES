@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { getTableColumns, query, tableExists } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/server/super-admin-auth";
+import { deliverAccountCredentialEmail } from "@/lib/server/account-credential-email";
+import { requireItAdmin } from "@/lib/server/it-admin-auth";
 import {
   HttpError,
   createItAdmin,
@@ -195,7 +196,7 @@ async function persistAdminIdentifiers(
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireSuperAdmin(request, { permission: "super_admin:accounts.manage" });
+  const auth = await requireItAdmin(request, { permission: "it_admin:accounts.manage" });
   if (!auth.ok) {
     return auth.response;
   }
@@ -445,7 +446,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireSuperAdmin(request, { permission: "super_admin:accounts.manage" });
+  const auth = await requireItAdmin(request, { permission: "it_admin:accounts.manage" });
   if (!auth.ok) {
     return auth.response;
   }
@@ -474,12 +475,21 @@ export async function POST(request: NextRequest) {
       phoneNumber,
     });
 
+    const credentialEmail = await deliverAccountCredentialEmail({
+      email: result.record.email,
+      recipientName: result.record.name,
+      roleLabel: "IT Admin",
+      temporaryPassword: result.temporaryPassword,
+      secondaryCredentialLabel: "IT Admin ID",
+      secondaryCredentialValue: result.record.adminId,
+    });
+
     return NextResponse.json(
       {
         success: true,
         userId: result.userId,
-        temporaryPassword: result.temporaryPassword,
         record: result.record,
+        credentialEmail,
       },
       { status: 201 },
     );
@@ -487,7 +497,7 @@ export async function POST(request: NextRequest) {
     if (error instanceof HttpError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
-    console.error("Failed to add Super Admin", error);
-    return NextResponse.json({ error: "Failed to add Super Admin." }, { status: 500 });
+    console.error("Failed to add IT Admin", error);
+    return NextResponse.json({ error: "Failed to add IT Admin." }, { status: 500 });
   }
 }

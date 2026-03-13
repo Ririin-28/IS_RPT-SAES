@@ -1,5 +1,5 @@
-import ITAdminDashboard from "@/modules/Super_Admin/dashboard/dashboard"; 
+﻿import { redirect } from "next/navigation";
 
-export default function Dashboard() {
-  return <ITAdminDashboard />;
+export default function LegacySuperAdminPage() {
+  redirect("/IT_Admin/dashboard");
 }

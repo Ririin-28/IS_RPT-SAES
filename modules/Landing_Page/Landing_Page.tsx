@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useRef } from "react";
 import Image from "next/image";
@@ -235,7 +235,7 @@ export default function Home() {
   useEffect(() => {
     const fetchLandingContent = async () => {
       try {
-        const response = await fetch("/api/super_admin/landing");
+        const response = await fetch("/api/it_admin/landing");
         if (!response.ok) {
           throw new Error(`Failed to load landing configuration (${response.status})`);
         }
@@ -552,7 +552,7 @@ export default function Home() {
             </h1>
             <p
               className={`
-              mb-1 text-sm text-green-900 md:mb-2 md:text-lg lg:mb-2 lg:text-xl
+              mb-1 text-sm text-green-900 md:mb-2 md:text-lg lg:mb-10 lg:text-xl
               transition-all duration-800 delay-300 transform
               ${mounted ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}
               text-center sm:text-left
@@ -560,12 +560,11 @@ export default function Home() {
             >
               An innovative platform designed to support teachers in managing and tracking student progress in remedial programs.
             </p>
-            <div className={`flex flex-wrap gap-4 mt-4 transition-all duration-800 delay-500 transform ${mounted ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-6 opacity-0 scale-95'
-              } items-center sm:items-start w-full`}>
+            <div className={`flex w-full flex-wrap items-center justify-center gap-4 mt-4 transition-all duration-800 delay-500 transform ${mounted ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-6 opacity-0 scale-95'
+              } sm:items-start sm:justify-start`}>
               <Link href="/auth/login" className="
                 inline-flex min-h-12 touch-manipulation items-center justify-center rounded-xl bg-[#013300] px-4 py-3 text-base font-semibold text-white transition-colors duration-200 hover:bg-[#014a1f]
                 md:px-5 md:py-3 md:text-lg lg:text-xl
-                w-full sm:w-auto sm:justify-start
               ">
                 Get Started
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 ml-2 md:w-6 md:h-6">
@@ -598,7 +597,7 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="absolute inset-y-0 left-0 right-0 flex items-center justify-between px-4">
+                <div className="absolute inset-y-0 left-0 right-0 hidden items-center justify-between px-4 sm:flex">
                   <button
                     type="button"
                     onClick={handlePrev}
@@ -622,10 +621,10 @@ export default function Home() {
                 </div>
 
                 <div className="absolute bottom-0 left-0 right-0 rounded-b-3xl bg-linear-to-t from-[#013300]/78 via-[#013300]/35 to-transparent px-6 py-5">
-                  <h3 className="text-2xl font-bold text-white md:text-2xl lg:text-2xl">
+                  <h3 className="text-lg font-bold text-white sm:text-xl md:text-2xl lg:text-2xl">
                     {"San Agustin Elementary School"}
                   </h3>
-                  <h3 className="text-md font-base text-white pb-2">
+                  <h3 className="pb-2 text-xs font-normal text-white sm:text-sm md:text-base">
                     {landingContent?.saesDetails?.location || "San Agustin Elementary School"}
                   </h3>
                 </div>
@@ -652,7 +651,7 @@ export default function Home() {
       <section
         ref={aboutRef}
         id="about"
-        className="relative px-6 py-16 md:px-8 md:py-20 lg:px-12 lg:py-24 bg-linear-to-b from-transparent via-green-50/30 to-transparent"
+        className="relative px-4 py-12 md:px-8 md:py-20 lg:px-12 lg:py-24 bg-linear-to-b from-transparent via-green-50/30 to-transparent"
       >
         <div className="mx-auto max-w-7xl">
           <div data-nav-anchor="true" className="flex flex-col lg:flex-row lg:items-center gap-12 lg:gap-16">
@@ -664,12 +663,16 @@ export default function Home() {
               className={`lg:order-2 lg:w-5/12 transition-all duration-1000 transform ${isSectionVisible('mission') ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'
                 }`}
             >
-              <h2 className="text-3xl font-extrabold text-left text-[#013300] mb-6 leading-tight md:text-4xl lg:text-5xl">
+              <h2 className="mb-6 text-center text-3xl font-extrabold leading-tight text-[#013300] sm:text-left md:text-4xl lg:text-5xl">
                 Transforming Remedial Education
               </h2>
-              <p className="text-base text-green-900 mb-6 md:text-lg md:mb-6
+              <p className="
+                mb-1 text-sm text-green-900 leading-relaxed
                 transition-all duration-700 delay-800 transform
                 translate-y-0 opacity-100
+                text-center sm:text-left
+                md:mb-2 md:text-lg
+                lg:mb-10 lg:text-xl
               ">
                 Our mission is to enhance the San Agustin Elementary School remedial program by providing teachers with a centralized system that tracks student performance, manages materials, and uses AI-driven remedial to support student learning.
               </p>
@@ -679,7 +682,7 @@ export default function Home() {
             <div
               ref={featuresRef}
               id="features"
-              className="lg:order-1 lg:w-7/12 grid grid-cols-1 gap-6 sm:grid-cols-2 md:gap-8 mt-8 lg:mt-0"
+              className="mt-8 grid grid-cols-2 gap-2 sm:gap-6 md:gap-8 lg:order-1 lg:mt-0 lg:w-7/12"
             >
               {[
                 {
@@ -710,10 +713,11 @@ export default function Home() {
                 <div
                   key={index}
                   className={`
-                    group relative flex h-full flex-col rounded-3xl bg-white p-6
+                    group relative flex h-full flex-col rounded-xl bg-white p-3
                     border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.02)]
                     transition-all duration-500 ease-out 
                     hover:-translate-y-2 hover:shadow-[0_12px_40px_rgba(1,51,0,0.08)] hover:border-green-100/60
+                    sm:rounded-3xl sm:p-6
                     ${isSectionVisible('features') ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}
                   `}
                   style={{ transitionDelay: `${isSectionVisible('features') ? index * 120 : 0}ms` }}
@@ -722,28 +726,28 @@ export default function Home() {
                     const Icon = feature.icon;
                     const HoverIcon = feature.hoverIcon;
                     return (
-                      <div className="flex items-start gap-4">
-                        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-green-100 bg-green-50/70 transition-colors duration-500 group-hover:bg-green-100/70">
-                          <div className="relative h-8 w-8">
+                      <div className="flex flex-col items-center gap-2 text-center sm:flex-row sm:items-start sm:gap-4 sm:text-left">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-green-100 bg-green-50/70 transition-colors duration-500 group-hover:bg-green-100/70 sm:h-16 sm:w-16 sm:rounded-2xl">
+                          <div className="relative h-5 w-5 sm:h-8 sm:w-8">
                             <Icon
-                              className="absolute inset-0 h-8 w-8 text-[#013300] transition-all duration-300 group-hover:scale-90 group-hover:opacity-0"
+                              className="absolute inset-0 h-5 w-5 text-[#013300] transition-all duration-300 group-hover:scale-90 group-hover:opacity-0 sm:h-8 sm:w-8"
                               strokeWidth={2}
                             />
                             <HoverIcon
-                              className="absolute inset-0 h-8 w-8 scale-90 text-green-800 opacity-0 transition-all duration-300 group-hover:scale-100 group-hover:opacity-100"
+                              className="absolute inset-0 h-5 w-5 scale-90 text-green-800 opacity-0 transition-all duration-300 group-hover:scale-100 group-hover:opacity-100 sm:h-8 sm:w-8"
                               strokeWidth={2}
                             />
                           </div>
                         </div>
 
-                        <h3 className="pt-1 text-xl font-bold leading-tight text-[#013300] transition-colors duration-300 group-hover:text-green-800">
+                        <h3 className="text-sm font-bold leading-tight text-[#013300] transition-colors duration-300 group-hover:text-green-800 sm:pt-1 sm:text-xl">
                           {feature.title}
                         </h3>
                       </div>
                     );
                   })()}
 
-                  <p className="mt-5 text-base leading-relaxed text-green-800 opacity-90 transition-colors duration-300 group-hover:text-[#013300]">
+                  <p className="mt-2 text-center text-[11px] leading-snug text-green-800 opacity-90 transition-colors duration-300 group-hover:text-[#013300] sm:mt-5 sm:text-left sm:text-base sm:leading-relaxed">
                     {feature.desc}
                   </p>
                 </div>
@@ -760,10 +764,115 @@ export default function Home() {
         id="mobile"
         className="px-6 py-12 md:px-8 md:py-16 lg:px-12 lg:py-20"
       >
-        <div className="mb-12 md:mb-16">
+        <div data-nav-anchor="true" className="mb-12 md:mb-16">
           <div
-            data-nav-anchor="true"
-            className="flex flex-col items-center justify-center gap-8 md:flex-row md:gap-12 lg:gap-16"
+            className="mx-auto flex max-w-sm flex-col items-center gap-8 md:hidden"
+          >
+            <div className="relative shrink-0">
+              <div className={`
+                absolute -top-8 -left-10 h-56 w-56 rounded-full bg-green-100/45 z-0
+                transition-all duration-1000 delay-300
+                ${isSectionVisible('mobile') ? 'scale-100 opacity-100' : 'scale-50 opacity-0'}
+              `}></div>
+
+              <div className={`
+                absolute -bottom-8 -right-10 h-48 w-48 rounded-full bg-green-100/35 z-0
+                transition-all duration-1000 delay-500
+                ${isSectionVisible('mobile') ? 'scale-100 opacity-100' : 'scale-50 opacity-0'}
+              `}></div>
+
+              <div className={`
+                absolute top-1/2 -right-12 h-40 w-40 rounded-full bg-green-50/65 transform -translate-y-1/2 z-0
+                transition-all duration-1000 delay-700
+                ${isSectionVisible('mobile') ? 'scale-100 opacity-100' : 'scale-50 opacity-0'}
+              `}></div>
+
+              <Image
+                width={200}
+                height={400}
+                src="/RPT-SAES/RPT-SAES Mobile.png"
+                alt="Quiz Mobile"
+                className={`
+                  relative z-10 w-48 min-[380px]:w-52
+                  transition-all duration-800 delay-900 transform
+                  ${isSectionVisible('mobile') ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-8 opacity-0 scale-95'}
+                `}
+              />
+            </div>
+
+            <div
+              className={`
+              relative z-20 flex w-full max-w-sm flex-col items-center text-center
+              transition-all duration-800 delay-200
+              ${isSectionVisible('mobile') ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}
+            `}
+            >
+              <div
+                className={`
+                  mb-5 flex items-center gap-3
+                  transition-all duration-700 delay-400 transform
+                  ${isSectionVisible('mobile') ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-4 opacity-0 scale-95'}
+                `}
+              >
+                <Image
+                  src="/RPT-SAES/RPTLogo.png"
+                  alt="RPT Portal Logo"
+                  width={44}
+                  height={44}
+                  className="h-11 w-11 object-contain drop-shadow-md"
+                />
+                <span className="bg-gradient-to-r from-green-700 to-green-900 bg-clip-text text-2xl font-bold text-transparent">
+                  RPT Portal
+                </span>
+              </div>
+              <h3
+                className="mb-5 text-4xl font-extrabold leading-[0.92] text-[#013300] min-[380px]:text-[2.6rem]"
+              >
+                Innovation
+                <br /> in Your Hands
+              </h3>
+              <p
+                className={`
+                max-w-sm text-base text-green-900 leading-relaxed
+                transition-all duration-700 delay-800 transform
+                ${isSectionVisible('mobile') ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}
+                text-center
+              `}
+              >
+                Manage remedial programs and
+                track student progress directly from your phone.
+              </p>
+              <div
+                className={`
+                  mt-5 w-full max-w-[18rem]
+                  ${isSectionVisible('mobile') ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-6 opacity-0 scale-95'}
+                `}
+              >
+                <Link
+                  href="/PWA"
+                  className="flex w-full items-center justify-center rounded-xl bg-[#013300] px-6 py-3.5 text-base font-semibold text-white transition-colors duration-200 hover:bg-[#014a1f]"
+                >
+                  <svg
+                    className="mr-2 h-5 w-5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4"
+                    />
+                  </svg>
+                  Install RPT-SAES
+                </Link>
+              </div>
+            </div>
+          </div>
+
+          <div
+            className="hidden md:flex md:flex-row md:items-center md:justify-center md:gap-12 lg:gap-16"
           >
             <div className="shrink-0 relative">
               <div className={`
@@ -811,17 +920,24 @@ export default function Home() {
               ${isSectionVisible('mobile') ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}
             `}
             >
-              <Image
-                width={200}
-                height={200}
-                src="/RPT-SAES/RPT-SAES Full Logo.png"
-                alt="Quiz Logo"
+              <div
                 className={`
-                  w-48 mb-6 md:w-56 md:mb-8 lg:w-90 lg:mb-0
+                  mb-6 flex items-center gap-4
                   transition-all duration-700 delay-400 transform
-                  ${isSectionVisible('mobile') ? 'scale-100 opacity-100' : 'scale-90 opacity-0'}
+                  ${isSectionVisible('mobile') ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-4 opacity-0 scale-95'}
                 `}
-              />
+              >
+                <Image
+                  src="/RPT-SAES/RPTLogo.png"
+                  alt="RPT Portal Logo"
+                  width={64}
+                  height={64}
+                  className="h-16 w-16 object-contain drop-shadow-md"
+                />
+                <span className="bg-gradient-to-r from-green-700 to-green-900 bg-clip-text text-5xl font-bold text-transparent">
+                  RPT Portal
+                </span>
+              </div>
               <h3
                 className="text-3xl font-extrabold text-[#013300] mb-6 leading-tight md:text-4xl lg:text-5xl"
               >
@@ -830,9 +946,12 @@ export default function Home() {
               </h3>
               <p
                 className={`
-                text-base text-green-900 mb-6 md:text-lg md:mb-6
+                mb-1 text-sm text-green-900 leading-relaxed
                 transition-all duration-700 delay-800 transform
                 ${isSectionVisible('mobile') ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}
+                text-left
+                md:mb-6 md:text-lg
+                lg:mb-10 lg:text-xl
               `}
               >
                 Manage remedial programs and
@@ -902,10 +1021,10 @@ export default function Home() {
                 isSectionVisible('location') ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'
               }`}
             >
-              <h2 className="mt-5 text-3xl font-extrabold text-[#013300] leading-[0.98] md:text-4xl lg:text-[3.5rem]">
+              <h2 className="mt-5 text-center text-3xl font-extrabold leading-[0.98] text-[#013300] sm:text-left md:text-4xl lg:text-[3.5rem]">
                 Visit Our Campus
               </h2>
-              <p className="mt-5 max-w-xl text-base leading-relaxed text-green-900 md:text-lg">
+              <p className="mt-5 mx-auto max-w-xl text-sm leading-relaxed text-green-900 text-center sm:mx-0 sm:text-left md:text-lg lg:text-xl">
                 We are conveniently located in the heart of Novaliches. Come visit San Agustin
                 Elementary School and see where the learning happens.
               </p>
@@ -991,10 +1110,10 @@ export default function Home() {
                 isSectionVisible("contacts") ? "translate-y-0 opacity-100" : "translate-y-8 opacity-0"
               }`}
             >
-              <h2 className="mt-6 text-3xl font-extrabold leading-tight text-[#013300] md:text-4xl lg:text-5xl">
+              <h2 className="mt-6 text-center text-3xl font-extrabold leading-tight text-[#013300] sm:text-left md:text-4xl lg:text-5xl">
                 Let&apos;s Connect
               </h2>
-              <p className="mt-5 max-w-2xl text-base leading-relaxed text-green-900 md:text-lg">
+              <p className="mt-5 mx-auto max-w-2xl text-sm leading-relaxed text-green-900 text-center sm:mx-0 sm:text-left md:text-lg lg:text-xl">
                 Reach out for school concerns, remedial updates, or general inquiries about
                 RPT-SAES.
               </p>
@@ -1014,20 +1133,20 @@ export default function Home() {
                       href={contact.href}
                       target={contact.external ? "_blank" : undefined}
                       rel={contact.external ? "noreferrer" : undefined}
-                      className="group flex items-start gap-5 rounded-[1.75rem] border border-gray-100 bg-white px-6 py-6 transition-all duration-300 hover:-translate-y-1 hover:border-green-100"
+                      className="group flex items-start gap-3 rounded-[1.25rem] border border-gray-100 bg-white px-4 py-4 transition-all duration-300 hover:-translate-y-1 hover:border-green-100 sm:gap-5 sm:rounded-[1.75rem] sm:px-6 sm:py-6"
                     >
-                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#f0f7f3] text-[#013300] transition-colors duration-300 group-hover:bg-green-100/80">
-                        <Icon className="h-6 w-6" strokeWidth={2} />
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#f0f7f3] text-[#013300] transition-colors duration-300 group-hover:bg-green-100/80 sm:h-14 sm:w-14 sm:rounded-2xl">
+                        <Icon className="h-5 w-5 sm:h-6 sm:w-6" strokeWidth={2} />
                       </div>
 
                       <div className="min-w-0">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-green-700/80">
                           {contact.label}
                         </p>
-                        <p className="mt-3 break-all text-xl font-bold leading-tight text-[#013300] md:text-2xl">
+                        <p className="mt-2 break-all text-base font-bold leading-tight text-[#013300] sm:mt-3 sm:text-lg md:text-2xl">
                           {contact.value}
                         </p>
-                        <p className="mt-3 text-sm leading-relaxed text-green-900/75">
+                        <p className="mt-2 text-xs leading-relaxed text-green-900/75 sm:mt-3 sm:text-sm">
                           {contact.description}
                         </p>
                       </div>

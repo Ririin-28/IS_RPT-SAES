@@ -85,7 +85,7 @@ const formatMonthRange = (range: { startMonth: number | null; endMonth: number |
   const startLabel = MONTH_LABELS[range.startMonth - 1] ?? "";
   const endLabel = MONTH_LABELS[range.endMonth - 1] ?? "";
   if (!startLabel || !endLabel) return "--";
-  return startLabel === endLabel ? startLabel : `${startLabel} â€“ ${endLabel}`;
+  return startLabel === endLabel ? startLabel : `${startLabel} - ${endLabel}`;
 };
 
 const getActivityColor = (type: string) => {

@@ -1,7 +1,7 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { getTableColumns, query, tableExists } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/server/super-admin-auth";
+import { requireItAdmin } from "@/lib/server/it-admin-auth";
 import { RECOVERY_ENTITIES, modeFlagColumn, modeTimeColumn } from "@/lib/server/recovery-center";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 type CountRow = RowDataPacket & { total: number };
 
 export async function GET(request: Request): Promise<Response> {
-  const auth = await requireSuperAdmin(request, { permission: "super_admin:data.restore" });
+  const auth = await requireItAdmin(request, { permission: "it_admin:data.restore" });
   if (!auth.ok) {
     return auth.response;
   }

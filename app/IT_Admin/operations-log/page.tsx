@@ -1,5 +1,5 @@
-import ITAdminOperationsLog from "@/modules/Super_Admin/operations-log/operations-log";
+import { redirect } from "next/navigation";
 
 export default function OperationsLogPage() {
-  return <ITAdminOperationsLog />;
+  redirect("/IT_Admin/logs");
 }

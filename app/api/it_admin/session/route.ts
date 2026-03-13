@@ -1,8 +1,8 @@
-import type { RowDataPacket } from "mysql2/promise";
+﻿import type { RowDataPacket } from "mysql2/promise";
 import { runWithConnection } from "@/lib/db";
 import { normalizeRoleName, resolveCanonicalRole, resolveUserRole } from "@/lib/server/role-resolution";
-import { ensureSuperAdminPhaseOneMigration } from "@/lib/server/super-admin-migration";
-import { requireSuperAdmin } from "@/lib/server/super-admin-auth";
+import { ensureItAdminPhaseOneMigration } from "@/lib/server/it-admin-migration";
+import { requireItAdmin } from "@/lib/server/it-admin-auth";
 
 interface AdminUserRow extends RowDataPacket {
   user_id: number;
@@ -21,14 +21,14 @@ function canonicalizeRole(role: string | null): string {
 }
 
 export async function GET(request: Request): Promise<Response> {
-  const auth = await requireSuperAdmin(request);
+  const auth = await requireItAdmin(request);
   if (!auth.ok) {
     return auth.response;
   }
 
   try {
     const payload = await runWithConnection(async (connection) => {
-      await ensureSuperAdminPhaseOneMigration(connection);
+      await ensureItAdminPhaseOneMigration(connection);
 
       const [rows] = await connection.execute<AdminUserRow[]>(
         "SELECT user_id, email, first_name, middle_name, last_name, role_id, user_code FROM users WHERE user_id = ? LIMIT 1",

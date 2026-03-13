@@ -4,7 +4,7 @@ import { recordAccountLogin } from "@/lib/server/account-logs";
 import { buildParentSessionCookie, createParentSession } from "@/lib/server/parent-session";
 import { buildAdminSessionCookie, createAdminSession } from "@/lib/server/admin-session";
 import { normalizeRoleName, resolveCanonicalRole, resolvePortalPath, resolveUserRole } from "@/lib/server/role-resolution";
-import { ensureSuperAdminPhaseOneMigration } from "@/lib/server/super-admin-migration";
+import { ensureItAdminPhaseOneMigration } from "@/lib/server/it-admin-migration";
 
 interface VerifyOtpPayload {
   email: string;
@@ -67,7 +67,7 @@ export async function POST(req: Request): Promise<Response> {
       database: process.env.DB_NAME,
       port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 3306,
     });
-    await ensureSuperAdminPhaseOneMigration(db);
+    await ensureItAdminPhaseOneMigration(db);
 
     const [users] = await db.execute<UserRow[]>("SELECT * FROM users WHERE email = ?", [email]);
     const user = users[0];
@@ -116,7 +116,7 @@ export async function POST(req: Request): Promise<Response> {
       responseCookies.push(buildParentSessionCookie(token, expiresAt));
     }
 
-    if (normalizedRole === "admin" || normalizedRole === "it_admin" || normalizedRole === "itadmin" || normalizedRole === "super_admin") {
+    if (canonicalRole === "it_admin") {
       const { token, expiresAt } = await createAdminSession(db, user.user_id, deviceName ?? null);
       responseCookies.push(buildAdminSessionCookie(token, expiresAt));
     }

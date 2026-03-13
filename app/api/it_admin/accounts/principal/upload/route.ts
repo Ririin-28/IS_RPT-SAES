@@ -1,4 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
+import {
+  type AccountCredentialEmailDelivery,
+  deliverAccountCredentialEmail,
+} from "@/lib/server/account-credential-email";
 import {
   HttpError,
   createPrincipal,
@@ -7,7 +11,7 @@ import {
   sanitizeOptionalNamePart,
   sanitizePhoneNumber,
 } from "../validation/validation";
-import { requireSuperAdmin } from "@/lib/server/super-admin-auth";
+import { requireItAdmin } from "@/lib/server/it-admin-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +19,7 @@ interface UploadResultItem {
   index: number;
   userId: number;
   record: any;
-  temporaryPassword: string;
+  credentialEmail: AccountCredentialEmailDelivery;
 }
 
 interface UploadFailureItem {
@@ -25,7 +29,7 @@ interface UploadFailureItem {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireSuperAdmin(request, { permission: "super_admin:accounts.manage" });
+  const auth = await requireItAdmin(request, { permission: "it_admin:accounts.manage" });
   if (!auth.ok) {
     return auth.response;
   }
@@ -44,6 +48,12 @@ export async function POST(request: NextRequest) {
 
   const inserted: UploadResultItem[] = [];
   const failures: UploadFailureItem[] = [];
+  const createdAccounts: Array<{
+    index: number;
+    userId: number;
+    record: any;
+    temporaryPassword: string;
+  }> = [];
 
   for (let index = 0; index < principals.length; index += 1) {
     const item = principals[index];
@@ -69,6 +79,12 @@ export async function POST(request: NextRequest) {
         index,
         userId: result.userId,
         record: result.record,
+        credentialEmail: { sent: true, error: null },
+      });
+      createdAccounts.push({
+        index,
+        userId: result.userId,
+        record: result.record,
         temporaryPassword: result.temporaryPassword,
       });
     } catch (error) {
@@ -80,6 +96,25 @@ export async function POST(request: NextRequest) {
       console.error("Failed to import Principal", error);
       failures.push({ index, email: normalizedEmail, error: "Unexpected error while importing." });
     }
+  }
+
+  if (createdAccounts.length > 0) {
+    const emailResults = await Promise.all(
+      createdAccounts.map((entry) =>
+        deliverAccountCredentialEmail({
+          email: entry.record.email,
+          recipientName: entry.record.name,
+          roleLabel: "Principal",
+          temporaryPassword: entry.temporaryPassword,
+          secondaryCredentialLabel: "Principal ID",
+          secondaryCredentialValue: entry.record.principalId,
+        }),
+      ),
+    );
+
+    inserted.forEach((entry, index) => {
+      entry.credentialEmail = emailResults[index] ?? { sent: false, error: "Unable to send credential email." };
+    });
   }
 
   const statusCode = inserted.length > 0 ? 200 : 400;

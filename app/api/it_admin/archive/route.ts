@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { query, getTableColumns } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/server/super-admin-auth";
+import { requireItAdmin } from "@/lib/server/it-admin-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -9,9 +9,9 @@ const LEGACY_ARCHIVE_TABLE = "archive_users";
 const NEW_ARCHIVE_TABLE = "archived_users";
 
 const ROLE_LABELS: Record<string, string> = {
-  super_admin: "Super Admin",
-  admin: "Super Admin",
-  it_admin: "Super Admin",
+  it_admin: "IT Admin",
+  admin: "IT Admin",
+  super_admin: "IT Admin",
   principal: "Principal",
   master_teacher: "Master Teacher",
   teacher: "Teacher",
@@ -72,13 +72,13 @@ function normalizeRoleValue(value: string | null | undefined): string | undefine
     lowered === "super_admin" ||
     lowered === "superadmin"
   ) {
-    return "super_admin";
+    return "it_admin";
   }
   return lowered.replace(/[\s/-]+/g, "_");
 }
 
 function resolveRoleFilterValues(role: string): string[] {
-  if (role === "super_admin") {
+  if (role === "it_admin") {
     return Array.from(new Set(SUPER_ADMIN_ROLE_FILTERS.map((item) => item.toLowerCase())));
   }
   return [role];
@@ -115,7 +115,7 @@ async function safeGetColumns(tableName: string): Promise<Set<string>> {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireSuperAdmin(request, { permission: "super_admin:data.archive" });
+  const auth = await requireItAdmin(request, { permission: "it_admin:data.archive" });
   if (!auth.ok) {
     return auth.response;
   }

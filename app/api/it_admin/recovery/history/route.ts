@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { runWithConnection } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/server/super-admin-auth";
+import { requireItAdmin } from "@/lib/server/it-admin-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +31,7 @@ function safeParseJson(value: unknown): unknown {
 }
 
 export async function GET(request: NextRequest): Promise<Response> {
-  const auth = await requireSuperAdmin(request, { permission: "super_admin:logs.view" });
+  const auth = await requireItAdmin(request, { permission: "it_admin:logs.view" });
   if (!auth.ok) {
     return auth.response;
   }

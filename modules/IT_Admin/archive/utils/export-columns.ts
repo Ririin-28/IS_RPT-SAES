@@ -1,5 +1,5 @@
-import { exportRowsToExcel, type ExportColumn } from "@/lib/utils/export-to-excel";
-import { buildAccountsExportFilename } from "@/modules/Super_Admin/accounts/utils/export-columns";
+﻿import { exportRowsToExcel, type ExportColumn } from "@/lib/utils/export-to-excel";
+import { buildAccountsExportFilename } from "@/modules/IT_Admin/accounts/utils/export-columns";
 
 export const ARCHIVE_EXPORT_COLUMNS: ExportColumn<any>[] = [
   { header: "Archive ID", accessor: (row) => row.archiveId ?? row.archive_id ?? "" },

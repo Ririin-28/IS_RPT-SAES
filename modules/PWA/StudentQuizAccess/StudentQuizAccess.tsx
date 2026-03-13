@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { motion } from "framer-motion";
+import { FiChevronLeft } from "react-icons/fi";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import RemedialAssessment from "../RemedialAssessment/RemedialAssessment";
 
@@ -251,29 +252,67 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
     );
   }
 
+  const totalQuestions = completedSummary?.total ?? 0;
+  const rightAnswers = completedSummary?.correct ?? 0;
+  const wrongAnswers = completedSummary?.incorrect ?? 0;
+  const scorePercent = totalQuestions > 0 ? Math.round((rightAnswers / totalQuestions) * 100) : 0;
+  const scoreFraction = `${rightAnswers}/${totalQuestions}`;
+  const summaryMessage = (() => {
+    if (scorePercent === 100) {
+      return {
+        title: "Perfect Score!",
+        message: "Excellent! You got everything right.",
+      };
+    }
+    if (scorePercent >= 85) {
+      return {
+        title: "Great Job!",
+        message: "Awesome work! You almost got all right.",
+      };
+    }
+    if (scorePercent >= 50) {
+      return {
+        title: "Good Job!",
+        message: "You did well. Practice a little more.",
+      };
+    }
+    if (scorePercent >= 25) {
+      return {
+        title: "Nice Try!",
+        message: "You got some right. Keep going!",
+      };
+    }
+    return {
+      title: "Good Try!",
+      message: "You are learning. Let's practice more.",
+    };
+  })();
+
   return (
-    <div className="relative min-h-dvh w-full overflow-x-hidden overflow-y-auto px-3 py-4 text-[#013300] sm:px-4 sm:py-6 lg:flex lg:items-center lg:justify-center">
+    <div className="relative flex min-h-dvh w-full items-center justify-center overflow-x-hidden overflow-y-auto bg-[#edf0ee] px-4 py-6 text-[#013300]">
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(209,255,222,0.45),transparent_20%),radial-gradient(circle_at_bottom_right,rgba(188,240,214,0.35),transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(242,249,245,0.95))]" />
       <div className="pointer-events-none absolute left-[10%] right-[50%] top-32 -z-10 h-56 rounded-3xl bg-linear-to-br from-green-200/50 via-white/40 to-transparent blur-4xl" />
       <div className="pointer-events-none absolute left-[55%] right-[10%] bottom-16 -z-10 h-56 rounded-[40px] bg-linear-to-t from-green-200/60 via-white/35 to-transparent blur-4xl" />
+
+      <button
+        type="button"
+        onClick={onBack}
+        className="absolute left-3 top-3 z-10 inline-flex items-center gap-1 text-base font-semibold leading-none text-[#013300]/80 transition hover:text-[#013300]"
+        aria-label="Back"
+      >
+        <FiChevronLeft className="h-5 w-5" />
+        <span className="leading-none">Back</span>
+      </button>
 
       <motion.div
         initial={mounted ? { opacity: 0, y: 20 } : false}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="mx-auto w-full max-w-[36rem]"
+        className="relative w-full max-w-[36rem]"
       >
         {completedSummary ? (
-          <div className="w-full rounded-[28px] border border-green-100/60 bg-white/88 p-4 shadow-xl backdrop-blur-sm sm:p-6 md:p-7">
-            <button
-              type="button"
-              onClick={onBack}
-              className="text-sm font-semibold text-[#013300]/70 hover:text-[#013300]"
-            >
-              Back to portal home
-            </button>
-
-            <div className="flex flex-col items-center mb-10 mt-4">
+          <div className="w-full rounded-[28px] border border-green-100/70 bg-white p-4 shadow-xl sm:p-6 md:p-7">
+            <div className="flex flex-col items-center mb-7 mt-2">
               <Image
                 src="/RPT-SAES/RPTLogo.png"
                 alt="RPT-SAES Logo"
@@ -284,50 +323,45 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
               <h1 className="mt-3 text-[2rem] font-bold bg-linear-to-r from-green-800 to-[#013300] bg-clip-text text-transparent sm:text-3xl">
                 RPT Quiz
               </h1>
-              <p className="mt-1 text-sm font-medium text-[#013300]/70 sm:text-base">Student Assessment</p>
+              <p className="mt-1 text-sm font-medium text-[#013300]/70 sm:text-base">Quiz Done</p>
             </div>
 
-            <div className="text-center">
-              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[#013300]/50">Completion</p>
-              <h2 className="text-2xl font-bold text-[#013300] mt-2">Quiz Submitted</h2>
-              <p className="text-sm text-[#013300]/60 mt-2">Your answers have been recorded.</p>
+            <div className="rounded-2xl border border-green-100 bg-[#f7fbf7] p-5 text-center">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#013300]/55">Your Score</p>
+              <p className="mt-2 text-5xl font-black tracking-tight text-[#013300]">{scoreFraction}</p>
+              <p className="mt-1 text-3xl font-black text-[#013300]">{scorePercent}%</p>
+              <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-[#013300]/10">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${scorePercent}%` }}
+                  transition={{ duration: 0.6, ease: "easeOut" }}
+                  className="h-full rounded-full bg-[#46a301]"
+                />
+              </div>
             </div>
 
-            <div className="mt-6 rounded-2xl border border-green-100/80 bg-white/70 p-4 text-center">
-              <p className="text-sm font-semibold text-[#013300]">{studentName ?? "Student"}</p>
-              {studentLrn ? <p className="text-xs text-[#013300]/60 mt-1">LRN: {studentLrn}</p> : null}
-            </div>
-
-            <div className="mt-6 grid grid-cols-1 gap-3 text-center sm:grid-cols-2">
+            <div className="mt-4 grid grid-cols-2 gap-3 text-center">
               <div className="rounded-2xl border border-green-100 bg-green-50 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-[#013300]/50">Score</p>
-                <p className="text-3xl font-bold text-[#013300] mt-2">{completedSummary.score}</p>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#013300]/55">Correct</p>
+                <p className="mt-2 text-4xl font-black text-[#2f8e00]">{rightAnswers}</p>
               </div>
-              <div className="rounded-2xl border border-green-100 bg-green-50 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-[#013300]/50">Correct</p>
-                <p className="text-3xl font-bold text-[#013300] mt-2">{completedSummary.correct}</p>
+              <div className="rounded-2xl border border-red-100 bg-red-50 p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#013300]/55">Incorrect</p>
+                <p className="mt-2 text-4xl font-black text-[#c21b37]">{wrongAnswers}</p>
               </div>
-              <div className="rounded-2xl border border-green-100 bg-white p-4 sm:col-span-2">
-                <p className="text-xs uppercase tracking-[0.2em] text-[#013300]/50">Incorrect</p>
-                <p className="text-2xl font-semibold text-[#013300] mt-2">{completedSummary.incorrect}</p>
-                <p className="text-xs text-[#013300]/60 mt-1">Out of {completedSummary.total} questions</p>
-              </div>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-green-100 bg-white p-4 text-center">
+              <h2 className="text-2xl font-black tracking-tight text-[#013300]">{summaryMessage.title}</h2>
+              <p className="mt-2 text-sm font-semibold text-[#013300]/72">{summaryMessage.message}</p>
             </div>
 
             <PrimaryButton onClick={onBack} className="w-full mt-6 py-3.5 rounded-xl text-base font-semibold">
-              Back to PWA Home
+              Go Back
             </PrimaryButton>
           </div>
         ) : (
-          <div className="w-full rounded-[28px] border-2 border-[#013300] bg-white/88 p-4 shadow-xl backdrop-blur-sm sm:p-6 md:p-7">
-            <button
-              type="button"
-              onClick={onBack}
-              className="text-sm font-semibold text-[#013300]/70 hover:text-[#013300]"
-            >
-              Back to portal home
-            </button>
-
+          <div className="w-full max-w-md rounded-[28px] bg-white px-4 pt-6 pb-7">
             <div className="flex flex-col items-center mb-10 mt-4">
               <Image
                 src="/RPT-SAES/RPTLogo.png"
@@ -366,7 +400,7 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
                 />
               </div>
 
-              <div>
+              <div className="mt-10">
                 <label className="block text-sm font-bold text-[#013300]/80 mb-2">Student LRN</label>
                 <input
                   type="text"

@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import { runWithConnection } from "@/lib/db";
 import { HttpError } from "../validation/validation";
-import { requireSuperAdmin } from "@/lib/server/super-admin-auth";
+import { requireItAdmin } from "@/lib/server/it-admin-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -89,7 +89,7 @@ function getColumnValue(row: RowDataPacket | null, column: string): any {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireSuperAdmin(request, { permission: "super_admin:data.archive" });
+  const auth = await requireItAdmin(request, { permission: "it_admin:data.archive" });
   if (!auth.ok) {
     return auth.response;
   }
@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
       await connection.beginTransaction();
       try {
         const archived: ArchiveResult[] = [];
-        const archiveReason = reason ?? "Archived by Super Admin";
+        const archiveReason = reason ?? "Archived by IT Admin";
 
         for (const userId of userIds) {
           const [userRows] = await connection.query<RowDataPacket[]>(
@@ -336,7 +336,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
 
-    console.error("Failed to archive Super Admin accounts", error);
-    return NextResponse.json({ error: "Failed to archive Super Admin accounts." }, { status: 500 });
+    console.error("Failed to archive IT Admin accounts", error);
+    return NextResponse.json({ error: "Failed to archive IT Admin accounts." }, { status: 500 });
   }
 }

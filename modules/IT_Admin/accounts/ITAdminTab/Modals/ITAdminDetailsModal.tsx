@@ -22,16 +22,16 @@ export default function ITAdminDetailsModal({ show, onClose, itAdmin }: ITAdminD
     <BaseModal
       show={show}
       onClose={onClose}
-      title="Super Admin Details"
+      title="IT Admin Details"
       maxWidth="2xl"
       footer={footer}
     >
       <ModalSection title="Personal Details">
         <div className="space-y-4">
-          {/* 1st Row: Super Admin ID and Role */}
+          {/* 1st Row: IT Admin ID and Role */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <ModalInfoItem label="Super Admin ID" value={itAdmin.itAdminId || itAdmin.adminId} />
-            <ModalInfoItem label="Role" value={itAdmin.role || "Super Admin"} />
+            <ModalInfoItem label="IT Admin ID" value={itAdmin.itAdminId || itAdmin.adminId} />
+            <ModalInfoItem label="Role" value={itAdmin.role || "IT Admin"} />
           </div>
           
           {/* 2nd Row: Name fields */}
@@ -49,7 +49,7 @@ export default function ITAdminDetailsModal({ show, onClose, itAdmin }: ITAdminD
           <ModalInfoItem label="Email" value={itAdmin.email} />
           <ModalInfoItem
             label="Phone Number"
-            value={itAdmin.contactNumberDisplay || itAdmin.contactNumber || itAdmin.phoneNumber || "—"}
+            value={itAdmin.contactNumberDisplay || itAdmin.contactNumber || itAdmin.phoneNumber || "--"}
           />
         </div>
       </ModalSection>

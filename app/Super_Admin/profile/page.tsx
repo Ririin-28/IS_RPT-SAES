@@ -1,5 +1,5 @@
-import ITAdminProfile from "@/modules/Super_Admin/profile/profile";
+﻿import { redirect } from "next/navigation";
 
-export default function Profile() {
-  return <ITAdminProfile />;
+export default function LegacySuperAdminPage() {
+  redirect("/IT_Admin/profile");
 }

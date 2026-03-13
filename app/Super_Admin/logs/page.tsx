@@ -1,5 +1,5 @@
-import ITAdminLogs from "@/modules/Super_Admin/logs/logs";
+﻿import { redirect } from "next/navigation";
 
-export default function Logs() {
-  return <ITAdminLogs />;
+export default function LegacySuperAdminPage() {
+  redirect("/IT_Admin/logs");
 }

@@ -1,4 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
+import {
+  type AccountCredentialEmailDelivery,
+  deliverAccountCredentialEmail,
+} from "@/lib/server/account-credential-email";
 import {
   HttpError,
   createTeachersBulk,
@@ -10,7 +14,7 @@ import {
   sanitizeOptionalString,
   type BulkCreateTeacherItem,
 } from "../validation/validation";
-import { requireSuperAdmin } from "@/lib/server/super-admin-auth";
+import { requireItAdmin } from "@/lib/server/it-admin-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +22,7 @@ interface UploadResultItem {
   index: number;
   userId: number;
   record: any;
-  temporaryPassword: string;
+  credentialEmail: AccountCredentialEmailDelivery;
 }
 
 interface UploadFailureItem {
@@ -28,7 +32,7 @@ interface UploadFailureItem {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireSuperAdmin(request, { permission: "super_admin:accounts.manage" });
+  const auth = await requireItAdmin(request, { permission: "it_admin:accounts.manage" });
   if (!auth.ok) {
     return auth.response;
   }
@@ -111,7 +115,26 @@ export async function POST(request: NextRequest) {
 
     if (deduped.length > 0) {
       const bulkResult = await createTeachersBulk(deduped);
-      inserted.push(...bulkResult.inserted);
+      const emailResults = await Promise.all(
+        bulkResult.inserted.map((entry) =>
+          deliverAccountCredentialEmail({
+            email: entry.record.email,
+            recipientName: entry.record.name,
+            roleLabel: "Teacher",
+            temporaryPassword: entry.temporaryPassword,
+            secondaryCredentialLabel: "Teacher ID",
+            secondaryCredentialValue: entry.record.teacherId,
+          }),
+        ),
+      );
+      inserted.push(
+        ...bulkResult.inserted.map((entry, index) => ({
+          index: entry.index,
+          userId: entry.userId,
+          record: entry.record,
+          credentialEmail: emailResults[index] ?? { sent: false, error: "Unable to send credential email." },
+        })),
+      );
       failures.push(...bulkResult.failures);
     }
   }

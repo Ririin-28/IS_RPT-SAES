@@ -1,8 +1,8 @@
 "use client";
 import Image from "next/image";
 import { useRef, useState, useEffect, useMemo, useCallback, ChangeEvent } from "react";
-import ITAdminSidebar from "@/components/Super_Admin/Sidebar";
-import ITAdminHeader from "@/components/Super_Admin/Header";
+import ITAdminSidebar from "@/components/IT_Admin/Sidebar";
+import ITAdminHeader from "@/components/IT_Admin/Header";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
@@ -140,7 +140,7 @@ export default function SystemConfiguration() {
   const loadLandingConfiguration = useCallback(async () => {
     setIsLandingLoading(true);
     try {
-      const response = await fetch("/api/super_admin/landing");
+      const response = await fetch("/api/it_admin/landing");
       if (!response.ok) {
         throw new Error(`Request failed: ${response.status}`);
       }
@@ -273,7 +273,7 @@ export default function SystemConfiguration() {
     setStatusMessage(`Restore started for ${selected.label}. You will be notified when it completes.`);
   };
   const handleBackupExport = () => {
-    setStatusMessage(`Exporting backups as ${backupSettings.exportFormat.toUpperCase()}…`);
+    setStatusMessage(`Exporting backups as ${backupSettings.exportFormat.toUpperCase()}...`);
   };
 
   // Theme section handlers
@@ -312,7 +312,7 @@ export default function SystemConfiguration() {
     if (logoFile) {
       try {
         const logoDataUrl = await fileToDataUrl(logoFile);
-        const response = await fetch("/api/super_admin/landing", {
+        const response = await fetch("/api/it_admin/landing", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -411,7 +411,7 @@ export default function SystemConfiguration() {
           }
         : null;
 
-      const response = await fetch("/api/super_admin/landing", {
+      const response = await fetch("/api/it_admin/landing", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -977,7 +977,7 @@ export default function SystemConfiguration() {
                   <div className="rounded-lg border border-green-100 bg-white p-4">
                     <h4 className="text-sm font-semibold text-[#013300]">Carousel images</h4>
                     <p className="text-xs text-gray-500 mt-1">
-                      Recommended size: 1600×900px (16:9). Larger images are automatically scaled but may impact load time.
+                      Recommended size: 1600x900px (16:9). Larger images are automatically scaled but may impact load time.
                     </p>
                     <div className="mt-4">
                       <span className="text-xs font-semibold uppercase tracking-wide text-[#013300]">
