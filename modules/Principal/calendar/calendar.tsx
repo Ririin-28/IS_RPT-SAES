@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
-import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
 import BaseModal, { ModalInfoItem, ModalSection } from "@/components/Common/Modals/BaseModal";
 import {
   QUARTER_OPTIONS,
@@ -48,6 +47,7 @@ const API_ENDPOINT = "/api/master_teacher/coordinator/calendar/remedial-schedule
 const SUBJECT_SCHEDULE_ENDPOINT = "/api/principal/weekly-subject-schedule";
 const ACTIVITIES_ENDPOINT = "/api/principal/calendar";
 const ACTIVITIES_DELETE_ENDPOINT = "/api/principal/calendar-activities";
+const NEW_ACADEMIC_YEAR_ENDPOINT = "/api/principal/calendar/new-academic-year";
 const GRADE_OPTIONS = [1, 2, 3, 4, 5, 6] as const;
 
 const MONTH_LABELS = [
@@ -121,6 +121,15 @@ const getSubjectChipTone = (subject: string | null | undefined) => {
   return "bg-gray-700 text-white border-gray-700";
 };
 
+const getPrintSubjectTone = (subject: string | null | undefined) => {
+  const value = subject?.toLowerCase() ?? "";
+  if (value.includes("english")) return "border-emerald-300 bg-emerald-50 text-emerald-900";
+  if (value.includes("filipino")) return "border-blue-300 bg-blue-50 text-blue-900";
+  if (value.includes("math")) return "border-rose-300 bg-rose-50 text-rose-900";
+  if (value.includes("assessment")) return "border-amber-300 bg-amber-50 text-amber-900";
+  return "border-gray-300 bg-gray-50 text-gray-900";
+};
+
 const resolveActivitySubject = (title: string | null | undefined, fallback: string | null | undefined) => {
   const text = `${title ?? ""}`.toLowerCase();
   if (text.includes("english")) return "english";
@@ -128,6 +137,13 @@ const resolveActivitySubject = (title: string | null | undefined, fallback: stri
   if (text.includes("math")) return "math";
   if (text.includes("assessment")) return "assessment";
   return fallback ?? null;
+};
+
+const toDateKey = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
 };
 
 const MONTH_LABELS_SHORT = [
@@ -151,6 +167,32 @@ const formatMonthRangeShort = (range: { startMonth: number | null; endMonth: num
   const endLabel = MONTH_LABELS_SHORT[range.endMonth - 1] ?? "";
   if (!startLabel || !endLabel) return "--";
   return startLabel === endLabel ? startLabel : `${startLabel}-${endLabel}`;
+};
+
+const buildMonthMatrix = (year: number, month: number): Array<Array<Date | null>> => {
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const weeks: Array<Array<Date | null>> = [];
+  let day = 1;
+
+  for (let week = 0; week < 6; week++) {
+    if (day > daysInMonth) break;
+    const days: Array<Date | null> = [];
+
+    for (let weekday = 0; weekday < 7; weekday++) {
+      if ((week === 0 && weekday < firstDay) || day > daysInMonth) {
+        days.push(null);
+      } else {
+        days.push(new Date(year, month, day));
+        day += 1;
+      }
+    }
+
+    weeks.push(days);
+  }
+
+  return weeks;
 };
 
 const DEFAULT_SUBJECT_OPTIONS = ["Assessment", "English", "Filipino", "Math"] as const;
@@ -261,7 +303,6 @@ export default function PrincipalCalendar() {
   const [scheduleOverviewCollapsed, setScheduleOverviewCollapsed] = useState(false);
   const [remedialPeriod, setRemedialPeriod] = useState<RemedialPeriod | null>(null);
   const [selectedSchoolYear, setSelectedSchoolYear] = useState<string>(resolveDefaultSchoolYear());
-  const [showCancelModal, setShowCancelModal] = useState(false);
   const [scheduleLoading, setScheduleLoading] = useState(true);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [isMutating, setIsMutating] = useState(false);
@@ -285,6 +326,10 @@ export default function PrincipalCalendar() {
   const [showActivityModal, setShowActivityModal] = useState(false);
   const [activityRemoving, setActivityRemoving] = useState(false);
   const [activityRemoveError, setActivityRemoveError] = useState<string | null>(null);
+  const [showNewAcademicYearModal, setShowNewAcademicYearModal] = useState(false);
+  const [newAcademicYearConfirmText, setNewAcademicYearConfirmText] = useState("");
+  const [newAcademicYearError, setNewAcademicYearError] = useState<string | null>(null);
+  const [newAcademicYearSubmitting, setNewAcademicYearSubmitting] = useState(false);
 
   const loadSubjectSchedule = useCallback(async () => {
     setSubjectScheduleLoading(true);
@@ -489,30 +534,80 @@ export default function PrincipalCalendar() {
   const month = currentDate.getMonth();
 
   const monthMatrix = useMemo(() => {
-    const firstDay = new Date(year, month, 1).getDay();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    return buildMonthMatrix(year, month);
+  }, [month, year]);
 
-    const weeks: Array<Array<Date | null>> = [];
-    let day = 1;
-
-    for (let week = 0; week < 6; week++) {
-      if (day > daysInMonth) break;
-      const days: Array<Date | null> = [];
-
-      for (let weekday = 0; weekday < 7; weekday++) {
-        if ((week === 0 && weekday < firstDay) || day > daysInMonth) {
-          days.push(null);
-        } else {
-          days.push(new Date(year, month, day));
-          day += 1;
-        }
+  const activitiesByDate = useMemo(() => {
+    const grouped = new Map<string, Activity[]>();
+    for (const activity of activities) {
+      const key = toDateKey(activity.date);
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.push(activity);
+      } else {
+        grouped.set(key, [activity]);
       }
+    }
+    for (const [, items] of grouped) {
+      items.sort((a, b) => a.date.getTime() - b.date.getTime());
+    }
+    return grouped;
+  }, [activities]);
 
-      weeks.push(days);
+  const printableMonths = useMemo(() => {
+    const schedule = remedialPeriod;
+    if (!schedule?.quarters) {
+      return [
+        {
+          month: currentDate.getMonth() + 1,
+          year: currentDate.getFullYear(),
+          key: `${currentDate.getFullYear()}-${currentDate.getMonth() + 1}`,
+        },
+      ];
     }
 
-    return weeks;
-  }, [month, year]);
+    const schoolYear = schedule.schoolYear || selectedSchoolYear;
+    const parsedYear = parseSchoolYear(schoolYear);
+    if (!parsedYear) {
+      return [
+        {
+          month: currentDate.getMonth() + 1,
+          year: currentDate.getFullYear(),
+          key: `${currentDate.getFullYear()}-${currentDate.getMonth() + 1}`,
+        },
+      ];
+    }
+
+    const allMonths: Array<{ month: number; year: number; key: string }> = [];
+    const quarterRanges = Object.values(schedule.quarters);
+
+    quarterRanges.forEach((range) => {
+      if (!range?.startMonth || !range?.endMonth) return;
+      for (let monthValue = range.startMonth; monthValue <= range.endMonth; monthValue += 1) {
+        const resolvedYear = monthValue >= 6 ? parsedYear.startYear : parsedYear.endYear;
+        allMonths.push({
+          month: monthValue,
+          year: resolvedYear,
+          key: `${resolvedYear}-${monthValue}`,
+        });
+      }
+    });
+
+    const deduped = Array.from(new Map(allMonths.map((item) => [item.key, item])).values());
+    deduped.sort((a, b) => new Date(a.year, a.month - 1, 1).getTime() - new Date(b.year, b.month - 1, 1).getTime());
+    return deduped;
+  }, [currentDate, remedialPeriod, selectedSchoolYear]);
+
+  const remedialPeriodSummaryLabel = useMemo(() => {
+    if (!remedialPeriod?.quarters) {
+      return "--";
+    }
+
+    return QUARTER_OPTIONS.map((quarter) => {
+      const range = remedialPeriod.quarters[quarter];
+      return `${quarter}: ${formatMonthRangeShort(range)}`;
+    }).join(" | ");
+  }, [remedialPeriod]);
 
   const prevPeriod = () => {
     const next = new Date(currentDate);
@@ -584,12 +679,7 @@ export default function PrincipalCalendar() {
       return <div className="h-24 p-1 border border-gray-100 bg-gray-50"></div>;
     }
 
-    const cellActivities = activities.filter(
-      (activity) =>
-        activity.date.getDate() === cellDate.getDate() &&
-        activity.date.getMonth() === cellDate.getMonth() &&
-        activity.date.getFullYear() === cellDate.getFullYear()
-    );
+    const cellActivities = activitiesByDate.get(toDateKey(cellDate)) ?? [];
 
     const isToday = (() => {
       const today = new Date();
@@ -792,6 +882,25 @@ export default function PrincipalCalendar() {
     }
 
     return renderMonthView();
+  };
+
+  const currentPeriodLabel =
+    view === "month"
+      ? currentDate.toLocaleDateString("en-US", { month: "long", year: "numeric" })
+      : view === "week"
+      ? `Week of ${currentDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+      : "Activities by Week";
+
+  const handlePrint = () => {
+    setGradeMenuOpen(false);
+    setSettingsOpen(false);
+    setScheduleOverviewCollapsed(false);
+
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        window.print();
+      });
+    });
   };
 
 
@@ -1044,47 +1153,65 @@ export default function PrincipalCalendar() {
     }
   };
 
-  const openCancelModal = () => {
-    setShowCancelModal(true);
+  const handleOpenNewAcademicYearModal = () => {
+    setNewAcademicYearConfirmText("");
+    setNewAcademicYearError(null);
+    setShowNewAcademicYearModal(true);
   };
 
-  const handleConfirmCancel = async () => {
-    if (isMutating) return;
-    setIsMutating(true);
-    setScheduleError(null);
-    try {
-      const response = await fetch(`${API_ENDPOINT}?school_year=${encodeURIComponent(selectedSchoolYear)}`, { method: "DELETE" });
-      const payload = (await response.json().catch(() => null)) as ScheduleResponse | null;
-      if (!response.ok) {
-        const message = payload && typeof (payload as any)?.error === "string"
-          ? (payload as any).error
-          : `Request failed with status ${response.status}`;
-        throw new Error(message);
-      }
-      const data = payload ?? { success: false, schedule: null };
-      if (!data.success) {
-        throw new Error("Server responded with an error");
-      }
-      const schedule = data.schedule;
-      if (schedule?.quarters) {
-        setRemedialPeriod({
-          schoolYear: schedule.schoolYear,
-          quarters: schedule.quarters,
-        });
-      } else {
-        setRemedialPeriod(null);
-      }
-      setShowCancelModal(false);
-    } catch (error) {
-      console.error("Failed to cancel remedial schedule", error);
-      setScheduleError(error instanceof Error ? error.message : "Unable to cancel the remedial schedule. Please try again.");
-    } finally {
-      setIsMutating(false);
+  const handleCloseNewAcademicYearModal = () => {
+    if (newAcademicYearSubmitting) return;
+    setShowNewAcademicYearModal(false);
+    setNewAcademicYearConfirmText("");
+    setNewAcademicYearError(null);
+  };
+
+  const handleStartNewAcademicYear = async () => {
+    if (newAcademicYearSubmitting) return;
+    if (newAcademicYearConfirmText.trim() !== "CONFIRM") {
+      setNewAcademicYearError('Type "CONFIRM" to proceed.');
+      return;
     }
-  };
 
-  const handleCloseCancelModal = () => {
-    setShowCancelModal(false);
+    setNewAcademicYearSubmitting(true);
+    setNewAcademicYearError(null);
+    try {
+      const response = await fetch(NEW_ACADEMIC_YEAR_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          confirmText: newAcademicYearConfirmText.trim(),
+          schoolYear: selectedSchoolYear,
+        }),
+      });
+
+      const payload = (await response.json().catch(() => null)) as {
+        success?: boolean;
+        error?: string | null;
+      } | null;
+
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error ?? `Request failed with status ${response.status}`);
+      }
+
+      setShowNewAcademicYearModal(false);
+      setNewAcademicYearConfirmText("");
+      setRemedialPeriod(null);
+      setActivities([]);
+      setSubjectSchedule(buildEmptySubjectSchedule());
+      setSubjectScheduleEmpty(true);
+      setScheduleError(null);
+      setSubjectScheduleError(null);
+
+      await Promise.all([loadRemedialSchedule(), loadSubjectSchedule(), loadApprovedActivities()]);
+    } catch (error) {
+      console.error("Failed to start new academic year", error);
+      setNewAcademicYearError(
+        error instanceof Error ? error.message : "Unable to archive the current remedial setup.",
+      );
+    } finally {
+      setNewAcademicYearSubmitting(false);
+    }
   };
 
   const handleConfirmActivityDelete = async () => {
@@ -1123,20 +1250,24 @@ export default function PrincipalCalendar() {
   };
 
   return (
-    <div className="relative flex h-screen overflow-hidden bg-[#f2f7f4]">
+    <div className="principal-calendar-page relative flex h-screen overflow-hidden bg-[#f2f7f4]">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -top-32 right-[-10%] h-80 w-80 rounded-full bg-emerald-200/35 blur-3xl" />
         <div className="absolute bottom-[-10%] left-[-5%] h-96 w-96 rounded-full bg-emerald-100/50 blur-3xl" />
         <div className="absolute top-16 left-1/2 h-40 w-96 -translate-x-1/2 rounded-full bg-white/70 blur-2xl" />
       </div>
-      <Sidebar />
-      <div className="relative z-10 flex-1 pt-16 flex flex-col overflow-hidden">
-        <Header title="Calendar" />
-        <main className="flex-1 overflow-y-auto">
-          <div className="relative p-4 h-full sm:p-5 md:p-6">
-            <div className="relative z-10 h-full min-h-100 overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_20px_45px_-28px_rgba(15,23,42,0.45)] backdrop-blur-xl sm:p-5 md:p-6">
+      <div className="print-hidden">
+        <Sidebar />
+      </div>
+      <div className="principal-calendar-content relative z-10 flex-1 pt-16 flex flex-col overflow-hidden">
+        <div className="print-hidden">
+          <Header title="Calendar" />
+        </div>
+        <main className="principal-calendar-main flex-1 overflow-y-auto">
+          <div className="principal-calendar-scroll relative p-4 h-full sm:p-5 md:p-6">
+            <div className="principal-calendar-surface relative z-10 h-full min-h-100 overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_20px_45px_-28px_rgba(15,23,42,0.45)] backdrop-blur-xl sm:p-5 md:p-6">
               {/* Calendar Toolbar */}
-              <div className="flex flex-col gap-3 mb-3">
+              <div className="principal-calendar-toolbar print-hidden flex flex-col gap-3 mb-3">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center space-x-2 sm:space-x-3">
                     <div className="flex items-center space-x-1">
@@ -1151,13 +1282,7 @@ export default function PrincipalCalendar() {
                         </svg>
                       </button>
                     </div>
-                    <h2 className="text-lg font-semibold text-gray-800 sm:text-xl">
-                      {view === "month"
-                        ? currentDate.toLocaleDateString("en-US", { month: "long", year: "numeric" })
-                        : view === "week"
-                        ? `Week of ${currentDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
-                        : "Activities by Week"}
-                    </h2>
+                    <h2 className="text-lg font-semibold text-gray-800 sm:text-xl">{currentPeriodLabel}</h2>
                     <button onClick={goToToday} className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-md text-gray-700">
                       Today
                     </button>
@@ -1194,8 +1319,8 @@ export default function PrincipalCalendar() {
                         type="button"
                         onClick={() => setGradeMenuOpen((prev) => !prev)}
                         className="relative z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 shadow-sm transition hover:bg-gray-100"
-                        aria-label={`Filter grade (Grade ${selectedGrade})`}
-                        title={`Grade ${selectedGrade}`}
+                        aria-label="Grade Levels"
+                        title="Grade Levels"
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <polygon points="3 4 21 4 14 12 14 19 10 21 10 12 3 4" />
@@ -1233,9 +1358,24 @@ export default function PrincipalCalendar() {
                     </div>
                     <button
                       type="button"
+                      onClick={handlePrint}
+                      className="inline-flex items-center justify-center rounded-full border border-gray-200 bg-white p-2 text-gray-700 transition hover:bg-gray-100"
+                      aria-label="Print calendar"
+                      title="Print"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M6 9V2h12v7" />
+                        <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                        <rect x="6" y="14" width="12" height="8" rx="1" />
+                        <circle cx="18" cy="12" r="1" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setSettingsOpen(true)}
                       className="inline-flex items-center justify-center rounded-full border border-gray-200 bg-white p-2 text-gray-700 transition hover:bg-gray-100"
-                      aria-label="Open schedule settings"
+                      aria-label="Remedial Schedule Settings"
+                      title="Remedial Schedule Settings"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                         <circle cx="12" cy="12" r="3" />
@@ -1246,8 +1386,14 @@ export default function PrincipalCalendar() {
                 </div>
               </div>
 
+              <section className="printable-calendar-section">
+                <div className="print-only mb-4">
+                  <h2 className="text-xl font-bold text-gray-900">Grade {selectedGrade} Calendar</h2>
+                  <p className="text-sm text-gray-700">{currentPeriodLabel}</p>
+                </div>
+
               {/* Grade Filter + Schedule Overview */}
-              <div className="mb-4 rounded-2xl border border-white/80 bg-white/80 px-4 py-2 shadow-sm">
+              <div className="mb-4 rounded-2xl border border-white/80 bg-white/80 px-4 py-2 shadow-sm print-avoid-break">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div className="flex items-center gap-3">
                     <h3 className="text-base font-semibold text-gray-900">Schedule Overview</h3>
@@ -1348,7 +1494,7 @@ export default function PrincipalCalendar() {
               <div className="flex flex-col gap-4 xl:flex-row xl:items-stretch">
                 <div className="min-w-0 flex-1">
                   {/* Calendar View */}
-                  <div className="rounded-2xl border border-gray-100 bg-white/90 shadow-sm">
+                  <div className="printable-calendar-grid rounded-2xl border border-gray-100 bg-white/90 shadow-sm print-avoid-break">
                     <div className="px-4 py-3 border-b border-gray-100 bg-white">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
@@ -1380,13 +1526,129 @@ export default function PrincipalCalendar() {
                 </div>
 
               </div>
+              </section>
             </div>
           </div>
         </main>
       </div>
 
+      <div className="print-calendar-document print-only">
+        {printableMonths.map((item, monthIndex) => {
+          const monthDate = new Date(item.year, item.month - 1, 1);
+          const matrix = buildMonthMatrix(item.year, item.month - 1);
+
+          return (
+            <section className="print-month-page" key={item.key}>
+              <header className="print-month-header">
+                <h1 className="text-xl font-bold text-gray-900">Grade {selectedGrade} Calendar</h1>
+                <p className="text-sm text-gray-700">
+                  {monthDate.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+                </p>
+              </header>
+
+              <div className="print-month-overview rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs">
+                <div className="grid grid-cols-3 gap-2 font-semibold text-emerald-900">
+                  <div>Remedial Time</div>
+                  <div>Remedial Subjects</div>
+                  <div>Remedial Period</div>
+                </div>
+                <div className="mt-2 grid grid-cols-3 gap-2 text-gray-700">
+                  <div>{weeklyTimeLabel}</div>
+                  <div>
+                    {SUBJECT_WEEKDAYS.map((day) => `${SUBJECT_DAY_LABELS[day]}:${subjectSchedule[day] || "--"}`).join(" | ")}
+                  </div>
+                  <div>{remedialPeriodSummaryLabel}</div>
+                </div>
+              </div>
+
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-gray-700">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-600">Legend</span>
+                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-700">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                  English
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-blue-700">
+                  <span className="h-2 w-2 rounded-full bg-blue-500" />
+                  Filipino
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-rose-700">
+                  <span className="h-2 w-2 rounded-full bg-rose-500" />
+                  Math
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-700">
+                  <span className="h-2 w-2 rounded-full bg-amber-500" />
+                  Assessment
+                </span>
+              </div>
+
+              <div className="mt-3 rounded-lg border border-gray-300 bg-white">
+                <div className="grid grid-cols-7 bg-gray-100 text-xs font-semibold text-gray-700">
+                  {["S", "M", "T", "W", "T", "F", "S"].map((day, index) => (
+                    <div key={`print-${item.key}-${day}-${index}`} className="border-r border-gray-200 px-2 py-1 text-center last:border-r-0">
+                      {day}
+                    </div>
+                  ))}
+                </div>
+                <div className="divide-y divide-gray-200">
+                  {matrix.map((week, weekIndex) => (
+                    <div key={`print-week-${item.key}-${weekIndex}`} className="grid grid-cols-7">
+                      {week.map((cellDate, dayIndex) => {
+                        if (!cellDate) {
+                          return (
+                            <div
+                              key={`print-day-${item.key}-${weekIndex}-${dayIndex}`}
+                              className="h-20 border-r border-gray-200 bg-gray-50 last:border-r-0"
+                            />
+                          );
+                        }
+
+                        const isWeekend = cellDate.getDay() === 0 || cellDate.getDay() === 6;
+                        const withinPeriod = isWithinPeriod(cellDate) && !isWeekend;
+                        const weekdayLabel = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][cellDate.getDay()] ?? "";
+                        const subjectForDay = SUBJECT_WEEKDAYS.includes(weekdayLabel as (typeof SUBJECT_WEEKDAYS)[number])
+                          ? subjectSchedule[weekdayLabel as (typeof SUBJECT_WEEKDAYS)[number]]
+                          : "";
+                        const subjectColor = withinPeriod ? getSubjectColor(subjectForDay) : "border-gray-100";
+                        const cellActivities = activitiesByDate.get(toDateKey(cellDate)) ?? [];
+
+                        return (
+                          <div
+                            key={`print-day-${item.key}-${weekIndex}-${dayIndex}`}
+                            className={`h-[92px] border-r border-gray-200 px-1.5 py-1 align-top last:border-r-0 ${subjectColor}`}
+                          >
+                            <div className="text-right text-[11px] font-semibold leading-none text-gray-800">{cellDate.getDate()}</div>
+                            <div className="mt-1 space-y-0.5 overflow-visible">
+                              {cellActivities.map((activity) => {
+                                const activitySubject = resolveActivitySubject(activity.title, activity.subject ?? subjectForDay);
+                                return (
+                                  <div
+                                    key={`print-activity-${item.key}-${activity.id}`}
+                                    className={`rounded border px-1 py-[1px] text-[9px] font-semibold leading-[1.2] break-words whitespace-normal ${getPrintSubjectTone(activitySubject)}`}
+                                    title={activity.title}
+                                  >
+                                    {activity.title}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-2 text-right text-[11px] text-gray-500">
+                {monthIndex + 1} / {printableMonths.length}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+
       <aside
-        className={`fixed inset-0 z-[2000] transition-opacity duration-300 ${
+        className={`print-hidden fixed inset-0 z-[2000] transition-opacity duration-300 ${
           settingsOpen ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
         aria-hidden={!settingsOpen}
@@ -1401,8 +1663,7 @@ export default function PrincipalCalendar() {
         >
           <div className="flex items-start justify-between border-b border-gray-200 bg-gray-50 px-6 py-4">
             <div>
-              <h3 className="text-base font-semibold text-gray-900">Schedule Settings</h3>
-              <p className="text-xs text-gray-500">Grade {selectedGrade} Configuration</p>
+              <h3 className="text-base font-semibold text-gray-900">Remedial Schedule Settings</h3>
             </div>
             <button
               onClick={() => setSettingsOpen(false)}
@@ -1420,21 +1681,6 @@ export default function PrincipalCalendar() {
             <div className="grid grid-cols-2 gap-2 rounded-2xl border border-gray-200 bg-gray-50 p-1">
               <button
                 type="button"
-                onClick={() => setActiveSettingsTab("weekly")}
-                className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition ${
-                  activeSettingsTab === "weekly"
-                    ? "bg-white text-[#013300] shadow-sm"
-                    : "bg-transparent text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M4 4h16v16H4z" />
-                  <path d="M8 4v16" />
-                </svg>
-                Weekly Subjects
-              </button>
-              <button
-                type="button"
                 onClick={() => setActiveSettingsTab("remedial")}
                 className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition ${
                   activeSettingsTab === "remedial"
@@ -1449,6 +1695,21 @@ export default function PrincipalCalendar() {
                   <rect x="3" y="4" width="18" height="18" rx="2" />
                 </svg>
                 Remedial Period
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSettingsTab("weekly")}
+                className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                  activeSettingsTab === "weekly"
+                    ? "bg-white text-[#013300] shadow-sm"
+                    : "bg-transparent text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 4h16v16H4z" />
+                  <path d="M8 4v16" />
+                </svg>
+                Weekly Subjects
               </button>
             </div>
           </div>
@@ -1557,18 +1818,7 @@ export default function PrincipalCalendar() {
                 </div>
 
                 <div className="space-y-4 rounded-2xl border border-gray-200 bg-white p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-sm font-semibold text-gray-900">Quarter Month Ranges</div>
-                    <DangerButton
-                      type="button"
-                      small
-                      className={`px-3 ${!remedialPeriod ? "opacity-60" : ""}`}
-                      onClick={openCancelModal}
-                      disabled={isMutating || !remedialPeriod}
-                    >
-                      Reset
-                    </DangerButton>
-                  </div>
+                  <div className="text-sm font-semibold text-gray-900">Quarter Month Ranges</div>
                   <div className="space-y-3">
                     {QUARTER_OPTIONS.map((quarter) => (
                       <div key={quarter} className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
@@ -1624,6 +1874,35 @@ export default function PrincipalCalendar() {
                   </div>
                 </div>
 
+                <div className="space-y-3 rounded-2xl border border-red-200 bg-red-50 p-4">
+                  <div className="text-sm font-semibold text-red-800">Danger Zone</div>
+                  <div className="space-y-2 text-xs text-red-700 text-justify">
+                    <p>
+                      This action archives the current remedial calendar setup including:
+                    </p>
+                    <ul className="list-disc space-y-1 pl-5">
+                      <li>schedules</li>
+                      <li>activities</li>
+                      <li>approved records</li>
+                      <li>materials</li>
+                    </ul>
+                    <p>
+                      Archived records remain stored for history but will no longer appear in the active calendar.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <DangerButton
+                      type="button"
+                      small
+                      className="px-3"
+                      onClick={handleOpenNewAcademicYearModal}
+                      disabled={newAcademicYearSubmitting || isMutating}
+                    >
+                      Start New Academic Year
+                    </DangerButton>
+                  </div>
+                </div>
+
                 {remedialDraftError && <p className="text-sm text-red-600">{remedialDraftError}</p>}
                 {scheduleError && <p className="text-sm text-amber-600">{scheduleError}</p>}
               </div>
@@ -1648,72 +1927,253 @@ export default function PrincipalCalendar() {
         </div>
       </aside>
 
-      <DeleteConfirmationModal
-        isOpen={showCancelModal}
-        onClose={handleCloseCancelModal}
-        onConfirm={handleConfirmCancel}
-        title="Cancel Remedial Schedule"
-        message="Are you sure you want to cancel the current remedial schedule? This will remove the configured period for all principals."
-      />
-      <BaseModal
-        show={showActivityModal}
-        onClose={handleCloseActivityModal}
-        title="Activity Details"
-        maxWidth="lg"
-        footer={(
-          <>
-            <SecondaryButton type="button" onClick={handleCloseActivityModal} disabled={activityRemoving}>
-              Close
-            </SecondaryButton>
-            <DangerButton type="button" onClick={handleConfirmActivityDelete} disabled={activityRemoving || !selectedActivity}>
-              {activityRemoving ? "Deleting..." : "Delete"}
-            </DangerButton>
-          </>
-        )}
-      >
-        {activityRemoveError && (
-          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {activityRemoveError}
+      <div className="print-hidden">
+        <BaseModal
+          show={showNewAcademicYearModal}
+          onClose={handleCloseNewAcademicYearModal}
+          title="Start New Academic Year?"
+          maxWidth="lg"
+          footer={(
+            <>
+              <SecondaryButton type="button" onClick={handleCloseNewAcademicYearModal} disabled={newAcademicYearSubmitting}>
+                Cancel
+              </SecondaryButton>
+              <DangerButton
+                type="button"
+                onClick={handleStartNewAcademicYear}
+                disabled={newAcademicYearSubmitting || newAcademicYearConfirmText.trim() !== "CONFIRM"}
+              >
+                {newAcademicYearSubmitting ? "Archiving..." : "Start New Academic Year"}
+              </DangerButton>
+            </>
+          )}
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-gray-700">
+              This will archive the current remedial calendar setup including schedules, activities, and materials. Archived data will remain stored but will not appear in the active calendar.
+            </p>
+            <div className="space-y-1">
+              <label htmlFor="confirm-new-year" className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                Type CONFIRM to continue
+              </label>
+              <input
+                id="confirm-new-year"
+                value={newAcademicYearConfirmText}
+                onChange={(event) => setNewAcademicYearConfirmText(event.target.value)}
+                placeholder="CONFIRM"
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#013300]"
+                disabled={newAcademicYearSubmitting}
+              />
+            </div>
+            {newAcademicYearError && (
+              <p className="text-sm text-red-600">{newAcademicYearError}</p>
+            )}
           </div>
-        )}
-        <ModalSection title="Grade and Subject">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <ModalInfoItem label="Subject" value={selectedActivity?.subject ?? selectedActivity?.title ?? "-"} />
-            <ModalInfoItem label="Grade Level" value={selectedActivity?.gradeLevel ?? `Grade ${selectedGrade}`} />
-          </div>
-        </ModalSection>
+        </BaseModal>
+      </div>
+      <div className="print-hidden">
+        <BaseModal
+          show={showActivityModal}
+          onClose={handleCloseActivityModal}
+          title="Activity Details"
+          maxWidth="lg"
+          footer={(
+            <>
+              <SecondaryButton type="button" onClick={handleCloseActivityModal} disabled={activityRemoving}>
+                Close
+              </SecondaryButton>
+              <DangerButton type="button" onClick={handleConfirmActivityDelete} disabled={activityRemoving || !selectedActivity}>
+                {activityRemoving ? "Deleting..." : "Delete"}
+              </DangerButton>
+            </>
+          )}
+        >
+          {activityRemoveError && (
+            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {activityRemoveError}
+            </div>
+          )}
+          <ModalSection title="Grade and Subject">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <ModalInfoItem label="Subject" value={selectedActivity?.subject ?? selectedActivity?.title ?? "-"} />
+              <ModalInfoItem label="Grade Level" value={selectedActivity?.gradeLevel ?? `Grade ${selectedGrade}`} />
+            </div>
+          </ModalSection>
 
-        <ModalSection title="Date and Time">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <ModalInfoItem
-              label="Date"
-              value={
-                selectedActivity
-                  ? selectedActivity.date.toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    })
-                  : "-"
-              }
-            />
-            <ModalInfoItem
-              label="Day"
-              value={selectedActivity?.day ?? selectedActivity?.date.toLocaleDateString("en-US", { weekday: "long" }) ?? "-"}
-            />
-            <ModalInfoItem
-              label="Time"
-              value={
-                selectedActivity
-                  ? subjectScheduleConfigured
-                    ? weeklyTimeLabel
-                    : `${selectedActivity.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} - ${selectedActivity.end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-                  : "-"
-              }
-            />
-          </div>
-        </ModalSection>
-      </BaseModal>
+          <ModalSection title="Date and Time">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <ModalInfoItem
+                label="Date"
+                value={
+                  selectedActivity
+                    ? selectedActivity.date.toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })
+                    : "-"
+                }
+              />
+              <ModalInfoItem
+                label="Day"
+                value={selectedActivity?.day ?? selectedActivity?.date.toLocaleDateString("en-US", { weekday: "long" }) ?? "-"}
+              />
+              <ModalInfoItem
+                label="Time"
+                value={
+                  selectedActivity
+                    ? subjectScheduleConfigured
+                      ? weeklyTimeLabel
+                      : `${selectedActivity.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} - ${selectedActivity.end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                    : "-"
+                }
+              />
+            </div>
+          </ModalSection>
+        </BaseModal>
+      </div>
+
+      <style jsx global>{`
+        .print-only {
+          display: none;
+        }
+
+        @media print {
+          @page {
+            size: landscape;
+            margin: 8mm;
+          }
+
+          body {
+            background: #ffffff !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+            transform: none !important;
+            filter: none !important;
+            backdrop-filter: none !important;
+          }
+
+          html,
+          #__next {
+            background: #ffffff !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+            transform: none !important;
+            filter: none !important;
+            backdrop-filter: none !important;
+          }
+
+          .print-hidden {
+            display: none !important;
+          }
+
+          .print-only {
+            display: block !important;
+          }
+
+          .principal-calendar-content {
+            display: none !important;
+          }
+
+          .print-calendar-document {
+            display: block !important;
+            width: 100% !important;
+            max-width: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: visible !important;
+            background: #ffffff !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+            transform: none !important;
+          }
+
+          .principal-calendar-page > :not(.print-calendar-document) {
+            display: none !important;
+          }
+
+          .print-month-page {
+            break-inside: avoid;
+            page-break-inside: avoid;
+            page-break-after: always;
+            width: 100%;
+            min-height: 0;
+            padding: 0;
+          }
+
+          .print-month-page:last-child {
+            page-break-after: auto;
+          }
+
+          .print-month-header {
+            margin-bottom: 8px;
+          }
+
+          .print-month-overview {
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+
+          .principal-calendar-page,
+          .principal-calendar-content,
+          .principal-calendar-main,
+          .principal-calendar-scroll,
+          .principal-calendar-surface,
+          .printable-calendar-section,
+          .printable-calendar-grid {
+            height: auto !important;
+            min-height: 0 !important;
+            overflow: visible !important;
+            background: #ffffff !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+            transform: none !important;
+            filter: none !important;
+            backdrop-filter: none !important;
+          }
+
+          .principal-calendar-surface {
+            border: 0 !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+          }
+
+          .print-calendar-document,
+          .print-calendar-document * {
+            position: static !important;
+            box-shadow: none !important;
+            filter: none !important;
+            backdrop-filter: none !important;
+            transform: none !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+            overflow: visible !important;
+          }
+
+          .print-calendar-document .sticky,
+          .print-calendar-document [style*="position: sticky"],
+          .print-calendar-document [style*="position:fixed"],
+          .print-calendar-document [style*="position: fixed"] {
+            position: static !important;
+          }
+
+          .print-calendar-document,
+          .print-calendar-document * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+
+          .printable-calendar-grid * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+
+          .print-avoid-break {
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+        }
+      `}</style>
     </div>
   );
 }

@@ -14,7 +14,7 @@ import { ensureSuperAdminPhaseOneMigration } from "@/lib/server/super-admin-migr
 ======================= */
 
 interface LoginRequestPayload {
-  email: string;
+  email?: string | null;
   password: string;
   userId?: string | number | null;
   itAdminId?: string | null;
@@ -55,6 +55,7 @@ function sanitizeItAdminId(value: unknown): string | null {
 
 const MAX_EMAIL_LENGTH = 254;
 const MAX_PASSWORD_LENGTH = 256;
+const MAX_IT_ADMIN_ID_LENGTH = 100;
 const MAX_DEVICE_FIELD_LENGTH = 200;
 const MAX_EXPECTED_ROLE_LENGTH = 50;
 
@@ -68,8 +69,19 @@ function isValidEmail(value: string): boolean {
 }
 
 function validateLoginPayload(payload: LoginRequestPayload) {
-  if (!isSafeText(payload.email, MAX_EMAIL_LENGTH) || !isValidEmail(payload.email.trim())) {
+  const normalizedEmail = typeof payload.email === "string" ? payload.email.trim() : "";
+  const normalizedItAdminId = typeof payload.itAdminId === "string" ? payload.itAdminId.trim() : "";
+
+  if (!normalizedEmail && !normalizedItAdminId) {
+    return { ok: false, error: "Email or Super Admin ID is required" };
+  }
+
+  if (normalizedEmail && (!isSafeText(normalizedEmail, MAX_EMAIL_LENGTH) || !isValidEmail(normalizedEmail))) {
     return { ok: false, error: "Invalid email address" };
+  }
+
+  if (normalizedItAdminId && !isSafeText(normalizedItAdminId, MAX_IT_ADMIN_ID_LENGTH)) {
+    return { ok: false, error: "Invalid Super Admin ID" };
   }
 
   if (!isSafeText(payload.password, MAX_PASSWORD_LENGTH)) {
@@ -296,11 +308,13 @@ export async function POST(req: Request): Promise<Response> {
       try {
         const { email, password, userId, itAdminId, deviceToken, deviceName, expectedRole } =
           (await req.json()) as LoginRequestPayload;
+        const normalizedEmail = typeof email === "string" ? email.trim() : "";
+        const normalizedItAdminId = sanitizeItAdminId(itAdminId);
         const validation = validateLoginPayload({
-          email,
+          email: normalizedEmail || undefined,
           password,
           userId,
-          itAdminId,
+          itAdminId: normalizedItAdminId,
           deviceToken,
           deviceName,
           expectedRole,
@@ -310,11 +324,27 @@ export async function POST(req: Request): Promise<Response> {
         }
 
         /* ===== Fetch user ===== */
-        const [users] = await db.execute<UserRow[]>(
-          "SELECT * FROM users WHERE email = ? LIMIT 1",
-          [email],
-        );
-        const user = users[0];
+        let user: UserRow | undefined;
+
+        if (normalizedEmail) {
+          const [users] = await db.execute<UserRow[]>(
+            "SELECT * FROM users WHERE email = ? LIMIT 1",
+            [normalizedEmail],
+          );
+          user = users[0];
+        } else if (normalizedItAdminId) {
+          const linkedUserId = await resolveSuperAdminLinkedUserId(db, normalizedItAdminId);
+          if (!linkedUserId) {
+            return respond(401, { error: "Invalid credentials" });
+          }
+
+          const [users] = await db.execute<UserRow[]>(
+            "SELECT * FROM users WHERE user_id = ? LIMIT 1",
+            [linkedUserId],
+          );
+          user = users[0];
+        }
+
         if (!user) return respond(401, { error: "Invalid credentials" });
 
         if (password !== user.password) {
@@ -351,7 +381,6 @@ export async function POST(req: Request): Promise<Response> {
 
         /* ===== Super Admin validation ===== */
         if (roleRequiresItAdminId(roleForLogic)) {
-          const normalizedItAdminId = sanitizeItAdminId(itAdminId);
           if (!normalizedItAdminId) {
             return respond(401, {
               error: "Admin login requires Super Admin ID",

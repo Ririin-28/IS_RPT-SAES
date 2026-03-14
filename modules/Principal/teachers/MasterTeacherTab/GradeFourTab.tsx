@@ -145,10 +145,13 @@ export default function MasterTeacherGradeFourTab({ teachers, setTeachers, searc
           { key: "teacherId", title: "Teacher ID" },
           { key: "name", title: "Full Name" },
           { key: "email", title: "Email" },
-          { key: "contactNumber", title: "Contact Number" },
+          { key: "gradeLevel", title: "Grade Level" },
+          { key: "handledSubject", title: "Handled Subject" },
         ]}
         data={filteredTeachers.map((teacher: any, idx: number) => ({
           ...teacher,
+          gradeLevel: teacher.grade ?? teacher.gradeLevel ?? teacher.gradeNumber ?? "-",
+          handledSubject: teacher.subjects ?? teacher.subject ?? teacher.handledSubject ?? "-",
           no: idx + 1,
         }))}
         actions={(row: any) => (

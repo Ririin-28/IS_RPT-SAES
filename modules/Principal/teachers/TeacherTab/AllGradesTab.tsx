@@ -198,11 +198,14 @@ export default function TeacherAllGradesTab({ teachers, setTeachers, searchTerm,
           { key: "no", title: "No#" },
           { key: "name", title: "Full Name" },
           { key: "email", title: "Email" },
-          { key: "contactNumber", title: "Contact Number" },
+          { key: "gradeLevel", title: "Grade Level" },
+          { key: "handledSubject", title: "Handled Subject" },
         ]}
   data={sortedTeachers.map((teacher: any, idx: number) => ({
           ...teacher,
           name: formatTeacherFullName(teacher),
+          gradeLevel: teacher.grade ?? teacher.gradeLevel ?? teacher.gradeNumber ?? "-",
+          handledSubject: "All Subjects",
           no: idx + 1,
         }))}
         actions={(row: any) => (

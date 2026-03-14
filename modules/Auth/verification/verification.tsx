@@ -1,7 +1,9 @@
 "use client";
 import { useRouter, useSearchParams } from "next/navigation";
 import VerificationForm from "./VerificationForm";
-import { useCallback, Suspense } from "react";
+import { useCallback, Suspense, useEffect, useRef, useState } from "react";
+
+const OTP_VERIFICATION_CONTEXT_KEY = "otpVerificationContext";
 
 type VerificationFormProps = {
 	email: string;
@@ -23,16 +25,73 @@ const normalizeRole = (role: string | null | undefined): string => {
 function VerificationContent() {
 	const router = useRouter();
 	const params = useSearchParams();
-	let email = "";
-	let user_id = "";
-	let role = "";
-	let redirectPath = "";
-	if (params) {
-		email = params.get("email") || "";
-		user_id = params.get("user_id") || "";
-		role = params.get("role") || "";
-		redirectPath = params.get("redirect_path") || "";
-	}
+	const hasConsumedSessionContextRef = useRef(false);
+	const [verificationData, setVerificationData] = useState({
+		email: "",
+		user_id: "",
+		role: "",
+		redirectPath: "",
+	});
+
+	useEffect(() => {
+		const emailFromQuery = params?.get("email") || "";
+		const userIdFromQuery = params?.get("user_id") || "";
+		const roleFromQuery = params?.get("role") || "";
+		const redirectPathFromQuery = params?.get("redirect_path") || "";
+
+		let email = emailFromQuery;
+		let user_id = userIdFromQuery;
+		let role = roleFromQuery;
+		let redirectPath = redirectPathFromQuery;
+		let consumedSessionContext = false;
+
+		if (!email || !user_id) {
+			try {
+				const raw = sessionStorage.getItem(OTP_VERIFICATION_CONTEXT_KEY);
+				if (raw) {
+					const parsed = JSON.parse(raw) as {
+						email?: string;
+						user_id?: string;
+						role?: string;
+						redirect_path?: string;
+					};
+					email = parsed.email || email;
+					user_id = parsed.user_id || user_id;
+					role = parsed.role || role;
+					redirectPath = parsed.redirect_path || redirectPath;
+					consumedSessionContext = true;
+				}
+			} catch {
+				// Ignore invalid session payload.
+			}
+		}
+
+		setVerificationData((previous) => {
+			const next = { email, user_id, role, redirectPath };
+			const hasNextCoreData = Boolean(next.email && next.user_id);
+			const hasPreviousData = Boolean(previous.email || previous.user_id || previous.role || previous.redirectPath);
+
+			if (!hasNextCoreData && hasPreviousData) {
+				return previous;
+			}
+
+			return next;
+		});
+
+		// Remove sensitive query params from browser URL if present.
+		if (emailFromQuery || userIdFromQuery || roleFromQuery || redirectPathFromQuery) {
+			window.history.replaceState(null, "", "/auth/verification");
+		}
+
+		if (consumedSessionContext && !hasConsumedSessionContextRef.current) {
+			try {
+				sessionStorage.removeItem(OTP_VERIFICATION_CONTEXT_KEY);
+			} catch {
+				// Ignore storage access issues.
+			}
+			hasConsumedSessionContextRef.current = true;
+		}
+	}, [params]);
 
 	const resolveWelcomePath = useCallback((rawRole: string | null | undefined): string => {
 		const normalized = normalizeRole(rawRole);
@@ -65,18 +124,24 @@ function VerificationContent() {
 		} catch (storageError) {
 			console.warn("Unable to persist logout marker", storageError);
 		}
-		const fallbackPath = resolveWelcomePath(role);
-		const targetPath = apiRedirectPath || redirectPath || fallbackPath;
-		const normalizedRole = normalizeRole(role);
+		const fallbackPath = resolveWelcomePath(verificationData.role);
+		const targetPath = apiRedirectPath || verificationData.redirectPath || fallbackPath;
+		const normalizedRole = normalizeRole(verificationData.role);
 		if (["parent", "super_admin", "superadmin", "admin", "it_admin", "itadmin"].includes(normalizedRole || "")) {
 			window.location.replace(targetPath);
 			return;
 		}
 		router.push(targetPath);
-	}, [redirectPath, resolveWelcomePath, role, router]);
+	}, [verificationData.redirectPath, verificationData.role, resolveWelcomePath, router]);
 
 	return (
-		<VerificationForm email={email} user_id={user_id} role={role} redirectPath={redirectPath} onVerified={handleVerified} />
+		<VerificationForm
+			email={verificationData.email}
+			user_id={verificationData.user_id}
+			role={verificationData.role}
+			redirectPath={verificationData.redirectPath}
+			onVerified={handleVerified}
+		/>
 	);
 }
 

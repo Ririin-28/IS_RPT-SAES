@@ -2,6 +2,15 @@
 import { useEffect, useState } from "react";
 import { storeUserProfile } from "@/lib/utils/user-profile";
 
+const OTP_VALIDITY_MS = 5 * 60 * 1000;
+
+const formatRemainingTime = (timeLeftMs: number): string => {
+  const totalSeconds = Math.ceil(timeLeftMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+};
+
 interface VerificationFormProps {
   email: string;
   user_id: string;
@@ -16,14 +25,32 @@ export default function VerificationForm({ email, user_id, role, redirectPath, o
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [otpSent, setOtpSent] = useState(false);
-  const [sendDisabled, setSendDisabled] = useState(false);
+  const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
+  const [otpTimeLeftMs, setOtpTimeLeftMs] = useState(0);
 
-  const sendOtp = async () => {
-    if (sendDisabled || loading) {
+  useEffect(() => {
+    if (!otpExpiresAt) {
+      setOtpTimeLeftMs(0);
       return;
     }
 
-    setSendDisabled(true);
+    const updateTimeLeft = () => {
+      setOtpTimeLeftMs(Math.max(0, otpExpiresAt - Date.now()));
+    };
+
+    updateTimeLeft();
+    const intervalId = window.setInterval(updateTimeLeft, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [otpExpiresAt]);
+
+  const sendOtp = async () => {
+    if (loading) {
+      return;
+    }
+
     setLoading(true);
     setError("");
     try {
@@ -36,13 +63,13 @@ export default function VerificationForm({ email, user_id, role, redirectPath, o
 
       if (data.success) {
         setOtpSent(true);
+        setOtp("");
+        setOtpExpiresAt(Date.now() + OTP_VALIDITY_MS);
       } else {
         setError("Failed to send OTP. Please try again.");
-        setSendDisabled(false);
       }
     } catch (err) {
       setError("Failed to send OTP. Please try again.");
-      setSendDisabled(false);
     } finally {
       setLoading(false);
     }
@@ -50,6 +77,12 @@ export default function VerificationForm({ email, user_id, role, redirectPath, o
 
   const verifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (otpTimeLeftMs <= 0) {
+      setError("OTP expired. Please request a new OTP.");
+      return;
+    }
+
     setLoading(true);
     setError("");
     const res = await fetch("/api/auth/verify-otp", {
@@ -87,7 +120,7 @@ export default function VerificationForm({ email, user_id, role, redirectPath, o
             <button
               type="button"
               onClick={sendOtp}
-              disabled={loading || sendDisabled}
+              disabled={loading}
               className="w-full bg-linear-to-r from-green-600 to-[#133000] text-white font-bold py-2.5 rounded-lg hover:opacity-90 transition shadow-md disabled:opacity-70 sm:py-2 mb-4"
             >
               {loading ? "Sending..." : "Send OTP"}
@@ -105,15 +138,30 @@ export default function VerificationForm({ email, user_id, role, redirectPath, o
                 required
                 maxLength={6}
               />
-              <div className="text-xs text-gray-700 mb-2">OTP expires in 5 minutes.</div>
+              {otpTimeLeftMs > 0 ? (
+                <div className="text-xs text-gray-700 mb-2">OTP expires in {formatRemainingTime(otpTimeLeftMs)}.</div>
+              ) : (
+                <div className="text-xs text-red-700 mb-2">OTP has expired. Please resend a new OTP.</div>
+              )}
               {error && <div className="text-xs text-red-700 mb-2">{error}</div>}
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-linear-to-r from-green-600 to-[#133000] text-white font-bold py-2.5 rounded-lg hover:opacity-90 transition shadow-md disabled:opacity-70 sm:py-2"
-              >
-                {loading ? "Verifying..." : "Verify"}
-              </button>
+              {otpTimeLeftMs > 0 ? (
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="mt-3 w-full bg-linear-to-r from-green-600 to-[#133000] text-white font-bold py-2.5 rounded-lg hover:opacity-90 transition shadow-md disabled:opacity-70 sm:py-2"
+                >
+                  {loading ? "Verifying..." : "Verify"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={sendOtp}
+                  disabled={loading}
+                  className="mt-3 w-full bg-linear-to-r from-green-600 to-[#133000] text-white font-bold py-2.5 rounded-lg hover:opacity-90 transition shadow-md disabled:opacity-70 sm:py-2"
+                >
+                  {loading ? "Resending..." : "Resend OTP"}
+                </button>
+              )}
             </form>
           )}
         </div>

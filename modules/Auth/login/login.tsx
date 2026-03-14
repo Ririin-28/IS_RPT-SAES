@@ -7,6 +7,7 @@ import { clearOAuthState } from "@/lib/utils/clear-oauth-state";
 import { clearStoredUserProfile, getStoredUserProfile, storeUserProfile } from "@/lib/utils/user-profile";
 
 const DEFAULT_LOGIN_ERROR_MESSAGE = "Email and password do not match our records. Please try again.";
+const OTP_VERIFICATION_CONTEXT_KEY = "otpVerificationContext";
 
 const normalizeRole = (role: string | null | undefined): string => {
   if (!role) {
@@ -45,7 +46,7 @@ export default function Login({
   const trimmedEmail = useMemo(() => email.trim(), [email]);
   const trimmedPassword = useMemo(() => password.trim(), [password]);
   const canSubmit = adminIdRequired
-    ? Boolean(trimmedEmail && trimmedPassword && sanitizedItAdminId)
+    ? Boolean(trimmedPassword && sanitizedItAdminId)
     : Boolean(trimmedEmail && trimmedPassword);
 
   const resolveWelcomePath = useCallback((role: string | null | undefined): string => {
@@ -75,7 +76,7 @@ export default function Login({
   useEffect(() => {
     let active = true;
     const hasValidAdminId = sanitizedItAdminId.length > 0;
-    const canVerify = adminIdRequired ? Boolean(email && password && hasValidAdminId) : Boolean(email && password);
+    const canVerify = adminIdRequired ? Boolean(password && hasValidAdminId) : Boolean(email && password);
     if (canVerify) {
       setVerifying(true);
       setSuccess(false);
@@ -84,7 +85,7 @@ export default function Login({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email,
+          email: adminIdRequired ? undefined : email,
           password,
           itAdminId: adminIdRequired ? sanitizedItAdminId : undefined,
         }),
@@ -133,11 +134,6 @@ export default function Login({
       const isLoggedOut = urlParams.get("logout") === "true";
       const hasError = urlParams.get("error");
       const wasLoggedOut = sessionStorage.getItem("wasLoggedOut") === "true";
-      const prefillEmail = urlParams.get("email");
-      if (prefillEmail) {
-        setEmail(prefillEmail);
-      }
-
       if (hasError === "OAuthCallback") {
         clearOAuthState();
         return;
@@ -145,6 +141,8 @@ export default function Login({
 
       if (isLoggedOut) {
         sessionStorage.setItem("wasLoggedOut", "true");
+        const cleanLoginPath = window.location.pathname || "/auth/login";
+        window.history.replaceState(null, "", cleanLoginPath);
       }
 
       if (!isLoggedOut && !wasLoggedOut) {
@@ -185,7 +183,11 @@ export default function Login({
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) {
-      setErrorMessage("Please enter your email and password to continue.");
+      setErrorMessage(
+        adminIdRequired
+          ? "Please enter your Super Admin ID and password to continue."
+          : "Please enter your email and password to continue.",
+      );
       setShowErrorModal(true);
       return;
     }
@@ -208,7 +210,7 @@ export default function Login({
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email,
+          email: adminIdRequired ? undefined : email,
           password,
           itAdminId: adminIdRequired ? sanitizedItAdminId : undefined,
           deviceToken,
@@ -227,7 +229,7 @@ export default function Login({
             clearTimeout(redirectTimerRef.current);
           }
           redirectTimerRef.current = setTimeout(() => {
-            router.push(`/auth/adminlogin?email=${encodeURIComponent(email)}`);
+            router.push("/auth/adminlogin");
           }, 1500);
           return;
         }
@@ -261,15 +263,20 @@ export default function Login({
           router.push(welcomePath);
         } else {
           clearStoredUserProfile();
-          // Device not trusted, redirect to verification page
-          const params = new URLSearchParams({
-            email,
-            role: data.role || "",
-            user_id: data.user_id || "",
-            redirect_path: resolvedRedirectPath,
-          }).toString();
-          console.log("[LOGIN] redirecting to verification with params:", params);
-          router.push(`/auth/verification?${params}`);
+          // Device not trusted, redirect to verification page using session data instead of query params.
+          const verificationContext = {
+            email: String(data.email || email || ""),
+            role: String(data.role || ""),
+            user_id: String(data.user_id || ""),
+            redirect_path: String(resolvedRedirectPath || ""),
+          };
+          try {
+            sessionStorage.setItem(OTP_VERIFICATION_CONTEXT_KEY, JSON.stringify(verificationContext));
+          } catch {
+            // Ignore storage failures; verification page can still fall back to legacy query params.
+          }
+          console.log("[LOGIN] redirecting to verification");
+          router.push("/auth/verification");
         }
       }
     } catch (err) {
@@ -352,22 +359,23 @@ export default function Login({
                   />
                 </div>
               )}
-              {/* Email Field */}
-              <div className="mb-3">
-                <label htmlFor="email" className="block text-sm font-medium text-[#013300] mb-1 sm:text-base">Email Address</label>
-                <input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  placeholder="Enter your email address"
-                  className="w-full px-4 py-2 border-2 border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#013300] focus:border-transparent transition placeholder-gray-400 text-[#013300] sm:py-2"
-                  required
-                />
-                {email && email !== "admin" && !email.includes("@") && (
-                  <div className="text-xs text-red-700 mt-1">Please enter a valid email address.</div>
-                )}
-              </div>
+              {!adminIdRequired && (
+                <div className="mb-3">
+                  <label htmlFor="email" className="block text-sm font-medium text-[#013300] mb-1 sm:text-base">Email Address</label>
+                  <input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder="Enter your email address"
+                    className="w-full px-4 py-2 border-2 border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#013300] focus:border-transparent transition placeholder-gray-400 text-[#013300] sm:py-2"
+                    required
+                  />
+                  {email && email !== "admin" && !email.includes("@") && (
+                    <div className="text-xs text-red-700 mt-1">Please enter a valid email address.</div>
+                  )}
+                </div>
+              )}
 
               {/* Password Field */}
               <div className="mb-3">
@@ -390,9 +398,11 @@ export default function Login({
                     {showPassword ? <FaEyeSlash className="h-5 w-5" /> : <FaEye className="h-5 w-5" />}
                   </button>
                 </div>
-                {verifying && password && <div className="text-xs text-yellow-700 mt-1">Verifying...</div>}
-                {success && <div className="text-xs text-green-700 mt-1">Credentials match.</div>}
-                {error && !verifying && password && <div className="text-xs text-red-700 mt-1">Credentials do not match.</div>}
+                <div className="mt-1 min-h-5 text-xs">
+                  {verifying && password && <div className="text-yellow-700">Verifying...</div>}
+                  {success && <div className="text-green-700">Credentials match.</div>}
+                  {error && !verifying && password && <div className="text-red-700">Credentials do not match.</div>}
+                </div>
               </div>
 
               {/* Forgot Password (moved here) */}

@@ -4,7 +4,7 @@ import { normalizeRoleName, resolveCanonicalRole, resolvePortalPath, resolveUser
 import { ensureSuperAdminPhaseOneMigration } from "@/lib/server/super-admin-migration";
 
 interface CheckCredentialsPayload {
-  email: string;
+  email?: string | null;
   password: string;
   userId?: string | number | null;
   itAdminId?: string | null;
@@ -98,6 +98,7 @@ export async function POST(req: Request): Promise<Response> {
 
       try {
         const { email, password, userId, itAdminId } = (await req.json()) as CheckCredentialsPayload;
+        const normalizedEmail = typeof email === "string" ? email.trim() : "";
 
         let normalizedUserId: number | null = null;
         if (userId !== undefined && userId !== null && String(userId).trim().length > 0) {
@@ -109,15 +110,32 @@ export async function POST(req: Request): Promise<Response> {
 
         const normalizedItAdminId = sanitizeItAdminId(itAdminId);
 
-        const params: Array<string | number> = [email];
-        let query = "SELECT * FROM users WHERE email = ?";
-        if (normalizedUserId !== null) {
-          query += " AND user_id = ?";
-          params.push(normalizedUserId);
+        let user: UserRow | undefined;
+
+        if (normalizedEmail) {
+          const params: Array<string | number> = [normalizedEmail];
+          let query = "SELECT * FROM users WHERE email = ?";
+          if (normalizedUserId !== null) {
+            query += " AND user_id = ?";
+            params.push(normalizedUserId);
+          }
+
+          const [users] = await db.execute<UserRow[]>(query, params);
+          user = users[0];
+        } else if (normalizedItAdminId) {
+          const linkedUserId = await resolveSuperAdminLinkedUserId(db, normalizedItAdminId);
+          if (!linkedUserId) {
+            return new Response(JSON.stringify({ match: false }), { status: 200 });
+          }
+
+          if (normalizedUserId !== null && linkedUserId !== normalizedUserId) {
+            return new Response(JSON.stringify({ match: false }), { status: 200 });
+          }
+
+          const [users] = await db.execute<UserRow[]>("SELECT * FROM users WHERE user_id = ? LIMIT 1", [linkedUserId]);
+          user = users[0];
         }
 
-        const [users] = await db.execute<UserRow[]>(query, params);
-        const user = users[0];
         if (!user) {
           return new Response(JSON.stringify({ match: false }), { status: 200 });
         }

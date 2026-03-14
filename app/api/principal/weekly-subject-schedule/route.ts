@@ -104,12 +104,16 @@ async function getSubjectIdByName(name: string): Promise<number | null> {
 export async function GET() {
   try {
     await ensureWeeklyTable();
+    const weeklyColumns = await getTableColumns(WEEKLY_TABLE);
+    const whereActive = weeklyColumns.has("is_archived")
+      ? " WHERE COALESCE(is_archived, 0) = 0"
+      : "";
 
     const subjects = await fetchAllSubjects();
     const map = new Map(subjects.map((s) => [s.id, s.name]));
 
     const [rows] = await query<WeeklyRow[]>(
-      `SELECT day_of_week, subject_id, start_time, end_time FROM \`${WEEKLY_TABLE}\``,
+      `SELECT day_of_week, subject_id, start_time, end_time FROM \`${WEEKLY_TABLE}\`${whereActive}`,
     );
 
     const schedule = VALID_WEEKDAYS.reduce(
@@ -145,6 +149,10 @@ export async function GET() {
 export async function PUT(request: NextRequest) {
   try {
     await ensureWeeklyTable();
+    const weeklyColumns = await getTableColumns(WEEKLY_TABLE);
+    const hasArchiveColumn = weeklyColumns.has("is_archived");
+    const hasArchivedAtColumn = weeklyColumns.has("archived_at");
+    const hasArchivedByColumn = weeklyColumns.has("archived_by");
 
     const session = await getPrincipalSessionFromCookies();
     if (!session?.principalId) {
@@ -172,7 +180,25 @@ export async function PUT(request: NextRequest) {
       entries.push({ day, subjectId: id });
     }
 
-    await query(`DELETE FROM \`${WEEKLY_TABLE}\``);
+    if (!hasArchiveColumn) {
+      return NextResponse.json(
+        { success: false, error: "weekly_subject_schedule.is_archived is required for safe reset." },
+        { status: 500 },
+      );
+    }
+
+    const archiveAssignments = ["is_archived = 1"];
+    if (hasArchivedAtColumn) {
+      archiveAssignments.push("archived_at = NOW()");
+    }
+    if (hasArchivedByColumn) {
+      archiveAssignments.push("archived_by = ?");
+    }
+
+    await query(
+      `UPDATE \`${WEEKLY_TABLE}\` SET ${archiveAssignments.join(", ")} WHERE COALESCE(is_archived, 0) = 0`,
+      hasArchivedByColumn ? [session.userId] : [],
+    );
 
     for (const e of entries) {
       await query<ResultSetHeader>(
@@ -195,7 +221,30 @@ export async function PUT(request: NextRequest) {
 export async function DELETE() {
   try {
     await ensureWeeklyTable();
-    await query(`DELETE FROM \`${WEEKLY_TABLE}\``);
+    const session = await getPrincipalSessionFromCookies();
+    if (!session?.principalId) {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
+
+    const weeklyColumns = await getTableColumns(WEEKLY_TABLE);
+    if (!weeklyColumns.has("is_archived")) {
+      return NextResponse.json(
+        { success: false, error: "weekly_subject_schedule.is_archived is required for safe reset." },
+        { status: 500 },
+      );
+    }
+
+    const archiveAssignments = ["is_archived = 1"];
+    if (weeklyColumns.has("archived_at")) {
+      archiveAssignments.push("archived_at = NOW()");
+    }
+    if (weeklyColumns.has("archived_by")) {
+      archiveAssignments.push("archived_by = ?");
+    }
+    await query(
+      `UPDATE \`${WEEKLY_TABLE}\` SET ${archiveAssignments.join(", ")} WHERE COALESCE(is_archived, 0) = 0`,
+      weeklyColumns.has("archived_by") ? [session.userId] : [],
+    );
 
     return NextResponse.json({
       success: true,

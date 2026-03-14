@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
-import { query } from "@/lib/db";
+import { getTableColumns, query } from "@/lib/db";
 import { getPrincipalSessionFromCookies } from "@/lib/server/principal-session";
 
 export const dynamic = "force-dynamic";
@@ -89,8 +89,10 @@ const emptySchedule = (schoolYear: string): RemedialQuarterSchedule => ({
 });
 
 const loadSchedule = async (schoolYear: string): Promise<RemedialQuarterSchedule | null> => {
+  const quarterColumns = await getTableColumns(REMEDIAL_QUARTER_TABLE);
+  const whereActive = quarterColumns.has("is_archived") ? " AND COALESCE(is_archived, 0) = 0" : "";
   const [rows] = await query<RemedialQuarterRow[]>(
-    `SELECT quarter_id, school_year, quarter_name, start_month, end_month FROM \`${REMEDIAL_QUARTER_TABLE}\` WHERE school_year = ?`,
+    `SELECT quarter_id, school_year, quarter_name, start_month, end_month FROM \`${REMEDIAL_QUARTER_TABLE}\` WHERE school_year = ?${whereActive}`,
     [schoolYear],
   );
 
@@ -181,8 +183,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const quarterColumns = await getTableColumns(REMEDIAL_QUARTER_TABLE);
+    const whereActive = quarterColumns.has("is_archived") ? " AND COALESCE(is_archived, 0) = 0" : "";
+
     const [existingRows] = await query<RemedialQuarterRow[]>(
-      `SELECT quarter_id, quarter_name FROM \`${REMEDIAL_QUARTER_TABLE}\` WHERE school_year = ?`,
+      `SELECT quarter_id, quarter_name FROM \`${REMEDIAL_QUARTER_TABLE}\` WHERE school_year = ?${whereActive}`,
       [payload.schoolYear],
     );
     const existingByQuarter = new Map<QuarterValue, number>();
@@ -220,16 +225,49 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    const session = await getPrincipalSessionFromCookies();
+    if (!session?.principalId) {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
+
     const url = new URL(request.url);
     const schoolYear = resolveSchoolYear(url.searchParams.get("school_year"));
-    await query(`DELETE FROM \`${REMEDIAL_QUARTER_TABLE}\` WHERE school_year = ?`, [schoolYear]);
+
+    const archiveTableBySchoolYear = async (tableName: string) => {
+      const columns = await getTableColumns(tableName);
+      if (!columns.has("is_archived")) {
+        return;
+      }
+      const assignments = ["is_archived = 1"];
+      if (columns.has("archived_at")) {
+        assignments.push("archived_at = NOW()");
+      }
+      if (columns.has("archived_by")) {
+        assignments.push("archived_by = ?");
+      }
+      const params: Array<string | number> = [];
+      if (columns.has("archived_by")) {
+        params.push(session.userId);
+      }
+      const whereParts = ["COALESCE(is_archived, 0) = 0"];
+      if (columns.has("school_year")) {
+        whereParts.push("school_year = ?");
+        params.push(schoolYear);
+      }
+      await query(
+        `UPDATE \`${tableName}\` SET ${assignments.join(", ")} WHERE ${whereParts.join(" AND ")}`,
+        params,
+      );
+    };
+
+    await archiveTableBySchoolYear(REMEDIAL_QUARTER_TABLE);
     try {
-      await query(`DELETE FROM \`${APPROVED_REMEDIAL_TABLE}\``);
+      await archiveTableBySchoolYear(APPROVED_REMEDIAL_TABLE);
     } catch (activityError) {
       console.warn("Unable to clear approved remedial activities", activityError);
     }
     try {
-      await query(`DELETE FROM \`${REQUEST_REMEDIAL_TABLE}\``);
+      await archiveTableBySchoolYear(REQUEST_REMEDIAL_TABLE);
     } catch (requestError) {
       console.warn("Unable to clear pending remedial requests", requestError);
     }

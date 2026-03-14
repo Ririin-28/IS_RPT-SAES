@@ -1,14 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import html2canvas from "html2canvas";
-import { jsPDF } from "jspdf";
 import { useRouter } from "next/navigation";
+import { BarChart3, Printer, Users } from "lucide-react";
+import { FaChalkboardTeacher } from "react-icons/fa";
 import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
   CartesianGrid,
   Cell,
   Legend,
@@ -24,12 +20,11 @@ import {
 import PrincipalHeader from "@/components/Principal/Header";
 import PrincipalSidebar from "@/components/Principal/Sidebar";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
-import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 
 type SubjectName = "English" | "Filipino" | "Math";
-type DateRangeFilter = "3m" | "6m" | "12m";
+type TrendSubjectFilter = "All Subjects" | SubjectName;
 
 type DashboardTotals = {
   students: number;
@@ -49,10 +44,16 @@ type ReportMonthStat = {
   pending: number;
 };
 
-type SubjectProgressPayload = {
-  gradeData: Record<string, Record<string, number>>;
-  percentageData: Record<string, Record<string, number>>;
-  gradeTotals: Record<string, number>;
+type DashboardAnalyticsPayload = {
+  remedialAverageHeatmap: Array<{ grade: string; subject: SubjectName; averageScore: number }>;
+  performanceTrend: Array<{
+    period: string;
+    allSubjects: number;
+    english: number;
+    filipino: number;
+    math: number;
+  }>;
+  averageStudentsPerSubject: Array<{ subject: SubjectName; students: number; percentage: number }>;
 };
 
 type DashboardApiResponse = {
@@ -61,7 +62,7 @@ type DashboardApiResponse = {
     monthStats: ReportMonthStat[];
     currentMonth: ReportMonthStat;
   };
-  progress?: Partial<Record<SubjectName, SubjectProgressPayload>>;
+  analytics?: DashboardAnalyticsPayload;
 };
 
 type HeatCell = {
@@ -72,11 +73,7 @@ type HeatCell = {
 
 const SUBJECTS: SubjectName[] = ["English", "Filipino", "Math"];
 const GRADES = ["1", "2", "3", "4", "5", "6"] as const;
-const COMPETENCIES = ["Comprehension", "Fluency", "Numeracy", "Critical Thinking", "Problem Solving"];
-
-const GREEN_HEAT = ["#ecfdf3", "#d1fae5", "#a7f3d0", "#6ee7b7", "#34d399", "#10b981", "#059669"];
-const SKILL_HEAT = ["#f0fdfa", "#ccfbf1", "#99f6e4", "#5eead4", "#2dd4bf", "#14b8a6", "#0f766e"];
-const MULTI_SERIES_COLORS = ["#0f766e", "#16a34a", "#4ade80", "#84cc16", "#65a30d", "#0ea5a4"];
+const HEATMAP_SCORE_COLORS = ["#fee2e2", "#fecaca", "#fde68a", "#bef264", "#86efac", "#4ade80", "#22c55e"];
 const PIE_SOFT_COLORS = ["#0f766e", "#16a34a", "#65a30d", "#0ea5a4", "#84cc16"];
 
 const palette = {
@@ -87,81 +84,30 @@ const palette = {
   grid: "#d1d5db",
 };
 
-const rangeOptions: { label: string; value: DateRangeFilter }[] = [
-  { label: "Last 3 Months", value: "3m" },
-  { label: "Last 6 Months", value: "6m" },
-  { label: "Last 12 Months", value: "12m" },
-];
+const MONTH_OPTIONS = [
+  { label: "January", value: 1 },
+  { label: "February", value: 2 },
+  { label: "March", value: 3 },
+  { label: "April", value: 4 },
+  { label: "May", value: 5 },
+  { label: "June", value: 6 },
+  { label: "July", value: 7 },
+  { label: "August", value: 8 },
+  { label: "September", value: 9 },
+  { label: "October", value: 10 },
+  { label: "November", value: 11 },
+  { label: "December", value: 12 },
+] as const;
+
+const GRADE_LABELS = GRADES.map((grade) => `Grade ${grade}`);
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function seededNoise(seed: string) {
-  let hash = 0;
-  for (let index = 0; index < seed.length; index += 1) {
-    hash = (hash << 5) - hash + seed.charCodeAt(index);
-    hash |= 0;
-  }
-  return Math.abs(hash % 1000) / 1000;
-}
-
-function normalizeGradeKey(value: string): string | null {
-  const match = value.match(/(\d+)/);
-  return match ? match[1] : null;
-}
-
-function getLevelWeight(subject: SubjectName, levelName: string): number {
-  const key = levelName.toLowerCase();
-
-  if (subject === "Math") {
-    if (key.includes("highly") || key.includes("at grade")) return 95;
-    if (key.includes("proficient") && !key.includes("not") && !key.includes("low")) return 82;
-    if (key.includes("nearly") || key.includes("developing")) return 68;
-    if (key.includes("low")) return 52;
-    if (key.includes("not")) return 38;
-    if (key.includes("assessed")) return 46;
-    return 60;
-  }
-
-  if (key.includes("paragraph")) return 94;
-  if (key.includes("sentence")) return 84;
-  if (key.includes("phrase")) return 74;
-  if (key.includes("word")) return 62;
-  if (key.includes("syllable")) return 50;
-  if (key.includes("non")) return 36;
-  if (key.includes("assessed")) return 46;
-  return 60;
-}
-
-function computeGradeScore(subject: SubjectName, levels: Record<string, number>): number {
-  const entries = Object.entries(levels ?? {});
-  if (entries.length === 0) {
-    return 58;
-  }
-
-  const weighted = entries.reduce(
-    (accumulator, [levelName, percent]) => accumulator + getLevelWeight(subject, levelName) * (Number(percent) / 100),
-    0,
-  );
-
-  return clamp(Math.round(weighted), 35, 98);
-}
-
-function FilterChip({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-        active
-          ? "border-emerald-700 bg-emerald-700 text-white"
-          : "border-emerald-100 bg-white/70 text-emerald-900 hover:border-emerald-300"
-      }`}
-    >
-      {label}
-    </button>
-  );
+function getMonthLabel(value: number | null): string {
+  if (!value) return "";
+  return MONTH_OPTIONS.find((month) => month.value === value)?.label ?? "";
 }
 
 function HeatmapCard({
@@ -170,7 +116,7 @@ function HeatmapCard({
   cells,
   xLabels,
   yLabels,
-  colors = GREEN_HEAT,
+  colors = HEATMAP_SCORE_COLORS,
 }: {
   title: string;
   subtitle?: string;
@@ -242,19 +188,27 @@ export default function PrincipalDashboard() {
   const router = useRouter();
   const exportRef = useRef<HTMLDivElement>(null);
 
-  const [selectedRange, setSelectedRange] = useState<DateRangeFilter>("6m");
-  const [selectedSubjects, setSelectedSubjects] = useState<SubjectName[]>([]);
-  const [selectedGrades, setSelectedGrades] = useState<string[]>([]);
+  const [trendSubjectFilter, setTrendSubjectFilter] = useState<TrendSubjectFilter>("All Subjects");
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+  const [selectedQuarter, setSelectedQuarter] = useState<"all" | "1st" | "2nd">("all");
+  const [monthRangeFrom, setMonthRangeFrom] = useState<number | null>(null);
+  const [monthRangeTo, setMonthRangeTo] = useState<number | null>(null);
+  const [monthFromMenuOpen, setMonthFromMenuOpen] = useState(false);
+  const [monthToMenuOpen, setMonthToMenuOpen] = useState(false);
+  const [selectedSubjects, setSelectedSubjects] = useState<SubjectName[]>([...SUBJECTS]);
+  const [selectedGrades, setSelectedGrades] = useState<string[]>([...GRADE_LABELS]);
 
   const [overviewTotals, setOverviewTotals] = useState<DashboardTotals | null>(null);
   const [reportStats, setReportStats] = useState<{ currentMonth: ReportMonthStat | null; monthStats: ReportMonthStat[] }>({
     currentMonth: null,
     monthStats: [],
   });
-  const [progressBySubject, setProgressBySubject] = useState<Partial<Record<SubjectName, SubjectProgressPayload>>>({});
+  const [analytics, setAnalytics] = useState<DashboardAnalyticsPayload>({
+    remedialAverageHeatmap: [],
+    performanceTrend: [],
+    averageStudentsPerSubject: [],
+  });
   const [isLoading, setIsLoading] = useState(true);
-  const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
@@ -271,7 +225,13 @@ export default function PrincipalDashboard() {
         currentMonth: payload.reports?.currentMonth ?? null,
         monthStats: payload.reports?.monthStats ?? [],
       });
-      setProgressBySubject(payload.progress ?? {});
+      setAnalytics(
+        payload.analytics ?? {
+          remedialAverageHeatmap: [],
+          performanceTrend: [],
+          averageStudentsPerSubject: [],
+        },
+      );
       setLastUpdated(new Date());
       setError(null);
     } catch (fetchError) {
@@ -290,241 +250,145 @@ export default function PrincipalDashboard() {
     return () => window.clearInterval(refreshId);
   }, [loadDashboard]);
 
-  const gradeSubjectScores = useMemo(() => {
-    const map = new Map<string, number>();
+  const filteredHeatmapSource = useMemo(
+    () =>
+      analytics.remedialAverageHeatmap.filter(
+        (entry) => selectedSubjects.includes(entry.subject) && selectedGrades.includes(entry.grade),
+      ),
+    [analytics.remedialAverageHeatmap, selectedSubjects, selectedGrades],
+  );
 
-    for (const subject of SUBJECTS) {
-      const payload = progressBySubject[subject];
-      const percentageData = payload?.percentageData ?? {};
-
-      for (const [rawGrade, levels] of Object.entries(percentageData)) {
-        const grade = normalizeGradeKey(rawGrade);
-        if (!grade) continue;
-        map.set(`${subject}-${grade}`, computeGradeScore(subject, levels));
-      }
-
-      for (const grade of GRADES) {
-        const fallbackKey = `${subject}-${grade}`;
-        if (!map.has(fallbackKey)) {
-          map.set(fallbackKey, Math.round(56 + seededNoise(fallbackKey) * 22));
-        }
-      }
-    }
-
-    return map;
-  }, [progressBySubject]);
-
-  const visibleSubjects = selectedSubjects.length > 0 ? selectedSubjects : SUBJECTS;
-  const visibleGrades = selectedGrades.length > 0 ? selectedGrades : [...GRADES];
-
-  const filteredMonthStats = useMemo(() => {
-    const list = [...reportStats.monthStats];
-    if (selectedRange === "3m") return list.slice(-3);
-    if (selectedRange === "6m") return list.slice(-6);
-    return list.slice(-12);
-  }, [reportStats.monthStats, selectedRange]);
-
-  const subjectVsGradeHeatmap = useMemo<HeatCell[]>(() => {
-    return visibleSubjects.flatMap((subject) =>
-      visibleGrades.map((grade) => ({
-        x: `Grade ${grade}`,
-        y: subject,
-        value: gradeSubjectScores.get(`${subject}-${grade}`) ?? 0,
-      })),
-    );
-  }, [gradeSubjectScores, visibleGrades, visibleSubjects]);
-
-  const subjectComparison = useMemo(() => {
-    return visibleSubjects.map((subject) => {
-      const values = visibleGrades.map((grade) => gradeSubjectScores.get(`${subject}-${grade}`) ?? 0);
-      const average = values.reduce((sum, value) => sum + value, 0) / Math.max(values.length, 1);
-      return { subject, value: Math.round(average) };
-    });
-  }, [gradeSubjectScores, visibleGrades, visibleSubjects]);
-
-  const overallPerformanceTrend = useMemo(() => {
-    if (filteredMonthStats.length === 0) {
-      return ["Jan", "Feb", "Mar", "Apr", "May", "Jun"].map((month, index) => ({
-        month,
-        value: 58 + index * 3,
-      }));
-    }
-
-    return filteredMonthStats.map((entry, index) => {
-      const submissionRate = entry.total > 0 ? (entry.submitted / entry.total) * 100 : 0;
-      const trendBase = 54 + submissionRate * 0.32 + index * 1.8;
-      const noise = seededNoise(`${entry.label}-${entry.month}`) * 4;
-      return {
-        month: entry.label.slice(0, 3),
-        value: Math.round(clamp(trendBase + noise, 40, 98)),
-      };
-    });
-  }, [filteredMonthStats]);
-
-  const remediationSeries = useMemo(() => {
-    const points = visibleGrades.map((grade, index) => {
-      const avg =
-        visibleSubjects.reduce((sum, subject) => sum + (gradeSubjectScores.get(`${subject}-${grade}`) ?? 0), 0) /
-        Math.max(visibleSubjects.length, 1);
-      const pre = Math.round(clamp(avg - 14 - seededNoise(`${grade}-pre`) * 8, 30, 88));
-      const post = Math.round(clamp(pre + 8 + seededNoise(`${grade}-post`) * 10 + index * 0.5, 36, 97));
-
-      return {
-        grade: `Grade ${grade}`,
-        pre,
-        post,
-        improvement: Math.max(post - pre, 0),
-      };
-    });
-
-    return { points };
-  }, [gradeSubjectScores, visibleGrades, visibleSubjects]);
-
-  const parentEngagement = useMemo(() => {
-    const loginFrequency = visibleGrades.map((grade) => {
-      const avg =
-        visibleSubjects.reduce((sum, subject) => sum + (gradeSubjectScores.get(`${subject}-${grade}`) ?? 0), 0) /
-        Math.max(visibleSubjects.length, 1);
-      const logins = Math.round(clamp(4 + avg / 17 + seededNoise(`parent-${grade}`) * 4, 2, 14));
-      return { grade: `Grade ${grade}`, logins };
-    });
-
-    const weeklyTrend = Array.from({ length: 8 }, (_, index) => ({
-      week: `W${index + 1}`,
-      value: Math.round(clamp(52 + index * 2.2 + seededNoise(`week-${index}`) * 8, 40, 96)),
+  const remedialAverageHeatmap = useMemo<HeatCell[]>(() => {
+    return filteredHeatmapSource.map((entry) => ({
+      x: entry.subject,
+      y: entry.grade,
+      value: entry.averageScore,
     }));
+  }, [filteredHeatmapSource]);
 
-    const engagementHeatmap: HeatCell[] = visibleGrades.flatMap((grade) =>
-      ["Mon", "Tue", "Wed", "Thu", "Fri"].map((day) => ({
-        x: day,
-        y: `Grade ${grade}`,
-        value: Math.round(clamp(46 + seededNoise(`${grade}-${day}`) * 44, 20, 98)),
-      })),
-    );
+  const heatmapGrades = useMemo(() => {
+    const grades = Array.from(new Set(filteredHeatmapSource.map((entry) => entry.grade)));
+    return grades.length > 0 ? grades : GRADES.map((grade) => `Grade ${grade}`);
+  }, [filteredHeatmapSource]);
 
-    return { loginFrequency, weeklyTrend, engagementHeatmap };
-  }, [gradeSubjectScores, visibleGrades, visibleSubjects]);
-
-  const teacherInsights = useMemo(() => {
-    const classAverages = visibleGrades.map((grade) => {
-      const value =
-        visibleSubjects.reduce((sum, subject) => sum + (gradeSubjectScores.get(`${subject}-${grade}`) ?? 0), 0) /
-        Math.max(visibleSubjects.length, 1);
-      return { className: `Grade ${grade}`, value: Math.round(value) };
-    });
-
-    const progressSpeed = filteredMonthStats.map((entry, index) => ({
-      month: entry.label.slice(0, 3),
-      speed: Number((2.1 + seededNoise(`${entry.label}-momentum`) * 1.8 + index * 0.22).toFixed(2)),
-    }));
-
-    return { classAverages, progressSpeed };
-  }, [filteredMonthStats, gradeSubjectScores, visibleGrades, visibleSubjects]);
-
-  const competencyModel = useMemo(() => {
-    const skillMastery: HeatCell[] = visibleGrades.flatMap((grade) =>
-      COMPETENCIES.map((competency) => {
-        const base =
-          visibleSubjects.reduce((sum, subject) => sum + (gradeSubjectScores.get(`${subject}-${grade}`) ?? 0), 0) /
-          Math.max(visibleSubjects.length, 1);
-        const value = Math.round(clamp(base - 7 + seededNoise(`${grade}-${competency}-skill`) * 13, 30, 99));
-        return { x: competency, y: `Grade ${grade}`, value };
-      }),
-    );
-
-    const weaknessDistribution = COMPETENCIES.map((competency) => ({
-      competency,
-      value: Math.round(clamp(12 + seededNoise(`${competency}-weakness`) * 28, 8, 42)),
-    }));
-
-    return { skillMastery, weaknessDistribution };
-  }, [gradeSubjectScores, visibleGrades, visibleSubjects]);
-
-  const toggleSubject = useCallback((subject: SubjectName) => {
-    setSelectedSubjects((previous) =>
-      previous.includes(subject) ? previous.filter((item) => item !== subject) : [...previous, subject],
-    );
+  const monthInRange = useCallback((monthValue: number, start: number, end: number) => {
+    if (start <= end) return monthValue >= start && monthValue <= end;
+    return monthValue >= start || monthValue <= end;
   }, []);
 
-  const toggleGrade = useCallback((grade: string) => {
-    setSelectedGrades((previous) => (previous.includes(grade) ? previous.filter((item) => item !== grade) : [...previous, grade]));
-  }, []);
+  const filteredPerformanceTrend = useMemo(() => {
+    const resolveMonthFromPeriod = (period: string): number | null => {
+      const parsed = new Date(`1 ${period}`);
+      if (Number.isNaN(parsed.getTime())) return null;
+      return parsed.getMonth() + 1;
+    };
+
+    const source = [...analytics.performanceTrend];
+    const quarterScoped =
+      selectedQuarter === "all"
+        ? source
+        : selectedQuarter === "1st"
+          ? source.slice(0, Math.ceil(source.length / 2))
+          : source.slice(Math.ceil(source.length / 2));
+
+    if (!monthRangeFrom || !monthRangeTo) {
+      return quarterScoped;
+    }
+
+    return quarterScoped.filter((item) => {
+      const monthValue = resolveMonthFromPeriod(item.period);
+      if (!monthValue) return false;
+      return monthInRange(monthValue, monthRangeFrom, monthRangeTo);
+    });
+  }, [analytics.performanceTrend, selectedQuarter, monthRangeFrom, monthRangeTo, monthInRange]);
+
+  const visibleTrendSubjects = useMemo(
+    () => ["All Subjects", ...selectedSubjects] as TrendSubjectFilter[],
+    [selectedSubjects],
+  );
+
+  useEffect(() => {
+    if (trendSubjectFilter === "All Subjects") return;
+    if (!selectedSubjects.includes(trendSubjectFilter)) {
+      setTrendSubjectFilter("All Subjects");
+    }
+  }, [selectedSubjects, trendSubjectFilter]);
+
+  const performanceTrendSeries = useMemo(() => {
+    const pickValue = (item: DashboardAnalyticsPayload["performanceTrend"][number]): number => {
+      const selectedSet = new Set<SubjectName>(selectedSubjects);
+      if (trendSubjectFilter === "English") return item.english;
+      if (trendSubjectFilter === "Filipino") return item.filipino;
+      if (trendSubjectFilter === "Math") return item.math;
+
+      const values: number[] = [];
+      if (selectedSet.has("English")) values.push(item.english);
+      if (selectedSet.has("Filipino")) values.push(item.filipino);
+      if (selectedSet.has("Math")) values.push(item.math);
+      if (values.length === 0) return 0;
+      return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
+    };
+
+    return filteredPerformanceTrend.map((item) => ({
+      period: item.period,
+      value: pickValue(item),
+    }));
+  }, [filteredPerformanceTrend, trendSubjectFilter, selectedSubjects]);
+
+  const hasPerformanceTrendData = useMemo(() => performanceTrendSeries.some((item) => item.value > 0), [performanceTrendSeries]);
+
+  const hasHeatmapData = filteredHeatmapSource.length > 0;
+
+  const averageStudentsPerSubject = useMemo(() => {
+    const source = analytics.averageStudentsPerSubject.filter((entry) => selectedSubjects.includes(entry.subject));
+    if (source.length === 0) {
+      return selectedSubjects.map((subject) => ({ subject, students: 0, percentage: 0 }));
+    }
+    const total = source.reduce((sum, entry) => sum + entry.students, 0);
+    return source.map((entry) => ({
+      ...entry,
+      percentage: total > 0 ? Math.round((entry.students / total) * 100) : 0,
+    }));
+  }, [analytics.averageStudentsPerSubject, selectedSubjects]);
+
+  const hasStudentsPerSubjectData = useMemo(
+    () => averageStudentsPerSubject.some((entry) => entry.students > 0),
+    [averageStudentsPerSubject],
+  );
 
   const clearFilters = useCallback(() => {
-    setSelectedRange("6m");
-    setSelectedSubjects([]);
-    setSelectedGrades([]);
+    setSelectedQuarter("all");
+    setMonthRangeFrom(null);
+    setMonthRangeTo(null);
+    setMonthFromMenuOpen(false);
+    setMonthToMenuOpen(false);
+    setSelectedSubjects([...SUBJECTS]);
+    setSelectedGrades([...GRADE_LABELS]);
+    setTrendSubjectFilter("All Subjects");
   }, []);
 
-  const handleExportPdf = useCallback(async () => {
-    if (!exportRef.current) return;
-
-    setIsExporting(true);
-    setError(null);
-
-    try {
-      if (typeof document !== "undefined" && document.fonts?.ready) {
-        await document.fonts.ready;
+  const toggleSubject = useCallback((subject: SubjectName) => {
+    setSelectedSubjects((prev) => {
+      if (prev.includes(subject)) {
+        if (prev.length === 1) return prev;
+        return prev.filter((entry) => entry !== subject);
       }
-      await new Promise((resolve) => window.setTimeout(resolve, 120));
+      return [...prev, subject];
+    });
+  }, []);
 
-      const bounds = exportRef.current.getBoundingClientRect();
-      const captureWidth = Math.round(bounds.width);
-      const captureHeight = Math.max(exportRef.current.scrollHeight, Math.round(bounds.height));
-
-      const canvas = await html2canvas(exportRef.current, {
-        scale: 1.8,
-        useCORS: true,
-        backgroundColor: "#ffffff",
-        width: captureWidth,
-        height: captureHeight,
-        windowWidth: captureWidth,
-        windowHeight: captureHeight,
-        scrollX: 0,
-        scrollY: -window.scrollY,
-        onclone: (clonedDoc) => {
-          const style = clonedDoc.createElement("style");
-          style.textContent = `
-            *, *::before, *::after {
-              backdrop-filter: none !important;
-              -webkit-backdrop-filter: none !important;
-              text-shadow: none !important;
-            }
-          `;
-          clonedDoc.head.appendChild(style);
-        },
-      });
-
-      const imageData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF("l", "pt", "a4");
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      const margin = 18;
-      const usableWidth = pdfWidth - margin * 2;
-      const usableHeight = pdfHeight - margin * 2;
-
-      const imageWidth = usableWidth;
-      const imageHeight = (canvas.height * imageWidth) / canvas.width;
-
-      let heightLeft = imageHeight;
-      let position = margin;
-
-      pdf.addImage(imageData, "PNG", margin, position, imageWidth, imageHeight);
-      heightLeft -= usableHeight;
-
-      while (heightLeft > 0) {
-        position = margin - (imageHeight - heightLeft);
-        pdf.addPage();
-        pdf.addImage(imageData, "PNG", margin, position, imageWidth, imageHeight);
-        heightLeft -= usableHeight;
+  const toggleGrade = useCallback((gradeLabel: string) => {
+    setSelectedGrades((prev) => {
+      if (prev.includes(gradeLabel)) {
+        if (prev.length === 1) return prev;
+        return prev.filter((entry) => entry !== gradeLabel);
       }
+      return [...prev, gradeLabel];
+    });
+  }, []);
 
-      pdf.save(`principal-school-intelligence-${Date.now()}.pdf`);
-    } catch (exportError) {
-      setError(exportError instanceof Error ? `Export failed: ${exportError.message}` : "Export failed.");
-    } finally {
-      setIsExporting(false);
-    }
+  const handlePrintExport = useCallback(() => {
+    window.print();
   }, []);
 
   const totalTeachers = overviewTotals?.teachers ?? 0;
@@ -534,7 +398,7 @@ export default function PrincipalDashboard() {
     : 0;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
+    <div className="dashboard-page flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
       <div className="no-print">
         <PrincipalSidebar />
       </div>
@@ -544,10 +408,10 @@ export default function PrincipalDashboard() {
           <PrincipalHeader title="Dashboard" />
         </div>
 
-        <main className="flex flex-1 min-h-0 overflow-hidden p-4 sm:p-5 md:p-6">
+        <main className="print-stage flex flex-1 min-h-0 overflow-hidden p-4 sm:p-5 md:p-6">
           <div className="relative h-full min-h-0 w-full">
-            <div className="pointer-events-none absolute -top-16 right-10 h-52 w-52 rounded-full bg-emerald-200/55 blur-3xl" />
-            <div className="pointer-events-none absolute bottom-8 left-8 h-56 w-56 rounded-full bg-emerald-100/45 blur-3xl" />
+            <div className="no-print pointer-events-none absolute -top-16 right-10 h-52 w-52 rounded-full bg-emerald-200/55 blur-3xl" />
+            <div className="no-print pointer-events-none absolute bottom-8 left-8 h-56 w-56 rounded-full bg-emerald-100/45 blur-3xl" />
 
             <div
               id="principal-export-root"
@@ -556,100 +420,277 @@ export default function PrincipalDashboard() {
             >
               <div className="mb-5 flex items-start justify-between gap-3">
                 <div>
-                  <SecondaryHeader title="School-Wide Intelligence Dashboard" />
+                  <SecondaryHeader title="Remedial Progress" />
                 </div>
 
                 <div className="no-print flex shrink-0 items-center gap-2">
-                  <SecondaryButton
-                    small
-                    className="flex h-[42px] items-center gap-2 border border-emerald-100 bg-white/70 px-3"
-                    onClick={() => setIsFilterModalOpen(true)}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M3 5h18" />
-                      <path d="M6 12h12" />
-                      <path d="M10 19h4" />
-                    </svg>
-                    <span>Filter</span>
-                  </SecondaryButton>
-                  <SecondaryButton small className="h-[42px] border border-emerald-100 bg-white/70 px-3" onClick={() => window.print()}>
-                    Print
-                  </SecondaryButton>
-                  <PrimaryButton small className="h-[42px] px-3" disabled={isExporting} onClick={() => void handleExportPdf()}>
-                    {isExporting ? "Exporting..." : "Export to PDF"}
-                  </PrimaryButton>
-                </div>
-              </div>
-
-              {isFilterModalOpen ? (
-                <div className="no-print fixed inset-0 z-50 flex items-center justify-center p-4">
-                  <div className="w-full max-w-3xl rounded-2xl border border-white/75 bg-white/85 p-5 shadow-[0_24px_48px_rgba(15,23,42,0.20)]">
-                    <div className="mb-4 flex items-center justify-between gap-3">
-                      <p className="text-base font-semibold text-slate-900">Filter Dashboard</p>
+                  <div className="relative">
+                    {isFilterModalOpen && (
                       <button
                         type="button"
-                        onClick={() => setIsFilterModalOpen(false)}
-                        className="rounded-full border border-emerald-100 bg-white px-2.5 py-1 text-xs font-semibold text-emerald-900"
-                      >
-                        Close
-                      </button>
-                    </div>
+                        className="fixed inset-0 z-10 cursor-default"
+                        onClick={() => {
+                          setIsFilterModalOpen(false);
+                          setMonthFromMenuOpen(false);
+                          setMonthToMenuOpen(false);
+                        }}
+                        aria-label="Close filter panel"
+                      />
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsFilterModalOpen((prev) => !prev);
+                        if (isFilterModalOpen) {
+                          setMonthFromMenuOpen(false);
+                          setMonthToMenuOpen(false);
+                        }
+                      }}
+                      className="relative z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 shadow-sm transition hover:bg-gray-100"
+                      aria-label="Filter dashboard"
+                      title="Filter"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polygon points="3 4 21 4 14 12 14 19 10 21 10 12 3 4" />
+                      </svg>
+                    </button>
 
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                      <div>
-                        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Date Range</p>
-                        <div className="flex flex-wrap gap-2">
-                          {rangeOptions.map((option) => (
-                            <FilterChip
-                              key={option.value}
-                              label={option.label}
-                              active={selectedRange === option.value}
-                              onClick={() => setSelectedRange(option.value)}
-                            />
-                          ))}
+                    {isFilterModalOpen ? (
+                      <div className="absolute right-0 z-20 mt-2 w-[min(56rem,92vw)] rounded-2xl border border-gray-200 bg-white p-5 shadow-[0_24px_48px_rgba(15,23,42,0.22)]">
+                        <div className="mb-4 flex items-center justify-between gap-3">
+                          <p className="text-base font-semibold text-slate-900">Filter Dashboard</p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsFilterModalOpen(false);
+                              setMonthFromMenuOpen(false);
+                              setMonthToMenuOpen(false);
+                            }}
+                            className="rounded-full border border-emerald-100 bg-white px-2.5 py-1 text-xs font-semibold text-emerald-900"
+                          >
+                            Close
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-4">
+                          <div>
+                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Quarter Range</p>
+                            <div className="flex flex-wrap gap-2">
+                              {[
+                                { label: "All", value: "all" },
+                                { label: "1st Quarter", value: "1st" },
+                                { label: "2nd Quarter", value: "2nd" },
+                              ].map((option) => (
+                                <button
+                                  key={option.value}
+                                  type="button"
+                                  onClick={() => setSelectedQuarter(option.value as "all" | "1st" | "2nd")}
+                                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                                    selectedQuarter === option.value
+                                      ? "border-emerald-700 bg-emerald-700 text-white"
+                                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  {option.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div>
+                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Month Range</p>
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+                              <div className="relative">
+                                {monthFromMenuOpen && (
+                                  <button
+                                    type="button"
+                                    className="fixed inset-0 z-10 cursor-default"
+                                    onClick={() => setMonthFromMenuOpen(false)}
+                                    aria-label="Close from month menu"
+                                  />
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setMonthFromMenuOpen((prev) => !prev);
+                                    setMonthToMenuOpen(false);
+                                  }}
+                                  className="relative z-20 flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm"
+                                >
+                                  <span>{monthRangeFrom ? getMonthLabel(monthRangeFrom) : "From month"}</span>
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="6 9 12 15 18 9" />
+                                  </svg>
+                                </button>
+                                {monthFromMenuOpen && (
+                                  <div className="absolute left-0 right-0 z-20 mt-2 max-h-64 overflow-y-auto rounded-xl border border-gray-200 bg-white p-2 shadow-lg">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setMonthRangeFrom(null);
+                                        setMonthFromMenuOpen(false);
+                                      }}
+                                      className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-semibold transition ${
+                                        monthRangeFrom === null ? "bg-emerald-50 text-emerald-800" : "text-slate-700 hover:bg-slate-100"
+                                      }`}
+                                    >
+                                      <span>Any month</span>
+                                      {monthRangeFrom === null && <span className="text-xs text-emerald-700">Active</span>}
+                                    </button>
+                                    {MONTH_OPTIONS.map((option) => (
+                                      <button
+                                        key={`from-menu-${option.value}`}
+                                        type="button"
+                                        onClick={() => {
+                                          setMonthRangeFrom(option.value);
+                                          setMonthFromMenuOpen(false);
+                                        }}
+                                        className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-semibold transition ${
+                                          monthRangeFrom === option.value
+                                            ? "bg-emerald-50 text-emerald-800"
+                                            : "text-slate-700 hover:bg-slate-100"
+                                        }`}
+                                      >
+                                        <span>{option.label}</span>
+                                        {monthRangeFrom === option.value && <span className="text-xs text-emerald-700">Active</span>}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                              <span className="justify-self-center text-sm font-semibold text-slate-500">to</span>
+                              <div className="relative">
+                                {monthToMenuOpen && (
+                                  <button
+                                    type="button"
+                                    className="fixed inset-0 z-10 cursor-default"
+                                    onClick={() => setMonthToMenuOpen(false)}
+                                    aria-label="Close to month menu"
+                                  />
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setMonthToMenuOpen((prev) => !prev);
+                                    setMonthFromMenuOpen(false);
+                                  }}
+                                  className="relative z-20 flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm"
+                                >
+                                  <span>{monthRangeTo ? getMonthLabel(monthRangeTo) : "To month"}</span>
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="6 9 12 15 18 9" />
+                                  </svg>
+                                </button>
+                                {monthToMenuOpen && (
+                                  <div className="absolute left-0 right-0 z-20 mt-2 max-h-64 overflow-y-auto rounded-xl border border-gray-200 bg-white p-2 shadow-lg">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setMonthRangeTo(null);
+                                        setMonthToMenuOpen(false);
+                                      }}
+                                      className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-semibold transition ${
+                                        monthRangeTo === null ? "bg-emerald-50 text-emerald-800" : "text-slate-700 hover:bg-slate-100"
+                                      }`}
+                                    >
+                                      <span>Any month</span>
+                                      {monthRangeTo === null && <span className="text-xs text-emerald-700">Active</span>}
+                                    </button>
+                                    {MONTH_OPTIONS.map((option) => (
+                                      <button
+                                        key={`to-menu-${option.value}`}
+                                        type="button"
+                                        onClick={() => {
+                                          setMonthRangeTo(option.value);
+                                          setMonthToMenuOpen(false);
+                                        }}
+                                        className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-semibold transition ${
+                                          monthRangeTo === option.value
+                                            ? "bg-emerald-50 text-emerald-800"
+                                            : "text-slate-700 hover:bg-slate-100"
+                                        }`}
+                                      >
+                                        <span>{option.label}</span>
+                                        {monthRangeTo === option.value && <span className="text-xs text-emerald-700">Active</span>}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div>
+                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Subjects</p>
+                            <div className="flex flex-wrap gap-2">
+                              {SUBJECTS.map((subject) => (
+                                <button
+                                  key={subject}
+                                  type="button"
+                                  onClick={() => toggleSubject(subject)}
+                                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                                    selectedSubjects.includes(subject)
+                                      ? "border-emerald-700 bg-emerald-700 text-white"
+                                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  {subject}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div>
+                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Grade Levels</p>
+                            <div className="flex flex-wrap gap-2">
+                              {GRADE_LABELS.map((gradeLabel) => (
+                                <button
+                                  key={gradeLabel}
+                                  type="button"
+                                  onClick={() => toggleGrade(gradeLabel)}
+                                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                                    selectedGrades.includes(gradeLabel)
+                                      ? "border-emerald-700 bg-emerald-700 text-white"
+                                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  {gradeLabel}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-5 flex items-center justify-end gap-2">
+                          <SecondaryButton small className="border border-emerald-100 bg-white/80 px-3" onClick={clearFilters}>
+                            Clear All
+                          </SecondaryButton>
+                          <PrimaryButton
+                            small
+                            className="px-3"
+                            onClick={() => {
+                              setIsFilterModalOpen(false);
+                              setMonthFromMenuOpen(false);
+                              setMonthToMenuOpen(false);
+                            }}
+                          >
+                            Apply Filters
+                          </PrimaryButton>
                         </div>
                       </div>
-
-                      <div>
-                        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Subjects</p>
-                        <div className="flex flex-wrap gap-2">
-                          {SUBJECTS.map((subject) => (
-                            <FilterChip
-                              key={subject}
-                              label={subject}
-                              active={selectedSubjects.includes(subject)}
-                              onClick={() => toggleSubject(subject)}
-                            />
-                          ))}
-                        </div>
-                      </div>
-
-                      <div>
-                        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Grade Levels</p>
-                        <div className="flex flex-wrap gap-2">
-                          {GRADES.map((grade) => (
-                            <FilterChip
-                              key={grade}
-                              label={`Grade ${grade}`}
-                              active={selectedGrades.includes(grade)}
-                              onClick={() => toggleGrade(grade)}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-5 flex items-center justify-end gap-2">
-                      <SecondaryButton small className="border border-emerald-100 bg-white/80 px-3" onClick={clearFilters}>
-                        Clear All
-                      </SecondaryButton>
-                      <PrimaryButton small className="px-3" onClick={() => setIsFilterModalOpen(false)}>
-                        Apply Filters
-                      </PrimaryButton>
-                    </div>
+                    ) : null}
                   </div>
+                  <button
+                    type="button"
+                    onClick={handlePrintExport}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 shadow-sm transition hover:bg-gray-100"
+                    aria-label="Print or export dashboard as PDF"
+                    title="Print / Export PDF"
+                  >
+                    <Printer className="h-4.5 w-4.5" />
+                  </button>
                 </div>
-              ) : null}
+              </div>
 
               {error ? <p className="mb-4 text-sm font-medium text-red-600">{error}</p> : null}
 
@@ -657,211 +698,124 @@ export default function PrincipalDashboard() {
                 <button
                   type="button"
                   onClick={() => router.push("/Principal/students")}
-                  className="rounded-2xl border border-white/70 bg-white/60 p-5 text-left shadow-[0_10px_26px_rgba(15,23,42,0.08)] backdrop-blur-xl"
+                  className="cursor-pointer rounded-xl border border-white/70 bg-white/60 px-4 py-3 text-left shadow-[0_10px_26px_rgba(15,23,42,0.08)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-[0_14px_28px_rgba(15,23,42,0.12)]"
                 >
-                  <p className="text-3xl font-semibold text-slate-900">{isLoading ? "..." : totalStudents.toLocaleString()}</p>
-                  <p className="text-sm font-medium text-slate-600">Total Students</p>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-3xl font-semibold text-slate-900">{isLoading ? "..." : totalStudents.toLocaleString()}</p>
+                      <p className="text-sm font-medium text-slate-600">Total Students</p>
+                    </div>
+                    <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+                      <Users className="h-4.5 w-4.5" />
+                    </span>
+                  </div>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => router.push("/Principal/teachers")}
-                  className="rounded-2xl border border-white/70 bg-white/60 p-5 text-left shadow-[0_10px_26px_rgba(15,23,42,0.08)] backdrop-blur-xl"
+                  className="cursor-pointer rounded-xl border border-white/70 bg-white/60 px-4 py-3 text-left shadow-[0_10px_26px_rgba(15,23,42,0.08)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-[0_14px_28px_rgba(15,23,42,0.12)]"
                 >
-                  <p className="text-3xl font-semibold text-slate-900">{isLoading ? "..." : totalTeachers.toLocaleString()}</p>
-                  <p className="text-sm font-medium text-slate-600">Teaching Staff</p>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-3xl font-semibold text-slate-900">{isLoading ? "..." : totalTeachers.toLocaleString()}</p>
+                      <p className="text-sm font-medium text-slate-600">Teaching Staff</p>
+                    </div>
+                    <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+                      <FaChalkboardTeacher className="h-4.5 w-4.5" />
+                    </span>
+                  </div>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => router.push("/Principal/reports")}
-                  className="rounded-2xl border border-white/70 bg-white/60 p-5 text-left shadow-[0_10px_26px_rgba(15,23,42,0.08)] backdrop-blur-xl"
+                  className="cursor-pointer rounded-xl border border-white/70 bg-white/60 px-4 py-3 text-left shadow-[0_10px_26px_rgba(15,23,42,0.08)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-[0_14px_28px_rgba(15,23,42,0.12)]"
                 >
-                  <p className="text-3xl font-semibold text-slate-900">{isLoading ? "..." : `${reportRate}%`}</p>
-                  <p className="text-sm font-medium text-slate-600">Current Report Submission Rate</p>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-3xl font-semibold text-slate-900">{isLoading ? "..." : `${reportRate}%`}</p>
+                      <p className="text-sm font-medium text-slate-600">Current Report Submission Rate</p>
+                    </div>
+                    <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+                      <BarChart3 className="h-4.5 w-4.5" />
+                    </span>
+                  </div>
                 </button>
               </div>
 
               <section className="mb-8">
-                <TertiaryHeader title="School-Wide Overview" />
-                <div className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-2">
-                  <div className="xl:col-span-2">
+                <div className="mt-3 grid grid-cols-1 gap-4">
+                  <GlassChartCard title="Performance Trend" subtitle="Average remedial score trend over time.">
+                    <div className="mb-3 flex items-center justify-end gap-2">
+                    </div>
+                    {hasPerformanceTrendData ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={performanceTrendSeries}>
+                          <CartesianGrid strokeDasharray="3 3" stroke={palette.grid} />
+                          <XAxis dataKey="period" tick={{ fill: palette.text, fontSize: 11 }} />
+                          <YAxis domain={[0, 100]} tick={{ fill: palette.text, fontSize: 11 }} />
+                          <Tooltip />
+                          <Line type="monotone" dataKey="value" stroke={palette.primary} strokeWidth={2.5} dot={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/40 text-sm font-medium text-slate-500">
+                        No performance trend data available.
+                      </div>
+                    )}
+                  </GlassChartCard>
+                </div>
+              </section>
+
+              <section className="mb-8">
+                <div className="mt-3 grid grid-cols-1 gap-4">
+                  {hasHeatmapData ? (
                     <HeatmapCard
-                      title="Subject vs Grade Heatmap"
-                      subtitle="Average performance percentage by grade and subject."
-                      cells={subjectVsGradeHeatmap}
-                      xLabels={visibleGrades.map((grade) => `Grade ${grade}`)}
-                      yLabels={visibleSubjects}
+                      title="Remedial Average Heatmap"
+                      subtitle="Average remedial performance score per subject and grade level."
+                      cells={remedialAverageHeatmap}
+                      xLabels={selectedSubjects}
+                      yLabels={heatmapGrades}
+                      colors={HEATMAP_SCORE_COLORS}
                     />
-                  </div>
-
-                  <GlassChartCard title="Overall Performance Trend Line" subtitle="Monthly school-wide strategic performance trend.">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={overallPerformanceTrend}>
-                        <CartesianGrid strokeDasharray="3 3" stroke={palette.grid} />
-                        <XAxis dataKey="month" tick={{ fill: palette.text, fontSize: 11 }} />
-                        <YAxis domain={[30, 100]} tick={{ fill: palette.text, fontSize: 11 }} />
-                        <Tooltip />
-                        <Line type="monotone" dataKey="value" stroke={palette.primary} strokeWidth={2.5} dot={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </GlassChartCard>
-
-                  <GlassChartCard title="Subject Comparison Chart" subtitle="Average performance by selected subject scope.">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={subjectComparison}>
-                        <CartesianGrid strokeDasharray="3 3" stroke={palette.grid} />
-                        <XAxis dataKey="subject" tick={{ fill: palette.text, fontSize: 11 }} />
-                        <YAxis domain={[0, 100]} tick={{ fill: palette.text, fontSize: 11 }} />
-                        <Tooltip />
-                        <Bar dataKey="value" radius={[10, 10, 0, 0]}>
-                          {subjectComparison.map((item, index) => (
-                            <Cell key={item.subject} fill={MULTI_SERIES_COLORS[index % MULTI_SERIES_COLORS.length]} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </GlassChartCard>
-                </div>
-              </section>
-
-              <section className="mb-8">
-                <TertiaryHeader title="Remediation Effectiveness Index" />
-                <div className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-2">
-                  <GlassChartCard title="Pre vs Post Intervention Comparison" subtitle="Average outcome before and after interventions by grade.">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={remediationSeries.points}>
-                        <CartesianGrid strokeDasharray="3 3" stroke={palette.grid} />
-                        <XAxis dataKey="grade" tick={{ fill: palette.text, fontSize: 11 }} />
-                        <YAxis domain={[20, 100]} tick={{ fill: palette.text, fontSize: 11 }} />
-                        <Tooltip />
-                        <Legend />
-                        <Line type="monotone" dataKey="pre" stroke="#65a30d" strokeWidth={2.2} dot={false} name="Pre" />
-                        <Line type="monotone" dataKey="post" stroke={palette.primary} strokeWidth={2.4} dot={false} name="Post" />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </GlassChartCard>
-
-                  <GlassChartCard title="Improvement Rate per Grade" subtitle="Net improvement after remediation cycles.">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={remediationSeries.points}>
-                        <CartesianGrid strokeDasharray="3 3" stroke={palette.grid} />
-                        <XAxis dataKey="grade" tick={{ fill: palette.text, fontSize: 11 }} />
-                        <YAxis tick={{ fill: palette.text, fontSize: 11 }} />
-                        <Tooltip />
-                        <Bar dataKey="improvement" radius={[10, 10, 0, 0]}>
-                          {remediationSeries.points.map((point, index) => (
-                            <Cell key={point.grade} fill={MULTI_SERIES_COLORS[index % MULTI_SERIES_COLORS.length]} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </GlassChartCard>
-                </div>
-              </section>
-
-              <section className="mb-8">
-                <TertiaryHeader title="Parent Engagement" />
-                <div className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-2">
-                  <GlassChartCard title="Parent Login Frequency" subtitle="Average parent login sessions by grade.">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={parentEngagement.loginFrequency}>
-                        <defs>
-                          <linearGradient id="parentLoginFill" x1="0" x2="0" y1="0" y2="1">
-                            <stop offset="5%" stopColor="#0ea5a4" stopOpacity={0.45} />
-                            <stop offset="95%" stopColor="#0ea5a4" stopOpacity={0.04} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke={palette.grid} />
-                        <XAxis dataKey="grade" tick={{ fill: palette.text, fontSize: 11 }} />
-                        <YAxis tick={{ fill: palette.text, fontSize: 11 }} />
-                        <Tooltip />
-                        <Area type="monotone" dataKey="logins" stroke="#0f766e" strokeWidth={2.2} fill="url(#parentLoginFill)" />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </GlassChartCard>
-
-                  <GlassChartCard title="Weekly Engagement Trend" subtitle="Near-real-time weekly engagement index.">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={parentEngagement.weeklyTrend}>
-                        <CartesianGrid strokeDasharray="3 3" stroke={palette.grid} />
-                        <XAxis dataKey="week" tick={{ fill: palette.text, fontSize: 11 }} />
-                        <YAxis domain={[30, 100]} tick={{ fill: palette.text, fontSize: 11 }} />
-                        <Tooltip />
-                        <Line type="monotone" dataKey="value" stroke={palette.primary} strokeWidth={2.5} dot={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </GlassChartCard>
-
-                  <div className="xl:col-span-2">
-                    <HeatmapCard
-                      title="Engagement Heatmap"
-                      subtitle="Grade vs weekday engagement intensity."
-                      cells={parentEngagement.engagementHeatmap}
-                      xLabels={["Mon", "Tue", "Wed", "Thu", "Fri"]}
-                      yLabels={visibleGrades.map((grade) => `Grade ${grade}`)}
-                    />
-                  </div>
-                </div>
-              </section>
-
-              <section className="mb-8">
-                <TertiaryHeader title="Teacher Performance Insights" />
-                <div className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-2">
-                  <GlassChartCard title="Class Average Comparison" subtitle="Average class performance by grade.">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={teacherInsights.classAverages}>
-                        <CartesianGrid strokeDasharray="3 3" stroke={palette.grid} />
-                        <XAxis dataKey="className" tick={{ fill: palette.text, fontSize: 11 }} />
-                        <YAxis domain={[0, 100]} tick={{ fill: palette.text, fontSize: 11 }} />
-                        <Tooltip />
-                        <Bar dataKey="value" radius={[10, 10, 0, 0]}>
-                          {teacherInsights.classAverages.map((item, index) => (
-                            <Cell key={item.className} fill={MULTI_SERIES_COLORS[index % MULTI_SERIES_COLORS.length]} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </GlassChartCard>
-
-                  <GlassChartCard title="Student Progress Speed" subtitle="Average monthly progression speed index.">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={teacherInsights.progressSpeed}>
-                        <CartesianGrid strokeDasharray="3 3" stroke={palette.grid} />
-                        <XAxis dataKey="month" tick={{ fill: palette.text, fontSize: 11 }} />
-                        <YAxis tick={{ fill: palette.text, fontSize: 11 }} />
-                        <Tooltip />
-                        <Line type="monotone" dataKey="speed" stroke={palette.primary} strokeWidth={2.5} dot={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </GlassChartCard>
+                  ) : (
+                    <GlassChartCard title="Remedial Average Heatmap" subtitle="Average remedial performance score per subject and grade level.">
+                      <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/40 text-sm font-medium text-slate-500">
+                        No remedial average data available.
+                      </div>
+                    </GlassChartCard>
+                  )}
                 </div>
               </section>
 
               <section>
-                <TertiaryHeader title="Performance Heatmap by Competency" />
-                <div className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-2">
-                  <HeatmapCard
-                    title="Skill Mastery Heatmap"
-                    subtitle="Competency mastery levels by grade."
-                    cells={competencyModel.skillMastery}
-                    xLabels={COMPETENCIES}
-                    yLabels={visibleGrades.map((grade) => `Grade ${grade}`)}
-                    colors={SKILL_HEAT}
-                  />
-
-                  <GlassChartCard title="Competency Weakness Distribution" subtitle="Relative weakness share by competency area.">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie data={competencyModel.weaknessDistribution} dataKey="value" nameKey="competency" innerRadius={52} outerRadius={90} paddingAngle={2}>
-                          {competencyModel.weaknessDistribution.map((entry, index) => (
-                            <Cell key={entry.competency} fill={PIE_SOFT_COLORS[index % PIE_SOFT_COLORS.length]} />
-                          ))}
-                        </Pie>
-                        <Legend />
-                        <Tooltip />
-                      </PieChart>
-                    </ResponsiveContainer>
+                <div className="mt-3 grid grid-cols-1 gap-4">
+                  <GlassChartCard title="Students per Subject Ratio" subtitle="Distinct students participating in remedial sessions by subject.">
+                    {hasStudentsPerSubjectData ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={averageStudentsPerSubject}
+                            dataKey="students"
+                            nameKey="subject"
+                            innerRadius={52}
+                            outerRadius={90}
+                            paddingAngle={2}
+                          >
+                            {averageStudentsPerSubject.map((entry, index) => (
+                              <Cell key={entry.subject} fill={PIE_SOFT_COLORS[index % PIE_SOFT_COLORS.length]} />
+                            ))}
+                          </Pie>
+                          <Legend />
+                          <Tooltip formatter={(value: number, name: string, item: { payload?: { percentage?: number } }) => [`${value} (${item?.payload?.percentage ?? 0}%)`, name]} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/40 text-sm font-medium text-slate-500">
+                        No student participation data available.
+                      </div>
+                    )}
                   </GlassChartCard>
                 </div>
               </section>
@@ -872,22 +826,49 @@ export default function PrincipalDashboard() {
 
       <style jsx global>{`
         @media print {
+          @page {
+            size: landscape;
+            margin: 8mm;
+          }
+
           .no-print {
             display: none !important;
           }
 
-          .print-main {
+          .dashboard-page,
+          .dashboard-page .print-main,
+          .dashboard-page .print-stage {
+            display: block !important;
+            height: auto !important;
+            min-height: 0 !important;
+            overflow: visible !important;
+            background: #ffffff !important;
+          }
+
+          .dashboard-page .print-main {
             padding-top: 0 !important;
           }
 
-          main,
-          #principal-export-root {
+          .dashboard-page .print-stage {
+            padding: 0 !important;
+          }
+
+          .dashboard-page #principal-export-root {
+            border: 0 !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+            background: #ffffff !important;
             overflow: visible !important;
             height: auto !important;
+            padding: 0 !important;
           }
 
           body {
             background: #ffffff !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
         }
       `}</style>

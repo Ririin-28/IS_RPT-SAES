@@ -67,9 +67,32 @@ export async function DELETE(request: NextRequest) {
     }
 
     const ids = Array.from(targetIds);
+    if (!columns.has("is_archived")) {
+      return NextResponse.json(
+        { success: false, error: `${table}.is_archived is required for safe archive.` },
+        { status: 500 },
+      );
+    }
+
+    const assignments = ["is_archived = 1"];
+    if (columns.has("archived_at")) {
+      assignments.push("archived_at = NOW()");
+    }
+    if (columns.has("archived_by")) {
+      assignments.push("archived_by = ?");
+    }
+    const params: Array<string | number> = [];
+    if (columns.has("archived_by")) {
+      params.push(session.userId);
+    }
+    params.push(...ids);
+
     await query<ResultSetHeader>(
-      `DELETE FROM ${table} WHERE ${idColumn} IN (${ids.map(() => "?").join(", ")})`,
-      ids,
+      `UPDATE ${table}
+       SET ${assignments.join(", ")}
+       WHERE ${idColumn} IN (${ids.map(() => "?").join(", ")})
+         AND COALESCE(is_archived, 0) = 0`,
+      params,
     );
 
     return NextResponse.json({ success: true });

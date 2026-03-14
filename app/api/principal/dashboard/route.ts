@@ -6,18 +6,8 @@ export const dynamic = "force-dynamic";
 
 const STUDENT_TABLE_CANDIDATES = ["student", "students", "student_info"] as const;
 const TEACHER_TABLE_CANDIDATES = ["teacher", "teachers", "teacher_info"] as const;
-const MASTER_TEACHER_TABLE_CANDIDATES = [
-  "master_teacher",
-  "master_teachers",
-  "master_teacher_info",
-] as const;
-const REPORT_TABLE_CANDIDATES = [
-  "teacher_reports",
-  "reports",
-  "monthly_reports",
-  "progress_reports",
-  "remedial_reports",
-] as const;
+const MASTER_TEACHER_TABLE_CANDIDATES = ["master_teacher", "master_teachers", "master_teacher_info"] as const;
+const REPORT_TABLE_CANDIDATES = ["teacher_reports", "reports", "monthly_reports", "progress_reports", "remedial_reports"] as const;
 
 const REPORT_DATE_CANDIDATES = [
   "submitted_at",
@@ -30,14 +20,7 @@ const REPORT_DATE_CANDIDATES = [
   "submitted_on",
 ] as const;
 
-const REPORT_STATUS_CANDIDATES = [
-  "status",
-  "report_status",
-  "submission_status",
-  "is_submitted",
-  "submitted",
-  "state",
-] as const;
+const REPORT_STATUS_CANDIDATES = ["status", "report_status", "submission_status", "is_submitted", "submitted", "state"] as const;
 
 const SUBMITTED_KEYWORDS = [
   "submitted",
@@ -66,10 +49,9 @@ const TRACKED_MONTHS = [
 const SUBJECT_NAMES = ["English", "Filipino", "Math"] as const;
 type SubjectName = (typeof SUBJECT_NAMES)[number];
 
-type SubjectProgressPayload = {
-  gradeData: Record<string, Record<string, number>>;
-  percentageData: Record<string, Record<string, number>>;
-  gradeTotals: Record<string, number>;
+type ResolvedTable = {
+  name: string;
+  columns: Set<string>;
 };
 
 type MonthStat = {
@@ -81,16 +63,90 @@ type MonthStat = {
   pending: number;
 };
 
-type ResolvedTable = {
-  name: string;
-  columns: Set<string>;
+type AnalyticsPayload = {
+  remedialAverageHeatmap: Array<{ grade: string; subject: SubjectName; averageScore: number }>;
+  performanceTrend: Array<{
+    period: string;
+    allSubjects: number;
+    english: number;
+    filipino: number;
+    math: number;
+  }>;
+  averageStudentsPerSubject: Array<{ subject: SubjectName; students: number; percentage: number }>;
+};
+
+const pickColumn = (columns: Set<string>, candidates: readonly string[]): string | null => {
+  for (const candidate of candidates) {
+    if (columns.has(candidate)) return candidate;
+  }
+
+  const lowerMap = new Map<string, string>();
+  for (const column of columns) {
+    lowerMap.set(column.toLowerCase(), column);
+  }
+
+  for (const candidate of candidates) {
+    const resolved = lowerMap.get(candidate.toLowerCase());
+    if (resolved) return resolved;
+  }
+
+  return null;
+};
+
+const normalizeStatus = (value: unknown): string => {
+  if (value === null || value === undefined) return "";
+  return String(value).trim().toLowerCase();
+};
+
+const isSubmittedStatus = (value: unknown): boolean => {
+  const normalized = normalizeStatus(value);
+  if (!normalized) return false;
+  if (SUBMITTED_KEYWORDS.includes(normalized as (typeof SUBMITTED_KEYWORDS)[number])) return true;
+  if (normalized.startsWith("submitted")) return true;
+  if (normalized.startsWith("complete")) return true;
+  if (normalized.startsWith("done")) return true;
+  if (normalized.startsWith("approved")) return true;
+  if (normalized === "1" || normalized === "yes" || normalized === "true") return true;
+  return false;
+};
+
+const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
+
+const normalizeSubject = (value: unknown): SubjectName | null => {
+  const text = String(value ?? "").trim().toLowerCase();
+  if (!text) return null;
+  if (text.includes("english")) return "English";
+  if (text.includes("filipino")) return "Filipino";
+  if (text.includes("math")) return "Math";
+  return null;
+};
+
+const normalizeGrade = (value: unknown): string | null => {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  const match = text.match(/(\d+)/);
+  if (!match) return null;
+  return `Grade ${match[1]}`;
+};
+
+const monthKey = (date: Date): string => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+
+const buildRecentMonthKeys = (count = 12): Array<{ key: string; label: string }> => {
+  const now = new Date();
+  const keys: Array<{ key: string; label: string }> = [];
+  for (let offset = count - 1; offset >= 0; offset -= 1) {
+    const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+    keys.push({
+      key: monthKey(date),
+      label: date.toLocaleDateString("en-US", { month: "short", year: "numeric" }),
+    });
+  }
+  return keys;
 };
 
 async function resolveTable(candidates: readonly string[]): Promise<ResolvedTable | null> {
   for (const candidate of candidates) {
-    if (!(await tableExists(candidate))) {
-      continue;
-    }
+    if (!(await tableExists(candidate))) continue;
     const columns = await getTableColumns(candidate);
     return { name: candidate, columns };
   }
@@ -104,50 +160,18 @@ async function countRows(tableInfo: ResolvedTable | null): Promise<number> {
   return typeof total === "number" ? total : Number(total ?? 0);
 }
 
-function normalizeStatus(value: unknown): string {
-  if (value === null || value === undefined) {
-    return "";
-  }
-  return String(value).trim().toLowerCase();
+function applyArchiveFilter(baseWhere: string[], columns: Set<string>, alias?: string): void {
+  if (!columns.has("is_archived")) return;
+  const prefix = alias ? `${alias}.` : "";
+  baseWhere.push(`COALESCE(${prefix}is_archived, 0) = 0`);
 }
 
-function isSubmittedStatus(value: unknown): boolean {
-  const normalized = normalizeStatus(value);
-  if (!normalized) return false;
-  if (SUBMITTED_KEYWORDS.includes(normalized as typeof SUBMITTED_KEYWORDS[number])) {
-    return true;
-  }
-  if (normalized.startsWith("submitted")) return true;
-  if (normalized.startsWith("complete")) return true;
-  if (normalized.startsWith("done")) return true;
-  if (normalized.startsWith("approved")) return true;
-  if (normalized === "1" || normalized === "yes" || normalized === "true") return true;
-  return false;
-}
-
-function pickLatestYear(entryA: MonthStat, entryB: MonthStat): MonthStat {
-  if ((entryA.year ?? 0) >= (entryB.year ?? 0)) {
-    return entryA;
-  }
-  return entryB;
-}
-
-async function fetchReportStats(): Promise<{
-  monthStats: MonthStat[];
-  currentMonth: MonthStat;
-  metadata: { sourceTable: string | null; dateColumn: string | null; statusColumn: string | null };
-}> {
+async function fetchReportStats(): Promise<{ monthStats: MonthStat[]; currentMonth: MonthStat }> {
   const resolvedTable = await resolveTable(REPORT_TABLE_CANDIDATES);
   if (!resolvedTable) {
+    const emptyStats = TRACKED_MONTHS.map(({ month, label }) => ({ label, month, year: null, total: 0, submitted: 0, pending: 0 }));
     return {
-      monthStats: TRACKED_MONTHS.map(({ month, label }) => ({
-        label,
-        month,
-        year: null,
-        total: 0,
-        submitted: 0,
-        pending: 0,
-      })),
+      monthStats: emptyStats,
       currentMonth: {
         label: new Date().toLocaleString("en-US", { month: "long" }),
         month: new Date().getMonth() + 1,
@@ -156,21 +180,14 @@ async function fetchReportStats(): Promise<{
         submitted: 0,
         pending: 0,
       },
-      metadata: { sourceTable: null, dateColumn: null, statusColumn: null },
     };
   }
 
-  const dateColumn = REPORT_DATE_CANDIDATES.find((column) => resolvedTable.columns.has(column)) ?? null;
+  const dateColumn = pickColumn(resolvedTable.columns, REPORT_DATE_CANDIDATES);
   if (!dateColumn) {
+    const emptyStats = TRACKED_MONTHS.map(({ month, label }) => ({ label, month, year: null, total: 0, submitted: 0, pending: 0 }));
     return {
-      monthStats: TRACKED_MONTHS.map(({ month, label }) => ({
-        label,
-        month,
-        year: null,
-        total: 0,
-        submitted: 0,
-        pending: 0,
-      })),
+      monthStats: emptyStats,
       currentMonth: {
         label: new Date().toLocaleString("en-US", { month: "long" }),
         month: new Date().getMonth() + 1,
@@ -179,95 +196,62 @@ async function fetchReportStats(): Promise<{
         submitted: 0,
         pending: 0,
       },
-      metadata: { sourceTable: resolvedTable.name, dateColumn: null, statusColumn: null },
     };
   }
 
-  const statusColumn = REPORT_STATUS_CANDIDATES.find((column) => resolvedTable.columns.has(column)) ?? null;
+  const statusColumn = pickColumn(resolvedTable.columns, REPORT_STATUS_CANDIDATES);
+  const whereParts = [`${dateColumn} IS NOT NULL`];
+  applyArchiveFilter(whereParts, resolvedTable.columns);
 
-  const selectParts = [
-    `YEAR(${dateColumn}) AS year_value`,
-    `MONTH(${dateColumn}) AS month_value`,
-  ];
+  const [rows] = await query<RowDataPacket[]>(
+    `SELECT YEAR(${dateColumn}) AS year_value, MONTH(${dateColumn}) AS month_value, ${statusColumn ? `${statusColumn} AS status_value` : `NULL AS status_value`}
+     FROM \`${resolvedTable.name}\`
+     WHERE ${whereParts.join(" AND ")}`,
+  );
 
-  if (statusColumn) {
-    selectParts.push(`${statusColumn} AS status_value`);
-  } else {
-    selectParts.push(`NULL AS status_value`);
-  }
+  const monthMap = new Map<number, MonthStat>();
+  for (const row of rows) {
+    const monthNumber = Number(row.month_value ?? 0);
+    if (!Number.isFinite(monthNumber)) continue;
+    const tracked = TRACKED_MONTHS.find((entry) => entry.month === monthNumber);
+    if (!tracked) continue;
 
-  const sql = `
-    SELECT ${selectParts.join(", ")}
-    FROM \`${resolvedTable.name}\`
-    WHERE ${dateColumn} IS NOT NULL
-  `;
+    const submittedIncrement = statusColumn ? (isSubmittedStatus(row.status_value) ? 1 : 0) : 1;
+    const yearNumber = Number(row.year_value ?? 0);
 
-  const [rows] = await query<RowDataPacket[]>(sql);
-
-  const statsByMonth = new Map<number, MonthStat>();
-
-  for (const { month_value: monthValue, year_value: yearValue, status_value: statusValue } of rows) {
-    const monthNumber = typeof monthValue === "number" ? monthValue : Number(monthValue ?? 0);
-    if (!Number.isFinite(monthNumber)) {
-      continue;
-    }
-
-    const tracked = TRACKED_MONTHS.find(({ month }) => month === monthNumber);
-    if (!tracked) {
-      continue;
-    }
-
-    const yearNumber = typeof yearValue === "number" ? yearValue : Number(yearValue ?? 0);
-    const key = monthNumber;
-
-    const existing = statsByMonth.get(key);
-    const submittedIncrement = isSubmittedStatus(statusValue) || !statusColumn ? 1 : 0;
-
+    const existing = monthMap.get(monthNumber);
     if (existing) {
-      const updated: MonthStat = {
-        label: tracked.label,
-        month: monthNumber,
-        year: yearNumber || existing.year,
-        total: existing.total + 1,
-        submitted: existing.submitted + submittedIncrement,
-        pending: 0,
-      };
-      updated.pending = Math.max(updated.total - updated.submitted, 0);
-      statsByMonth.set(key, updated);
-    } else {
-      const initial: MonthStat = {
-        label: tracked.label,
-        month: monthNumber,
-        year: Number.isFinite(yearNumber) ? yearNumber : null,
-        total: 1,
-        submitted: submittedIncrement,
-        pending: 0,
-      };
-      initial.pending = Math.max(initial.total - initial.submitted, 0);
-      statsByMonth.set(key, initial);
+      existing.total += 1;
+      existing.submitted += submittedIncrement;
+      existing.pending = Math.max(existing.total - existing.submitted, 0);
+      if (Number.isFinite(yearNumber)) {
+        existing.year = existing.year === null ? yearNumber : Math.max(existing.year, yearNumber);
+      }
+      continue;
     }
+
+    monthMap.set(monthNumber, {
+      label: tracked.label,
+      month: monthNumber,
+      year: Number.isFinite(yearNumber) ? yearNumber : null,
+      total: 1,
+      submitted: submittedIncrement,
+      pending: Math.max(1 - submittedIncrement, 0),
+    });
   }
 
-  const monthStats: MonthStat[] = TRACKED_MONTHS.map(({ month, label }) => {
-    const entry = statsByMonth.get(month);
-    if (entry) {
-      entry.pending = Math.max(entry.total - entry.submitted, 0);
-      return entry;
-    }
-    return {
-      label,
-      month,
-      year: null,
-      total: 0,
-      submitted: 0,
-      pending: 0,
-    };
+  const monthStats = TRACKED_MONTHS.map(({ month, label }) => monthMap.get(month) ?? {
+    label,
+    month,
+    year: null,
+    total: 0,
+    submitted: 0,
+    pending: 0,
   });
 
   const currentMonthNumber = new Date().getMonth() + 1;
-  const currentTracked = TRACKED_MONTHS.find(({ month }) => month === currentMonthNumber);
-  const defaultCurrent: MonthStat = {
-    label: currentTracked?.label ?? new Date().toLocaleString("en-US", { month: "long" }),
+  const fallback = monthStats.find((entry) => entry.month === currentMonthNumber) ?? {
+    label: new Date().toLocaleString("en-US", { month: "long" }),
     month: currentMonthNumber,
     year: null,
     total: 0,
@@ -275,163 +259,219 @@ async function fetchReportStats(): Promise<{
     pending: 0,
   };
 
-  const currentMonthStat = monthStats
-    .filter((entry) => entry.month === currentMonthNumber)
-    .reduce((latest, entry) => pickLatestYear(entry, latest), defaultCurrent);
-  currentMonthStat.pending = Math.max(currentMonthStat.total - currentMonthStat.submitted, 0);
+  return { monthStats, currentMonth: fallback };
+}
+
+async function fetchPerformanceAnalytics(): Promise<AnalyticsPayload> {
+  const empty: AnalyticsPayload = {
+    remedialAverageHeatmap: [],
+    performanceTrend: [],
+    averageStudentsPerSubject: SUBJECT_NAMES.map((subject) => ({ subject, students: 0, percentage: 0 })),
+  };
+
+  const [performanceExists, activitiesExists, studentExists, gradeExists, subjectExists, sessionExists] = await Promise.all([
+    tableExists("performance_records"),
+    tableExists("activities"),
+    tableExists("student"),
+    tableExists("grade"),
+    tableExists("subject"),
+    tableExists("student_remedial_session"),
+  ]);
+
+  if (!performanceExists || !activitiesExists) {
+    return empty;
+  }
+
+  const [prColumns, activityColumns, studentColumns, gradeColumns, subjectColumns, sessionColumns] = await Promise.all([
+    getTableColumns("performance_records"),
+    getTableColumns("activities"),
+    studentExists ? getTableColumns("student") : Promise.resolve(new Set<string>()),
+    gradeExists ? getTableColumns("grade") : Promise.resolve(new Set<string>()),
+    subjectExists ? getTableColumns("subject") : Promise.resolve(new Set<string>()),
+    sessionExists ? getTableColumns("student_remedial_session") : Promise.resolve(new Set<string>()),
+  ]);
+
+  const prScoreCol = pickColumn(prColumns, ["score"]);
+  const prCompletedCol = pickColumn(prColumns, ["completed_at", "updated_at", "created_at"]);
+  const prActivityCol = pickColumn(prColumns, ["activity_id"]);
+  const prStudentCol = pickColumn(prColumns, ["student_id"]);
+  const prGradeCol = pickColumn(prColumns, ["grade", "grade_level"]);
+  const activityIdCol = pickColumn(activityColumns, ["activity_id", "id"]);
+  const activitySubjectCol = pickColumn(activityColumns, ["subject", "subject_name"]);
+
+  if (!prScoreCol || !prCompletedCol || !prActivityCol || !activityIdCol || !activitySubjectCol) {
+    return empty;
+  }
+
+  const whereParts: string[] = [`pr.${prScoreCol} IS NOT NULL`, `pr.${prCompletedCol} IS NOT NULL`];
+  applyArchiveFilter(whereParts, prColumns, "pr");
+  applyArchiveFilter(whereParts, activityColumns, "a");
+
+  const joins: string[] = [
+    `INNER JOIN activities a ON a.${activityIdCol} = pr.${prActivityCol}`,
+  ];
+
+  let gradeExpression = prGradeCol ? `pr.${prGradeCol}` : "NULL";
+  if (studentExists && prStudentCol && studentColumns.has("student_id")) {
+    joins.push("LEFT JOIN student s ON s.student_id = pr.student_id");
+    applyArchiveFilter(whereParts, studentColumns, "s");
+
+    if (gradeExists && studentColumns.has("grade_id") && gradeColumns.has("grade_id") && gradeColumns.has("grade_level")) {
+      joins.push("LEFT JOIN grade g ON g.grade_id = s.grade_id");
+      applyArchiveFilter(whereParts, gradeColumns, "g");
+      gradeExpression = `COALESCE(g.grade_level, ${prGradeCol ? `pr.${prGradeCol}` : "NULL"})`;
+    } else if (studentColumns.has("grade_level")) {
+      gradeExpression = `COALESCE(s.grade_level, ${prGradeCol ? `pr.${prGradeCol}` : "NULL"})`;
+    }
+  }
+
+  const [performanceRows] = await query<RowDataPacket[]>(
+    `SELECT pr.${prScoreCol} AS score_value,
+            pr.${prCompletedCol} AS completed_value,
+            a.${activitySubjectCol} AS subject_value,
+            ${gradeExpression} AS grade_value
+     FROM performance_records pr
+     ${joins.join("\n")}
+     WHERE ${whereParts.join(" AND ")}`,
+  );
+
+  const heatmapAccumulator = new Map<string, { sum: number; count: number }>();
+  const trendAccumulator = new Map<string, Record<SubjectName | "All", { sum: number; count: number }>>();
+
+  for (const row of performanceRows) {
+    const subject = normalizeSubject(row.subject_value);
+    if (!subject) continue;
+
+    const score = Number(row.score_value ?? NaN);
+    if (!Number.isFinite(score)) continue;
+
+    const completedAt = new Date(String(row.completed_value));
+    if (Number.isNaN(completedAt.getTime())) continue;
+
+    const grade = normalizeGrade(row.grade_value) ?? "Grade 0";
+
+    const heatKey = `${grade}|${subject}`;
+    const existingHeat = heatmapAccumulator.get(heatKey) ?? { sum: 0, count: 0 };
+    existingHeat.sum += score;
+    existingHeat.count += 1;
+    heatmapAccumulator.set(heatKey, existingHeat);
+
+    const key = monthKey(completedAt);
+    const monthBucket = trendAccumulator.get(key) ?? {
+      All: { sum: 0, count: 0 },
+      English: { sum: 0, count: 0 },
+      Filipino: { sum: 0, count: 0 },
+      Math: { sum: 0, count: 0 },
+    };
+
+    monthBucket.All.sum += score;
+    monthBucket.All.count += 1;
+    monthBucket[subject].sum += score;
+    monthBucket[subject].count += 1;
+    trendAccumulator.set(key, monthBucket);
+  }
+
+  const gradeLabels = Array.from(
+    new Set(Array.from(heatmapAccumulator.keys()).map((entry) => entry.split("|")[0])).values(),
+  ).sort((a, b) => Number((a.match(/(\d+)/)?.[1] ?? 0)) - Number((b.match(/(\d+)/)?.[1] ?? 0)));
+
+  const remedialAverageHeatmap: AnalyticsPayload["remedialAverageHeatmap"] = [];
+  for (const grade of gradeLabels) {
+    for (const subject of SUBJECT_NAMES) {
+      const key = `${grade}|${subject}`;
+      const entry = heatmapAccumulator.get(key);
+      const averageScore = entry && entry.count > 0 ? Math.round(clamp(entry.sum / entry.count, 0, 100)) : 0;
+      remedialAverageHeatmap.push({ grade, subject, averageScore });
+    }
+  }
+
+  const monthKeys = buildRecentMonthKeys(12);
+  const performanceTrend: AnalyticsPayload["performanceTrend"] = monthKeys.map(({ key, label }) => {
+    const bucket = trendAccumulator.get(key);
+    const average = (scope: SubjectName | "All") => {
+      if (!bucket) return 0;
+      const item = bucket[scope];
+      if (!item || item.count <= 0) return 0;
+      return Math.round(clamp(item.sum / item.count, 0, 100));
+    };
+
+    return {
+      period: label,
+      allSubjects: average("All"),
+      english: average("English"),
+      filipino: average("Filipino"),
+      math: average("Math"),
+    };
+  });
+
+  let averageStudentsPerSubject = SUBJECT_NAMES.map((subject) => ({ subject, students: 0, percentage: 0 }));
+
+  if (sessionExists && sessionColumns.has("student_id") && sessionColumns.has("subject_id")) {
+    const where: string[] = [];
+    applyArchiveFilter(where, sessionColumns, "srs");
+
+    const subjectJoin = subjectExists && subjectColumns.has("subject_id")
+      ? `LEFT JOIN subject sbj ON sbj.subject_id = srs.subject_id`
+      : "";
+    const subjectNameExpr = subjectExists && subjectColumns.has("subject_name")
+      ? "sbj.subject_name"
+      : "CAST(srs.subject_id AS CHAR)";
+
+    const [sessionRows] = await query<RowDataPacket[]>(
+      `SELECT srs.student_id AS student_value, ${subjectNameExpr} AS subject_value
+       FROM student_remedial_session srs
+       ${subjectJoin}
+       ${where.length > 0 ? `WHERE ${where.join(" AND ")}` : ""}`,
+    );
+
+    const studentsBySubject = new Map<SubjectName, Set<string>>();
+    for (const subject of SUBJECT_NAMES) {
+      studentsBySubject.set(subject, new Set<string>());
+    }
+
+    for (const row of sessionRows) {
+      const subject = normalizeSubject(row.subject_value);
+      if (!subject) continue;
+      const studentId = String(row.student_value ?? "").trim();
+      if (!studentId) continue;
+      studentsBySubject.get(subject)?.add(studentId);
+    }
+
+    const counts = SUBJECT_NAMES.map((subject) => ({ subject, students: studentsBySubject.get(subject)?.size ?? 0 }));
+    const total = counts.reduce((sum, entry) => sum + entry.students, 0);
+    averageStudentsPerSubject = counts.map((entry) => ({
+      ...entry,
+      percentage: total > 0 ? Math.round((entry.students / total) * 100) : 0,
+    }));
+  }
 
   return {
-    monthStats,
-    currentMonth: currentMonthStat,
-    metadata: {
-      sourceTable: resolvedTable.name,
-      dateColumn,
-      statusColumn,
-    },
+    remedialAverageHeatmap,
+    performanceTrend,
+    averageStudentsPerSubject,
   };
-}
-
-async function fetchSubjectIds(): Promise<Map<SubjectName, number>> {
-  const subjectIds = new Map<SubjectName, number>();
-  if (!(await tableExists("subject"))) {
-    return subjectIds;
-  }
-
-  const [rows] = await query<RowDataPacket[]>(
-    "SELECT subject_id, subject_name FROM subject WHERE subject_name IN (?, ?, ?)",
-    [...SUBJECT_NAMES],
-  );
-
-  for (const row of rows) {
-    const name = typeof row.subject_name === "string" ? row.subject_name : null;
-    const id = Number(row.subject_id);
-    if (!name || !Number.isFinite(id)) {
-      continue;
-    }
-    const matched = SUBJECT_NAMES.find((subject) => subject.toLowerCase() === name.toLowerCase());
-    if (matched) {
-      subjectIds.set(matched, id);
-    }
-  }
-
-  return subjectIds;
-}
-
-async function fetchSubjectProgressByGrade(subjectId: number): Promise<SubjectProgressPayload> {
-  const empty: SubjectProgressPayload = { gradeData: {}, percentageData: {}, gradeTotals: {} };
-
-  const requiredTables = ["student", "grade", "student_subject_assessment", "phonemic_level"];
-  for (const table of requiredTables) {
-    if (!(await tableExists(table))) {
-      return empty;
-    }
-  }
-
-  const [totalRows] = await query<RowDataPacket[]>(
-    `
-      SELECT g.grade_level, COUNT(DISTINCT s.student_id) as total
-      FROM student s
-      INNER JOIN grade g ON s.grade_id = g.grade_id
-      GROUP BY g.grade_level
-      ORDER BY g.grade_level
-    `,
-  );
-
-  const [rows] = await query<RowDataPacket[]>(
-    `
-      SELECT
-        g.grade_level,
-        pl.level_name,
-        COUNT(DISTINCT s.student_id) as student_count
-      FROM student s
-      INNER JOIN grade g ON s.grade_id = g.grade_id
-      LEFT JOIN (
-        SELECT student_id, subject_id, MAX(assessed_at) AS latest_assessed
-        FROM student_subject_assessment
-        WHERE subject_id = ?
-        GROUP BY student_id, subject_id
-      ) latest ON latest.student_id = s.student_id AND latest.subject_id = ?
-      LEFT JOIN student_subject_assessment ssa
-        ON ssa.student_id = latest.student_id
-        AND ssa.subject_id = latest.subject_id
-        AND ssa.assessed_at = latest.latest_assessed
-      LEFT JOIN phonemic_level pl ON ssa.phonemic_id = pl.phonemic_id AND pl.subject_id = ?
-      GROUP BY g.grade_level, pl.level_name
-      ORDER BY g.grade_level, pl.level_name
-    `,
-    [subjectId, subjectId, subjectId],
-  );
-
-  const gradeData: Record<string, Record<string, number>> = {};
-  const gradeTotals: Record<string, number> = {};
-
-  totalRows.forEach((row) => {
-    const gradeKey = row.grade_level != null ? String(row.grade_level) : "";
-    if (!gradeKey) {
-      return;
-    }
-    gradeTotals[gradeKey] = Number(row.total ?? 0);
-    gradeData[gradeKey] = {};
-  });
-
-  rows.forEach((row) => {
-    const gradeKey = row.grade_level != null ? String(row.grade_level) : "";
-    if (!gradeKey) {
-      return;
-    }
-    const levelName = typeof row.level_name === "string" && row.level_name.trim().length > 0
-      ? row.level_name
-      : "Not Assessed";
-    const count = Number(row.student_count ?? 0);
-    if (!gradeData[gradeKey]) {
-      gradeData[gradeKey] = {};
-    }
-    gradeData[gradeKey][levelName] = count;
-  });
-
-  const percentageData: Record<string, Record<string, number>> = {};
-  Object.keys(gradeData).forEach((gradeKey) => {
-    percentageData[gradeKey] = {};
-    const total = gradeTotals[gradeKey] || 1;
-    Object.keys(gradeData[gradeKey]).forEach((level) => {
-      percentageData[gradeKey][level] = Math.round((gradeData[gradeKey][level] / total) * 100);
-    });
-  });
-
-  return { gradeData, percentageData, gradeTotals };
 }
 
 export async function GET() {
   try {
-    const [studentTable, teacherTable, masterTeacherTable] = await Promise.all([
+    const [studentTable, teacherTable, masterTeacherTable, reportStats, analytics] = await Promise.all([
       resolveTable(STUDENT_TABLE_CANDIDATES),
       resolveTable(TEACHER_TABLE_CANDIDATES),
       resolveTable(MASTER_TEACHER_TABLE_CANDIDATES),
+      fetchReportStats(),
+      fetchPerformanceAnalytics(),
     ]);
 
-    const [studentCount, teacherCount, masterTeacherCount, reportStats, subjectIds] = await Promise.all([
+    const [studentCount, teacherCount, masterTeacherCount] = await Promise.all([
       countRows(studentTable),
       countRows(teacherTable),
       countRows(masterTeacherTable),
-      fetchReportStats(),
-      fetchSubjectIds(),
     ]);
-
-    const totalTeachers = teacherCount + masterTeacherCount;
-
-    const progressBySubject: Partial<Record<SubjectName, SubjectProgressPayload>> = {};
-    for (const subject of SUBJECT_NAMES) {
-      const subjectId = subjectIds.get(subject);
-      if (!subjectId) {
-        continue;
-      }
-      progressBySubject[subject] = await fetchSubjectProgressByGrade(subjectId);
-    }
 
     return NextResponse.json({
       totals: {
         students: studentCount,
-        teachers: totalTeachers,
+        teachers: teacherCount + masterTeacherCount,
         breakdown: {
           teachers: teacherCount,
           masterTeachers: masterTeacherCount,
@@ -441,13 +481,7 @@ export async function GET() {
         monthStats: reportStats.monthStats,
         currentMonth: reportStats.currentMonth,
       },
-      progress: progressBySubject,
-      metadata: {
-        studentTable: studentTable?.name ?? null,
-        teacherTable: teacherTable?.name ?? null,
-        masterTeacherTable: masterTeacherTable?.name ?? null,
-        reportSource: reportStats.metadata,
-      },
+      analytics,
     });
   } catch (error) {
     console.error("Failed to load principal dashboard data", error);

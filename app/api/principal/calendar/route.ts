@@ -97,6 +97,7 @@ export async function GET(request: NextRequest) {
     const dayColumn = pickColumn(columns, DAY_COLUMN_CANDIDATES);
     const submittedByColumn = pickColumn(columns, SUBMITTED_BY_COLUMN_CANDIDATES);
     const masterTeacherIdColumn = pickColumn(columns, MASTER_TEACHER_ID_COLUMN_CANDIDATES);
+    const hasArchiveColumn = columns.has("is_archived");
 
     if (gradeId && !gradeColumn) {
       return NextResponse.json({ success: true, activities: [] });
@@ -141,7 +142,16 @@ export async function GET(request: NextRequest) {
       ? `LEFT JOIN (SELECT DISTINCT master_teacher_id FROM ${MT_HANDLED_TABLE}) mch ON mch.master_teacher_id = r.${submitterColumn}
         LEFT JOIN ${USERS_TABLE} u ON u.user_code = mch.master_teacher_id`
       : "";
-    const whereClause = gradeId && gradeColumn ? `WHERE r.${gradeColumn} = ?` : "";
+    const whereParts: string[] = [];
+    const params: Array<number> = [];
+    if (hasArchiveColumn) {
+      whereParts.push("COALESCE(r.is_archived, 0) = 0");
+    }
+    if (gradeId && gradeColumn) {
+      whereParts.push(`r.${gradeColumn} = ?`);
+      params.push(gradeId);
+    }
+    const whereClause = whereParts.length > 0 ? `WHERE ${whereParts.join(" AND ")}` : "";
 
     const sql = `
       SELECT ${selectParts.join(", ")}
@@ -153,7 +163,7 @@ export async function GET(request: NextRequest) {
       LIMIT 1000
     `;
 
-    const [rows] = await query<ApprovedRow[]>(sql, gradeId && gradeColumn ? [gradeId] : []);
+    const [rows] = await query<ApprovedRow[]>(sql, params);
 
     const uniqueByDate = new Map<
       string,
