@@ -140,18 +140,18 @@ export default function ParentLogin({ onBack }: ParentLoginProps) {
   };
 
   return (
-    <div className="relative flex min-h-dvh w-full items-center justify-center overflow-x-hidden overflow-y-auto bg-[#edf0ee] px-4 py-6 text-[#013300]">
+    <div className="relative min-h-dvh w-full overflow-hidden bg-[#edf0ee] text-[#013300]">
       <button
         type="button"
         onClick={onBack}
-        className="absolute left-3 top-3 inline-flex items-center gap-1 text-base font-semibold leading-none text-[#013300]/80 transition hover:text-[#013300]"
+        className="absolute left-3 top-[calc(env(safe-area-inset-top)+0.75rem)] z-10 inline-flex items-center gap-1 text-base font-semibold leading-none text-[#013300]/80 transition hover:text-[#013300]"
         aria-label="Back"
       >
         <FiChevronLeft className="h-5 w-5" />
         <span className="leading-none">Back</span>
       </button>
 
-      <div className="w-full max-w-md rounded-[28px] bg-[#f7f8f7] px-4 pt-6 pb-7">
+      <div className="mt-[calc(env(safe-area-inset-top)+3rem)] flex min-h-[calc(100dvh-env(safe-area-inset-top)-3rem)] w-full flex-col justify-center overflow-y-auto rounded-t-[30px] bg-[#f7f8f7] px-4 pt-6 pb-7">
         <div className="mx-auto flex w-full max-w-md flex-col items-center text-center">
           <Image
             src="/RPT-SAES/RPTLogo.png"
@@ -169,8 +169,12 @@ export default function ParentLogin({ onBack }: ParentLoginProps) {
         </div>
 
         {isCheckingSession ? (
-          <div className="mx-auto mt-7 w-full max-w-md rounded-2xl border border-[#013300]/10 bg-[#f6faf5] px-4 py-5 text-center text-sm font-medium text-[#013300]/75">
-            Checking parent session...
+          <div className="mx-auto mt-7 flex w-full max-w-md flex-col items-center justify-center gap-3 rounded-2xl border border-[#013300]/10 bg-[#f6faf5] px-4 py-6 text-center">
+            <span
+              className="h-6 w-6 animate-spin rounded-full border-2 border-[#013300]/20 border-t-[#013300]"
+              aria-hidden="true"
+            />
+            <p className="text-sm font-medium text-[#013300]/70">Loading...</p>
           </div>
         ) : (
           <form className="mx-auto mt-7 w-full max-w-md space-y-4" onSubmit={handleLogin}>

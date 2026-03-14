@@ -49,38 +49,28 @@ const LOGO_THEMES: Record<
 
 function ParentPortalBadge() {
   return (
-    <div className="relative h-32 w-full max-w-[210px] sm:h-40 sm:max-w-[240px]" aria-hidden="true">
-      <div className="absolute left-7 top-2 h-24 w-24 rounded-[28px] bg-white/12 sm:left-8 sm:top-3 sm:h-28 sm:w-28 sm:rounded-[32px]" />
-      <div className="absolute right-7 top-0 h-20 w-20 rounded-full bg-white/8 sm:right-8 sm:h-24 sm:w-24" />
-      <div className="absolute left-5 top-6 flex h-24 w-24 items-center justify-center rounded-[28px] border border-white/12 bg-white/10 backdrop-blur-sm shadow-[0_18px_40px_rgba(0,0,0,0.08)] sm:left-6 sm:top-7 sm:h-28 sm:w-28 sm:rounded-[32px]">
-        <FiUsers className="h-12 w-12 text-white sm:h-14 sm:w-14" strokeWidth={2.1} />
-      </div>
-      <div className="absolute right-8 top-8 flex h-14 w-14 items-center justify-center rounded-2xl border border-white/12 bg-[#f3c15e] text-[#11452c] shadow-[0_14px_30px_rgba(0,0,0,0.12)] sm:right-10 sm:top-10 sm:h-16 sm:w-16">
-        <FiBookOpen className="h-6 w-6 sm:h-7 sm:w-7" strokeWidth={2.2} />
-      </div>
-      <div className="absolute bottom-4 left-10 h-2.5 w-20 rounded-full bg-white/10 sm:bottom-5 sm:left-12 sm:h-3 sm:w-24" />
-      <div className="absolute bottom-2 right-7 flex h-12 w-12 items-center justify-center rounded-full border border-white/12 bg-white/10 text-white/90 sm:right-8 sm:h-14 sm:w-14">
-        <FiCheckSquare className="h-6 w-6" strokeWidth={2.2} />
-      </div>
+    <div className="relative h-32 w-full max-w-52.5 sm:h-40 sm:max-w-60" aria-hidden="true">
+      <Image
+        src="/PWA/Parent Illustration.png"
+        alt=""
+        fill
+        sizes="(min-width: 640px) 240px, 210px"
+        className="object-contain"
+      />
     </div>
   );
 }
 
 function StudentQuizBadge() {
   return (
-    <div className="relative h-32 w-full max-w-[210px] sm:h-40 sm:max-w-[240px]" aria-hidden="true">
-      <div className="absolute left-5 top-3 h-24 w-24 rounded-[28px] bg-white/60 sm:left-6 sm:top-4 sm:h-28 sm:w-28 sm:rounded-[30px]" />
-      <div className="absolute right-8 top-4 h-16 w-16 rounded-[22px] bg-[#dfeac7] sm:right-10 sm:top-5 sm:h-20 sm:w-20 sm:rounded-[26px]" />
-      <div className="absolute left-7 top-6 flex h-24 w-24 items-center justify-center rounded-[28px] border border-[#013300]/8 bg-white shadow-[0_18px_40px_rgba(1,51,0,0.06)] sm:left-8 sm:top-7 sm:h-28 sm:w-28 sm:rounded-[30px]">
-        <FiBookOpen className="h-12 w-12 text-[#013300] sm:h-14 sm:w-14" strokeWidth={2.1} />
-      </div>
-      <div className="absolute right-9 top-[3.5rem] flex h-14 w-14 items-center justify-center rounded-2xl border border-[#013300]/8 bg-[#e7f1d7] text-[#4d7f2d] shadow-[0_12px_26px_rgba(1,51,0,0.08)] sm:right-11 sm:top-[4.25rem] sm:h-16 sm:w-16">
-        <FiCheckSquare className="h-6 w-6 sm:h-7 sm:w-7" strokeWidth={2.2} />
-      </div>
-      <div className="absolute bottom-5 left-8 flex h-12 w-12 items-center justify-center rounded-full bg-[#013300] text-white shadow-[0_14px_28px_rgba(1,51,0,0.16)] sm:bottom-6 sm:left-10 sm:h-14 sm:w-14">
-        <FiBookOpen className="h-5 w-5 sm:h-6 sm:w-6" strokeWidth={2.1} />
-      </div>
-      <div className="absolute bottom-7 left-24 h-2.5 w-20 rounded-full bg-[#013300]/8 sm:bottom-8 sm:left-28 sm:h-3 sm:w-24" />
+    <div className="relative h-32 w-full max-w-52.5 sm:h-40 sm:max-w-60" aria-hidden="true">
+      <Image
+        src="/PWA/Student Illustration.png"
+        alt=""
+        fill
+        sizes="(min-width: 640px) 240px, 210px"
+        className="object-contain"
+      />
     </div>
   );
 }
@@ -90,7 +80,7 @@ function AnimatedPortalLogo({ mode }: { mode: AnimatedLogoMode }) {
 
   return (
     <motion.div
-      className="relative flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-[22px] border border-[#013300]/10 bg-white shadow-[0_16px_36px_rgba(1,51,0,0.12)] sm:h-[4.5rem] sm:w-[4.5rem]"
+      className="relative flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-[22px] border border-[#013300]/10 bg-white shadow-[0_16px_36px_rgba(1,51,0,0.12)] sm:h-18 sm:w-18"
       aria-hidden="true"
       animate={{ y: [0, -2, 0], rotate: [0, 1.5, 0, -1.5, 0] }}
       transition={{ duration: 5.6, repeat: Infinity, ease: "easeInOut" }}
@@ -107,7 +97,7 @@ function AnimatedPortalLogo({ mode }: { mode: AnimatedLogoMode }) {
         transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
       >
         <span
-          className="absolute left-1/2 top-[6px] h-2.5 w-2.5 -translate-x-1/2 rounded-full"
+          className="absolute left-1/2 top-1.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full"
           style={{ backgroundColor: theme.accent, boxShadow: theme.dotShadow }}
         />
       </motion.div>
@@ -122,7 +112,7 @@ function AnimatedPortalLogo({ mode }: { mode: AnimatedLogoMode }) {
         />
       </motion.div>
       <motion.div
-        className="pointer-events-none absolute inset-[5px] rounded-[18px] border border-white/60"
+        className="pointer-events-none absolute inset-1.25 rounded-[18px] border border-white/60"
         style={{ background: theme.panel }}
         animate={{ scale: [1, 1.03, 1], opacity: [0.96, 1, 0.96] }}
         transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
@@ -168,7 +158,7 @@ function AnimatedPortalLogo({ mode }: { mode: AnimatedLogoMode }) {
         </motion.div>
       </AnimatePresence>
       <motion.div
-        className="pointer-events-none absolute bottom-[6px] left-1/2 z-10 h-1 rounded-full"
+        className="pointer-events-none absolute bottom-1.5 left-1/2 z-10 h-1 rounded-full"
         style={{ background: theme.strip }}
         animate={{ width: [18, 30, 22], opacity: [0.45, 0.95, 0.55], x: "-50%" }}
         transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
@@ -311,18 +301,13 @@ export default function LandingPageAssessment() {
       <div className="pointer-events-none absolute left-[10%] right-[50%] top-32 -z-10 h-56 rounded-3xl bg-linear-to-br from-green-200/50 via-white/40 to-transparent blur-4xl" />
       <div className="pointer-events-none absolute left-[55%] right-[10%] bottom-16 -z-10 h-56 rounded-[40px] bg-linear-to-t from-green-200/60 via-white/35 to-transparent blur-4xl" />
 
-      <motion.div
-        initial={mounted ? { opacity: 0, y: 20 } : false}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="relative w-full"
-      >
+      <div className="relative w-full">
         {!isStandalone ? (
           <div className="mx-auto w-full max-w-2xl space-y-4 rounded-[28px] border-[3px] border-[#013300] bg-white/88 p-4 shadow-xl backdrop-blur-sm sm:space-y-5 sm:p-6 md:p-7">
             <div className="flex items-center justify-center gap-3 text-left sm:gap-4">
               <AnimatedPortalLogo mode={logoMode} />
               <div>
-                <h1 className="bg-gradient-to-r from-green-700 to-green-900 bg-clip-text text-[2rem] font-bold tracking-[-0.04em] text-transparent sm:text-[2.3rem]">
+                <h1 className="bg-linear-to-r from-green-700 to-green-900 bg-clip-text text-[2rem] font-bold tracking-[-0.04em] text-transparent sm:text-[2.3rem]">
                   RPT Portal
                 </h1>
                 <p className="mt-1 text-sm font-medium text-[#013300]/70 sm:text-base">Parent and Student PWA</p>
@@ -360,42 +345,52 @@ export default function LandingPageAssessment() {
             </div>
           </div>
         ) : (
-          <div className="relative flex min-h-[calc(100dvh-1.5rem)] w-full flex-col justify-center overflow-hidden rounded-[24px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(246,250,247,0.98))] p-3.5 shadow-[0_24px_80px_rgba(1,51,0,0.08)] sm:min-h-0 sm:rounded-[32px] sm:p-6 md:p-7">
+          <div className="relative flex min-h-[calc(100dvh-1.5rem)] w-full flex-col justify-center overflow-hidden rounded-3xl border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(246,250,247,0.98))] p-3.5 shadow-[0_24px_80px_rgba(1,51,0,0.08)] sm:min-h-0 sm:rounded-4xl sm:p-6 md:p-7">
             <div className="pointer-events-none absolute inset-0">
               <div className="absolute -left-20 top-10 h-52 w-52 rounded-full bg-[#dcefe1] blur-3xl" />
-              <div className="absolute right-[-4rem] top-[-2rem] h-56 w-56 rounded-full bg-[#eff5d9] blur-3xl" />
-              <div className="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-[#013300]/10 to-transparent" />
+              <div className="absolute -right-16 -top-8 h-56 w-56 rounded-full bg-[#eff5d9] blur-3xl" />
+              <div className="absolute inset-x-8 top-0 h-px bg-linear-to-r from-transparent via-[#013300]/10 to-transparent" />
             </div>
 
             <div className="relative flex flex-col items-center text-center">
+              <span className="mb-3 inline-flex items-center rounded-full border border-[#013300]/10 bg-white/75 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#013300]/60 sm:text-[0.7rem]">
+                Mobile Portal
+              </span>
               <div className="flex items-center justify-center gap-2.5 sm:gap-4">
                 <AnimatedPortalLogo mode={logoMode} />
                 <div>
-                  <h1 className="bg-gradient-to-r from-green-700 to-green-900 bg-clip-text text-[1.85rem] font-bold tracking-[-0.04em] text-transparent sm:text-[2.7rem] lg:text-[3.1rem]">
+                  <h1 className="bg-linear-to-r from-green-700 to-green-900 bg-clip-text text-[1.85rem] font-bold tracking-[-0.04em] text-transparent sm:text-[2.7rem] lg:text-[3.1rem]">
                     RPT Portal
                   </h1>
-                  <p className="mt-1 text-xs font-medium text-[#013300]/55 sm:text-base">Choose your space</p>
+                  <p className="mt-1 text-sm font-medium text-[#013300]/60 sm:text-base">Choose your space</p>
                 </div>
               </div>
             </div>
 
-            <div className="relative mt-5 grid gap-3 sm:mt-8 sm:gap-4 lg:grid-cols-2">
+            <div className="relative mt-5 grid gap-4 sm:mt-8 sm:gap-5 lg:grid-cols-2">
               <button
                 type="button"
                 onClick={() => openPortal("parent")}
-                className="group relative overflow-hidden rounded-[22px] border border-[#0d6039]/10 bg-[#0d6039] p-4 text-left text-white transition duration-200 hover:-translate-y-1 hover:shadow-[0_16px_40px_rgba(13,96,57,0.18)] sm:rounded-[28px] sm:p-6"
+                className="group relative isolate overflow-hidden rounded-3xl border border-[#0d6039]/30 bg-[linear-gradient(155deg,#0d6039_0%,#0e7a4a_58%,#0a5f3a_100%)] p-5 text-left text-white transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_18px_36px_rgba(9,74,45,0.28)] sm:rounded-[30px] sm:p-6"
               >
-                <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/8" />
-                <div className="pointer-events-none absolute bottom-0 left-0 h-24 w-full bg-gradient-to-t from-black/8 to-transparent" />
-                <div className="relative flex min-h-[186px] flex-col sm:min-h-[232px]">
-                  <div className="flex items-center justify-center transition group-hover:scale-[1.02]">
-                    <ParentPortalBadge />
+                <div className="pointer-events-none absolute -right-16 -top-16 h-44 w-44 rounded-full bg-white/10" />
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-linear-to-t from-black/12 to-transparent" />
+                <div className="pointer-events-none absolute inset-0 rounded-3xl ring-1 ring-inset ring-white/12 sm:rounded-[30px]" />
+                <div className="pointer-events-none absolute left-6 top-5 h-px w-20 bg-white/25" />
+                <div className="relative flex min-h-48.5 flex-col sm:min-h-59">
+                  <div className="mx-auto w-full max-w-65 rounded-[22px] border border-white/18 bg-white/12 p-2.5 backdrop-blur-[2px] sm:rounded-3xl sm:p-3">
+                    <div className="flex items-center justify-center">
+                      <ParentPortalBadge />
+                    </div>
                   </div>
                   <div className="mt-auto flex items-end justify-between gap-4">
-                    <h2 className="max-w-[11ch] text-[1.55rem] font-semibold leading-[0.98] tracking-[-0.04em] sm:text-[2.15rem]">
-                      Enter as Parent
-                    </h2>
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/12 bg-white/10 text-white/90 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5 sm:h-12 sm:w-12">
+                    <div>
+                      <h2 className="mt-1 max-w-[11ch] text-[1.62rem] font-semibold leading-[0.96] tracking-[-0.045em] sm:text-[2.15rem]">
+                        Enter as Parent
+                      </h2>
+                      <p className="mt-1 text-xs font-medium text-white/70 sm:text-sm">Sign in to view student progress</p>
+                    </div>
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/22 bg-white/20 text-white shadow-[0_6px_16px_rgba(0,0,0,0.14)] transition group-hover:translate-x-0.5 sm:h-12 sm:w-12">
                       <FiArrowUpRight className="h-5 w-5" />
                     </div>
                   </div>
@@ -405,19 +400,26 @@ export default function LandingPageAssessment() {
               <button
                 type="button"
                 onClick={() => openPortal("student")}
-                className="group relative overflow-hidden rounded-[22px] border border-[#013300]/10 bg-[linear-gradient(180deg,#f8fbf4_0%,#eef5e8_100%)] p-4 text-left text-[#013300] transition duration-200 hover:-translate-y-1 hover:shadow-[0_16px_40px_rgba(1,51,0,0.10)] sm:rounded-[28px] sm:p-6"
+                className="group relative isolate overflow-hidden rounded-3xl border border-[#c7d9b8] bg-[linear-gradient(170deg,#f7fcf2_0%,#eaf5e2_62%,#e2efd8_100%)] p-5 text-left text-[#013300] transition duration-200 hover:-translate-y-0.5 hover:border-[#adc79a] hover:shadow-[0_18px_34px_rgba(27,77,25,0.12)] sm:rounded-[30px] sm:p-6"
               >
-                <div className="pointer-events-none absolute right-6 top-6 h-24 w-24 rounded-full bg-white/60 blur-2xl" />
-                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-[#dfead6]/50 to-transparent" />
-                <div className="relative flex min-h-[186px] flex-col sm:min-h-[232px]">
-                  <div className="flex items-center justify-center transition group-hover:scale-[1.02]">
-                    <StudentQuizBadge />
+                <div className="pointer-events-none absolute -right-14 -top-14 h-44 w-44 rounded-full bg-[#d9eaca]" />
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-linear-to-t from-[#e1edd7]/70 to-transparent" />
+                <div className="pointer-events-none absolute inset-0 rounded-3xl ring-1 ring-inset ring-white/55 sm:rounded-[30px]" />
+                <div className="pointer-events-none absolute left-6 top-5 h-px w-20 bg-[#013300]/18" />
+                <div className="relative flex min-h-48.5 flex-col sm:min-h-59">
+                  <div className="mx-auto w-full max-w-65 rounded-[22px] border border-[#d4e2c7] bg-[#fbfff8] p-2.5 sm:rounded-3xl sm:p-3">
+                    <div className="flex items-center justify-center">
+                      <StudentQuizBadge />
+                    </div>
                   </div>
                   <div className="mt-auto flex items-end justify-between gap-4">
-                    <h2 className="max-w-[10ch] text-[1.55rem] font-semibold leading-[0.98] tracking-[-0.04em] text-[#013300] sm:text-[2.15rem]">
-                      Enter RPT Quiz
-                    </h2>
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#013300]/10 bg-white text-[#013300] transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5 sm:h-12 sm:w-12">
+                    <div>
+                      <h2 className="mt-1 max-w-[10ch] text-[1.62rem] font-semibold leading-[0.96] tracking-[-0.045em] text-[#013300] sm:text-[2.15rem]">
+                        Enter RPT Quiz
+                      </h2>
+                      <p className="mt-1 text-xs font-medium text-[#013300]/62 sm:text-sm">Launch remedial quiz and continue learning</p>
+                    </div>
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#8fb27d] bg-[#fcfff9] text-[#245f2b] shadow-[0_6px_16px_rgba(20,70,24,0.12)] transition group-hover:translate-x-0.5 sm:h-12 sm:w-12">
                       <FiArrowUpRight className="h-5 w-5" />
                     </div>
                   </div>
@@ -426,7 +428,7 @@ export default function LandingPageAssessment() {
             </div>
           </div>
         )}
-      </motion.div>
+      </div>
     </div>
   );
 }

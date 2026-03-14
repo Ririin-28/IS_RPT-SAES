@@ -654,7 +654,7 @@ export default function Home() {
         className="relative px-4 py-12 md:px-8 md:py-20 lg:px-12 lg:py-24 bg-linear-to-b from-transparent via-green-50/30 to-transparent"
       >
         <div className="mx-auto max-w-7xl">
-          <div data-nav-anchor="true" className="flex flex-col lg:flex-row lg:items-center gap-12 lg:gap-16">
+          <div data-nav-anchor="true" className="flex flex-col lg:flex-row lg:items-center gap-5 lg:gap-16">
 
             {/* Mission / About Left Column */}
             <div
@@ -667,7 +667,7 @@ export default function Home() {
                 Transforming Remedial Education
               </h2>
               <p className="
-                mb-1 text-sm text-green-900 leading-relaxed
+                mb-2 text-base text-green-900 leading-relaxed
                 transition-all duration-700 delay-800 transform
                 translate-y-0 opacity-100
                 text-center sm:text-left
@@ -713,7 +713,7 @@ export default function Home() {
                 <div
                   key={index}
                   className={`
-                    group relative flex h-full flex-col rounded-xl bg-white p-3
+                    group relative flex h-full flex-col rounded-xl bg-white p-3.5
                     border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.02)]
                     transition-all duration-500 ease-out 
                     hover:-translate-y-2 hover:shadow-[0_12px_40px_rgba(1,51,0,0.08)] hover:border-green-100/60
@@ -726,28 +726,28 @@ export default function Home() {
                     const Icon = feature.icon;
                     const HoverIcon = feature.hoverIcon;
                     return (
-                      <div className="flex flex-col items-center gap-2 text-center sm:flex-row sm:items-start sm:gap-4 sm:text-left">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-green-100 bg-green-50/70 transition-colors duration-500 group-hover:bg-green-100/70 sm:h-16 sm:w-16 sm:rounded-2xl">
-                          <div className="relative h-5 w-5 sm:h-8 sm:w-8">
+                      <div className="flex flex-col items-center gap-2.5 text-center sm:flex-row sm:items-start sm:gap-4 sm:text-left">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-green-100 bg-green-50/70 transition-colors duration-500 group-hover:bg-green-100/70 sm:h-16 sm:w-16 sm:rounded-2xl">
+                          <div className="relative h-[22px] w-[22px] sm:h-8 sm:w-8">
                             <Icon
-                              className="absolute inset-0 h-5 w-5 text-[#013300] transition-all duration-300 group-hover:scale-90 group-hover:opacity-0 sm:h-8 sm:w-8"
+                              className="absolute inset-0 h-[22px] w-[22px] text-[#013300] transition-all duration-300 group-hover:scale-90 group-hover:opacity-0 sm:h-8 sm:w-8"
                               strokeWidth={2}
                             />
                             <HoverIcon
-                              className="absolute inset-0 h-5 w-5 scale-90 text-green-800 opacity-0 transition-all duration-300 group-hover:scale-100 group-hover:opacity-100 sm:h-8 sm:w-8"
+                              className="absolute inset-0 h-[22px] w-[22px] scale-90 text-green-800 opacity-0 transition-all duration-300 group-hover:scale-100 group-hover:opacity-100 sm:h-8 sm:w-8"
                               strokeWidth={2}
                             />
                           </div>
                         </div>
 
-                        <h3 className="text-sm font-bold leading-tight text-[#013300] transition-colors duration-300 group-hover:text-green-800 sm:pt-1 sm:text-xl">
+                        <h3 className="text-[15px] font-bold leading-tight text-[#013300] transition-colors duration-300 group-hover:text-green-800 sm:pt-1 sm:text-xl">
                           {feature.title}
                         </h3>
                       </div>
                     );
                   })()}
 
-                  <p className="mt-2 text-center text-[11px] leading-snug text-green-800 opacity-90 transition-colors duration-300 group-hover:text-[#013300] sm:mt-5 sm:text-left sm:text-base sm:leading-relaxed">
+                  <p className="mt-2.5 text-center text-xs leading-snug text-green-800 opacity-90 transition-colors duration-300 group-hover:text-[#013300] sm:mt-5 sm:text-left sm:text-base sm:leading-relaxed">
                     {feature.desc}
                   </p>
                 </div>
@@ -994,21 +994,32 @@ export default function Home() {
         id="location"
         className="relative px-6 py-16 md:px-8 md:py-20 lg:px-12 lg:py-24 bg-linear-to-b from-transparent via-green-50/30 to-transparent"
       >
-        <div className="mx-auto max-w-7xl">
-          <div
-            data-nav-anchor="true"
-            className="grid grid-cols-1 gap-10 lg:grid-cols-[1.02fr_0.98fr] lg:items-center lg:gap-14"
-          >
+        <div data-nav-anchor="true" className="mx-auto max-w-7xl">
+          <div className="space-y-5 md:hidden">
             <div
-              className={`lg:order-1 transition-all duration-1000 delay-150 transform ${
+              className={`transition-all duration-1000 transform ${
                 isSectionVisible('location') ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'
               }`}
             >
-              <div className="overflow-hidden rounded-[2rem] border border-green-100 bg-white">
+              <h2 className="text-center text-3xl font-extrabold leading-[0.98] text-[#013300]">
+                Visit Our Campus
+              </h2>
+              <p className="mt-4 text-center text-sm leading-relaxed text-green-900">
+                We are conveniently located in the heart of Novaliches. Come visit San Agustin
+                Elementary School and see where the learning happens.
+              </p>
+            </div>
+
+            <div
+              className={`transition-all duration-1000 delay-100 transform ${
+                isSectionVisible('location') ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'
+              }`}
+            >
+              <div className="overflow-hidden rounded-[1.5rem] border border-green-100 bg-white">
                 <iframe
                   title="San Agustin Elementary School Location"
                   src="https://www.google.com/maps?q=San%20Agustin%20Elementary%20School%2C%20G%2C%20P2HP%2B8QG%2C%200%20Susano%20Rd%2C%20Novaliches%2C%20Quezon%20City%2C%20Metro%20Manila%2C%20Philippines&output=embed"
-                  className="h-[360px] w-full border-0 grayscale-[12%] transition-all duration-500 hover:grayscale-0 md:h-[450px]"
+                  className="h-[250px] w-full border-0 grayscale-[12%] transition-all duration-500 hover:grayscale-0"
                   loading="lazy"
                   referrerPolicy="no-referrer-when-downgrade"
                   allowFullScreen
@@ -1017,77 +1028,164 @@ export default function Home() {
             </div>
 
             <div
-              className={`lg:order-2 flex flex-col justify-center transition-all duration-1000 transform ${
+              className={`overflow-hidden rounded-[1.5rem] border border-gray-100 bg-white transition-all duration-1000 delay-150 transform ${
                 isSectionVisible('location') ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'
               }`}
             >
-              <h2 className="mt-5 text-center text-3xl font-extrabold leading-[0.98] text-[#013300] sm:text-left md:text-4xl lg:text-[3.5rem]">
-                Visit Our Campus
-              </h2>
-              <p className="mt-5 mx-auto max-w-xl text-sm leading-relaxed text-green-900 text-center sm:mx-0 sm:text-left md:text-lg lg:text-xl">
-                We are conveniently located in the heart of Novaliches. Come visit San Agustin
-                Elementary School and see where the learning happens.
-              </p>
+              <div className="px-4 py-3">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#f4f8f5] text-[#013300]">
+                    <MapPinned className="h-5 w-5" strokeWidth={2} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-green-700/80">
+                      Campus Address
+                    </p>
+                    <h3 className="mt-2 text-xl font-bold leading-tight text-[#013300]">
+                      San Agustin Elementary School
+                    </h3>
+                    <p className="mt-2 text-sm leading-relaxed text-green-800/90">
+                      Heavenly Drive St., San Agustin,
+                      <br />
+                      Novaliches, Quezon City
+                    </p>
+                  </div>
+                </div>
+              </div>
 
-              <div className="mt-4 overflow-hidden rounded-[2rem] border border-gray-100 bg-white">
-                <div className="px-5 py-4 md:px-5">
-                  <div className="flex items-start gap-4">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#f4f8f5] text-[#013300]">
-                      <MapPinned className="h-6 w-6" strokeWidth={2} />
+              <div className="grid grid-cols-2 border-t border-gray-100">
+                <div className="px-4 py-3 border-r border-gray-100">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#f4f8f5] text-[#013300]">
+                      <Clock3 className="h-4 w-4" strokeWidth={2} />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-green-700/80">
-                        Campus Address
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-green-700/80">
+                        Office Hours
                       </p>
-                      <h3 className="mt-2 text-[1.75rem] font-bold leading-tight text-[#013300]">
-                        San Agustin Elementary School
-                      </h3>
-                      <p className="mt-2 text-base leading-relaxed text-green-800/90">
-                        Heavenly Drive St., San Agustin,
-                        <br />
-                        Novaliches, Quezon City
-                      </p>
+                      <p className="mt-1 text-sm font-bold leading-tight text-[#013300]">Monday to Friday</p>
+                      <p className="mt-1 text-xs leading-relaxed text-green-900/80">8:00 AM to 5:00 PM</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="grid border-t border-gray-100 sm:grid-cols-2">
-                  <div className="px-5 py-4 md:px-5 sm:border-r sm:border-gray-100">
+                <a
+                  href="https://www.google.com/maps/search/?api=1&query=San+Agustin+Elementary+School+Novaliches+Quezon+City"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="group px-4 py-3 transition-colors duration-300 hover:bg-[#fbfdfb]"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#f4f8f5] text-[#013300] transition-colors duration-300 group-hover:bg-green-100/80">
+                      <Navigation className="h-4 w-4" strokeWidth={2} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-green-700/80">
+                        Directions
+                      </p>
+                      <p className="mt-1 text-sm font-bold leading-tight text-[#013300]">Get Directions</p>
+                      <p className="mt-1 text-xs leading-relaxed text-green-900/80">
+                        Open in Google Maps.
+                      </p>
+                    </div>
+                  </div>
+                </a>
+              </div>
+            </div>
+          </div>
+
+          <div className="hidden md:block">
+            <div className="grid grid-cols-1 gap-10 lg:grid-cols-[1.02fr_0.98fr] lg:items-center lg:gap-14">
+              <div
+                className={`lg:order-1 transition-all duration-1000 delay-150 transform ${
+                  isSectionVisible('location') ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'
+                }`}
+              >
+                <div className="overflow-hidden rounded-[2rem] border border-green-100 bg-white">
+                  <iframe
+                    title="San Agustin Elementary School Location"
+                    src="https://www.google.com/maps?q=San%20Agustin%20Elementary%20School%2C%20G%2C%20P2HP%2B8QG%2C%200%20Susano%20Rd%2C%20Novaliches%2C%20Quezon%20City%2C%20Metro%20Manila%2C%20Philippines&output=embed"
+                    className="h-[360px] w-full border-0 grayscale-[12%] transition-all duration-500 hover:grayscale-0 md:h-[450px]"
+                    loading="lazy"
+                    referrerPolicy="no-referrer-when-downgrade"
+                    allowFullScreen
+                  />
+                </div>
+              </div>
+
+              <div
+                className={`lg:order-2 flex flex-col justify-center transition-all duration-1000 transform ${
+                  isSectionVisible('location') ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'
+                }`}
+              >
+                <h2 className="mt-5 text-center text-3xl font-extrabold leading-[0.98] text-[#013300] sm:text-left md:text-4xl lg:text-[3.5rem]">
+                  Visit Our Campus
+                </h2>
+                <p className="mt-5 mx-auto max-w-xl text-sm leading-relaxed text-green-900 text-center sm:mx-0 sm:text-left md:text-lg lg:text-xl">
+                  We are conveniently located in the heart of Novaliches. Come visit San Agustin
+                  Elementary School and see where the learning happens.
+                </p>
+
+                <div className="mt-4 overflow-hidden rounded-[2rem] border border-gray-100 bg-white">
+                  <div className="px-5 py-4 md:px-5">
                     <div className="flex items-start gap-4">
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#f4f8f5] text-[#013300]">
-                        <Clock3 className="h-[18px] w-[18px]" strokeWidth={2} />
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#f4f8f5] text-[#013300]">
+                        <MapPinned className="h-6 w-6" strokeWidth={2} />
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-green-700/80">
-                          Office Hours
+                          Campus Address
                         </p>
-                        <p className="mt-2 text-base font-bold text-[#013300] md:text-lg">Monday to Friday</p>
-                        <p className="mt-1 text-sm text-green-900/80">8:00 AM to 5:00 PM</p>
+                        <h3 className="mt-2 text-[1.75rem] font-bold leading-tight text-[#013300]">
+                          San Agustin Elementary School
+                        </h3>
+                        <p className="mt-2 text-base leading-relaxed text-green-800/90">
+                          Heavenly Drive St., San Agustin,
+                          <br />
+                          Novaliches, Quezon City
+                        </p>
                       </div>
                     </div>
                   </div>
 
-                  <a
-                    href="https://www.google.com/maps/search/?api=1&query=San+Agustin+Elementary+School+Novaliches+Quezon+City"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="group border-t border-gray-100 px-5 py-4 transition-colors duration-300 hover:bg-[#fbfdfb] sm:border-t-0 md:px-5"
-                  >
-                    <div className="flex items-start gap-4">
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#f4f8f5] text-[#013300] transition-colors duration-300 group-hover:bg-green-100/80">
-                        <Navigation className="h-[18px] w-[18px]" strokeWidth={2} />
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-green-700/80">
-                          Directions
-                        </p>
-                        <p className="mt-2 text-base font-bold text-[#013300] md:text-lg">Get Directions</p>
-                        <p className="mt-1 text-sm text-green-900/80">
-                          Open in Google Maps.
-                        </p>
+                  <div className="grid border-t border-gray-100 sm:grid-cols-2">
+                    <div className="px-5 py-4 md:px-5 sm:border-r sm:border-gray-100">
+                      <div className="flex items-start gap-4">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#f4f8f5] text-[#013300]">
+                          <Clock3 className="h-[18px] w-[18px]" strokeWidth={2} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-green-700/80">
+                            Office Hours
+                          </p>
+                          <p className="mt-2 text-base font-bold text-[#013300] md:text-lg">Monday to Friday</p>
+                          <p className="mt-1 text-sm text-green-900/80">8:00 AM to 5:00 PM</p>
+                        </div>
                       </div>
                     </div>
-                  </a>
+
+                    <a
+                      href="https://www.google.com/maps/search/?api=1&query=San+Agustin+Elementary+School+Novaliches+Quezon+City"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="group border-t border-gray-100 px-5 py-4 transition-colors duration-300 hover:bg-[#fbfdfb] sm:border-t-0 md:px-5"
+                    >
+                      <div className="flex items-start gap-4">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#f4f8f5] text-[#013300] transition-colors duration-300 group-hover:bg-green-100/80">
+                          <Navigation className="h-[18px] w-[18px]" strokeWidth={2} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-green-700/80">
+                            Directions
+                          </p>
+                          <p className="mt-2 text-base font-bold text-[#013300] md:text-lg">Get Directions</p>
+                          <p className="mt-1 text-sm text-green-900/80">
+                            Open in Google Maps.
+                          </p>
+                        </div>
+                      </div>
+                    </a>
+                  </div>
                 </div>
               </div>
             </div>

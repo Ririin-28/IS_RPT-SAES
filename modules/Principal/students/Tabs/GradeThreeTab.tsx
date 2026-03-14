@@ -124,6 +124,7 @@ export default function GradeThreeTab({ students, setStudents, searchTerm }: Gra
       />
 
       <TableList
+        showFullScreenToggle
         columns={[
           { key: "no", title: "No#" },
           { key: "studentId", title: "Student ID" },

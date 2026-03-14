@@ -285,6 +285,7 @@ export default function AllGradesTab({ students, searchTerm, gradeFilter = "All 
       />
 
       <TableList
+        showFullScreenToggle
         columns={[
           { key: "no", title: "No#" },
           {

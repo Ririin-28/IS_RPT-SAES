@@ -289,7 +289,7 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
   })();
 
   return (
-    <div className="relative flex min-h-dvh w-full items-center justify-center overflow-x-hidden overflow-y-auto bg-[#edf0ee] px-4 py-6 text-[#013300]">
+    <div className="relative min-h-dvh w-full overflow-hidden bg-[#edf0ee] text-[#013300]">
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(209,255,222,0.45),transparent_20%),radial-gradient(circle_at_bottom_right,rgba(188,240,214,0.35),transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(242,249,245,0.95))]" />
       <div className="pointer-events-none absolute left-[10%] right-[50%] top-32 -z-10 h-56 rounded-3xl bg-linear-to-br from-green-200/50 via-white/40 to-transparent blur-4xl" />
       <div className="pointer-events-none absolute left-[55%] right-[10%] bottom-16 -z-10 h-56 rounded-[40px] bg-linear-to-t from-green-200/60 via-white/35 to-transparent blur-4xl" />
@@ -297,7 +297,7 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
       <button
         type="button"
         onClick={onBack}
-        className="absolute left-3 top-3 z-10 inline-flex items-center gap-1 text-base font-semibold leading-none text-[#013300]/80 transition hover:text-[#013300]"
+        className="absolute left-3 top-[calc(env(safe-area-inset-top)+0.75rem)] z-10 inline-flex items-center gap-1 text-base font-semibold leading-none text-[#013300]/80 transition hover:text-[#013300]"
         aria-label="Back"
       >
         <FiChevronLeft className="h-5 w-5" />
@@ -308,10 +308,10 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
         initial={mounted ? { opacity: 0, y: 20 } : false}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="relative w-full max-w-[36rem]"
+        className="relative mt-[calc(env(safe-area-inset-top)+3rem)] flex min-h-[calc(100dvh-env(safe-area-inset-top)-3rem)] w-full flex-col justify-center overflow-y-auto rounded-t-[30px] bg-[#f7f8f7] px-4 pt-6 pb-7"
       >
         {completedSummary ? (
-          <div className="w-full rounded-[28px] border border-green-100/70 bg-white p-4 shadow-xl sm:p-6 md:p-7">
+          <div className="mx-auto w-full max-w-[36rem] rounded-[28px] border border-green-100/70 bg-white p-4 shadow-xl sm:p-6 md:p-7">
             <div className="flex flex-col items-center mb-7 mt-2">
               <Image
                 src="/RPT-SAES/RPTLogo.png"
@@ -361,7 +361,7 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
             </PrimaryButton>
           </div>
         ) : (
-          <div className="w-full max-w-md rounded-[28px] bg-white px-4 pt-6 pb-7">
+          <div className="mx-auto w-full max-w-md">
             <div className="flex flex-col items-center mb-10 mt-4">
               <Image
                 src="/RPT-SAES/RPTLogo.png"

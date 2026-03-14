@@ -50,6 +50,7 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
       />
 
       <TableList
+                    showFullScreenToggle
         columns={[
           { key: "no", title: "No#" },
           { key: "adminId", title: "Admin ID" },

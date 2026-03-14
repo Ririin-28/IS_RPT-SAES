@@ -107,6 +107,7 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
       />
 
       <TableList
+                    showFullScreenToggle
         columns={[
           { key: "no", title: "No#" },
           { key: "principalId", title: "Principal ID" },

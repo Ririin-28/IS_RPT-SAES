@@ -9,7 +9,6 @@ import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import BaseModal from "@/components/Common/Modals/BaseModal";
 import TableList from "@/components/Common/Tables/TableList";
-import Pagination from "@/components/Common/Tables/Pagination";
 
 type RecoveryEntity =
   | "student"
@@ -349,16 +348,14 @@ export default function ITAdminRecoveryCenter() {
                       selectedItems={selectedIds}
                       onSelectAll={toggleSelectAll}
                       onSelectItem={toggleSelected}
-                      hidePagination
+                      pagination={{
+                        page,
+                        totalPages,
+                        totalItems: total,
+                        onPageChange: setPage,
+                      }}
                     />
                   </div>
-                  <Pagination
-                    page={page}
-                    totalPages={totalPages}
-                    totalItems={total}
-                    onPrev={() => setPage((p) => Math.max(1, p - 1))}
-                    onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  />
                 </>
               )}
             </div>

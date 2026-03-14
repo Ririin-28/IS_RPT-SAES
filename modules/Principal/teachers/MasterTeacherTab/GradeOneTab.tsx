@@ -142,6 +142,7 @@ export default function MasterTeacherGradeOneTab({ teachers, setTeachers, search
       />
 
       <TableList
+        showFullScreenToggle
         columns={[
           { key: "no", title: "No#" },
           { key: "teacherId", title: "Teacher ID" },

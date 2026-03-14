@@ -50,8 +50,8 @@ export default function BaseModal({
   return createPortal(
     <div className="fixed inset-0 z-9999 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/35 backdrop-blur-[2px]" aria-hidden="true" />
-      <div className={`relative z-10000 w-full ${maxWidthClasses[maxWidth]} max-h-[95vh] overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-[0_20px_60px_-24px_rgba(15,23,42,0.35)]`}>
-        <div className=" bg-[#013300] px-6 py-5 rounded-t-2xl">
+      <div className={`relative z-10000 flex max-h-[95vh] w-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_20px_60px_-24px_rgba(15,23,42,0.35)] ${maxWidthClasses[maxWidth]}`}>
+        <div className="shrink-0 bg-[#013300] px-6 py-5 rounded-t-2xl">
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-semibold text-white tracking-tight">{title}</h2>
             <button
@@ -66,12 +66,12 @@ export default function BaseModal({
           </div>
         </div>
 
-        <div className="px-6 py-5 space-y-6">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 space-y-6">
           {children}
         </div>
 
         {footer && (
-          <div className="flex justify-end gap-3 border-t border-gray-200 bg-gray-50/70 px-6 py-4 rounded-b-2xl">
+          <div className="shrink-0 flex justify-end gap-3 border-t border-gray-200 bg-gray-50/70 px-6 py-4 rounded-b-2xl">
             {footer}
           </div>
         )}

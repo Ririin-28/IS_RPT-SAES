@@ -906,6 +906,7 @@ export default function MasterTeacherTab({ teachers, setTeachers, searchTerm, gr
       />
 
       <TableList
+                    showFullScreenToggle
         columns={[
           { key: "no", title: "No#" },
           { key: "masterTeacherId", title: "Teacher ID", render: (row: any) => row.masterTeacherId ?? "--" },

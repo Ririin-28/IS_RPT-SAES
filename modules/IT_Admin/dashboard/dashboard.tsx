@@ -388,7 +388,7 @@ export default function ITAdminDashboard() {
               {/* Recent Logins Table Section */}
               <div className="mt-8">
                 <TertiaryHeader title="Recent Logins" />
-                <TableList columns={tableColumns} data={tableData} pageSize={5} hidePagination={true} />
+                <TableList columns={tableColumns} data={tableData} pageSize={5} hidePagination={true} showFullScreenToggle />
                 {isLoading && (
                   <p className="mt-3 text-sm text-gray-500">Loading recent logins...</p>
                 )}

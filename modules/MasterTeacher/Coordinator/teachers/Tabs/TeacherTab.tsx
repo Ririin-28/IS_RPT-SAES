@@ -58,9 +58,9 @@ export default function TeacherTab({ teachers, searchTerm }: TeacherTabProps) {
 
       {/* Table */}
       <TableList
+        showFullScreenToggle
         columns={[
           { key: "no", title: "No#" },
-          { key: "teacherId", title: "Teacher ID" },
           { key: "name", title: "Full Name" },
           { key: "email", title: "Email" },
           { key: "contactNumber", title: "Contact Number" },

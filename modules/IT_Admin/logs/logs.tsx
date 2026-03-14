@@ -354,13 +354,13 @@ export default function ITAdminLogs() {
               {!isLoading && !error && (
                 <>
                   <TableList
+                    showFullScreenToggle
                     columns={tableColumns}
                     data={filteredLogs.map((log, idx) => ({
                       ...log,
                       no: idx + 1,
                     }))}
                     pageSize={10}
-                    showFullScreenToggle
                   />
                   
                   {filteredLogs.length === 0 && (

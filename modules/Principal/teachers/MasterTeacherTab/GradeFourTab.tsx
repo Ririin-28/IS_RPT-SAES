@@ -140,6 +140,7 @@ export default function MasterTeacherGradeFourTab({ teachers, setTeachers, searc
       />
 
       <TableList
+        showFullScreenToggle
         columns={[
           { key: "no", title: "No#" },
           { key: "teacherId", title: "Teacher ID" },

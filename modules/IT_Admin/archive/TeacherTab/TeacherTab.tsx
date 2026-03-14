@@ -517,6 +517,7 @@ export default function TeacherArchiveTab({
       </div>
 
       <TableList
+                    showFullScreenToggle
         columns={[
           { key: "no", title: "No#" },
           { 

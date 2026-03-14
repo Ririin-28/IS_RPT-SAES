@@ -512,6 +512,7 @@ export default function MasterTeacherTab({
       </div>
 
       <TableList
+                    showFullScreenToggle
         columns={tableColumns}
         data={tableData}
         actions={(row: any) => (

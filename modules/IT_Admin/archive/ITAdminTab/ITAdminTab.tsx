@@ -403,6 +403,7 @@ export default function ITAdminArchiveTab({ itAdmins, setItAdmins, searchTerm, o
         </div>
       </div>
       <TableList
+                    showFullScreenToggle
         columns={[
           { key: "no", title: "No#" },
           { key: "adminId", title: "Admin ID", render: (row: any) => row.userId ?? row.user_id ?? row.adminId ?? "--" },
