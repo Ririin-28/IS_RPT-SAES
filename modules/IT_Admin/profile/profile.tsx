@@ -1,7 +1,7 @@
-"use client";
+﻿"use client";
 import { ChangeEvent, useEffect, useState } from "react";
-import Sidebar from "@/components/Super_Admin/Sidebar";
-import Header from "@/components/Super_Admin/Header";
+import Sidebar from "@/components/IT_Admin/Sidebar";
+import Header from "@/components/IT_Admin/Header";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
@@ -34,16 +34,16 @@ function createEmptyProfileState(): ProfileFormState {
 		lastName: "",
 		email: "",
 		contactNumber: "",
-		position: "Super Admin",
+		position: "IT Admin",
 		profilePicture: "",
 	};
 }
 
 const ROLE_LABELS: Record<string, string> = {
-	admin: "Super Admin",
-	it_admin: "Super Admin",
-	itadmin: "Super Admin",
-	super_admin: "Super Admin",
+	admin: "IT Admin",
+	it_admin: "IT Admin",
+	itadmin: "IT Admin",
+	super_admin: "IT Admin",
 	master_teacher: "Master Teacher",
 	masterteacher: "Master Teacher",
 	teacher: "Teacher",
@@ -53,7 +53,7 @@ const ROLE_LABELS: Record<string, string> = {
 
 function formatRoleLabel(rawRole?: string | null): string {
 	if (!rawRole) {
-		return "Super Admin";
+		return "IT Admin";
 	}
 	const normalized = rawRole.toLowerCase().replace(/\s+/g, "_");
 	if (ROLE_LABELS[normalized]) {
@@ -99,7 +99,7 @@ export default function ITAdminProfile() {
 				}
 
 				const response = await fetch(
-					`/api/super_admin/profile?userId=${encodeURIComponent(String(userIdNumber))}`,
+					`/api/it_admin/profile?userId=${encodeURIComponent(String(userIdNumber))}`,
 					{ cache: "no-store" },
 				);
 
@@ -197,7 +197,7 @@ export default function ITAdminProfile() {
 			}
 
 			const response = await fetch(
-				`/api/super_admin/profile?userId=${encodeURIComponent(String(userIdNumber))}`,
+				`/api/it_admin/profile?userId=${encodeURIComponent(String(userIdNumber))}`,
 				{
 					method: "PUT",
 					headers: { "Content-Type": "application/json" },
@@ -301,7 +301,7 @@ export default function ITAdminProfile() {
 		}
 	};
 
-	const positionDisplay = formData.position || "Super Admin";
+	const positionDisplay = formData.position || "IT Admin";
 
 	return (
 		<div className="flex h-screen bg-white overflow-hidden">

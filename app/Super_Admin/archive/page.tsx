@@ -1,5 +1,5 @@
-import ITAdminArchive from "@/modules/Super_Admin/archive/archive";
+﻿import { redirect } from "next/navigation";
 
-export default function Archive() {
-  return <ITAdminArchive />;
+export default function LegacySuperAdminPage() {
+  redirect("/IT_Admin/archive");
 }

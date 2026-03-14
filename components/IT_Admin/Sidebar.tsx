@@ -85,11 +85,11 @@ const SettingsIcon = React.memo(() => (
 
 // Navigation items with submenus
 const NAV_ITEMS: NavItem[] = [
-  { label: "Dashboard", path: "/Super_Admin/dashboard", icon: <DashboardIcon /> },
-  { label: "Global Account Management", path: "/Super_Admin/accounts", icon: <AccountsIcon /> },
-  { label: "Recovery Center", path: "/Super_Admin/recovery", icon: <ArchiveIcon /> },
-  { label: "Critical Logs", path: "/Super_Admin/operations-log", icon: <LogsIcon /> },
-  { label: "Settings", path: "/Super_Admin/settings", icon: <SettingsIcon /> },
+  { label: "Dashboard", path: "/IT_Admin/dashboard", icon: <DashboardIcon /> },
+  { label: "Accounts", path: "/IT_Admin/accounts", icon: <AccountsIcon /> },
+  { label: "Logs", path: "/IT_Admin/logs", icon: <LogsIcon /> },
+  { label: "Archive", path: "/IT_Admin/archive", icon: <ArchiveIcon /> },
+  { label: "Settings", path: "/IT_Admin/settings", icon: <SettingsIcon /> },
 ];
 
 export default function ITAdminSidebar() {

@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import { runWithConnection } from "@/lib/db";
 import { HttpError } from "../validation/validation";
-import { requireSuperAdmin } from "@/lib/server/super-admin-auth";
+import { requireItAdmin } from "@/lib/server/it-admin-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -176,7 +176,7 @@ function buildPlaceholders(count: number): string {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireSuperAdmin(request, { permission: "super_admin:data.archive" });
+  const auth = await requireItAdmin(request, { permission: "it_admin:data.archive" });
   if (!auth.ok) {
     return auth.response;
   }
@@ -293,7 +293,7 @@ export async function POST(request: NextRequest) {
       await connection.beginTransaction();
       try {
         const archived: ArchiveResult[] = [];
-        const archiveReason = reason && reason.length > 0 ? reason : "Archived by Super Admin";
+        const archiveReason = reason && reason.length > 0 ? reason : "Archived by IT Admin";
 
         const archivedIdByUserId = new Map<number, number>();
         const archivedIdByTeacherId = new Map<string, number>();

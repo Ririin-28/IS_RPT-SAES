@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import type { Connection, PoolConnection, RowDataPacket } from "mysql2/promise";
 import { query, runWithConnection } from "@/lib/db";
 import { getDefaultLandingConfig } from "@/lib/utils/landing-config";
-import { requireSuperAdmin } from "@/lib/server/super-admin-auth";
+import { requireItAdmin } from "@/lib/server/it-admin-auth";
 
 const parseStoredAsset = (value: string | null) => {
   if (!value) return null;
@@ -298,7 +298,7 @@ const normalizeNumberArray = (values?: number[]) =>
   Array.isArray(values) ? values.map((value) => Number(value)).filter((value) => Number.isFinite(value)) : [];
 
 export async function POST(request: Request) {
-  const auth = await requireSuperAdmin(request, { permission: "super_admin:content.manage" });
+  const auth = await requireItAdmin(request, { permission: "it_admin:content.manage" });
   if (!auth.ok) {
     return auth.response;
   }

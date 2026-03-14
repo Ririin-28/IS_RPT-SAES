@@ -66,25 +66,6 @@ const RemedialIcon = React.memo(() => (
 ));
 RemedialIcon.displayName = "RemedialIcon";
 
-const ArchiveIcon = React.memo(() => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="24"
-    height="24"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <rect width="20" height="5" x="2" y="3" rx="1" />
-    <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
-    <path d="M10 12h4" />
-  </svg>
-));
-ArchiveIcon.displayName = "ArchiveIcon";
-
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", path: "/MasterTeacher/Coordinator/dashboard", icon: <DashboardIcon /> },
   { label: "Calendar", path: "/MasterTeacher/Coordinator/calendar", icon: <CalendarIcon /> },
@@ -92,7 +73,6 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Teachers", path: "/MasterTeacher/Coordinator/teachers", icon: <TeachersIcon /> },
   { label: "Materials", path: "/MasterTeacher/Coordinator/materials", icon: <MaterialsIcon /> },
   { label: "Remedial", path: "/MasterTeacher/Coordinator/remedial", icon: <RemedialIcon /> },
-  { label: "Archive", path: "/MasterTeacher/Coordinator/archive", icon: <ArchiveIcon /> },
 ];
 
 export default function CoordinatorSidebar() {

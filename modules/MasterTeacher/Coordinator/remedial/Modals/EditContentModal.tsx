@@ -1,26 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Trash2 } from "lucide-react";
 
-import UtilityButton from "@/components/Common/Buttons/UtilityButton";
-
+import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
-
-import BaseModal, { ModalSection } from "@/components/Common/Modals/BaseModal";
-
-
+import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
+import BaseModal, { ModalLabel, ModalSection } from "@/components/Common/Modals/BaseModal";
 
 export interface FlashcardContent {
-
   sentence: string;
-
   highlights: string[];
-
   answer?: string;
-
 }
-
-
 
 interface EditContentModalProps {
   isOpen: boolean;
@@ -30,20 +22,34 @@ interface EditContentModalProps {
   subject?: string;
 }
 
-
-
 export default function EditContentModal({ isOpen, onClose, flashcards, onSave, subject }: EditContentModalProps) {
-
   const [editableFlashcards, setEditableFlashcards] = useState<FlashcardContent[]>([]);
   const [hasChanges, setHasChanges] = useState(false);
+  const [showDiscardChangesModal, setShowDiscardChangesModal] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const isMathSubject = subject === "Math";
   const usesAnswerField = isMathSubject || editableFlashcards.some((card) => card.answer !== undefined);
-
-
+  const sentenceLabel = isMathSubject ? "Math Problem" : "Sentence";
+  const answerLabel = isMathSubject ? "Correct Answer" : "Answer";
+  const sentencePlaceholder = isMathSubject
+    ? "Enter the math problem for this flashcard..."
+    : "Enter the sentence for this flashcard...";
+  const answerPlaceholder = isMathSubject
+    ? "Enter the correct answer..."
+    : "Enter the answer...";
+  const description = isMathSubject
+    ? "Review each math problem and answer before saving the updated flashcard set."
+    : "Review and refine each sentence before saving the updated flashcard set.";
+  const fieldInputClass =
+    "w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-[#013300] focus:ring-1 focus:ring-[#013300]";
+  const fieldTextareaClass = `${fieldInputClass} min-h-[88px] resize-y`;
+  const iconActionButtonClass =
+    "inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-200 bg-white text-red-600 transition hover:border-red-300 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-40";
+  const validationAlertClass =
+    "rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700";
 
   useEffect(() => {
-
     if (isOpen) {
       const normalized = (flashcards ?? []).map((card) => {
         if (!isMathSubject) return card;
@@ -53,92 +59,71 @@ export default function EditContentModal({ isOpen, onClose, flashcards, onSave, 
         };
       });
       setEditableFlashcards([...normalized]);
-
       setHasChanges(false);
-
+      setShowDiscardChangesModal(false);
+      setValidationError(null);
+    } else {
+      setShowDiscardChangesModal(false);
+      setValidationError(null);
     }
   }, [isOpen, flashcards, isMathSubject]);
 
-
+  const closeEditor = () => {
+    setHasChanges(false);
+    setShowDiscardChangesModal(false);
+    setValidationError(null);
+    onClose();
+  };
 
   const handleSentenceChange = (index: number, value: string) => {
-
     const updated = [...editableFlashcards];
-
     updated[index] = { ...updated[index], sentence: value };
-
     setEditableFlashcards(updated);
-
     setHasChanges(true);
-
+    setValidationError(null);
   };
-
-
 
   const handleAnswerChange = (index: number, value: string) => {
-
     const updated = [...editableFlashcards];
-
     updated[index] = { ...updated[index], answer: value };
-
     setEditableFlashcards(updated);
-
     setHasChanges(true);
-
+    setValidationError(null);
   };
-
-
 
   const addNewFlashcard = () => {
-
     const newCard: FlashcardContent = usesAnswerField
-
       ? { sentence: "", highlights: [], answer: "" }
-
       : { sentence: "", highlights: [] };
-
     setEditableFlashcards([
-
       ...editableFlashcards,
-
-      newCard
-
+      newCard,
     ]);
-
     setHasChanges(true);
-
+    setValidationError(null);
   };
 
-
-
   const removeFlashcard = (index: number) => {
-
     if (editableFlashcards.length <= 1) {
-
-      alert("You must have at least one flashcard.");
-
+      setValidationError("At least one flashcard is required.");
       return;
-
     }
-
-
-
     const updated = editableFlashcards.filter((_, i) => i !== index);
-
     setEditableFlashcards(updated);
-
     setHasChanges(true);
+    setValidationError(null);
   };
 
   const handleSave = () => {
-    // Validate that all sentences are filled
-    const emptySentences = editableFlashcards.filter(card => !card.sentence.trim());
+    const emptySentences = editableFlashcards.filter((card) => !card.sentence.trim());
     if (emptySentences.length > 0) {
-      alert(subject === "Math" ? "Please fill in all math problems before saving." : "Please fill in all sentences before saving.");
+      setValidationError(
+        isMathSubject
+          ? "Please fill in all math problems before saving."
+          : "Please fill in all sentences before saving.",
+      );
       return;
     }
-
-
 
     const emptyAnswers = editableFlashcards.filter((card) => {
       if (isMathSubject) return !String(card.answer ?? "").trim();
@@ -146,180 +131,129 @@ export default function EditContentModal({ isOpen, onClose, flashcards, onSave, 
     });
 
     if (emptyAnswers.length > 0) {
-
-      alert("Please fill in all answers before saving.");
-
+      setValidationError("Please fill in all answers before saving.");
       return;
-
     }
-
-
-
+    setValidationError(null);
     onSave(editableFlashcards);
-
-    onClose();
-
+    closeEditor();
   };
 
-
-
-  const handleClose = () => {
-
+  const handleCloseRequest = () => {
     if (hasChanges) {
-
-      const confirmClose = window.confirm("You have unsaved changes. Are you sure you want to close?");
-
-      if (!confirmClose) return;
-
+      setShowDiscardChangesModal(true);
+      return;
     }
-
-    onClose();
-
+    closeEditor();
   };
-
-
 
   const footer = (
-
     <>
-
-      <SecondaryButton
-
-        onClick={handleClose}
-
-      >
-
+      <SecondaryButton type="button" onClick={handleCloseRequest}>
         Cancel
-
       </SecondaryButton>
-
-      <UtilityButton
-
-        onClick={handleSave}
-
-        disabled={!hasChanges}
-
-        className="bg-[#013300] hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed"
-
-      >
-
+      <PrimaryButton type="button" onClick={handleSave} disabled={!hasChanges}>
         Save Changes
-
-      </UtilityButton>
-
+      </PrimaryButton>
     </>
-
   );
-
-
 
   return (
-
-    <BaseModal
-
-      show={isOpen}
-
-      onClose={handleClose}
-
-      title="Edit Flashcards Content"
-
-      maxWidth="3xl"
-
-      footer={footer}
-
-    >
-
-      <ModalSection title="Flashcards">
-        <p className="text-sm text-gray-600 mb-4">
-          {subject === "Math"
-            ? "Update each math problem and its correct answer below. These changes apply to the Master Teacher flashcard session."
-            : "Update each sentence below. These changes apply to the Master Teacher flashcard session."
-          }
-        </p>
-
-        <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-2">
-
-          {editableFlashcards.map((card: FlashcardContent, index: number) => (
-
-            <div key={index} className="border border-gray-300 rounded-xl p-6 bg-gray-50">
-
-              <div className="flex justify-between items-center mb-4">
-
-                <h3 className="text-lg font-semibold text-gray-800">Flashcard {index + 1}</h3>
-
-                <button
-
-                  onClick={() => removeFlashcard(index)}
-
-                  className="text-red-600 hover:text-red-800 text-sm font-medium"
-
-                  disabled={editableFlashcards.length <= 1}
-
-                >
-
-                  Remove
-
-                </button>
-
-              </div>
-
-
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {subject === "Math" ? "Math Problem *" : "Sentence *"}
-                  </label>
-                  <textarea
-                    value={card.sentence}
-                    onChange={(event) => handleSentenceChange(index, event.target.value)}
-                    placeholder={subject === "Math" ? "Enter the math problem for this flashcard..." : "Enter the sentence for this flashcard..."}
-                    className="w-full h-24 rounded-lg border border-gray-300 px-4 py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
-                  />
-                </div>
-                {usesAnswerField && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {subject === "Math" ? "Correct Answer *" : "Answer *"}
-                    </label>
-                    <input
-                      value={card.answer ?? ""}
-                      onChange={(event) => handleAnswerChange(index, event.target.value)}
-                      placeholder={subject === "Math" ? "Enter the correct answer..." : "Enter the correct answer..."}
-                      className="w-full rounded-lg border border-gray-300 px-4 py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    />
-                  </div>
-                )}
-              </div>
-
+    <>
+      <BaseModal
+        show={isOpen}
+        onClose={handleCloseRequest}
+        title="Edit Flashcards Content"
+        maxWidth="3xl"
+        footer={footer}
+      >
+        <ModalSection title="Flashcards">
+          <div className="space-y-5">
+            <div className="border-b border-gray-200 pb-4">
+              <p className="text-sm text-gray-500">{description}</p>
             </div>
 
-          ))}
+            {validationError && (
+              <div className={validationAlertClass}>
+                {validationError}
+              </div>
+            )}
 
-        </div>
+            <div className="max-h-[60vh] overflow-y-auto pr-1">
+              <div className="space-y-4">
+                {editableFlashcards.map((card: FlashcardContent, index: number) => (
+                  <section key={index} className="rounded-md border border-gray-200 bg-white px-4 py-4">
+                    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <div>
+                          <h3 className="text-sm font-semibold text-gray-900">Flashcard {index + 1}</h3>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeFlashcard(index)}
+                        disabled={editableFlashcards.length <= 1}
+                        className={iconActionButtonClass}
+                        aria-label={`Remove flashcard ${index + 1}`}
+                        title={`Remove flashcard ${index + 1}`}
+                      >
+                        <Trash2 className="h-4 w-4" strokeWidth={2.25} />
+                      </button>
+                    </div>
 
+                    <div className={`grid grid-cols-1 gap-4 ${usesAnswerField ? "md:grid-cols-[minmax(0,1fr)_240px]" : ""}`}>
+                      <div className="space-y-1">
+                        <ModalLabel required>{sentenceLabel}</ModalLabel>
+                        <textarea
+                          value={card.sentence}
+                          onChange={(event) => handleSentenceChange(index, event.target.value)}
+                          placeholder={sentencePlaceholder}
+                          className={fieldTextareaClass}
+                          rows={3}
+                        />
+                      </div>
 
+                      {usesAnswerField && (
+                        <div className="space-y-1">
+                          <ModalLabel required>{answerLabel}</ModalLabel>
+                          <input
+                            value={card.answer ?? ""}
+                            onChange={(event) => handleAnswerChange(index, event.target.value)}
+                            placeholder={answerPlaceholder}
+                            className={fieldInputClass}
+                          />
+                          <p className="text-xs leading-5 text-gray-500">
+                            {isMathSubject
+                              ? "Use the final correct answer shown to the student."
+                              : "Use a short, exact answer for this flashcard."}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            </div>
 
-        <div className="mt-6">
+            <button
+              type="button"
+              onClick={addNewFlashcard}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm font-semibold text-[#013300] transition hover:border-[#013300]/35 hover:bg-[#013300]/5"
+            >
+              <span className="text-base leading-none">+</span>
+              Add Flashcard
+            </button>
+          </div>
+        </ModalSection>
+      </BaseModal>
 
-          <UtilityButton
-
-            onClick={addNewFlashcard}
-
-            className="bg-[#013300] hover:bg-green-900 w-full justify-center"
-
-          >
-
-            + Add New Flashcard
-
-          </UtilityButton>
-
-        </div>
-
-      </ModalSection>
-
-    </BaseModal>
-
+      <ConfirmationModal
+        isOpen={showDiscardChangesModal}
+        onClose={() => setShowDiscardChangesModal(false)}
+        onConfirm={closeEditor}
+        title="Discard Unsaved Changes?"
+        message="You have unsaved flashcard changes. Are you sure you want to close this editor without saving?"
+      />
+    </>
   );
-
 }

@@ -1,12 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { getTableColumns, query, tableExists } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/server/super-admin-auth";
+import { requireItAdmin } from "@/lib/server/it-admin-auth";
 
 export const dynamic = "force-dynamic";
 
 const ROLE_VARIANTS: Record<string, string[]> = {
-  super_admin: ["super_admin", "super admin", "super-admin", "superadmin", "admin", "it_admin", "it-admin", "it admin"],
+  it_admin: ["super_admin", "super admin", "super-admin", "superadmin", "admin", "it_admin", "it-admin", "it admin"],
   principal: ["principal"],
   master_teacher: ["master_teacher", "master-teacher", "master teacher", "masterteacher"],
   teacher: ["teacher", "faculty"],
@@ -15,7 +15,7 @@ const ROLE_VARIANTS: Record<string, string[]> = {
 };
 
 const ROLE_LABELS: Record<string, string> = {
-  super_admin: "Super Admin",
+  it_admin: "IT Admin",
   principal: "Principal",
   master_teacher: "Master Teacher",
   teacher: "Teacher",
@@ -115,7 +115,7 @@ function determineStatusFromIso(
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireSuperAdmin(request, { permission: "super_admin:logs.view" });
+  const auth = await requireItAdmin(request, { permission: "it_admin:logs.view" });
   if (!auth.ok) {
     return auth.response;
   }
@@ -323,7 +323,7 @@ export async function GET(request: NextRequest) {
       const principalId = row.principal_id ?? null;
       const masterTeacherId = row.master_teacher_id ?? null;
       const teacherId = row.teacher_id ?? null;
-      const displayId = ((resolvedRole === "super_admin" || resolvedRole === "admin") && itAdminId)
+      const displayId = ((resolvedRole === "it_admin" || resolvedRole === "super_admin" || resolvedRole === "admin") && itAdminId)
         ? itAdminId 
         : (resolvedRole === "principal" && principalId)
           ? principalId

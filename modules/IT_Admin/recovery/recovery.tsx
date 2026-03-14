@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import ITAdminSidebar from "@/components/Super_Admin/Sidebar";
-import ITAdminHeader from "@/components/Super_Admin/Header";
+import ITAdminSidebar from "@/components/IT_Admin/Sidebar";
+import ITAdminHeader from "@/components/IT_Admin/Header";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
@@ -85,7 +85,7 @@ export default function ITAdminRecoveryCenter() {
 
   const fetchSummary = useCallback(async () => {
     try {
-      const response = await fetch("/api/super_admin/recovery/summary", { cache: "no-store" });
+      const response = await fetch("/api/it_admin/recovery/summary", { cache: "no-store" });
       if (!response.ok) {
         throw new Error(`Summary request failed (${response.status})`);
       }
@@ -114,7 +114,7 @@ export default function ITAdminRecoveryCenter() {
       if (query.trim().length > 0) {
         params.set("query", query.trim());
       }
-      const response = await fetch(`/api/super_admin/recovery/list?${params.toString()}`, { cache: "no-store" });
+      const response = await fetch(`/api/it_admin/recovery/list?${params.toString()}`, { cache: "no-store" });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
         throw new Error(payload?.error ?? `List request failed (${response.status})`);
@@ -171,7 +171,7 @@ export default function ITAdminRecoveryCenter() {
     setPreviewLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/super_admin/recovery/preview", {
+      const response = await fetch("/api/it_admin/recovery/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ entity, ids: selectedIdValues }),
@@ -223,7 +223,7 @@ export default function ITAdminRecoveryCenter() {
     setError(null);
     setMessage(null);
     try {
-      const response = await fetch("/api/super_admin/recovery/restore", {
+      const response = await fetch("/api/it_admin/recovery/restore", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -271,7 +271,7 @@ export default function ITAdminRecoveryCenter() {
               <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800">
                 <p className="font-semibold">Dual Confirmation Policy</p>
                 <p className="text-sm mt-1">
-                  Super Admin must provide both a recovery reason and approval note, then type <span className="font-bold">RESTORE</span> to execute.
+                  IT Admin must provide both a recovery reason and approval note, then type <span className="font-bold">RESTORE</span> to execute.
                 </p>
               </div>
 
@@ -359,9 +359,9 @@ export default function ITAdminRecoveryCenter() {
                               />
                             </td>
                             <td className="px-3 py-2 font-medium">{key}</td>
-                            <td className="px-3 py-2">{record.label ?? "—"}</td>
-                            <td className="px-3 py-2">{record.reason ?? "—"}</td>
-                            <td className="px-3 py-2">{record.occurredAt ? new Date(record.occurredAt).toLocaleString() : "—"}</td>
+                            <td className="px-3 py-2">{record.label ?? "--"}</td>
+                            <td className="px-3 py-2">{record.reason ?? "--"}</td>
+                            <td className="px-3 py-2">{record.occurredAt ? new Date(record.occurredAt).toLocaleString() : "--"}</td>
                           </tr>
                         );
                       })}

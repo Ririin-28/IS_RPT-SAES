@@ -7,11 +7,12 @@ describe("role resolution", () => {
     expect(normalizeRoleName(" IT/Admin ")).toBe("it_admin");
   });
 
-  test("canonicalizes legacy admin aliases to super_admin", () => {
-    expect(resolveCanonicalRole("admin")).toBe("super_admin");
-    expect(resolveCanonicalRole("it_admin")).toBe("super_admin");
-    expect(resolveCanonicalRole("itadmin")).toBe("super_admin");
-    expect(resolveCanonicalRole("superadmin")).toBe("super_admin");
+  test("canonicalizes legacy admin aliases to it_admin", () => {
+    expect(resolveCanonicalRole("admin")).toBe("it_admin");
+    expect(resolveCanonicalRole("it_admin")).toBe("it_admin");
+    expect(resolveCanonicalRole("itadmin")).toBe("it_admin");
+    expect(resolveCanonicalRole("superadmin")).toBe("it_admin");
+    expect(resolveCanonicalRole("super_admin")).toBe("it_admin");
   });
 
   test("keeps non-admin roles canonical", () => {

@@ -140,6 +140,7 @@ export default function MasterTeacherGradeSixTab({ teachers, setTeachers, search
       />
 
       <TableList
+        showFullScreenToggle
         columns={[
           { key: "no", title: "No#" },
           { key: "teacherId", title: "Teacher ID" },

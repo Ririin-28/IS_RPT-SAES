@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState, useCallback } from "react";
-import ITAdminHeader from "@/components/Super_Admin/Header";
-import ITAdminSidebar from "@/components/Super_Admin/Sidebar";
+import ITAdminHeader from "@/components/IT_Admin/Header";
+import ITAdminSidebar from "@/components/IT_Admin/Sidebar";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import TableList from "@/components/Common/Tables/TableList";
@@ -10,7 +10,7 @@ import { exportLogRows } from "./utils/export-columns";
 
 const ROLE_OPTIONS = [
   "All Users",
-  "Super Admin",
+  "IT Admin",
   "Principal",
   "Master Teacher",
   "Teacher",
@@ -19,7 +19,7 @@ const ROLE_OPTIONS = [
 
 const ROLE_LABEL_TO_KEY: Record<(typeof ROLE_OPTIONS)[number], string | null> = {
   "All Users": null,
-  "Super Admin": "super_admin",
+  "IT Admin": "it_admin",
   "Principal": "principal",
   "Master Teacher": "master_teacher",
   "Teacher": "teacher",
@@ -27,9 +27,9 @@ const ROLE_LABEL_TO_KEY: Record<(typeof ROLE_OPTIONS)[number], string | null> = 
 };
 
 const ROLE_KEY_TO_LABEL: Record<string, string> = {
-  super_admin: "Super Admin",
-  admin: "Super Admin",
-  it_admin: "Super Admin",
+  it_admin: "IT Admin",
+  super_admin: "IT Admin",
+  admin: "IT Admin",
   principal: "Principal", 
   master_teacher: "Master Teacher",
   teacher: "Teacher",
@@ -107,7 +107,7 @@ export default function ITAdminLogs() {
         console.log(`Fetching logs for role: ${roleFilter} (key: ${roleKey || 'all'})`);
         
         const response = await fetch(
-          `/api/super_admin/logs?${params.toString()}`,
+          `/api/it_admin/logs?${params.toString()}`,
           { 
             cache: "no-store", 
             signal: controller.signal,
@@ -240,7 +240,7 @@ export default function ITAdminLogs() {
 
   // Helper to format timestamp
   const formatTimestamp = (ts: string | null | undefined) => {
-    if (!ts) return "—";
+    if (!ts) return "--";
     
     try {
       const parsed = new Date(ts);
@@ -269,7 +269,7 @@ export default function ITAdminLogs() {
       title: "User ID", 
       render: (row: LogRecord) => {
         // Show role-specific ID when available
-        if ((row.role === "super_admin" || row.role === "admin") && row.itAdminId) {
+        if ((row.role === "it_admin" || row.role === "super_admin" || row.role === "admin") && row.itAdminId) {
           return row.itAdminId;
         }
         if (row.role === "principal" && row.principalId) {
@@ -281,10 +281,10 @@ export default function ITAdminLogs() {
         if (row.role === "teacher" && row.teacherId) {
           return row.teacherId;
         }
-        return row.userId ?? "—";
+        return row.userId ?? "--";
       }
     },
-    { key: "name", title: "Name", render: (row: LogRecord) => row.name ?? "—" },
+    { key: "name", title: "Name", render: (row: LogRecord) => row.name ?? "--" },
     { key: "lastLogin", title: "Last Login", render: (row: LogRecord) => formatTimestamp(row.lastLogin) },
     {
       key: "status",
@@ -354,13 +354,13 @@ export default function ITAdminLogs() {
               {!isLoading && !error && (
                 <>
                   <TableList
+                    showFullScreenToggle
                     columns={tableColumns}
                     data={filteredLogs.map((log, idx) => ({
                       ...log,
                       no: idx + 1,
                     }))}
                     pageSize={10}
-                    showFullScreenToggle
                   />
                   
                   {filteredLogs.length === 0 && (

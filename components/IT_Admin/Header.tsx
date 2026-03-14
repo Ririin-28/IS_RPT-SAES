@@ -138,7 +138,7 @@ export default function AdminHeader({ title }: AdminHeaderProps) {
                 <ProfileDropdown
                   onProfile={() => {
                     setShowDropdown(false);
-                    router.push("/Super_Admin/profile");
+                    router.push("/IT_Admin/profile");
                   }}
                   onLogout={() => {
                     setShowDropdown(false);

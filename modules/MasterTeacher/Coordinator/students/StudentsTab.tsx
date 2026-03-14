@@ -1328,6 +1328,7 @@ export default function StudentTab({
 
       {/* Student Table Section */}
       <TableList
+        showFullScreenToggle
         columns={[
           { key: "no", title: "No#" },
           {

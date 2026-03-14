@@ -194,6 +194,7 @@ export default function TeacherAllGradesTab({ teachers, setTeachers, searchTerm,
       />
 
       <TableList
+        showFullScreenToggle
         columns={[
           { key: "no", title: "No#" },
           { key: "name", title: "Full Name" },

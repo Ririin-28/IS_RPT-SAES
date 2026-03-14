@@ -145,6 +145,7 @@ export default function TeacherTab({ teachers, setTeachers, searchTerm }: Teache
       <UserDetailModal show={showDetailModal} onClose={() => setShowDetailModal(false)} user={selectedTeacher} />
 
       <TableList
+                    showFullScreenToggle
         columns={[
           { key: "no", title: "No#" },
           { key: "teacherId", title: "Teacher ID" },

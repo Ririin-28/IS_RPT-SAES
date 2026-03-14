@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import Sidebar from "@/components/Super_Admin/Sidebar";
-import Header from "@/components/Super_Admin/Header";
+import Sidebar from "@/components/IT_Admin/Sidebar";
+import Header from "@/components/IT_Admin/Header";
 // Text Components
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
@@ -141,7 +141,7 @@ function OverviewCard({
 
 
 function formatDateTime(dt: string | null | undefined) {
-  if (!dt) return "—";
+  if (!dt) return "--";
   const date = new Date(dt);
   if (Number.isNaN(date.getTime())) {
     return dt;
@@ -182,7 +182,7 @@ export default function ITAdminDashboard() {
       setIsLoading(true);
       setError(null);
       try {
-  const response = await fetch("/api/super_admin/dashboard", { cache: "no-store" });
+  const response = await fetch("/api/it_admin/dashboard", { cache: "no-store" });
         if (!response.ok) {
           throw new Error(`Request failed with status ${response.status}`);
         }
@@ -231,7 +231,7 @@ export default function ITAdminDashboard() {
             <circle cx="9" cy="7" r="4" />
           </svg>
         ),
-        onClick: () => handleNavigation("/Super_Admin/accounts"),
+        onClick: () => handleNavigation("/IT_Admin/accounts"),
       },
       {
         key: "new-users",
@@ -246,7 +246,7 @@ export default function ITAdminDashboard() {
             <line x1="22" x2="16" y1="11" y2="11" />
           </svg>
         ),
-        onClick: () => handleNavigation("/Super_Admin/accounts"),
+        onClick: () => handleNavigation("/IT_Admin/accounts"),
       },
       {
         key: "pending-users",
@@ -262,7 +262,7 @@ export default function ITAdminDashboard() {
             <rect x="8" y="2" width="8" height="4" rx="1" />
           </svg>
         ),
-        onClick: () => handleNavigation("/Super_Admin/operations-log"),
+        onClick: () => handleNavigation("/IT_Admin/logs"),
       },
       {
         key: "archived-users",
@@ -275,7 +275,7 @@ export default function ITAdminDashboard() {
             <circle cx="12" cy="12" r="10" />
           </svg>
         ),
-        onClick: () => handleNavigation("/Super_Admin/recovery"),
+        onClick: () => handleNavigation("/IT_Admin/archive"),
       },
     ],
     [overview, handleNavigation]
@@ -309,7 +309,7 @@ export default function ITAdminDashboard() {
     }
     return recentLogins.map((entry) => ({
       ...entry,
-      role: entry.role ? entry.role.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "—",
+      role: entry.role ? entry.role.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "--",
       status:
         typeof entry.status === "string" && entry.status.toLowerCase() === "online"
           ? "Online"
@@ -353,7 +353,7 @@ export default function ITAdminDashboard() {
             <div className="relative h-full min-h-95 overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.10)] backdrop-blur-xl sm:p-5 md:p-6">
               {/* Overview Cards Section */}
               <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
-                <SecondaryHeader title="Super Admin Overview" />
+                <SecondaryHeader title="IT Admin Overview" />
               </div>
               {error && (
                 <p className="mt-2 text-sm text-red-600" role="alert">
@@ -364,9 +364,9 @@ export default function ITAdminDashboard() {
                 {overviewCards.map((card) => {
                   const rawValue = card.value;
                   const displayValue = isLoading
-                    ? "…"
+                    ? "..."
                     : rawValue === null || rawValue === undefined
-                      ? "—"
+                      ? "--"
                       : rawValue;
                   return (
                     <OverviewCard
@@ -388,9 +388,9 @@ export default function ITAdminDashboard() {
               {/* Recent Logins Table Section */}
               <div className="mt-8">
                 <TertiaryHeader title="Recent Logins" />
-                <TableList columns={tableColumns} data={tableData} pageSize={5} hidePagination={true} />
+                <TableList columns={tableColumns} data={tableData} pageSize={5} hidePagination={true} showFullScreenToggle />
                 {isLoading && (
-                  <p className="mt-3 text-sm text-gray-500">Loading recent logins…</p>
+                  <p className="mt-3 text-sm text-gray-500">Loading recent logins...</p>
                 )}
                 {!isLoading && tableData.length === 0 && !error && (
                   <p className="mt-3 text-sm text-gray-500">No login activity recorded yet.</p>

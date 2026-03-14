@@ -1,7 +1,7 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { getTableColumns, query, tableExists } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/server/super-admin-auth";
+import { requireItAdmin } from "@/lib/server/it-admin-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -99,7 +99,7 @@ async function safeGetTableColumns(tableName: string): Promise<Set<string>> {
 }
 
 export async function GET(request: Request) {
-  const auth = await requireSuperAdmin(request, { permission: "super_admin:dashboard.view" });
+  const auth = await requireItAdmin(request, { permission: "it_admin:dashboard.view" });
   if (!auth.ok) {
     return auth.response;
   }
@@ -343,10 +343,10 @@ export async function GET(request: Request) {
     return NextResponse.json(response);
 
   } catch (error) {
-    console.error("Failed to load Super Admin dashboard data", error);
+    console.error("Failed to load IT Admin dashboard data", error);
     return NextResponse.json(
       { 
-        error: "Failed to load Super Admin dashboard data.",
+        error: "Failed to load IT Admin dashboard data.",
         details: error instanceof Error ? error.message : 'Unknown error',
         overview: {
           totalUsers: 0,

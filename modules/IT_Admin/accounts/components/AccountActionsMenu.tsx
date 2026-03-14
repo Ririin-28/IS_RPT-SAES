@@ -1,9 +1,9 @@
-"use client";
+﻿"use client";
 
 import { useCallback, type ReactElement } from "react";
 import KebabMenu from "@/components/Common/Menus/KebabMenu";
 
-export type AccountType = "Principal" | "Super Admin" | "Master Teachers" | "Teachers";
+export type AccountType = "Principal" | "IT Admin" | "Master Teachers" | "Teachers";
 
 export type AccountActionKey =
   | "principal:add"
@@ -61,8 +61,8 @@ const ACCOUNT_ACTIONS: Record<AccountType, ActionConfig[]> = {
     { label: "Upload file", action: "principal:upload", icon: <UploadIcon /> },
     { label: "Select", action: "principal:select", icon: <SelectIcon /> },
   ],
-  "Super Admin": [
-    { label: "Add Super Admin", action: "it_admin:add", icon: <AddIcon /> },
+  "IT Admin": [
+    { label: "Add IT Admin", action: "it_admin:add", icon: <AddIcon /> },
     { label: "Upload file", action: "it_admin:upload", icon: <UploadIcon /> },
     { label: "Select", action: "it_admin:select", icon: <SelectIcon /> },
   ],
@@ -88,10 +88,6 @@ interface AccountActionsMenuProps {
     disabled?: boolean;
     onExport: () => void;
   };
-  downloadPasswordsConfig?: {
-    disabled?: boolean;
-    onDownload: () => void;
-  };
   downloadTemplateConfig?: {
     disabled?: boolean;
     onDownload: () => void;
@@ -104,7 +100,6 @@ export default function AccountActionsMenu({
   buttonAriaLabel = "Open menu",
   className = "",
   exportConfig,
-  downloadPasswordsConfig,
   downloadTemplateConfig,
 }: AccountActionsMenuProps) {
   const handleAction = useCallback(
@@ -174,27 +169,6 @@ export default function AccountActionsMenu({
                   <ExportIcon />
                   {exportConfig.label ?? "Export to Excel"}
                 </button>
-                {downloadPasswordsConfig && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (downloadPasswordsConfig.disabled) {
-                        return;
-                      }
-                      downloadPasswordsConfig.onDownload();
-                      close();
-                    }}
-                    className={`flex w-full items-center gap-2 px-4 py-2 text-left text-sm ${
-                      downloadPasswordsConfig.disabled
-                        ? "text-gray-300 cursor-not-allowed"
-                        : "text-[#013300] hover:bg-gray-50"
-                    }`}
-                    aria-disabled={downloadPasswordsConfig.disabled}
-                  >
-                    <ExportIcon />
-                    Download Passwords CSV
-                  </button>
-                )}
                 {downloadTemplateConfig && (
                   <button
                     type="button"
@@ -249,27 +223,6 @@ export default function AccountActionsMenu({
                   <ExportIcon />
                   {exportConfig.label ?? "Export to Excel"}
                 </button>
-                {downloadPasswordsConfig && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (downloadPasswordsConfig.disabled) {
-                        return;
-                      }
-                      downloadPasswordsConfig.onDownload();
-                      close();
-                    }}
-                    className={`flex w-full items-center gap-2 px-4 py-2 text-left text-sm ${
-                      downloadPasswordsConfig.disabled
-                        ? "text-gray-300 cursor-not-allowed"
-                        : "text-[#013300] hover:bg-gray-50"
-                    }`}
-                    aria-disabled={downloadPasswordsConfig.disabled}
-                  >
-                    <ExportIcon />
-                    Download Passwords CSV
-                  </button>
-                )}
                 {downloadTemplateConfig && (
                   <button
                     type="button"

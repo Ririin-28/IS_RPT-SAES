@@ -833,6 +833,7 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
 
       {/* Student Table Section */}
       <TableList
+        showFullScreenToggle
         columns={[
           { key: "no", title: "No#" },
           {

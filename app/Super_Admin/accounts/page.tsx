@@ -1,5 +1,5 @@
-import ITAdminAccounts from "@/modules/Super_Admin/accounts/accounts";
+﻿import { redirect } from "next/navigation";
 
-export default function Accounts() {
-  return <ITAdminAccounts />;
+export default function LegacySuperAdminPage() {
+  redirect("/IT_Admin/accounts");
 }

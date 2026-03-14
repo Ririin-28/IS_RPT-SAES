@@ -1,7 +1,7 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import type { ResultSetHeader } from "mysql2/promise";
 import { runWithConnection } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/server/super-admin-auth";
+import { requireItAdmin } from "@/lib/server/it-admin-auth";
 
 function buildNormalizeSql(tableName: string, columnName: string): string {
   return `UPDATE ${tableName}
@@ -16,7 +16,7 @@ function buildNormalizeSql(tableName: string, columnName: string): string {
 }
 
 export async function POST(request: Request): Promise<Response> {
-  const auth = await requireSuperAdmin(request, { permission: "super_admin:maintenance.execute" });
+  const auth = await requireItAdmin(request, { permission: "it_admin:maintenance.execute" });
   if (!auth.ok) {
     return auth.response;
   }

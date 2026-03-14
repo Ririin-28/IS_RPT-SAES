@@ -1,4 +1,4 @@
-import ITAdminArchive from "@/modules/Super_Admin/archive/archive";
+﻿import ITAdminArchive from "@/modules/IT_Admin/archive/archive";
 
 export default function Archive() {
   return <ITAdminArchive />;

@@ -88,7 +88,7 @@ export default function ITAdminArchiveTab({ itAdmins, setItAdmins, searchTerm, o
       }
 
       try {
-        const response = await fetch("/api/super_admin/archive/restore", {
+        const response = await fetch("/api/it_admin/archive/restore", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ archiveIds }),
@@ -150,7 +150,7 @@ export default function ITAdminArchiveTab({ itAdmins, setItAdmins, searchTerm, o
           resetSelection();
         }
       } catch (error) {
-        console.error("Failed to restore archived Super Admin accounts", error);
+        console.error("Failed to restore archived IT Admin accounts", error);
         if (typeof window !== "undefined") {
           const message = error instanceof Error ? error.message : "Failed to restore archived accounts.";
           window.alert(message);
@@ -184,7 +184,7 @@ export default function ITAdminArchiveTab({ itAdmins, setItAdmins, searchTerm, o
       }
 
       try {
-        const response = await fetch("/api/super_admin/archive/delete", {
+        const response = await fetch("/api/it_admin/archive/delete", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ archiveIds }),
@@ -226,7 +226,7 @@ export default function ITAdminArchiveTab({ itAdmins, setItAdmins, searchTerm, o
 
         resetSelection();
       } catch (error) {
-        console.error("Failed to delete archived Super Admin accounts", error);
+        console.error("Failed to delete archived IT Admin accounts", error);
         if (typeof window !== "undefined") {
           const message = error instanceof Error ? error.message : "Failed to delete archived accounts.";
           window.alert(message);
@@ -287,7 +287,7 @@ export default function ITAdminArchiveTab({ itAdmins, setItAdmins, searchTerm, o
   const handleExport = () => {
     void exportArchiveRows({
       rows: filteredAdmins,
-      accountLabel: "Super Admin",
+      accountLabel: "IT Admin",
     });
   };
 
@@ -403,14 +403,15 @@ export default function ITAdminArchiveTab({ itAdmins, setItAdmins, searchTerm, o
         </div>
       </div>
       <TableList
+                    showFullScreenToggle
         columns={[
           { key: "no", title: "No#" },
-          { key: "adminId", title: "Admin ID", render: (row: any) => row.userId ?? row.user_id ?? row.adminId ?? "—" },
+          { key: "adminId", title: "Admin ID", render: (row: any) => row.userId ?? row.user_id ?? row.adminId ?? "--" },
           { key: "name", title: "Full Name" },
           {
             key: "archivedDate",
             title: "Archived Date",
-            render: (row: any) => row.archivedDateDisplay ?? "—",
+            render: (row: any) => row.archivedDateDisplay ?? "--",
           },
         ]}
         data={tableData}
@@ -451,12 +452,12 @@ export default function ITAdminArchiveTab({ itAdmins, setItAdmins, searchTerm, o
         show={restoredAccounts.length > 0}
         onClose={() => setRestoredAccounts([])}
         accounts={restoredAccounts}
-        roleLabel="Super Admin"
+        roleLabel="IT Admin"
       />
       <AccountDeletedModal
         show={showDeletedModal}
         onClose={() => setShowDeletedModal(false)}
-        roleLabel="Super Admin"
+        roleLabel="IT Admin"
         count={deletedCount}
       />
     </div>

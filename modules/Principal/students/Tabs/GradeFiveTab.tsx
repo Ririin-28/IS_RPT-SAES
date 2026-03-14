@@ -124,6 +124,7 @@ export default function GradeFiveTab({ students, setStudents, searchTerm }: Grad
       />
 
       <TableList
+        showFullScreenToggle
         columns={[
           { key: "no", title: "No#" },
           { key: "studentId", title: "Student ID" },

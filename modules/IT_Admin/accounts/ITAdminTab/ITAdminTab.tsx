@@ -57,7 +57,7 @@ function normalizePhoneDigits(raw: string | null | undefined): string | null {
 
 function formatTimestamp(value: string | Date | null | undefined): string {
   if (!value) {
-    return "—";
+    return "--";
   }
 
   try {
@@ -190,6 +190,16 @@ function extractNumericId(value: unknown): number | null {
   return numeric;
 }
 
+function buildItAdminCreatedAccount(record: any, fallbackEmail: string): AccountCreatedInfo {
+  return {
+    name: record?.name ?? "New IT Admin",
+    email: record?.email ?? fallbackEmail,
+    roleLabel: "IT Admin",
+    identifierLabel: "IT Admin ID",
+    identifierValue: record?.adminId ?? null,
+  };
+}
+
 interface ITAdminTabProps {
   itAdmins: any[];
   setITAdmins: Dispatch<SetStateAction<any[]>>;
@@ -204,6 +214,7 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [createdAccount, setCreatedAccount] = useState<AccountCreatedInfo | null>(null);
+  const [createdAccountMessage, setCreatedAccountMessage] = useState<string | null>(null);
   const [archivedCount, setArchivedCount] = useState<number | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -213,8 +224,8 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [isArchiving, setIsArchiving] = useState(false);
-  const [uploadedPasswords, setUploadedPasswords] = useState<Array<{name: string; email: string; password: string}>>([]);
   const [uploadedAccounts, setUploadedAccounts] = useState<AccountCreatedInfo[] | null>(null);
+  const [uploadedAccountsMessage, setUploadedAccountsMessage] = useState<string | null>(null);
   const [currentUserIdentifiers, setCurrentUserIdentifiers] = useState<{ id: string | null; email: string | null }>({ id: null, email: null });
 
   const clearSelfArchiveError = useCallback(() => {
@@ -338,7 +349,7 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
       return;
     }
 
-    console.log(`[Super Admin Tab] Action triggered: ${action}`);
+    console.log(`[IT Admin Tab] Action triggered: ${action}`);
   }, [addITAdminForm]);
 
 
@@ -362,8 +373,8 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
       rows: filteredITAdmins,
       columns: IT_ADMIN_EXPORT_COLUMNS,
       baseFilename: "it-admin-accounts",
-      sheetName: "Super Admin Accounts",
-      emptyMessage: "No Super Admin accounts available to export.",
+      sheetName: "IT Admin Accounts",
+      emptyMessage: "No IT Admin accounts available to export.",
     });
   }, [filteredITAdmins]);
 
@@ -391,7 +402,7 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
     setIsSubmitting(true);
     setSubmitError(null);
     try {
-      const response = await fetch("/api/super_admin/accounts/it_admin", {
+      const response = await fetch("/api/it_admin/accounts/it_admin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -399,13 +410,13 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
 
       if (!response.ok) {
         const errorPayload = await response.json().catch(() => ({}));
-        throw new Error(errorPayload?.error ?? `Unable to add Super Admin (status ${response.status}).`);
+        throw new Error(errorPayload?.error ?? `Unable to add IT Admin (status ${response.status}).`);
       }
 
       const result = await response.json();
       const record = result?.record ?? null;
       const userId = result?.userId ?? record?.userId ?? null;
-      const temporaryPassword = result?.temporaryPassword ?? null;
+      const credentialEmail = result?.credentialEmail ?? null;
 
       const fallbackRecord = {
         userId,
@@ -428,19 +439,15 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
       });
 
       setShowAddModal(false);
-      if (temporaryPassword) {
-        setSuccessMessage(null);
-        setCreatedAccount({
-          name: normalizedRecord.name ?? "New Super Admin",
-          email: normalizedRecord.email ?? payload.email,
-          temporaryPassword,
-          roleLabel: "Super Admin",
-        });
-      } else {
-        setSuccessMessage(`${normalizedRecord.name ?? "New Super Admin"} added successfully.`);
-      }
+      setSuccessMessage(null);
+      setCreatedAccount(buildItAdminCreatedAccount(normalizedRecord, payload.email));
+      setCreatedAccountMessage(
+        credentialEmail?.sent === false
+          ? `The account was created, but the credential email could not be sent${credentialEmail?.error ? `: ${credentialEmail.error}` : "."}`
+          : "Temporary sign-in credentials were sent to this user's email address.",
+      );
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : "Unable to add Super Admin.");
+      setSubmitError(error instanceof Error ? error.message : "Unable to add IT Admin.");
     } finally {
       setIsSubmitting(false);
     }
@@ -575,7 +582,7 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
           setArchiveError(null);
           setSuccessMessage(null);
 
-          const response = await fetch("/api/super_admin/accounts/it_admin/upload", {
+          const response = await fetch("/api/it_admin/accounts/it_admin/upload", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ admins: adminsPayload }),
@@ -586,7 +593,7 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
           const failures = Array.isArray(result?.failures) ? result.failures : [];
           
           if (failures.length > 0) {
-            console.warn("Super Admin upload skipped rows:", failures);
+            console.warn("IT Admin upload skipped rows:", failures);
           }
           const normalizedRecords = inserted
             .map((entry: any) => normalizeItAdminRecord(entry?.record ?? {}))
@@ -600,48 +607,34 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
             });
           }
 
-          let passwordMap: Array<{ name: string; email: string; password: string }> = [];
-          if (inserted.length > 0) {
-            passwordMap = inserted
-                .map((entry: any) => ({
-                  name: (() => {
-                    const rec = entry?.record ?? {};
-                    const explicitName = toStringOrNull(rec.name);
-                    if (explicitName) return explicitName;
-                    const first = toStringOrNull(rec.firstName ?? rec.first_name) ?? "";
-                    const last = toStringOrNull(rec.lastName ?? rec.last_name) ?? "";
-                    const composed = `${first} ${last}`.trim();
-                    return composed.length > 0 ? composed : "Unknown";
-                  })(),
-                  email: entry?.record?.email ?? '',
-                  password: entry?.temporaryPassword ?? '',
-                }))
-                .filter((item: any) => item.email && item.password);
-            if (passwordMap.length > 0) {
-              setUploadedPasswords(passwordMap);
-              setUploadedAccounts(
-                passwordMap.map((entry) => ({
-                  name: entry.name,
-                  email: entry.email,
-                  temporaryPassword: entry.password,
-                  roleLabel: "Super Admin",
-                })),
-              );
-              console.info("Temporary passwords for imported Super Admin accounts:", passwordMap);
-            }
+          if (normalizedRecords.length > 0) {
+            setUploadedAccounts(
+              normalizedRecords.map((entry: any) => buildItAdminCreatedAccount(entry, entry?.email ?? "")),
+            );
           }
 
           const successCount = normalizedRecords.length;
           const failureCount = failures.length + invalidRows;
+          const credentialEmailFailures = inserted.filter((entry: any) => entry?.credentialEmail?.sent === false);
+          const credentialFailureCount = credentialEmailFailures.length;
+          const credentialFailurePreview = credentialEmailFailures.slice(0, 3).map((entry: any) => {
+            const email = entry?.record?.email ?? `Row ${Number(entry?.index ?? 0) + 1}`;
+            const error = entry?.credentialEmail?.error ?? "Unable to send credential email.";
+            return `${email}: ${error}`;
+          });
 
-          if (successCount > 0 && passwordMap.length === 0) {
-            setSuccessMessage(`Imported ${successCount} Super Admin${successCount === 1 ? "" : "s"} successfully.`);
+          if (successCount > 0) {
+            setUploadedAccountsMessage(
+              credentialFailureCount > 0
+                ? "Import completed, but some credential emails could not be delivered. Review the warning banner for details."
+                : "Import completed successfully. Temporary sign-in credentials were emailed to the imported users.",
+            );
           }
 
           if (!response.ok || (successCount === 0 && failureCount > 0)) {
             const responseError = typeof result?.error === "string" && result.error.trim().length > 0
               ? result.error
-              : "Failed to import Super Admin accounts.";
+              : "Failed to import IT Admin accounts.";
             const failurePreview = failures.slice(0, 3).map((failure: any) => {
               const label = failure?.email ? `${failure.email}` : `Row ${Number(failure?.index ?? 0) + 1}`;
               return `${label}: ${failure?.error ?? "Unknown error"}`;
@@ -654,7 +647,13 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
               return `${label}: ${failure?.error ?? "Unknown error"}`;
             });
             const detailText = failurePreview.length > 0 ? ` Details: ${failurePreview.join("; ")}` : "";
-            setArchiveError(`${failureCount} row${failureCount === 1 ? "" : "s"} could not be imported. Check for duplicate emails or missing data.${detailText}`.trim());
+            const credentialDetailText = credentialFailurePreview.length > 0
+              ? ` Email delivery: ${credentialFailurePreview.join("; ")}`
+              : "";
+            setArchiveError(`${failureCount} row${failureCount === 1 ? "" : "s"} could not be imported. Check for duplicate emails or missing data.${detailText}${credentialDetailText}`.trim());
+          } else if (credentialFailureCount > 0) {
+            const detailText = credentialFailurePreview.length > 0 ? ` Details: ${credentialFailurePreview.join("; ")}` : "";
+            setArchiveError(`${credentialFailureCount} imported account${credentialFailureCount === 1 ? "" : "s"} ${credentialFailureCount === 1 ? "was" : "were"} created, but the credential email could not be sent.${detailText}`.trim());
           } else {
             setArchiveError(null);
           }
@@ -764,14 +763,14 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
     const uniqueUserIds = Array.from(new Set(userIds));
 
     if (uniqueUserIds.length === 0) {
-      setArchiveError("Unable to determine user IDs for the selected Super Admins.");
+      setArchiveError("Unable to determine user IDs for the selected IT Admins.");
       return;
     }
 
     setIsArchiving(true);
     setArchiveError(null);
     try {
-  const response = await fetch("/api/super_admin/accounts/it_admin/archive", {
+  const response = await fetch("/api/it_admin/accounts/it_admin/archive", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userIds: uniqueUserIds }),
@@ -779,7 +778,7 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
 
       if (!response.ok) {
         const errorPayload = await response.json().catch(() => ({}));
-        throw new Error(errorPayload?.error ?? `Failed to archive Super Admins (status ${response.status}).`);
+        throw new Error(errorPayload?.error ?? `Failed to archive IT Admins (status ${response.status}).`);
       }
 
       const payload = await response.json().catch(() => ({}));
@@ -809,7 +808,7 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
       setSelectMode(false);
       setShowArchiveModal(false);
     } catch (error) {
-      setArchiveError(error instanceof Error ? error.message : "Failed to archive the selected Super Admins.");
+      setArchiveError(error instanceof Error ? error.message : "Failed to archive the selected IT Admins.");
     } finally {
       setIsArchiving(false);
     }
@@ -821,32 +820,10 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
     setIsArchiving(false);
   }, []);
 
-  const handleDownloadPasswords = useCallback(() => {
-    if (uploadedPasswords.length === 0) return;
-
-    const csvContent = [
-      ['Name', 'Email', 'Temporary Password'].join(','),
-      ...uploadedPasswords.map(item => 
-        [item.name, item.email, item.password].map(val => `"${val}"`).join(',')
-      )
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `it-admin-passwords-${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setUploadedPasswords([]);
-  }, [uploadedPasswords]);
-
   const handleDownloadTemplate = useCallback(() => {
     const link = document.createElement('a');
     link.href = '/it_admin/accounts/it_admin/IT Admin List  Template.xlsx';
-    link.download = 'Super Admin List Template.xlsx';
+    link.download = 'IT Admin List Template.xlsx';
     link.click();
   }, []);
 
@@ -875,16 +852,12 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
             </>
           ) : (
             <AccountActionsMenu
-              accountType="Super Admin"
+              accountType="IT Admin"
               onAction={handleMenuAction}
-              buttonAriaLabel="Open Super Admin actions"
+              buttonAriaLabel="Open IT Admin actions"
               exportConfig={{
                 onExport: handleExport,
                 disabled: filteredITAdmins.length === 0,
-              }}
-              downloadPasswordsConfig={{
-                onDownload: handleDownloadPasswords,
-                disabled: uploadedPasswords.length === 0,
               }}
               downloadTemplateConfig={{
                 onDownload: handleDownloadTemplate,
@@ -925,16 +898,23 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
 
       <AccountCreatedModal
         show={!!createdAccount}
-        onClose={() => setCreatedAccount(null)}
+        onClose={() => {
+          setCreatedAccount(null);
+          setCreatedAccountMessage(null);
+        }}
         account={createdAccount}
+        message={createdAccountMessage ?? undefined}
       />
 
       <AccountCreatedModal
         show={!!uploadedAccounts}
-        onClose={() => setUploadedAccounts(null)}
+        onClose={() => {
+          setUploadedAccounts(null);
+          setUploadedAccountsMessage(null);
+        }}
         accounts={uploadedAccounts}
         title="Import Successful"
-        message="Import completed successfully. You can download the CSV file for passwords."
+        message={uploadedAccountsMessage ?? undefined}
       />
 
       <ConfirmationModal
@@ -942,7 +922,7 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
         onClose={() => setArchivedCount(null)}
         onConfirm={() => setArchivedCount(null)}
         title="Archived Successfully"
-        message={`Archived ${archivedCount ?? 0} Super Admin${archivedCount === 1 ? "" : "s"} successfully.`}
+        message={`Archived ${archivedCount ?? 0} IT Admin${archivedCount === 1 ? "" : "s"} successfully.`}
       />
 
       <ITAdminDetailsModal
@@ -956,20 +936,21 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
         onClose={handleUploadCancel}
         onConfirm={handleUploadConfirm}
         title="Confirm File Upload"
-        message="Are you sure you want to upload this Excel file? This will import Super Admin data."
+        message="Are you sure you want to upload this Excel file? This will import IT Admin data."
         fileName={selectedFile?.name}
       />
 
       <TableList
+                    showFullScreenToggle
         columns={[
           { key: "no", title: "No#" },
-          { key: "adminId", title: "Admin ID", render: (row: any) => row.adminId ?? "—" },
-          { key: "name", title: "Full Name", render: (row: any) => row.name ?? "—" },
-          { key: "email", title: "Email", render: (row: any) => row.email ?? "—" },
+          { key: "adminId", title: "Admin ID", render: (row: any) => row.adminId ?? "--" },
+          { key: "name", title: "Full Name", render: (row: any) => row.name ?? "--" },
+          { key: "email", title: "Email", render: (row: any) => row.email ?? "--" },
           {
             key: "lastLogin",
             title: "Last Login",
-            render: (row: any) => row.lastLoginDisplay ?? "—",
+            render: (row: any) => row.lastLoginDisplay ?? "--",
           },
         ]}
         data={filteredITAdmins.map((admin, idx) => ({
@@ -995,7 +976,7 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
         onClose={handleCloseArchiveModal}
         onConfirm={handleConfirmArchiveSelected}
         title="Confirm Archive Selected"
-        message={`Are you sure you want to archive ${selectedITAdminKeys.size} selected Super Admin${selectedITAdminKeys.size === 1 ? "" : "s"}? This will move them to the archive.`}
+        message={`Are you sure you want to archive ${selectedITAdminKeys.size} selected IT Admin${selectedITAdminKeys.size === 1 ? "" : "s"}? This will move them to the archive.`}
         confirmLabel="Archive"
         confirmDisabled={selectedITAdminKeys.size === 0}
         isProcessing={isArchiving}

@@ -6,7 +6,6 @@ import ITAdminHeader from "@/components/Super_Admin/Header";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import TableList from "@/components/Common/Tables/TableList";
-import Pagination from "@/components/Common/Tables/Pagination";
 
 const ACTION_OPTIONS = ["All", "Restore", "Delete", "Archive"] as const;
 
@@ -174,15 +173,17 @@ export default function ITAdminOperationsLog() {
               ) : (
                 <>
                   <div className="mt-5">
-                    <TableList columns={tableColumns} data={tableRows} hidePagination />
+                    <TableList
+                      columns={tableColumns}
+                      data={tableRows}
+                      pagination={{
+                        page,
+                        totalPages,
+                        totalItems: total,
+                        onPageChange: setPage,
+                      }}
+                    />
                   </div>
-                  <Pagination
-                    page={page}
-                    totalPages={totalPages}
-                    totalItems={total}
-                    onPrev={() => setPage((p) => Math.max(1, p - 1))}
-                    onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  />
                 </>
               )}
             </div>

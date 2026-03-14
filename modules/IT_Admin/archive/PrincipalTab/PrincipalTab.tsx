@@ -88,7 +88,7 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm, on
       }
 
       try {
-        const response = await fetch("/api/super_admin/archive/restore", {
+        const response = await fetch("/api/it_admin/archive/restore", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ archiveIds }),
@@ -184,7 +184,7 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm, on
       }
 
       try {
-        const response = await fetch("/api/super_admin/archive/delete", {
+        const response = await fetch("/api/it_admin/archive/delete", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ archiveIds }),
@@ -413,14 +413,15 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm, on
       </div>
 
       <TableList
+                    showFullScreenToggle
         columns={[
           { key: "no", title: "No#" },
-          { key: "principalId", title: "Principal ID", render: (row: any) => row.principalId ?? row.user_code ?? row.adminId ?? row.userId ?? row.user_id ?? "—" },
+          { key: "principalId", title: "Principal ID", render: (row: any) => row.principalId ?? row.user_code ?? row.adminId ?? row.userId ?? row.user_id ?? "--" },
           { key: "name", title: "Full Name" },
           {
             key: "archivedDate",
             title: "Archived Date",
-            render: (row: any) => row.archivedDateDisplay ?? "—",
+            render: (row: any) => row.archivedDateDisplay ?? "--",
           },
         ]}
         data={tableData}

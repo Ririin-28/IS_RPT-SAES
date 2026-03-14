@@ -124,6 +124,7 @@ export default function GradeTwoTab({ students, setStudents, searchTerm }: Grade
       />
 
       <TableList
+        showFullScreenToggle
         columns={[
           { key: "no", title: "No#" },
           { key: "studentId", title: "Student ID" },

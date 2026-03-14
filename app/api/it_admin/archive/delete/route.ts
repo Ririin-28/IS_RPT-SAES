@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import { runWithConnection } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/server/super-admin-auth";
+import { requireItAdmin } from "@/lib/server/it-admin-auth";
 import { resolveRequestIp, writeSecurityAuditLog } from "@/lib/server/security-audit";
 
 export const dynamic = "force-dynamic";
@@ -49,7 +49,7 @@ function sanitizeOptionalAuditText(value: unknown): string {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireSuperAdmin(request, { permission: "super_admin:data.delete" });
+  const auth = await requireItAdmin(request, { permission: "it_admin:data.delete" });
   if (!auth.ok) {
     return auth.response;
   }

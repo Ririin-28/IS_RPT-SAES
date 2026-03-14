@@ -2,11 +2,19 @@
 import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 interface TableColumn {
   key: string;
   title: React.ReactNode;
   render?: (row: any) => React.ReactNode;
+}
+
+interface TablePaginationConfig {
+  page: number;
+  totalPages: number;
+  totalItems?: number;
+  onPageChange: (page: number) => void;
 }
 
 interface TableListProps {
@@ -22,6 +30,7 @@ interface TableListProps {
   hidePagination?: boolean;
   nonSelectableIds?: Set<any>;
   actionHeaderLabel?: string;
+  pagination?: TablePaginationConfig;
 }
 
 export default function TableList({
@@ -37,14 +46,22 @@ export default function TableList({
   hidePagination = false,
   nonSelectableIds,
   actionHeaderLabel,
+  pagination,
 }: TableListProps) {
   const [page, setPage] = useState(1);
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const effectivePageSize = Math.min(Math.max(Math.floor(pageSize), 1), 10);
+  const usesExternalPagination = Boolean(pagination);
   const totalPages = Math.ceil((data.length || 0) / effectivePageSize);
+  const activePage = pagination?.page ?? page;
+  const activeTotalPages = Math.max(1, pagination?.totalPages ?? totalPages);
+  const totalItemCount = pagination?.totalItems ?? data.length;
   const paginatedData = hidePagination
     ? data
-    : data.slice((page - 1) * effectivePageSize, page * effectivePageSize);
+    : usesExternalPagination
+      ? data
+      : data.slice((activePage - 1) * effectivePageSize, activePage * effectivePageSize);
   const disabledSelectionIds = nonSelectableIds ?? new Set();
   const headerSelectableRows = selectable
     ? data.reduce((count, row) => count + (disabledSelectionIds.has(row.id) ? 0 : 1), 0)
@@ -52,10 +69,16 @@ export default function TableList({
   const allSelectableSelected = selectable && headerSelectableRows > 0 && selectedItems.size === headerSelectableRows;
 
   useEffect(() => {
-    setPage(1);
-  }, [data.length, effectivePageSize]);
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
+    if (usesExternalPagination) return;
+    setPage(1);
+  }, [data.length, effectivePageSize, usesExternalPagination]);
+
+  useEffect(() => {
+    if (usesExternalPagination) return;
     if (totalPages === 0 && page !== 1) {
       setPage(1);
       return;
@@ -63,10 +86,49 @@ export default function TableList({
     if (totalPages > 0 && page > totalPages) {
       setPage(totalPages);
     }
-  }, [page, totalPages]);
+  }, [page, totalPages, usesExternalPagination]);
+
+  useEffect(() => {
+    if (!mounted || !isFullScreen) return undefined;
+    const { overflow } = document.body.style;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = overflow;
+    };
+  }, [isFullScreen, mounted]);
+
+  const changePage = (nextPage: number) => {
+    const resolvedPage = Math.min(Math.max(nextPage, 1), activeTotalPages);
+    if (usesExternalPagination) {
+      pagination?.onPageChange(resolvedPage);
+      return;
+    }
+    setPage(resolvedPage);
+  };
+
+  const buildVisiblePages = () => {
+    const pages: (number | string)[] = [];
+    if (activeTotalPages <= 5) {
+      for (let index = 1; index <= activeTotalPages; index += 1) {
+        pages.push(index);
+      }
+      return pages;
+    }
+
+    if (activePage <= 3) {
+      return [1, 2, 3, 4, "...", activeTotalPages];
+    }
+
+    if (activePage >= activeTotalPages - 2) {
+      return [1, "...", activeTotalPages - 3, activeTotalPages - 2, activeTotalPages - 1, activeTotalPages];
+    }
+
+    return [1, "...", activePage - 1, activePage, activePage + 1, "...", activeTotalPages];
+  };
 
   const renderFullScreenToggle = (className: string) => (
     <button
+      type="button"
       onClick={() => setIsFullScreen(!isFullScreen)}
       className={className}
       aria-label={isFullScreen ? 'Exit full screen' : 'Enter full screen'}
@@ -112,14 +174,11 @@ export default function TableList({
 
   // Updated height classes for better mobile responsiveness
   const bodyMaxHeightClass = isFullScreen
-    ? 'max-h-[calc(100vh-8rem)]'
+    ? 'h-full'
     : 'lg:max-h-[53vh] md:max-h-[62vh] max-h-[59vh]';
 
-  return (
-    <div
-      className={`w-full flex flex-col ${isFullScreen ? 'fixed inset-0 z-50 bg-white p-6' : 'relative'}`}
-      style={isFullScreen ? { height: '100vh' } : undefined}
-    >
+  const tableContent = (
+    <div className={`w-full flex flex-col ${isFullScreen ? 'h-full' : 'relative'}`}>
       {/* Main table container with improved flex behavior */}
       <div className={`relative flex-1 min-h-0 rounded-lg border border-gray-200 bg-white shadow-md ${
         isFullScreen ? '' : 'mb-2' // Add margin bottom only in non-fullscreen
@@ -161,9 +220,10 @@ export default function TableList({
                   <th className="px-4 py-2 text-center">
                     <div className="flex items-center justify-center gap-4">
                       <TertiaryHeader title={actionHeaderLabel || "Actions"} className="mb-0" />
-                      {renderFullScreenToggle(
-                        'p-1 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors'
-                      )}
+                      {showFullScreenToggle &&
+                        renderFullScreenToggle(
+                          'p-1 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors'
+                        )}
                     </div>
                   </th>
                 )}
@@ -222,14 +282,20 @@ export default function TableList({
       </div>
 
       {/* Pagination - Improved mobile styling */}
-      {!hidePagination && data.length > 0 && (
+      {!hidePagination && totalItemCount > 0 && (
         <div
-          className={`flex shrink-0 items-center justify-center gap-1 sm:gap-2 py-2 text-sm sm:text-base border-t border-gray-200 bg-white rounded-lg shadow-sm ${
+          className={`flex shrink-0 flex-col gap-2 border-t border-gray-200 bg-white py-2 text-sm sm:text-base rounded-lg shadow-sm ${
             isFullScreen ? 'sticky bottom-0 left-0 right-0' : ''
           }`}
         >
-          {data.length <= effectivePageSize ? (
-            <>
+          {usesExternalPagination && (
+            <p className="px-3 text-xs text-gray-600 sm:text-sm">
+              Page {activePage} of {activeTotalPages} | Total {totalItemCount}
+            </p>
+          )}
+          <div className="flex items-center justify-center gap-1 sm:gap-2">
+            {activeTotalPages <= 1 ? (
+              <>
               <UtilityButton small disabled>
                 <span className="flex items-center gap-1 opacity-50">
                   <svg
@@ -263,15 +329,15 @@ export default function TableList({
                   </svg>
                 </span>
               </UtilityButton>
-            </>
-          ) : (
-            <>
+              </>
+            ) : (
+              <>
               <UtilityButton
                 small
-                disabled={page === 1}
-                onClick={() => page > 1 && setPage((prev) => Math.max(prev - 1, 1))}
+                disabled={activePage === 1}
+                onClick={() => activePage > 1 && changePage(activePage - 1)}
               >
-                <span className={`flex items-center gap-1 ${page === 1 ? 'opacity-50' : ''}`}>
+                <span className={`flex items-center gap-1 ${activePage === 1 ? 'opacity-50' : ''}`}>
                   <svg
                     className="w-4 h-4"
                     fill="none"
@@ -285,30 +351,13 @@ export default function TableList({
                 </span>
               </UtilityButton>
 
-              {/* Dynamic Page Numbers with mobile optimization */}
-              {(() => {
-                const pages: (number | string)[] = [];
-                const maxVisible = window.innerWidth < 640 ? 3 : 5; // Fewer pages on mobile
-
-                if (totalPages <= maxVisible) {
-                  for (let i = 1; i <= totalPages; i++) pages.push(i);
-                } else {
-                  if (page <= 2) { // Show fewer pages on mobile
-                    pages.push(1, 2, 3, "...", totalPages);
-                  } else if (page >= totalPages - 1) {
-                    pages.push(1, "...", totalPages - 2, totalPages - 1, totalPages);
-                  } else {
-                    pages.push(1, "...", page - 1, page, page + 1, "...", totalPages);
-                  }
-                }
-
-                return pages.map((num, i) =>
+              {buildVisiblePages().map((num, i) =>
                   typeof num === "number" ? (
                     <button
                       key={i}
-                      onClick={() => setPage(num)}
+                      onClick={() => changePage(num)}
                       className={`px-2 sm:px-3 py-1.5 rounded font-semibold transition-colors text-xs sm:text-sm ${
-                        num === page
+                        num === activePage
                           ? "bg-green-900 text-white"
                           : "bg-gray-100 text-gray-700 hover:bg-green-100"
                       }`}
@@ -320,15 +369,14 @@ export default function TableList({
                       {num}
                     </span>
                   )
-                );
-              })()}
+                )}
 
               <UtilityButton
                 small
-                disabled={page === totalPages}
-                onClick={() => page < totalPages && setPage((prev) => Math.min(prev + 1, totalPages))}
+                disabled={activePage === activeTotalPages}
+                onClick={() => activePage < activeTotalPages && changePage(activePage + 1)}
               >
-                <span className={`flex items-center gap-1 ${page === totalPages ? 'opacity-50' : ''}`}>
+                <span className={`flex items-center gap-1 ${activePage === activeTotalPages ? 'opacity-50' : ''}`}>
                   <span className="hidden sm:inline">Next</span>
                   <svg
                     className="w-4 h-4"
@@ -341,10 +389,22 @@ export default function TableList({
                   </svg>
                 </span>
               </UtilityButton>
-            </>
-          )}
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>
   );
+
+  if (isFullScreen && mounted) {
+    return createPortal(
+      <div className="fixed inset-0 z-[1200] bg-white p-6">
+        {tableContent}
+      </div>,
+      document.body,
+    );
+  }
+
+  return tableContent;
 }

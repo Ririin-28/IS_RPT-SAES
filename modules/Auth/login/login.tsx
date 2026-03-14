@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { FaEye, FaEyeSlash, FaInfoCircle } from "react-icons/fa";
@@ -57,7 +57,7 @@ export default function Login({
       case "it_admin":
       case "admin":
       case "itadmin":
-        return "/Super_Admin/welcome";
+        return "/IT_Admin/welcome";
       case "principal":
         return "/Principal/welcome";
       case "parent":
@@ -158,7 +158,7 @@ export default function Login({
 
           // Prevent login<->welcome loops: only auto-redirect admin users when server session is valid.
           try {
-            const response = await fetch("/api/super_admin/session", {
+            const response = await fetch("/api/it_admin/session", {
               method: "GET",
               credentials: "include",
               cache: "no-store",
@@ -195,7 +195,7 @@ export default function Login({
     try {
       if (adminIdRequired) {
         if (!sanitizedItAdminId) {
-          setErrorMessage("Please enter your Super Admin ID to sign in.");
+          setErrorMessage("Please enter your IT Admin ID to sign in.");
           setShowErrorModal(true);
           setIsLoading(false);
           return;
@@ -223,7 +223,7 @@ export default function Login({
         const adminIdMissing = data.requireItAdminId || data.requireUserId || data.errorCode === "ADMIN_IT_ADMIN_ID_REQUIRED" || data.errorCode === "ADMIN_USER_ID_REQUIRED";
         if (!adminIdRequired && adminIdMissing) {
           setIsLoading(false);
-          setErrorMessage("Super Admin accounts must use the Admin Login and provide their Super Admin ID.");
+          setErrorMessage("IT Admin accounts must use the Admin Login and provide their IT Admin ID.");
           setShowErrorModal(true);
           if (redirectTimerRef.current) {
             clearTimeout(redirectTimerRef.current);
@@ -347,13 +347,13 @@ export default function Login({
             <form onSubmit={handleLogin}>
               {adminIdRequired && (
                 <div className="mb-3">
-                  <label htmlFor="itAdminId" className="block text-sm font-medium text-[#013300] mb-1 sm:text-base">Super Admin ID</label>
+                  <label htmlFor="itAdminId" className="block text-sm font-medium text-[#013300] mb-1 sm:text-base">IT Admin ID</label>
                   <input
                     id="itAdminId"
                     type="text"
                     value={itAdminId}
                     onChange={e => setItAdminId(e.target.value)}
-                    placeholder="Enter your Super Admin ID"
+                    placeholder="Enter your IT Admin ID"
                     className="w-full px-4 py-2 border-2 border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#013300] focus:border-transparent transition placeholder-gray-400 text-[#013300] sm:py-2"
                     required={adminIdRequired}
                   />

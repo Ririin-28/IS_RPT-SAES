@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { runWithConnection } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/server/super-admin-auth";
+import { requireItAdmin } from "@/lib/server/it-admin-auth";
 import { resolveRequestIp, writeSecurityAuditLog } from "@/lib/server/security-audit";
 import { findRecoveryEntity, modeFlagColumn, type RecoveryMode } from "@/lib/server/recovery-center";
 
@@ -76,7 +76,7 @@ function buildRestoreAssignments(mode: RecoveryMode, columns: Set<string>): stri
 }
 
 export async function POST(request: NextRequest): Promise<Response> {
-  const auth = await requireSuperAdmin(request, { permission: "super_admin:data.restore" });
+  const auth = await requireItAdmin(request, { permission: "it_admin:data.restore" });
   if (!auth.ok) {
     return auth.response;
   }

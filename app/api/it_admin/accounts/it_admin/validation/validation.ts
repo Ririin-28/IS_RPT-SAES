@@ -197,7 +197,7 @@ export async function createItAdmin(input: CreateItAdminInput): Promise<CreateIt
           `SELECT role_id
            FROM role
            WHERE LOWER(REPLACE(REPLACE(TRIM(role_name), '-', '_'), ' ', '_')) IN ('super_admin','admin','it_admin','itadmin')
-           ORDER BY CASE WHEN LOWER(TRIM(role_name)) = 'super admin' THEN 0 ELSE 1 END, role_id ASC
+           ORDER BY CASE WHEN LOWER(TRIM(role_name)) = 'it admin' THEN 0 ELSE 1 END, role_id ASC
            LIMIT 1`,
         );
         if (Array.isArray(roleRows) && roleRows.length > 0) {
@@ -247,30 +247,48 @@ export async function createItAdmin(input: CreateItAdminInput): Promise<CreateIt
 
       let adminId: string | null = null;
       const adminIdSources: Array<{ table: string; column: string }> = [];
+      const seenAdminIdSources = new Set<string>();
+      const addAdminIdSource = (table: string, column: string) => {
+        const key = `${table}:${column}`;
+        if (seenAdminIdSources.has(key)) {
+          return;
+        }
+        seenAdminIdSources.add(key);
+        adminIdSources.push({ table, column });
+      };
 
       if (userColumns.has("user_code")) {
-        adminIdSources.push({ table: "users", column: "user_code" });
+        addAdminIdSource("users", "user_code");
       }
       if (userColumns.has("admin_id")) {
-        adminIdSources.push({ table: "users", column: "admin_id" });
+        addAdminIdSource("users", "admin_id");
       }
       if (userColumns.has("it_admin_id")) {
-        adminIdSources.push({ table: "users", column: "it_admin_id" });
+        addAdminIdSource("users", "it_admin_id");
       }
       if (itAdminColumns?.has("admin_id")) {
-        adminIdSources.push({ table: "it_admin", column: "admin_id" });
+        addAdminIdSource("it_admin", "admin_id");
       }
       if (itAdminColumns?.has("it_admin_id")) {
-        adminIdSources.push({ table: "it_admin", column: "it_admin_id" });
+        addAdminIdSource("it_admin", "it_admin_id");
+      }
+      if (superAdminColumns?.has("super_admin_id")) {
+        addAdminIdSource("super_admin", "super_admin_id");
+      }
+      if (superAdminColumns?.has("it_admin_id")) {
+        addAdminIdSource("super_admin", "it_admin_id");
+      }
+      if (superAdminColumns?.has("admin_id")) {
+        addAdminIdSource("super_admin", "admin_id");
       }
       try {
         const archivedColumns = await getColumnsForTable(connection, "archived_users");
         if (archivedColumns.has("it_admin_id")) {
-          adminIdSources.push({ table: "archived_users", column: "it_admin_id" });
+          addAdminIdSource("archived_users", "it_admin_id");
         } else if (archivedColumns.has("admin_id")) {
-          adminIdSources.push({ table: "archived_users", column: "admin_id" });
+          addAdminIdSource("archived_users", "admin_id");
         } else if (archivedColumns.has("user_code")) {
-          adminIdSources.push({ table: "archived_users", column: "user_code" });
+          addAdminIdSource("archived_users", "user_code");
         }
       } catch {
         // ignore archived_users absence
@@ -321,7 +339,7 @@ export async function createItAdmin(input: CreateItAdminInput): Promise<CreateIt
       }
       if (userColumns.has("role")) {
         userInsertColumns.push("role");
-        userInsertValues.push("super_admin");
+        userInsertValues.push("it_admin");
       }
       if (userColumns.has("role_id") && adminRoleId !== null) {
         userInsertColumns.push("role_id");
@@ -427,7 +445,7 @@ export async function createItAdmin(input: CreateItAdminInput): Promise<CreateIt
         }
         if (itAdminColumns.has("role")) {
           itAdminInsertColumns.push("role");
-          itAdminValues.push("super_admin");
+          itAdminValues.push("it_admin");
         }
         if (itAdminColumns.has("role_id") && adminRoleId !== null) {
           itAdminInsertColumns.push("role_id");
@@ -511,7 +529,7 @@ export async function createItAdmin(input: CreateItAdminInput): Promise<CreateIt
         }
         if (superAdminColumns.has("role")) {
           superAdminInsertColumns.push("role");
-          superAdminValues.push("super_admin");
+          superAdminValues.push("it_admin");
         }
         if (superAdminColumns.has("role_id") && adminRoleId !== null) {
           superAdminInsertColumns.push("role_id");

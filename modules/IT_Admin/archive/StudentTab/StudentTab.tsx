@@ -80,6 +80,7 @@ export default function StudentTab({ students, searchTerm, selectedGrade }: Stud
         />
       </div>
       <TableList
+                    showFullScreenToggle
         columns={[
           { key: "no", title: "No#" },
           { key: "studentId", title: "Student ID" },
@@ -89,7 +90,7 @@ export default function StudentTab({ students, searchTerm, selectedGrade }: Stud
           {
             key: "archivedDate",
             title: "Date Archived",
-            render: (row: any) => row.archivedDateDisplay ?? "—",
+            render: (row: any) => row.archivedDateDisplay ?? "â€”",
           },
         ]}
         data={filteredStudents.map((student, index) => ({

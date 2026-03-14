@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useRouter, useSearchParams } from "next/navigation";
 import VerificationForm from "./VerificationForm";
 import { useCallback, Suspense, useEffect, useRef, useState } from "react";
@@ -101,7 +101,7 @@ function VerificationContent() {
 			case "it_admin":
 			case "admin":
 			case "itadmin":
-				return "/Super_Admin/welcome";
+				return "/IT_Admin/welcome";
 			case "principal":
 				return "/Principal/welcome";
 			case "parent":

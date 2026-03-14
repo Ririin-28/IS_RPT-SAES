@@ -124,13 +124,13 @@ export default function AddITAdminModal({
         Cancel
       </DangerButton>
       <PrimaryButton type="submit" form="add-it-admin-form" disabled={isBusy}>
-        {isBusy ? "Adding…" : "Add Super Admin"}
+        {isBusy ? "Adding..." : "Add IT Admin"}
       </PrimaryButton>
     </>
   );
 
   return (
-    <BaseModal show={show} onClose={handleClose} title="Add Super Admin" footer={footer}>
+    <BaseModal show={show} onClose={handleClose} title="Add IT Admin" footer={footer}>
       <form id="add-it-admin-form" onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         {apiError && (
           <div className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
@@ -139,10 +139,10 @@ export default function AddITAdminModal({
         )}
         
         <ModalSection title="Personal Details">
-          {/* 1st Row: Super Admin ID and Role (disabled) */}
+          {/* 1st Row: IT Admin ID and Role (disabled) */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-1">
-              <ModalLabel>Super Admin ID</ModalLabel>
+              <ModalLabel>IT Admin ID</ModalLabel>
               <input
                 className="w-full cursor-not-allowed rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-500"
                 value="Auto-generated"
@@ -154,7 +154,7 @@ export default function AddITAdminModal({
               <ModalLabel>Role</ModalLabel>
               <input
                 className="w-full cursor-not-allowed rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-500"
-                value="Super Admin"
+                value="IT Admin"
                 disabled
                 aria-disabled
               />

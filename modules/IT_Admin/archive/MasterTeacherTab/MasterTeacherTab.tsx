@@ -12,7 +12,7 @@ import AccountDeletedModal from "@/components/Common/Modals/AccountDeletedModal"
 import { useArchiveRestoreDelete } from "../Common/useArchiveRestoreDelete";
 import { ensureArchiveRowKey } from "../Common/archiveRowKey";
 import { exportArchiveRows } from "../utils/export-columns";
-import MasterTeacherDetailsModal from "@/modules/Super_Admin/accounts/MasterTeacherTab/Modals/MasterTeacherDetailsModal";
+import MasterTeacherDetailsModal from "@/modules/IT_Admin/accounts/MasterTeacherTab/Modals/MasterTeacherDetailsModal";
 
 type ColumnConfig = {
   key: string;
@@ -129,7 +129,7 @@ export default function MasterTeacherTab({
       }
 
       try {
-        const response = await fetch("/api/super_admin/archive/restore", {
+        const response = await fetch("/api/it_admin/archive/restore", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ archiveIds }),
@@ -225,7 +225,7 @@ export default function MasterTeacherTab({
       }
 
       try {
-        const response = await fetch("/api/super_admin/archive/delete", {
+        const response = await fetch("/api/it_admin/archive/delete", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ archiveIds }),
@@ -375,13 +375,13 @@ export default function MasterTeacherTab({
           row.user_code ??
           row.userId ??
           row.user_id ??
-          "—",
+          "--",
       },
       { key: "name", title: "Full Name" },
       {
         key: "archivedDate",
         title: "Archived Date",
-        render: (row: any) => row.archivedDateDisplay ?? "—",
+        render: (row: any) => row.archivedDateDisplay ?? "--",
       },
     ];
 
@@ -512,6 +512,7 @@ export default function MasterTeacherTab({
       </div>
 
       <TableList
+                    showFullScreenToggle
         columns={tableColumns}
         data={tableData}
         actions={(row: any) => (

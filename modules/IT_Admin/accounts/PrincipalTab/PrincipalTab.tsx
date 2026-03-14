@@ -26,7 +26,7 @@ function toStringOrNull(value: unknown): string | null {
 
 function formatTimestamp(value: string | Date | null | undefined): string {
   if (!value) {
-    return "—";
+    return "--";
   }
 
   try {
@@ -159,6 +159,16 @@ function extractNumericId(value: unknown): number | null {
   return numeric;
 }
 
+function buildPrincipalCreatedAccount(record: any, fallbackEmail: string): AccountCreatedInfo {
+  return {
+    name: record?.name ?? "New Principal",
+    email: record?.email ?? fallbackEmail,
+    roleLabel: "Principal",
+    identifierLabel: "Principal ID",
+    identifierValue: record?.principalId ?? null,
+  };
+}
+
 interface PrincipalTabProps {
   principals: any[];
   setPrincipals: Dispatch<SetStateAction<any[]>>;
@@ -173,6 +183,7 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [createdAccount, setCreatedAccount] = useState<AccountCreatedInfo | null>(null);
+  const [createdAccountMessage, setCreatedAccountMessage] = useState<string | null>(null);
   const [archivedCount, setArchivedCount] = useState<number | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -182,8 +193,8 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [isArchiving, setIsArchiving] = useState(false);
-  const [uploadedPasswords, setUploadedPasswords] = useState<Array<{name: string; email: string; password: string}>>([]);
   const [uploadedAccounts, setUploadedAccounts] = useState<AccountCreatedInfo[] | null>(null);
+  const [uploadedAccountsMessage, setUploadedAccountsMessage] = useState<string | null>(null);
 
   const addPrincipalForm = useForm<AddPrincipalFormValues>({
     mode: "onTouched",
@@ -281,7 +292,7 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
     setIsSubmitting(true);
     setSubmitError(null);
     try {
-      const response = await fetch("/api/super_admin/accounts/principal", {
+      const response = await fetch("/api/it_admin/accounts/principal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -295,7 +306,7 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
       const result = await response.json();
       const record = result?.record ?? null;
       const userId = result?.userId ?? record?.userId ?? null;
-      const temporaryPassword = result?.temporaryPassword ?? null;
+      const credentialEmail = result?.credentialEmail ?? null;
 
       const fallbackRecord = {
         userId,
@@ -318,17 +329,13 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
       });
 
       setShowAddModal(false);
-      if (temporaryPassword) {
-        setSuccessMessage(null);
-        setCreatedAccount({
-          name: normalizedRecord.name ?? "New Principal",
-          email: normalizedRecord.email ?? payload.email,
-          temporaryPassword,
-          roleLabel: "Principal",
-        });
-      } else {
-        setSuccessMessage(`${normalizedRecord.name ?? "New Principal"} added successfully.`);
-      }
+      setSuccessMessage(null);
+      setCreatedAccount(buildPrincipalCreatedAccount(normalizedRecord, payload.email));
+      setCreatedAccountMessage(
+        credentialEmail?.sent === false
+          ? `The account was created, but the credential email could not be sent${credentialEmail?.error ? `: ${credentialEmail.error}` : "."}`
+          : "Temporary sign-in credentials were sent to this user's email address.",
+      );
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Unable to add Principal.");
     } finally {
@@ -465,7 +472,7 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
           setArchiveError(null);
           setSuccessMessage(null);
 
-          const response = await fetch("/api/super_admin/accounts/principal/upload", {
+          const response = await fetch("/api/it_admin/accounts/principal/upload", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ principals: principalsPayload }),
@@ -486,42 +493,28 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
             });
           }
 
-          let passwordMap: Array<{ name: string; email: string; password: string }> = [];
-          if (inserted.length > 0) {
-            passwordMap = inserted
-              .map((entry: any) => ({
-                name:
-                  entry?.record?.name ??
-                  (
-                    ( (entry?.record?.firstName ?? entry?.record?.first_name ?? '').toString().trim() ||
-                      (entry?.record?.lastName ?? entry?.record?.last_name ?? '').toString().trim()
-                    )
-                      ? `${(entry?.record?.firstName ?? entry?.record?.first_name ?? '').toString().trim()} ${(entry?.record?.lastName ?? entry?.record?.last_name ?? '').toString().trim()}`.trim()
-                      : 'Unknown'
-                  ),
-                email: entry?.record?.email ?? '',
-                password: entry?.temporaryPassword ?? '',
-              }))
-              .filter((item: any) => item.email && item.password);
-            if (passwordMap.length > 0) {
-              setUploadedPasswords(passwordMap);
-              setUploadedAccounts(
-                passwordMap.map((entry) => ({
-                  name: entry.name,
-                  email: entry.email,
-                  temporaryPassword: entry.password,
-                  roleLabel: "Principal",
-                })),
-              );
-              console.info("Temporary passwords for imported Principal accounts:", passwordMap);
-            }
+          if (normalizedRecords.length > 0) {
+            setUploadedAccounts(
+              normalizedRecords.map((entry: any) => buildPrincipalCreatedAccount(entry, entry?.email ?? "")),
+            );
           }
 
           const successCount = normalizedRecords.length;
           const failureCount = failures.length + invalidRows;
+          const credentialEmailFailures = inserted.filter((entry: any) => entry?.credentialEmail?.sent === false);
+          const credentialFailureCount = credentialEmailFailures.length;
+          const credentialFailurePreview = credentialEmailFailures.slice(0, 3).map((entry: any) => {
+            const email = entry?.record?.email ?? `Row ${Number(entry?.index ?? 0) + 1}`;
+            const error = entry?.credentialEmail?.error ?? "Unable to send credential email.";
+            return `${email}: ${error}`;
+          });
 
-          if (successCount > 0 && passwordMap.length === 0) {
-            setSuccessMessage(`Imported ${successCount} Principal${successCount === 1 ? "" : "s"} successfully.`);
+          if (successCount > 0) {
+            setUploadedAccountsMessage(
+              credentialFailureCount > 0
+                ? "Import completed, but some credential emails could not be delivered. Review the warning banner for details."
+                : "Import completed successfully. Temporary sign-in credentials were emailed to the imported users.",
+            );
           }
 
           if (!response.ok || (successCount === 0 && failureCount > 0)) {
@@ -530,7 +523,13 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
               : "Failed to import Principal accounts.";
             setArchiveError(failureCount > 0 ? `${responseError} (${failureCount} row${failureCount === 1 ? "" : "s"} failed).` : responseError);
           } else if (failureCount > 0) {
-            setArchiveError(`${failureCount} row${failureCount === 1 ? "" : "s"} could not be imported. Check for duplicate emails or missing data.`);
+            const credentialDetailText = credentialFailurePreview.length > 0
+              ? ` Email delivery: ${credentialFailurePreview.join("; ")}`
+              : "";
+            setArchiveError(`${failureCount} row${failureCount === 1 ? "" : "s"} could not be imported. Check for duplicate emails or missing data.${credentialDetailText}`.trim());
+          } else if (credentialFailureCount > 0) {
+            const detailText = credentialFailurePreview.length > 0 ? ` Details: ${credentialFailurePreview.join("; ")}` : "";
+            setArchiveError(`${credentialFailureCount} imported account${credentialFailureCount === 1 ? "" : "s"} ${credentialFailureCount === 1 ? "was" : "were"} created, but the credential email could not be sent.${detailText}`.trim());
           } else {
             setArchiveError(null);
           }
@@ -622,7 +621,7 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
     setIsArchiving(true);
     setArchiveError(null);
     try {
-      const response = await fetch("/api/super_admin/accounts/principal/archive", {
+      const response = await fetch("/api/it_admin/accounts/principal/archive", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userIds: uniqueUserIds }),
@@ -672,28 +671,6 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
     setIsArchiving(false);
   }, []);
 
-  const handleDownloadPasswords = useCallback(() => {
-    if (uploadedPasswords.length === 0) return;
-
-    const csvContent = [
-      ['Name', 'Email', 'Temporary Password'].join(','),
-      ...uploadedPasswords.map(item => 
-        [item.name, item.email, item.password].map(val => `"${val}"`).join(',')
-      )
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `principal-passwords-${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setUploadedPasswords([]);
-  }, [uploadedPasswords]);
-
   const handleDownloadTemplate = useCallback(() => {
     const link = document.createElement('a');
     link.href = '/it_admin/accounts/principal/Principal List Template.xlsx';
@@ -730,10 +707,6 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
               exportConfig={{
                 onExport: handleExport,
                 disabled: filteredPrincipals.length === 0,
-              }}
-              downloadPasswordsConfig={{
-                onDownload: handleDownloadPasswords,
-                disabled: uploadedPasswords.length === 0,
               }}
               downloadTemplateConfig={{
                 onDownload: handleDownloadTemplate,
@@ -774,16 +747,23 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
 
       <AccountCreatedModal
         show={!!createdAccount}
-        onClose={() => setCreatedAccount(null)}
+        onClose={() => {
+          setCreatedAccount(null);
+          setCreatedAccountMessage(null);
+        }}
         account={createdAccount}
+        message={createdAccountMessage ?? undefined}
       />
 
       <AccountCreatedModal
         show={!!uploadedAccounts}
-        onClose={() => setUploadedAccounts(null)}
+        onClose={() => {
+          setUploadedAccounts(null);
+          setUploadedAccountsMessage(null);
+        }}
         accounts={uploadedAccounts}
         title="Import Successful"
-        message="Import completed successfully. You can download the CSV file for passwords."
+        message={uploadedAccountsMessage ?? undefined}
       />
 
       <ConfirmationModal
@@ -810,15 +790,16 @@ export default function PrincipalTab({ principals, setPrincipals, searchTerm }: 
       />
 
       <TableList
+                    showFullScreenToggle
         columns={[
           { key: "no", title: "No#" },
-          { key: "principalId", title: "Principal ID", render: (row: any) => row.principalId ?? "—" },
-          { key: "name", title: "Full Name", render: (row: any) => row.name ?? "—" },
-          { key: "email", title: "Email", render: (row: any) => row.email ?? "—" },
+          { key: "principalId", title: "Principal ID", render: (row: any) => row.principalId ?? "--" },
+          { key: "name", title: "Full Name", render: (row: any) => row.name ?? "--" },
+          { key: "email", title: "Email", render: (row: any) => row.email ?? "--" },
           {
             key: "lastLogin",
             title: "Last Login",
-            render: (row: any) => row.lastLoginDisplay ?? "—",
+            render: (row: any) => row.lastLoginDisplay ?? "--",
           },
         ]}
         data={filteredPrincipals.map((principal, idx) => ({

@@ -1,6 +1,6 @@
 "use client";
-import Sidebar from "@/components/Super_Admin/Sidebar";
-import Header from "@/components/Super_Admin/Header";
+import Sidebar from "@/components/IT_Admin/Sidebar";
+import Header from "@/components/IT_Admin/Header";
 import { useCallback, useEffect, useState } from "react";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
@@ -9,16 +9,16 @@ import { FaTimes } from "react-icons/fa";
 import TeacherTab from "./TeacherTab/TeacherTab";
 // Master Teacher Tab
 import MasterTeacherTab from "./MasterTeacherTab/MasterTeacherTab";
-// Super Admin Tab
+// IT Admin Tab
 import ITAdminTab from "./ITAdminTab/ITAdminTab";
 // Principal Tab
 import PrincipalTab from "./PrincipalTab/PrincipalTab";
 import type { AccountType } from "./components/AccountActionsMenu";
 
-type ApiRole = "super_admin" | "principal" | "master_teacher" | "teacher";
+type ApiRole = "it_admin" | "principal" | "master_teacher" | "teacher";
 
 const ACCOUNT_TYPE_TO_ROLE: Record<AccountType, ApiRole> = {
-  "Super Admin": "super_admin",
+  "IT Admin": "it_admin",
   Principal: "principal",
   "Master Teachers": "master_teacher",
   Teachers: "teacher",
@@ -67,7 +67,7 @@ function toDigitsOrNull(value: unknown): string | null {
 
 function formatTimestamp(value: string | null | undefined): string {
   if (!value) {
-    return "—";
+    return "--";
   }
 
   try {
@@ -208,7 +208,7 @@ function sortAccounts(records: any[]) {
 
 export default function ITAdminAccounts() {
   const [activeTab, setActiveTab] = useState("All Grades");
-  const [accountType, setAccountType] = useState<AccountType>("Super Admin");
+  const [accountType, setAccountType] = useState<AccountType>("IT Admin");
   const [accounts, setAccounts] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -232,9 +232,9 @@ export default function ITAdminAccounts() {
       setIsLoading(true);
       setError(null);
       try {
-        const endpoint = accountType === "Super Admin"
-          ? "/api/super_admin/accounts/it_admin"
-          : `/api/super_admin/accounts?role=${role}`;
+        const endpoint = accountType === "IT Admin"
+          ? "/api/it_admin/accounts/it_admin"
+          : `/api/it_admin/accounts?role=${role}`;
 
         const response = await fetch(endpoint, {
           cache: "no-store",
@@ -277,7 +277,7 @@ export default function ITAdminAccounts() {
 
       {/*---------------------------------Main Content---------------------------------*/}
       <div className="flex-1 pt-16 flex flex-col overflow-hidden">
-        <Header title="Global Account Management" />
+        <Header title="Accounts" />
         <main className="flex-1">
           <div className="p-4 h-full sm:p-5 md:p-6">
             {/*---------------------------------Main Container---------------------------------*/}
@@ -285,12 +285,12 @@ export default function ITAdminAccounts() {
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
                 <div className="flex items-center gap-0">
                   <HeaderDropdown
-                    options={["Super Admin", "Principal", "Master Teachers", "Teachers"]}
+                    options={["IT Admin", "Principal", "Master Teachers", "Teachers"]}
                     value={accountType}
                     onChange={handleAccountTypeChange}
                   />
-                  {(accountType === "Super Admin" || accountType === "Principal") ? (
-                    <SecondaryHeader title="Global Accounts" />
+                  {(accountType === "IT Admin" || accountType === "Principal") ? (
+                    <SecondaryHeader title="Accounts" />
                   ) : (
                     <>
                       <SecondaryHeader title="in" />
@@ -326,13 +326,13 @@ export default function ITAdminAccounts() {
 
               {/*---------------------------------Tab Content---------------------------------*/}
               {isLoading && (
-                <p className="text-sm text-gray-500">Loading accounts…</p>
+                <p className="text-sm text-gray-500">Loading accounts...</p>
               )}
               {!isLoading && error && (
                 <p className="text-sm text-red-600" role="alert">{error}</p>
               )}
               <div className="mt-4 sm:mt-6">
-                {accountType === "Super Admin" && (
+                {accountType === "IT Admin" && (
                   <ITAdminTab itAdmins={accounts} setITAdmins={setAccounts} searchTerm={searchTerm} />
                 )}
 
