@@ -5,10 +5,12 @@ import { FiArrowLeft, FiArrowRight } from "react-icons/fi";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import TableList from "@/components/Common/Tables/TableList";
+import ToastActivity from "@/components/ToastActivity";
 import { buildFlashcardContentKey } from "@/lib/utils/flashcards-storage";
 import { getAiInsightsAction } from "@/app/actions/get-ai-insights";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 import { translateTutorText, type TutorLanguage } from "@/lib/performance/tutor-language";
+import { buildFutureScheduleMessage, isScheduleInFuture } from "@/lib/remedial-schedule";
 
 const ALLOW_BROWSER_FALLBACK = process.env.NEXT_PUBLIC_ALLOW_SPEECH_FALLBACK === "true";
 const SESSION_EXIT_LOCK_MESSAGE = "Complete the remedial session before leaving this page.";
@@ -438,6 +440,7 @@ export default function MathFlashcards({
   const phonemicIdParam = searchParams?.get("phonemicId");
   const phonemicNameParam = searchParams?.get("phonemicName") ?? "";
   const materialIdParam = searchParams?.get("materialId");
+  const scheduleDateParam = searchParams?.get("scheduleDate") ?? "";
   const userProfile = useMemo(() => getStoredUserProfile(), []);
   const userId = useMemo(() => {
     const raw = userProfile?.userId;
@@ -491,6 +494,14 @@ export default function MathFlashcards({
     if (!pathname) return false;
     return pathname.includes("/Teacher/remedial") || pathname.includes("/MasterTeacher/RemedialTeacher/remedial");
   }, [pathname]);
+  const futureScheduleMessage = useMemo(() => {
+    if (!sessionLockEnabled || !approvedScheduleId || !scheduleDateParam) {
+      return null;
+    }
+    return isScheduleInFuture(scheduleDateParam)
+      ? buildFutureScheduleMessage(scheduleDateParam)
+      : null;
+  }, [approvedScheduleId, scheduleDateParam, sessionLockEnabled]);
   const sessionKeyBase = useMemo(() => {
     if (!sessionLockEnabled) return null;
     const subjectKey = subjectParam || "subject";
@@ -541,6 +552,7 @@ export default function MathFlashcards({
   const [currentPage, setCurrentPage] = useState(1);
   const [dbCompletionByStudent, setDbCompletionByStudent] = useState<Record<string, boolean>>({});
   const [dbProgressByStudent, setDbProgressByStudent] = useState<Record<string, boolean>>({});
+  const [priorScheduleBlockByStudent, setPriorScheduleBlockByStudent] = useState<Record<string, string | null>>({});
   const [blockedSessionMessage, setBlockedSessionMessage] = useState<string | null>(null);
   const [teacherFeedback, setTeacherFeedback] = useState("");
   const [teacherFeedbackError, setTeacherFeedbackError] = useState<string | null>(null);
@@ -644,14 +656,16 @@ export default function MathFlashcards({
 
   useEffect(() => {
     if (!blockedSessionMessage) return undefined;
+    if (forceSessionOnly) return undefined;
     const timer = window.setTimeout(() => setBlockedSessionMessage(null), 5000);
     return () => window.clearTimeout(timer);
-  }, [blockedSessionMessage]);
+  }, [blockedSessionMessage, forceSessionOnly]);
 
   useEffect(() => {
     if (!sessionLockEnabled || !approvedScheduleId || !subjectId || !students.length) {
       setDbCompletionByStudent({});
       setDbProgressByStudent({});
+      setPriorScheduleBlockByStudent({});
       return;
     }
 
@@ -673,6 +687,7 @@ export default function MathFlashcards({
           | {
               success?: boolean;
               statusByStudent?: Record<string, { completed?: boolean; hasProgress?: boolean }>;
+              priorScheduleBlockByStudent?: Record<string, { message?: string | null } | string | null>;
             }
           | null;
 
@@ -682,13 +697,22 @@ export default function MathFlashcards({
 
         const nextCompletion: Record<string, boolean> = {};
         const nextProgress: Record<string, boolean> = {};
+        const nextPriorScheduleBlocks: Record<string, string | null> = {};
         const status = payload.statusByStudent ?? {};
+        const priorBlocks = payload.priorScheduleBlockByStudent ?? {};
         for (const student of students) {
           nextCompletion[student.id] = Boolean(status[student.id]?.completed);
           nextProgress[student.id] = Boolean(status[student.id]?.hasProgress);
+          const rawPriorBlock = priorBlocks[student.id];
+          nextPriorScheduleBlocks[student.id] = typeof rawPriorBlock === "string"
+            ? rawPriorBlock
+            : typeof rawPriorBlock?.message === "string"
+              ? rawPriorBlock.message
+              : null;
         }
         setDbCompletionByStudent(nextCompletion);
         setDbProgressByStudent(nextProgress);
+        setPriorScheduleBlockByStudent(nextPriorScheduleBlocks);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
           return;
@@ -705,12 +729,17 @@ export default function MathFlashcards({
       setBlockedSessionMessage(null);
       return;
     }
+    const priorScheduleBlockMessage = selectedStudentId ? (priorScheduleBlockByStudent[selectedStudentId] ?? null) : null;
+    if (priorScheduleBlockMessage) {
+      setBlockedSessionMessage(priorScheduleBlockMessage);
+      return;
+    }
     const isDbCompleted = selectedStudentId ? Boolean(dbCompletionByStudent[selectedStudentId]) : false;
     if (isDbCompleted) {
       setBlockedSessionMessage("This remedial session was already completed for this student.");
       return;
     }
-  }, [dbCompletionByStudent, selectedStudentId, sessionLockEnabled]);
+  }, [dbCompletionByStudent, priorScheduleBlockByStudent, selectedStudentId, sessionLockEnabled]);
 
   const enrichedStudents = useMemo<EnrichedStudent[]>(() => {
     const latestByStudent = new Map<string, StudentPerformanceEntry>();
@@ -1303,6 +1332,10 @@ export default function MathFlashcards({
 
   const handleStartSession = useCallback(async (studentId: string) => {
     navigationAllowedRef.current = false;
+    if (futureScheduleMessage) {
+      setBlockedSessionMessage(futureScheduleMessage);
+      return;
+    }
     const selectedStudent = students.find((student) => student.id === studentId);
     const studentLevel = normalizeLevelLabel(selectedStudent?.phonemicLevel ?? "");
     if (expectedPhonemicLevel && studentLevel && expectedPhonemicLevel !== studentLevel) {
@@ -1312,6 +1345,11 @@ export default function MathFlashcards({
       return;
     }
     if (sessionLockEnabled) {
+      const priorScheduleBlockMessage = priorScheduleBlockByStudent[studentId] ?? null;
+      if (priorScheduleBlockMessage) {
+        setBlockedSessionMessage(priorScheduleBlockMessage);
+        return;
+      }
       if (dbCompletionByStudent[studentId]) {
         setBlockedSessionMessage("This remedial session was already completed for this student.");
         return;
@@ -1334,6 +1372,7 @@ export default function MathFlashcards({
           | {
               success?: boolean;
               found?: boolean;
+              error?: string;
               slides?: Array<{
                 flashcardIndex: number;
                 pronunciationScore: number;
@@ -1349,7 +1388,11 @@ export default function MathFlashcards({
             }
           | null;
 
-        if (response.ok && payload?.success && payload.found && Array.isArray(payload.slides)) {
+        if (!response.ok || !payload?.success) {
+          throw new Error(payload?.error ?? "Unable to start remedial session.");
+        }
+
+        if (payload.found && Array.isArray(payload.slides)) {
           const nextScores: SessionScore[] = payload.slides.map((slide) => {
             const speedWpm = Number.isFinite(slide.readingSpeedWpm) ? slide.readingSpeedWpm : 0;
             const responseTime = speedWpm > 0 ? Math.max(1, Math.round(60 / speedWpm)) : 0;
@@ -1374,8 +1417,11 @@ export default function MathFlashcards({
             updatedAt: new Date().toISOString(),
           });
         }
-      } catch {
-        // Keep local session status unchanged on fetch failures.
+      } catch (error) {
+        setBlockedSessionMessage(
+          error instanceof Error ? error.message : "Unable to start remedial session.",
+        );
+        return;
       }
     }
     const boundedResume = Math.min(Math.max(resumeIndex, 0), Math.max(0, flashcardsData.length - 1));
@@ -1387,8 +1433,10 @@ export default function MathFlashcards({
     expectedPhonemicLevel,
     flashcardsData,
     phonemicNameParam,
+    priorScheduleBlockByStudent,
     resetFields,
     sessionLockEnabled,
+    futureScheduleMessage,
     startIndex,
     students,
     writeSessionState,
@@ -1613,12 +1661,6 @@ export default function MathFlashcards({
             </div>
           )}
 
-          {blockedSessionMessage && (
-            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-sm shadow-amber-100">
-              {blockedSessionMessage}
-            </div>
-          )}
-
           <div className="mt-5 rounded-3xl border border-white/70 bg-white/45 p-6 space-y-6 shadow-[0_20px_45px_-28px_rgba(15,23,42,0.45)] backdrop-blur-xl flex flex-1 flex-col min-h-0">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm font-medium text-gray-600">{selectionSummaryText}</p>
@@ -1672,17 +1714,27 @@ export default function MathFlashcards({
             {paginationControls}
           </div>
         </div>
+        {blockedSessionMessage && (
+          <ToastActivity
+            title="Action needed"
+            message={blockedSessionMessage}
+            tone="info"
+            onClose={() => setBlockedSessionMessage(null)}
+          />
+        )}
       </div>
     );
   }
 
-  if (sessionLockEnabled && blockedSessionMessage && forceSessionOnly) {
+  const activeBlockedMessage = futureScheduleMessage ?? blockedSessionMessage;
+
+  if (sessionLockEnabled && activeBlockedMessage && forceSessionOnly) {
     return (
       <div className="relative min-h-dvh bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
         <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10 flex min-h-dvh flex-col items-center justify-center">
           <div className="rounded-3xl border border-amber-200 bg-amber-50 px-6 py-5 text-center text-amber-900 shadow-sm">
             <p className="text-lg font-semibold">Session Locked</p>
-            <p className="mt-2 text-sm">{blockedSessionMessage}</p>
+            <p className="mt-2 text-sm">{activeBlockedMessage}</p>
             <button
               onClick={handleBackToDashboard}
               className="mt-5 inline-flex items-center gap-2 rounded-full border border-amber-300 px-6 py-2 text-sm font-medium text-amber-900 transition hover:bg-amber-100"

@@ -12,6 +12,8 @@ import DangerButton from "@/components/Common/Buttons/DangerButton";
 import TableList from "@/components/Common/Tables/TableList";
 import KebabMenu from "@/components/Common/Menus/KebabMenu";
 import SortMenu, { type SortMenuItem } from "@/components/Common/Menus/SortMenu";
+import UserAvatar from "@/components/Common/UserAvatar";
+import ToastActivity from "@/components/ToastActivity";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 import { normalizeMaterialSubject, type MaterialSubject } from "@/lib/materials/shared";
 
@@ -163,6 +165,25 @@ const parseNameParts = (value: string) => {
   };
 };
 
+const formatHandlerDisplayName = (handler: CoordinatorStudentHandler): string => {
+  const firstName = (handler.firstName ?? "").trim();
+  const lastName = (handler.lastName ?? "").trim();
+
+  if (lastName && firstName) {
+    return `${lastName}, ${firstName}`;
+  }
+
+  if (lastName) {
+    return lastName;
+  }
+
+  if (firstName) {
+    return firstName;
+  }
+
+  return handler.name.trim() || "Unnamed Teacher";
+};
+
 export type CoordinatorStudent = {
   id: string;
   studentId: string;
@@ -186,6 +207,16 @@ export type CoordinatorStudent = {
   englishPhonemic: string;
   filipinoPhonemic: string;
   mathProficiency: string;
+};
+
+export type CoordinatorStudentHandler = {
+  id: string;
+  handlerType: "regular_teacher" | "master_remedial" | "master_coordinator";
+  roleLabel: string;
+  name: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  profileImageUrl?: string | null;
 };
 
 type CreateStudentPayload = {
@@ -297,6 +328,7 @@ interface StudentTabProps {
   searchTerm: string;
   onMetaChange?: (meta: { subject: MaterialSubject; gradeLevel: string | null; students: CoordinatorStudent[] }) => void;
   onAssignStudents?: () => void;
+  handlersByStudentId?: Record<string, CoordinatorStudentHandler[]>;
   assignStudentsDisabled?: boolean;
 }
 
@@ -306,6 +338,7 @@ export default function StudentTab({
   searchTerm,
   onMetaChange,
   onAssignStudents,
+  handlersByStudentId = {},
   assignStudentsDisabled = false,
 }: StudentTabProps) {
   const [subject, setSubject] = useState<MaterialSubject>(SUBJECT_FALLBACK);
@@ -332,6 +365,11 @@ export default function StudentTab({
   const [crossGradeStudentName, setCrossGradeStudentName] = useState<string | null>(null);
   const [showCrossGradeModal, setShowCrossGradeModal] = useState(false);
   const [visibleLrnIds, setVisibleLrnIds] = useState<Set<string>>(new Set());
+  const [statusToast, setStatusToast] = useState<{
+    title: string;
+    message: string;
+    tone: "success" | "info" | "error";
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lrnRevealTimersRef = useRef<Record<string, number>>({});
 
@@ -352,6 +390,16 @@ export default function StudentTab({
       lrnRevealTimersRef.current = {};
     };
   }, []);
+
+  useEffect(() => {
+    if (!statusToast) return;
+    const timerId = window.setTimeout(() => {
+      setStatusToast(null);
+    }, 3000);
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [statusToast]);
 
   const handleRevealLrn = useCallback((rowId: string) => {
     if (!rowId) return;
@@ -386,7 +434,7 @@ export default function StudentTab({
 
     try {
       const response = await fetch(
-        `/api/master_teacher/coordinator/profile?userId=${encodeURIComponent(String(userId))}`,
+        "/api/master_teacher/coordinator/profile",
         {
           cache: "no-store",
         },
@@ -677,9 +725,14 @@ export default function StudentTab({
 
   // Add or update student
   const onSubmit = async (data: AddStudentFormValues) => {
+    const isEditing = Boolean(editingStudent);
     const effectiveGrade = gradeLevel && gradeLevel.trim().length > 0 ? gradeLevel.trim() : data.grade;
     if (!effectiveGrade || effectiveGrade.trim().length === 0) {
-      alert("Grade level is required.");
+      setStatusToast({
+        title: "Validation Error",
+        message: "Grade level is required.",
+        tone: "error",
+      });
       return;
     }
 
@@ -768,9 +821,18 @@ export default function StudentTab({
       
       reset();
       setShowModal(false);
+      setStatusToast({
+        title: "Student Saved",
+        message: isEditing ? "Student updated successfully." : "Student added successfully.",
+        tone: "success",
+      });
     } catch (error) {
       console.error(editingStudent ? "Failed to update student" : "Failed to add student", error);
-      alert(error instanceof Error ? error.message : editingStudent ? "Failed to update student." : "Failed to add student.");
+      setStatusToast({
+        title: "Save Failed",
+        message: error instanceof Error ? error.message : editingStudent ? "Failed to update student." : "Failed to add student.",
+        tone: "error",
+      });
     }
   };
 
@@ -845,12 +907,17 @@ export default function StudentTab({
       fullLrn: normalizeLrn(student.lrn) ?? "N/A",
       maskedLrn: maskLrnForDisplay(student.lrn),
       phonemic: resolveStudentPhonemic(student, subject),
+      handlers: handlersByStudentId[String(student.id ?? student.studentId ?? "")] ?? [],
     }))
-  ), [sortedStudents, subject]);
+  ), [handlersByStudentId, sortedStudents, subject]);
 
   const handleExport = () => {
     if (tableRows.length === 0) {
-      alert("No students available to export.");
+      setStatusToast({
+        title: "Nothing to Export",
+        message: "No students available to export.",
+        tone: "info",
+      });
       return;
     }
 
@@ -875,6 +942,11 @@ export default function StudentTab({
   const sanitizedSubject = subject.replace(/\s+/g, "");
   const filename = `MasterTeacher_${sanitizedSubject}_Students_${timestamp}.xlsx`;
     XLSX.writeFile(workbook, filename);
+    setStatusToast({
+      title: "Export Complete",
+      message: "Student list exported successfully.",
+      tone: "success",
+    });
   };
 
   const handleSelectAll = (checked: boolean) => {
@@ -902,14 +974,24 @@ export default function StudentTab({
   };
 
   const confirmDelete = async () => {
+    const deletedCount = selectedStudents.size;
     try {
       await deleteStudents(Array.from(selectedStudents));
       setSelectedStudents(new Set());
       setSelectMode(false);
       setShowDeleteModal(false);
+      setStatusToast({
+        title: "Students Deleted",
+        message: `Deleted ${deletedCount} student${deletedCount === 1 ? "" : "s"}.`,
+        tone: "success",
+      });
     } catch (error) {
       console.error("Failed to delete students", error);
-      alert(error instanceof Error ? error.message : "Failed to delete students.");
+      setStatusToast({
+        title: "Delete Failed",
+        message: error instanceof Error ? error.message : "Failed to delete students.",
+        tone: "error",
+      });
     }
   };
 
@@ -968,7 +1050,11 @@ export default function StudentTab({
     const validTypes = ['.xlsx', '.xls'];
     const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
     if (!validTypes.includes(fileExtension)) {
-      alert('Please upload only Excel files (.xlsx or .xls)');
+      setStatusToast({
+        title: "Invalid File",
+        message: "Please upload only Excel files (.xlsx or .xls).",
+        tone: "error",
+      });
       return;
     }
 
@@ -982,7 +1068,11 @@ export default function StudentTab({
 
     const assignedGrade = normalizeGradeLabel(gradeLevel);
     if (!assignedGrade) {
-      alert("Grade assignment is required before uploading.");
+      setStatusToast({
+        title: "Import Failed",
+        message: "Grade assignment is required before uploading.",
+        tone: "error",
+      });
       return;
     }
 
@@ -1111,13 +1201,29 @@ export default function StudentTab({
           } satisfies CoordinatorStudentFormInput;
         });
 
-        void importStudents(newStudents).catch((error) => {
-          console.error('Failed to import students', error);
-          alert(error instanceof Error ? error.message : 'Failed to import students.');
-        });
+        void importStudents(newStudents)
+          .then(() => {
+            setStatusToast({
+              title: "Import Complete",
+              message: `Imported ${newStudents.length} student${newStudents.length === 1 ? "" : "s"}.`,
+              tone: "success",
+            });
+          })
+          .catch((error) => {
+            console.error('Failed to import students', error);
+            setStatusToast({
+              title: "Import Failed",
+              message: error instanceof Error ? error.message : 'Failed to import students.',
+              tone: "error",
+            });
+          });
       } catch (error) {
         console.error(error);
-        alert('Error reading Excel file. Please check the format and column headers.');
+        setStatusToast({
+          title: "Import Failed",
+          message: "Error reading Excel file. Please check the format and column headers.",
+          tone: "error",
+        });
       }
     };
     reader.readAsArrayBuffer(selectedFile);
@@ -1218,7 +1324,11 @@ export default function StudentTab({
                       type="button"
                       onClick={() => {
                         if (!filteredStudents.length) {
-                          alert("No students available to export.");
+                          setStatusToast({
+                            title: "Nothing to Export",
+                            message: "No students available to export.",
+                            tone: "info",
+                          });
                           return;
                         }
                         handleExport();
@@ -1237,10 +1347,23 @@ export default function StudentTab({
                     <button
                       type="button"
                       onClick={() => {
-                        const link = document.createElement("a");
-                        link.href = "/masterteacher/coordinator/students/Student List Template.xlsx";
-                        link.download = "Student List Template.xlsx";
-                        link.click();
+                        try {
+                          const link = document.createElement("a");
+                          link.href = "/masterteacher/coordinator/students/Student List Template.xlsx";
+                          link.download = "Student List Template.xlsx";
+                          link.click();
+                          setStatusToast({
+                            title: "Template Exported",
+                            message: "Student list template downloaded successfully.",
+                            tone: "success",
+                          });
+                        } catch (error) {
+                          setStatusToast({
+                            title: "Export Failed",
+                            message: error instanceof Error ? error.message : "Unable to download template.",
+                            tone: "error",
+                          });
+                        }
                         close();
                       }}
                       className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[#013300] hover:bg-gray-50"
@@ -1367,6 +1490,42 @@ export default function StudentTab({
           },
           { key: "name", title: "Full Name" },
           { key: "phonemic", title: "Phonemic" },
+          {
+            key: "handlers",
+            title: "Handled By",
+            render: (row: any) => {
+              const handlers: CoordinatorStudentHandler[] = Array.isArray(row.handlers) ? row.handlers : [];
+
+              if (handlers.length === 0) {
+                return <span className="text-xs font-medium text-gray-400">Unassigned</span>;
+              }
+
+              return (
+                <div className="min-w-[220px] space-y-2 py-1">
+                  {handlers.map((handler) => {
+                    const displayName = formatHandlerDisplayName(handler);
+
+                    return (
+                      <div key={handler.id} className="flex items-center gap-3">
+                        <UserAvatar
+                          profileImageUrl={handler.profileImageUrl}
+                          firstName={handler.firstName}
+                          lastName={handler.lastName}
+                          alt={`${displayName} profile`}
+                          size={28}
+                          imageClassName="h-7 w-7 rounded-full border border-[#dbeadf] object-cover"
+                          fallbackClassName="h-7 w-7 text-[11px] shadow-sm"
+                        />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-gray-800">{displayName}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            },
+          },
         ]}
         data={tableRows}
         actions={(row: any) => (
@@ -1425,6 +1584,15 @@ export default function StudentTab({
         confirmLabel="Close"
         showCancel={false}
       />
+
+      {statusToast && (
+        <ToastActivity
+          title={statusToast.title}
+          message={statusToast.message}
+          tone={statusToast.tone}
+          onClose={() => setStatusToast(null)}
+        />
+      )}
     </div>
   );
 }

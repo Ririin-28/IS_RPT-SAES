@@ -9,6 +9,8 @@ const ROLE_TO_SEGMENT: Record<string, string> = {
   masterteacher: "masterteacher",
   teacher: "teachers",
   teachers: "teachers",
+  parent: "parents",
+  parents: "parents",
 };
 
 export const dynamic = "force-dynamic";

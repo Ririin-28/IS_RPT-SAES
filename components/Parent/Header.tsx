@@ -3,6 +3,8 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import ProfileDropdown from "../Common/ProfileDropdown";
 import { performClientLogout } from "@/lib/utils/logout";
+import UserAvatar from "../Common/UserAvatar";
+import { useStoredUserProfile } from "@/lib/hooks/useStoredUserProfile";
 
 interface ParentHeaderProps {
   title?: string;
@@ -18,6 +20,7 @@ export default function ParentHeader({
   selectedChildId,
   onChildSelect,
 }: ParentHeaderProps) {
+  const storedProfile = useStoredUserProfile();
   const [showDropdown, setShowDropdown] = React.useState(false);
   const router = useRouter();
   const profileBtnRef = React.useRef<HTMLButtonElement>(null);
@@ -59,10 +62,17 @@ export default function ParentHeader({
               aria-label="Profile"
               onClick={() => setShowDropdown((v) => !v)}
             >
-              <svg width="32" height="32" fill="none" stroke="#013300" strokeWidth="2" viewBox="0 0 24 24">
-                <circle cx="12" cy="8" r="4" />
-                <path d="M4 20v-2c0-2.5 3.5-4 8-4s8 1.5 8 4v2" />
-              </svg>
+              <div className="h-full w-full overflow-hidden rounded-full">
+                <UserAvatar
+                  profileImageUrl={storedProfile?.profileImageUrl}
+                  firstName={storedProfile?.firstName}
+                  lastName={storedProfile?.lastName}
+                  alt="Parent profile"
+                  imageClassName="h-full w-full object-cover"
+                  fallbackClassName="h-full w-full"
+                  size={40}
+                />
+              </div>
             </button>
             {showDropdown && (
               <div ref={dropdownRef}>

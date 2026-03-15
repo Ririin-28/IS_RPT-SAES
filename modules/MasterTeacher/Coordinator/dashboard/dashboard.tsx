@@ -9,7 +9,7 @@ import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
 import BodyText from "@/components/Common/Texts/BodyText";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 import { normalizeMaterialSubject } from "@/lib/materials/shared";
-import { Filter, FolderOpen, GraduationCap, Printer } from "lucide-react";
+import { CalendarDays, Filter, FolderOpen, GraduationCap, Printer } from "lucide-react";
 import { FaChalkboardTeacher } from "react-icons/fa";
 
 import {
@@ -299,6 +299,15 @@ export default function MasterTeacherDashboard() {
   const [selectedRange, setSelectedRange] = useState<DateRangeFilter>("6m");
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
+  const todayDateLabel = useMemo(
+    () =>
+      new Date().toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }),
+    [],
+  );
 
   useEffect(() => {
     const timer = window.setInterval(() => setRefreshTick((prev) => prev + 1), 90_000);
@@ -880,7 +889,7 @@ export default function MasterTeacherDashboard() {
             <div className="relative h-full min-h-95 overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.10)] backdrop-blur-xl sm:p-5 md:p-6">
               {/* Teacher Info Section */}
               <div className="flex flex-col mb-3 md:flex-row md:items-center md:justify-between">
-                <SecondaryHeader title="Teacher Overview" />
+                <SecondaryHeader title="Teacher's Profile" />
                 <div className="flex space-x-2 mt-2 md:mt-0">
                 </div>
               </div>
@@ -922,7 +931,7 @@ export default function MasterTeacherDashboard() {
               <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
                 <SecondaryHeader title="Coordinator Overview" />
               </div>
-              <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2 sm:gap-5 sm:mb-7 lg:grid-cols-3 lg:gap-6 lg:mb-8">
+              <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2 sm:gap-5 sm:mb-7 lg:grid-cols-4 lg:gap-6 lg:mb-8">
                 <DashboardMetricCard
                   value={totalStudentsValue}
                   label="Total Students"
@@ -940,6 +949,11 @@ export default function MasterTeacherDashboard() {
                   label="Pending Materials"
                   icon={<FolderOpen className="h-4.5 w-4.5" />}
                   onClick={() => handleNavigate("/MasterTeacher/Coordinator/materials?status=pending")}
+                />
+                <DashboardMetricCard
+                  value={todayDateLabel}
+                  label="Date Today"
+                  icon={<CalendarDays className="h-4.5 w-4.5" />}
                 />
               </div>
 

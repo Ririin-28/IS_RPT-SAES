@@ -1,6 +1,13 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
-import { getTableColumns, query } from "@/lib/db";
+import {
+  ensureUserProfileImageColumn,
+  uploadProfileImage,
+  cleanupProfileImage,
+  ProfileImageValidationError,
+} from "@/lib/server/profile-image";
+import { parseProfileMutationRequest, resolveAuthorizedProfileUserId } from "@/lib/server/profile-request";
+import { getTableColumns, query, runWithConnection } from "@/lib/db";
 import { requireItAdmin } from "@/lib/server/it-admin-auth";
 
 export const dynamic = "force-dynamic";
@@ -64,74 +71,140 @@ export async function PUT(request: NextRequest) {
     return auth.response;
   }
 
-  const userIdParam = request.nextUrl.searchParams.get("userId");
-  if (!userIdParam) {
-    return NextResponse.json(
-      { success: false, error: "Missing userId query parameter." },
-      { status: 400 },
-    );
+  const targetUser = resolveAuthorizedProfileUserId(
+    request.nextUrl.searchParams.get("userId"),
+    auth.userId,
+  );
+  if (!targetUser.ok) {
+    return targetUser.response;
   }
 
-  const userId = Number(userIdParam);
-  if (!Number.isFinite(userId) || userId <= 0) {
-    return NextResponse.json(
-      { success: false, error: "Invalid userId value." },
-      { status: 400 },
-    );
-  }
-
-  let body: any;
+  let payload: Awaited<ReturnType<typeof parseProfileMutationRequest>>;
   try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ success: false, error: "Invalid request body." }, { status: 400 });
-  }
-
-  try {
-    const userColumns = await getTableColumns("users");
-    const updates: string[] = [];
-    const params: any[] = [];
-
-    const firstNameCol = pickColumn(userColumns, FIRST_NAME_COLUMNS);
-    if (body.firstName !== undefined && firstNameCol) {
-      updates.push(`${firstNameCol} = ?`);
-      params.push(body.firstName?.trim() || null);
-    }
-
-    const middleNameCol = pickColumn(userColumns, MIDDLE_NAME_COLUMNS);
-    if (body.middleName !== undefined && middleNameCol) {
-      updates.push(`${middleNameCol} = ?`);
-      params.push(body.middleName?.trim() || null);
-    }
-
-    const lastNameCol = pickColumn(userColumns, LAST_NAME_COLUMNS);
-    if (body.lastName !== undefined && lastNameCol) {
-      updates.push(`${lastNameCol} = ?`);
-      params.push(body.lastName?.trim() || null);
-    }
-
-    const emailCol = pickColumn(userColumns, EMAIL_COLUMNS);
-    if (body.email !== undefined && emailCol) {
-      updates.push(`${emailCol} = ?`);
-      params.push(body.email?.trim() || null);
-    }
-
-    const contactCol = pickColumn(userColumns, CONTACT_COLUMNS);
-    if (body.contactNumber !== undefined && contactCol) {
-      updates.push(`${contactCol} = ?`);
-      params.push(body.contactNumber?.trim() || null);
-    }
-
-    if (updates.length > 0) {
-      params.push(userId);
-      await query(`UPDATE users SET ${updates.join(", ")} WHERE user_id = ?`, params);
-    }
-
-    return NextResponse.json({ success: true });
+    payload = await parseProfileMutationRequest(request);
   } catch (error) {
-    console.error("Failed to update IT admin profile", error);
     return NextResponse.json(
-      { success: false, error: "Failed to update profile." },
+      { success: false, error: error instanceof Error ? error.message : "Invalid request body." },
+      { status: 400 },
+    );
+  }
+
+  let uploadedImageStoragePath: string | null = null;
+
+  try {
+    const userColumns = await ensureUserProfileImageColumn();
+    const body = payload.body;
+    const uploadedImage = payload.profileImage ? await uploadProfileImage(payload.profileImage) : null;
+    uploadedImageStoragePath = uploadedImage?.storagePath ?? null;
+
+    const result = await runWithConnection(async (connection) => {
+      await connection.beginTransaction();
+
+      try {
+        const [currentRows] = await connection.execute<RowDataPacket[]>(
+          "SELECT profile_image_url FROM users WHERE user_id = ? LIMIT 1",
+          [targetUser.userId],
+        );
+
+        if (!currentRows.length) {
+          await connection.rollback();
+          return {
+            notFound: true as const,
+            previousProfileImageUrl: null,
+            profileImageUrl: null,
+          };
+        }
+
+        const previousProfileImageUrl = toNullableString(currentRows[0]?.profile_image_url);
+        const updates: string[] = [];
+        const params: Array<string | number | null> = [];
+
+        const firstNameCol = pickColumn(userColumns, FIRST_NAME_COLUMNS);
+        if (body.firstName !== undefined && firstNameCol) {
+          updates.push(`${firstNameCol} = ?`);
+          params.push(typeof body.firstName === "string" ? body.firstName.trim() || null : null);
+        }
+
+        const middleNameCol = pickColumn(userColumns, MIDDLE_NAME_COLUMNS);
+        if (body.middleName !== undefined && middleNameCol) {
+          updates.push(`${middleNameCol} = ?`);
+          params.push(typeof body.middleName === "string" ? body.middleName.trim() || null : null);
+        }
+
+        const lastNameCol = pickColumn(userColumns, LAST_NAME_COLUMNS);
+        if (body.lastName !== undefined && lastNameCol) {
+          updates.push(`${lastNameCol} = ?`);
+          params.push(typeof body.lastName === "string" ? body.lastName.trim() || null : null);
+        }
+
+        const emailCol = pickColumn(userColumns, EMAIL_COLUMNS);
+        if (body.email !== undefined && emailCol) {
+          updates.push(`${emailCol} = ?`);
+          params.push(typeof body.email === "string" ? body.email.trim() || null : null);
+        }
+
+        const contactCol = pickColumn(userColumns, CONTACT_COLUMNS);
+        if (body.contactNumber !== undefined && contactCol) {
+          updates.push(`${contactCol} = ?`);
+          params.push(typeof body.contactNumber === "string" ? body.contactNumber.trim() || null : null);
+        }
+
+        if (uploadedImage) {
+          updates.push("profile_image_url = ?");
+          params.push(uploadedImage.publicUrl);
+        }
+
+        if (updates.length > 0) {
+          params.push(targetUser.userId);
+          await connection.execute(`UPDATE users SET ${updates.join(", ")} WHERE user_id = ?`, params);
+        }
+
+        await connection.commit();
+        return {
+          notFound: false as const,
+          previousProfileImageUrl,
+          profileImageUrl: uploadedImage?.publicUrl ?? previousProfileImageUrl,
+        };
+      } catch (error) {
+        await connection.rollback();
+        throw error;
+      }
+    });
+
+    if (result.notFound) {
+      if (uploadedImage) {
+        await cleanupProfileImage(uploadedImage.storagePath);
+      }
+      return NextResponse.json({ success: false, error: "IT admin profile not found." }, { status: 404 });
+    }
+
+    if (
+      uploadedImage &&
+      result.previousProfileImageUrl &&
+      result.previousProfileImageUrl !== uploadedImage.publicUrl
+    ) {
+      await cleanupProfileImage(result.previousProfileImageUrl);
+    }
+
+    return NextResponse.json({
+      success: true,
+      profile: {
+        profileImageUrl: result.profileImageUrl,
+      },
+    });
+  } catch (error) {
+    if (uploadedImageStoragePath) {
+      await cleanupProfileImage(uploadedImageStoragePath);
+    }
+    console.error("Failed to update IT admin profile", error);
+    if (error instanceof ProfileImageValidationError) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: error.status },
+      );
+    }
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : "Failed to update profile." },
       { status: 500 },
     );
   }
@@ -143,24 +216,16 @@ export async function GET(request: NextRequest) {
     return auth.response;
   }
 
-  const userIdParam = request.nextUrl.searchParams.get("userId");
-  if (!userIdParam) {
-    return NextResponse.json(
-      { success: false, error: "Missing userId query parameter." },
-      { status: 400 },
-    );
-  }
-
-  const userId = Number(userIdParam);
-  if (!Number.isFinite(userId) || userId <= 0) {
-    return NextResponse.json(
-      { success: false, error: "Invalid userId value." },
-      { status: 400 },
-    );
+  const targetUser = resolveAuthorizedProfileUserId(
+    request.nextUrl.searchParams.get("userId"),
+    auth.userId,
+  );
+  if (!targetUser.ok) {
+    return targetUser.response;
   }
 
   try {
-    const userColumns = await getTableColumns("users");
+    const userColumns = await ensureUserProfileImageColumn();
     if (!userColumns.size) {
       return NextResponse.json(
         { success: false, error: "Users table is unavailable." },
@@ -200,6 +265,7 @@ export async function GET(request: NextRequest) {
     addUserColumn(pickColumn(userColumns, SUFFIX_COLUMNS), "user_suffix");
     addUserColumn(pickColumn(userColumns, EMAIL_COLUMNS), "user_email");
     addUserColumn(pickColumn(userColumns, CONTACT_COLUMNS), "user_contact_number");
+    addUserColumn(userColumns.has("profile_image_url") ? "profile_image_url" : null, "user_profile_image_url");
 
     addItAdminColumn(pickColumn(itAdminColumns, FIRST_NAME_COLUMNS), "admin_first_name");
     addItAdminColumn(pickColumn(itAdminColumns, MIDDLE_NAME_COLUMNS), "admin_middle_name");
@@ -216,7 +282,7 @@ export async function GET(request: NextRequest) {
       LIMIT 1
     `;
 
-    const [rows] = await query<RowDataPacket[]>(sql, [userId]);
+    const [rows] = await query<RowDataPacket[]>(sql, [targetUser.userId]);
     if (!rows.length) {
       return NextResponse.json(
         { success: false, error: "IT admin profile not found." },
@@ -252,6 +318,7 @@ export async function GET(request: NextRequest) {
         suffix,
         email,
         contactNumber,
+        profileImageUrl: toNullableString(row.user_profile_image_url),
       },
     });
   } catch (error) {

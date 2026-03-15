@@ -460,13 +460,14 @@ export default function ITAdminTab({ itAdmins, setITAdmins, searchTerm }: ITAdmi
     const validTypes = [".xlsx", ".xls"];
     const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf("."));
     if (!validTypes.includes(fileExtension)) {
-      alert("Please upload only Excel files (.xlsx or .xls)");
+      setSubmitError("Please upload only Excel files (.xlsx or .xls).");
       return;
     }
 
+    setSubmitError(null);
     setSelectedFile(file);
     setShowConfirmModal(true);
-  }, []);
+  }, [setSubmitError]);
 
   const handleUploadConfirm = useCallback(() => {
     if (!selectedFile) {

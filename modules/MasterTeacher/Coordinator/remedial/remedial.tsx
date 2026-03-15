@@ -21,10 +21,7 @@ import ScheduledActivitiesList, { type CalendarActivity } from "./ScheduledActiv
 import BaseModal from "@/components/Common/Modals/BaseModal";
 
 import EditContentModal, { type FlashcardContent } from "./Modals/EditContentModal";
-
-import NoContentModal from "./Modals/NoContentModal";
-
-import NoFlashcardsModal from "./Modals/NoFlashcardsModal";
+import ToastActivity from "@/components/ToastActivity";
 
 
 const SUBJECT_OPTIONS = ["English", "Filipino", "Math"] as const;
@@ -202,8 +199,11 @@ export default function MasterTeacherRemedial() {
   const [flashcards, setFlashcards] = useState<FlashcardContent[]>([]);
 
   const [validatingActivityId, setValidatingActivityId] = useState<string | null>(null);
-  const [showNoContentModal, setShowNoContentModal] = useState(false);
-  const [showNoFlashcardsModal, setShowNoFlashcardsModal] = useState(false);
+  const [saveToast, setSaveToast] = useState<{
+    title: string;
+    message: string;
+    tone: "success" | "error";
+  } | null>(null);
 
 
 
@@ -241,7 +241,7 @@ export default function MasterTeacherRemedial() {
 
         const response = await fetch(
 
-          `/api/master_teacher/coordinator/profile?userId=${encodeURIComponent(String(userId))}`,
+          "/api/master_teacher/coordinator/profile",
 
           { cache: "no-store" },
 
@@ -663,7 +663,11 @@ export default function MasterTeacherRemedial() {
           .filter((entry: FlashcardContent) => entry.sentence.trim().length > 0);
 
         if (normalized.length === 0) {
-          setShowNoFlashcardsModal(true);
+          setSaveToast({
+            title: "No Content Available",
+            message: "No approved flashcards content has been found for this activity.",
+            tone: "error",
+          });
         } else {
           const phonemicParam = phonemicId ? `&phonemicId=${encodeURIComponent(String(phonemicId))}` : "";
           const phonemicNameParam = phonemicLevelName ? `&phonemicName=${encodeURIComponent(phonemicLevelName)}` : "";
@@ -671,11 +675,19 @@ export default function MasterTeacherRemedial() {
           router.push(playPath);
         }
       } else {
-        setShowNoContentModal(true);
+        setSaveToast({
+          title: "No Content Available",
+          message: "No approved flashcards content has been found for this activity.",
+          tone: "error",
+        });
       }
     } catch (error) {
       console.error("Validation failed", error);
-      setShowNoContentModal(true);
+      setSaveToast({
+        title: "No Content Available",
+        message: "No approved flashcards content has been found for this activity.",
+        tone: "error",
+      });
     } finally {
       setValidatingActivityId(null);
     }
@@ -692,11 +704,18 @@ export default function MasterTeacherRemedial() {
 
     const phonemicId = resolveActivePhonemicId;
 
-    if (!activity || !phonemicId) return;
+    if (!activity || !phonemicId) {
+      setSaveToast({
+        title: "Save Failed",
+        message: "Missing activity or phonemic level. Please reopen this activity and try again.",
+        tone: "error",
+      });
+      return;
+    }
 
     try {
 
-      await fetch("/api/remedial-material-content", {
+      const response = await fetch("/api/remedial-material-content", {
 
         method: "PUT",
 
@@ -718,13 +737,43 @@ export default function MasterTeacherRemedial() {
 
       });
 
-    } catch {
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error ?? "Failed to save flashcards changes.");
+      }
+
+      setSaveToast({
+        title: "Flashcards Saved",
+        message: payload?.createdFallback
+          ? "Saved as fallback flashcards for this activity."
+          : "Flashcards changes saved successfully.",
+        tone: "success",
+      });
+
+    } catch (error) {
+
+      setSaveToast({
+        title: "Save Failed",
+        message: error instanceof Error ? error.message : "Unable to save flashcards changes.",
+        tone: "error",
+      });
 
       return;
 
     }
 
   };
+
+  useEffect(() => {
+    if (!saveToast) return;
+    const timerId = window.setTimeout(() => {
+      setSaveToast(null);
+    }, 3500);
+
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [saveToast]);
 
 
 
@@ -878,14 +927,14 @@ export default function MasterTeacherRemedial() {
 
        </BaseModal>
 
-       <NoContentModal
-          isOpen={showNoContentModal}
-          onClose={() => setShowNoContentModal(false)}
-       />
-       <NoFlashcardsModal
-          isOpen={showNoFlashcardsModal}
-          onClose={() => setShowNoFlashcardsModal(false)}
-       />
+       {saveToast && (
+         <ToastActivity
+          title={saveToast.title}
+          message={saveToast.message}
+          tone={saveToast.tone}
+          onClose={() => setSaveToast(null)}
+         />
+       )}
 
     </div>
 

@@ -139,7 +139,7 @@ export function useCoordinatorTeachers(): UseCoordinatorTeachersResult {
     }
 
     try {
-      const response = await fetch(`/api/master_teacher/coordinator/profile?userId=${encodeURIComponent(String(userId))}`, {
+      const response = await fetch("/api/master_teacher/coordinator/profile", {
         cache: "no-store",
       });
       const payload = await response.json().catch(() => null);

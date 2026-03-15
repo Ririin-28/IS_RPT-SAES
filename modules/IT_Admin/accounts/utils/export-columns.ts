@@ -49,7 +49,7 @@ interface ExportAccountRowsOptions<T> {
 
 export async function exportAccountRows<T>({ rows, columns, baseFilename, sheetName, emptyMessage }: ExportAccountRowsOptions<T>): Promise<void> {
   if (!rows.length) {
-    window.alert(emptyMessage);
+    console.warn(emptyMessage);
     return;
   }
 

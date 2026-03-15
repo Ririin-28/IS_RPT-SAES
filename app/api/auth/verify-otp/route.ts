@@ -3,6 +3,10 @@ import { randomBytes } from "crypto";
 import { recordAccountLogin } from "@/lib/server/account-logs";
 import { buildParentSessionCookie, createParentSession } from "@/lib/server/parent-session";
 import { buildAdminSessionCookie, createAdminSession } from "@/lib/server/admin-session";
+import { buildPrincipalSessionCookie, createPrincipalSession } from "@/lib/server/principal-session";
+import { buildMasterTeacherSessionCookie, createMasterTeacherSession } from "@/lib/server/master-teacher-session";
+import { buildTeacherSessionCookie, createTeacherSession } from "@/lib/server/teacher-session";
+import { resolveMasterTeacherId, resolvePrincipalId, resolveTeacherId } from "@/lib/server/role-record-ids";
 import { normalizeRoleName, resolveCanonicalRole, resolvePortalPath, resolveUserRole } from "@/lib/server/role-resolution";
 import { ensureItAdminPhaseOneMigration } from "@/lib/server/it-admin-migration";
 
@@ -21,6 +25,7 @@ interface UserRow extends RowDataPacket {
   first_name?: string | null;
   middle_name?: string | null;
   last_name?: string | null;
+  profile_image_url?: string | null;
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -121,6 +126,51 @@ export async function POST(req: Request): Promise<Response> {
       responseCookies.push(buildAdminSessionCookie(token, expiresAt));
     }
 
+    if (canonicalRole === "principal") {
+      const principalId = await resolvePrincipalId(db, user.user_id);
+      if (!principalId) {
+        return respond(403, { error: "Principal record not found" });
+      }
+
+      const { token, expiresAt } = await createPrincipalSession(
+        db,
+        principalId,
+        user.user_id,
+        deviceName ?? null,
+      );
+      responseCookies.push(buildPrincipalSessionCookie(token, expiresAt));
+    }
+
+    if (canonicalRole === "master_teacher" || canonicalRole === "masterteacher") {
+      const masterTeacherId = await resolveMasterTeacherId(db, user.user_id);
+      if (!masterTeacherId) {
+        return respond(403, { error: "Master teacher record not found" });
+      }
+
+      const { token, expiresAt } = await createMasterTeacherSession(
+        db,
+        masterTeacherId,
+        user.user_id,
+        deviceName ?? null,
+      );
+      responseCookies.push(buildMasterTeacherSessionCookie(token, expiresAt));
+    }
+
+    if (canonicalRole === "teacher") {
+      const teacherId = await resolveTeacherId(db, user.user_id);
+      if (!teacherId) {
+        return respond(403, { error: "Teacher record not found" });
+      }
+
+      const { token, expiresAt } = await createTeacherSession(
+        db,
+        teacherId,
+        user.user_id,
+        deviceName ?? null,
+      );
+      responseCookies.push(buildTeacherSessionCookie(token, expiresAt));
+    }
+
     await recordAccountLogin(db, user.user_id, responseRole);
 
     return respond(
@@ -135,6 +185,7 @@ export async function POST(req: Request): Promise<Response> {
         first_name: user.first_name ?? null,
         middle_name: user.middle_name ?? null,
         last_name: user.last_name ?? null,
+        profileImageUrl: user.profile_image_url ?? null,
       },
       responseCookies.length > 0 ? { "Set-Cookie": responseCookies } : undefined,
     );

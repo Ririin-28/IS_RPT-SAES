@@ -3,12 +3,11 @@ import React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { performClientLogout } from "@/lib/utils/logout";
 import {
-  getStoredUserProfile,
   formatFullNameWithMiddleInitial,
-  USER_PROFILE_EVENT,
-  StoredUserProfile,
 } from "@/lib/utils/user-profile";
 import LogoutConfirmationModal from "./Modals/LogoutConfirmationModal";
+import { useStoredUserProfile } from "@/lib/hooks/useStoredUserProfile";
+import UserAvatar from "./UserAvatar";
 type RoleSwitchOption = {
   label: string;
   description?: string;
@@ -44,31 +43,8 @@ export default function ProfileDropdown({
 }: ProfileDropdownProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const [storedProfile, setStoredProfile] = React.useState<StoredUserProfile | null>(() => getStoredUserProfile());
+  const storedProfile = useStoredUserProfile();
   const [showLogoutConfirm, setShowLogoutConfirm] = React.useState(false);
-
-  React.useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const handleProfileChange = (event: Event) => {
-      const customEvent = event as CustomEvent<StoredUserProfile | null>;
-      setStoredProfile(customEvent.detail ?? getStoredUserProfile());
-    };
-
-    const handleStorage = () => {
-      setStoredProfile(getStoredUserProfile());
-    };
-
-    window.addEventListener(USER_PROFILE_EVENT, handleProfileChange);
-    window.addEventListener("storage", handleStorage);
-
-    return () => {
-      window.removeEventListener(USER_PROFILE_EVENT, handleProfileChange);
-      window.removeEventListener("storage", handleStorage);
-    };
-  }, []);
 
   const resolveProfileRoute = React.useCallback((rawRole?: string | null) => {
     if (!rawRole) {
@@ -181,10 +157,17 @@ export default function ProfileDropdown({
       >
       <span className="text-sm text-[#013300] font-semibold mb-2">{resolvedEmail}</span>
       <div className="my-2">
-        <svg width="56" height="56" fill="none" stroke="#013300" strokeWidth="2" viewBox="0 0 24 24">
-          <circle cx="12" cy="8" r="6" />
-          <path d="M4 20v-2c0-3.5 5-5 8-5s8 1.5 8 5v2" />
-        </svg>
+        <div className="h-14 w-14 overflow-hidden rounded-full border border-[#013300]/20 bg-green-50">
+          <UserAvatar
+            profileImageUrl={storedProfile?.profileImageUrl}
+            firstName={storedProfile?.firstName}
+            lastName={storedProfile?.lastName}
+            alt={resolvedName}
+            imageClassName="h-full w-full object-cover"
+            fallbackClassName="h-full w-full"
+            size={56}
+          />
+        </div>
       </div>
       <div className="text-lg font-bold text-[#013300] mb-2 sm:text-xl md:text-2xl">Hi! {resolvedName}!</div>
       <hr className="w-full my-2 border-gray-300" />

@@ -53,7 +53,7 @@ interface ExportArchiveRowsOptions<T> {
 export async function exportArchiveRows<T>({ rows, accountLabel, gradeLabel, emptyMessage }: ExportArchiveRowsOptions<T>): Promise<void> {
   if (!rows.length) {
     const fallback = emptyMessage ?? `No ${gradeLabel ? `${gradeLabel.toLowerCase()} ` : ""}${accountLabel.toLowerCase()} archive records available to export.`;
-    window.alert(fallback);
+    console.warn(fallback);
     return;
   }
 

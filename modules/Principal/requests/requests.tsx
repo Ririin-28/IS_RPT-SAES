@@ -10,6 +10,7 @@ import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import BaseModal, { ModalLabel } from "@/components/Common/Modals/BaseModal";
 import TableList from "@/components/Common/Tables/TableList";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
+import ToastActivity from "@/components/ToastActivity";
 
 interface CalendarRequestRow {
   id: string;
@@ -234,6 +235,19 @@ export default function PrincipalRequests() {
     action: null,
   });
   const [actionError, setActionError] = useState<string | null>(null);
+  const [feedbackToast, setFeedbackToast] = useState<{
+    title: string;
+    message: string;
+    tone: "success" | "error";
+  } | null>(null);
+
+  useEffect(() => {
+    if (!feedbackToast) return;
+    const timerId = window.setTimeout(() => {
+      setFeedbackToast(null);
+    }, 3500);
+    return () => window.clearTimeout(timerId);
+  }, [feedbackToast]);
 
   const fetchRequests = useCallback(async () => {
     setLoading(true);
@@ -303,7 +317,13 @@ export default function PrincipalRequests() {
       setAllRequests(Array.from(deduped.values()));
     } catch (err) {
       console.error("Failed to load principal calendar requests", err);
-      setError((err as Error)?.message ?? "Unable to load requests. Please try again later.");
+      const message = (err as Error)?.message ?? "Unable to load requests. Please try again later.";
+      setError(message);
+      setFeedbackToast({
+        title: "Load Failed",
+        message,
+        tone: "error",
+      });
     } finally {
       setLoading(false);
     }
@@ -435,6 +455,11 @@ export default function PrincipalRequests() {
     async (requestInfo: CalendarRequestRow, action: ActionType, reason?: string) => {
       if (!requestInfo.sourceTable) {
         setActionError("The selected request cannot be updated.");
+        setFeedbackToast({
+          title: "Action Failed",
+          message: "The selected request cannot be updated.",
+          tone: "error",
+        });
         return;
       }
 
@@ -482,9 +507,23 @@ export default function PrincipalRequests() {
               : item,
           ),
         );
+        setFeedbackToast({
+          title: action === "approve" ? "Request Approved" : "Request Returned",
+          message:
+            action === "approve"
+              ? "The request was approved successfully."
+              : "The request was returned with your remarks.",
+          tone: "success",
+        });
       } catch (err) {
         console.error(`Failed to ${action} request`, err);
-        setActionError((err as Error)?.message ?? "Unable to update the request status.");
+        const message = (err as Error)?.message ?? "Unable to update the request status.";
+        setActionError(message);
+        setFeedbackToast({
+          title: "Action Failed",
+          message,
+          tone: "error",
+        });
       } finally {
         setActionState({ id: null, action: null });
       }
@@ -502,6 +541,11 @@ export default function PrincipalRequests() {
     const trimmed = remarks.trim();
     if (!trimmed) {
       setActionError("Remarks are required when returning a request.");
+      setFeedbackToast({
+        title: "Missing Remarks",
+        message: "Remarks are required when returning a request.",
+        tone: "error",
+      });
       return;
     }
     await handleAction(selectedRequest, "reject", trimmed);
@@ -879,6 +923,15 @@ export default function PrincipalRequests() {
           </div>
         )}
       </BaseModal>
+
+      {feedbackToast && (
+        <ToastActivity
+          title={feedbackToast.title}
+          message={feedbackToast.message}
+          tone={feedbackToast.tone}
+          onClose={() => setFeedbackToast(null)}
+        />
+      )}
     </div>
   );
 }

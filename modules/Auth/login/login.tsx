@@ -246,6 +246,7 @@ export default function Login({
             role: data.role,
             userId: data.user_id,
             email: data.email ?? email,
+            profileImageUrl: data.profileImageUrl ?? null,
           });
           try {
             sessionStorage.setItem("wasLoggedOut", "false");

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import { FaTimes } from "react-icons/fa";
+import AllAccountsTab from "./AllAccountsTab/AllAccountsTab";
 // Teacher Tab
 import TeacherTab from "./TeacherTab/TeacherTab";
 // Master Teacher Tab
@@ -13,27 +14,54 @@ import MasterTeacherTab from "./MasterTeacherTab/MasterTeacherTab";
 import ITAdminTab from "./ITAdminTab/ITAdminTab";
 // Principal Tab
 import PrincipalTab from "./PrincipalTab/PrincipalTab";
+import ParentTab from "./ParentTab/ParentTab";
+import ToastActivity from "@/components/ToastActivity";
 import type { AccountType } from "./components/AccountActionsMenu";
 
-type ApiRole = "it_admin" | "principal" | "master_teacher" | "teacher";
+type AccountListType = AccountType | "Parents";
+type AccountsView = "All Users" | AccountListType;
 
-const ACCOUNT_TYPE_TO_ROLE: Record<AccountType, ApiRole> = {
-  "IT Admin": "it_admin",
-  Principal: "principal",
-  "Master Teachers": "master_teacher",
-  Teachers: "teacher",
+type AccountFetchConfig = {
+  endpoint: string;
+  roleLabel: string;
+  identifierLabel: string;
+  identifierKey: "adminId" | "principalId" | "masterTeacherId" | "teacherId" | "parentId";
+};
+
+const ACCOUNT_FETCH_CONFIG: Record<AccountListType, AccountFetchConfig> = {
+  "IT Admin": {
+    endpoint: "/api/it_admin/accounts/it_admin",
+    roleLabel: "IT Admin",
+    identifierLabel: "Admin ID",
+    identifierKey: "adminId",
+  },
+  Principal: {
+    endpoint: "/api/it_admin/accounts?role=principal",
+    roleLabel: "Principal",
+    identifierLabel: "Principal ID",
+    identifierKey: "principalId",
+  },
+  "Master Teachers": {
+    endpoint: "/api/it_admin/accounts?role=master_teacher",
+    roleLabel: "Master Teacher",
+    identifierLabel: "Master Teacher ID",
+    identifierKey: "masterTeacherId",
+  },
+  Teachers: {
+    endpoint: "/api/it_admin/accounts?role=teacher",
+    roleLabel: "Teacher",
+    identifierLabel: "Teacher ID",
+    identifierKey: "teacherId",
+  },
+  Parents: {
+    endpoint: "/api/it_admin/accounts?role=parent",
+    roleLabel: "Parent",
+    identifierLabel: "Parent ID",
+    identifierKey: "parentId",
+  },
 };
 
 const NAME_COLLATOR = new Intl.Collator("en", { sensitivity: "base", numeric: true });
-
-const parseGradeFilter = (label: string): number | undefined => {
-  const match = /^Grade\s+(\d+)$/i.exec(label.trim());
-  if (!match) {
-    return undefined;
-  }
-  const value = Number.parseInt(match[1], 10);
-  return Number.isNaN(value) ? undefined : value;
-};
 
 function toStringOrNull(value: unknown): string | null {
   if (value === null || value === undefined) {
@@ -184,6 +212,18 @@ function normalizeAccountRecord(record: any) {
   return normalized;
 }
 
+function annotateAccountRecord(record: any, config: AccountFetchConfig) {
+  const normalized = normalizeAccountRecord(record);
+  const identifierSource = normalized[config.identifierKey] ?? normalized.userId ?? null;
+
+  normalized.roleLabel = config.roleLabel;
+  normalized.role = config.roleLabel;
+  normalized.identifierLabel = config.identifierLabel;
+  normalized.identifierValue = identifierSource != null ? String(identifierSource) : "--";
+
+  return normalized;
+}
+
 function sortAccounts(records: any[]) {
   return [...records].sort((a, b) => {
     const nameA = toStringOrNull(a.name);
@@ -208,23 +248,30 @@ function sortAccounts(records: any[]) {
 
 export default function ITAdminAccounts() {
   const [activeTab, setActiveTab] = useState("All Grades");
-  const [accountType, setAccountType] = useState<AccountType>("IT Admin");
+  const [accountType, setAccountType] = useState<AccountsView>("All Users");
   const [accounts, setAccounts] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [feedbackToast, setFeedbackToast] = useState<{
+    title: string;
+    message: string;
+    tone: "success" | "error";
+  } | null>(null);
+
+  useEffect(() => {
+    if (!feedbackToast) return;
+    const timerId = window.setTimeout(() => {
+      setFeedbackToast(null);
+    }, 3500);
+    return () => window.clearTimeout(timerId);
+  }, [feedbackToast]);
 
   const handleAccountTypeChange = useCallback((value: string) => {
-    setAccountType(value as AccountType);
+    setAccountType(value as AccountsView);
   }, []);
 
   useEffect(() => {
-    const role = ACCOUNT_TYPE_TO_ROLE[accountType];
-    if (!role) {
-      setAccounts([]);
-      return;
-    }
-
     const controller = new AbortController();
     let isActive = true;
 
@@ -232,11 +279,38 @@ export default function ITAdminAccounts() {
       setIsLoading(true);
       setError(null);
       try {
-        const endpoint = accountType === "IT Admin"
-          ? "/api/it_admin/accounts/it_admin"
-          : `/api/it_admin/accounts?role=${role}`;
+        if (accountType === "All Users") {
+          const responses = await Promise.all(
+            (Object.keys(ACCOUNT_FETCH_CONFIG) as AccountListType[]).map(async (type) => {
+              const config = ACCOUNT_FETCH_CONFIG[type];
+              const response = await fetch(config.endpoint, {
+                cache: "no-store",
+                signal: controller.signal,
+              });
+              if (!response.ok) {
+                throw new Error(`${config.roleLabel} request failed with status ${response.status}`);
+              }
 
-        const response = await fetch(endpoint, {
+              const payload = await response.json();
+              const normalizedRecords = (payload.records ?? []).map((record: any) => annotateAccountRecord(record, config));
+              return normalizedRecords;
+            }),
+          );
+
+          if (!isActive) return;
+
+          const sortedRecords = sortAccounts(responses.flat());
+          setAccounts(sortedRecords);
+          return;
+        }
+
+        const config = ACCOUNT_FETCH_CONFIG[accountType];
+        if (!config) {
+          setAccounts([]);
+          return;
+        }
+
+        const response = await fetch(config.endpoint, {
           cache: "no-store",
           signal: controller.signal,
         });
@@ -245,7 +319,7 @@ export default function ITAdminAccounts() {
         }
         const payload = await response.json();
         if (!isActive) return;
-        const normalizedRecords = (payload.records ?? []).map((record: any) => normalizeAccountRecord(record));
+        const normalizedRecords = (payload.records ?? []).map((record: any) => annotateAccountRecord(record, config));
         const sortedRecords = sortAccounts(normalizedRecords);
         setAccounts(sortedRecords);
       } catch (err) {
@@ -253,7 +327,13 @@ export default function ITAdminAccounts() {
         if ((err as Error).name === "AbortError") {
           return;
         }
-        setError(err instanceof Error ? err.message : "Unable to load accounts.");
+        const message = err instanceof Error ? err.message : "Unable to load accounts.";
+        setError(message);
+        setFeedbackToast({
+          title: "Load Failed",
+          message,
+          tone: "error",
+        });
         setAccounts([]);
       } finally {
         if (isActive) {
@@ -285,11 +365,11 @@ export default function ITAdminAccounts() {
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
                 <div className="flex items-center gap-0">
                   <HeaderDropdown
-                    options={["IT Admin", "Principal", "Master Teachers", "Teachers"]}
+                    options={["All Users", "IT Admin", "Principal", "Master Teachers", "Teachers", "Parents"]}
                     value={accountType}
                     onChange={handleAccountTypeChange}
                   />
-                  {(accountType === "IT Admin" || accountType === "Principal") ? (
+                  {(accountType === "All Users" || accountType === "IT Admin" || accountType === "Principal" || accountType === "Parents") ? (
                     <SecondaryHeader title="Accounts" />
                   ) : (
                     <>
@@ -307,7 +387,7 @@ export default function ITAdminAccounts() {
                   <div className="relative flex-1 sm:flex-initial">
                     <input
                       type="text"
-                      placeholder={`Search ${accountType.toLowerCase()}...`}
+                      placeholder={accountType === "All Users" ? "Search all users..." : `Search ${accountType.toLowerCase()}...`}
                       className="w-full border border-gray-300 rounded-lg px-4 py-2 pr-10 text-black"
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
@@ -332,6 +412,10 @@ export default function ITAdminAccounts() {
                 <p className="text-sm text-red-600" role="alert">{error}</p>
               )}
               <div className="mt-4 sm:mt-6">
+                {accountType === "All Users" && (
+                  <AllAccountsTab accounts={accounts} searchTerm={searchTerm} />
+                )}
+
                 {accountType === "IT Admin" && (
                   <ITAdminTab itAdmins={accounts} setITAdmins={setAccounts} searchTerm={searchTerm} />
                 )}
@@ -356,11 +440,23 @@ export default function ITAdminAccounts() {
                     gradeFilter={activeTab}
                   />
                 )}
+                {accountType === "Parents" && (
+                  <ParentTab parents={accounts} searchTerm={searchTerm} />
+                )}
               </div>
             </div>
           </div>
         </main>
       </div>
+
+      {feedbackToast && (
+        <ToastActivity
+          title={feedbackToast.title}
+          message={feedbackToast.message}
+          tone={feedbackToast.tone}
+          onClose={() => setFeedbackToast(null)}
+        />
+      )}
     </div>
   );
 }

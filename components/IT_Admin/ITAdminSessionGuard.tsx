@@ -67,6 +67,7 @@ export default function ITAdminSessionGuard({ children }: ITAdminSessionGuardPro
             firstName?: string | null;
             middleName?: string | null;
             lastName?: string | null;
+            profileImageUrl?: string | null;
             role?: string | null;
           };
         };
@@ -86,6 +87,7 @@ export default function ITAdminSessionGuard({ children }: ITAdminSessionGuardPro
             firstName: data.user.firstName ?? null,
             middleName: data.user.middleName ?? null,
             lastName: data.user.lastName ?? null,
+            profileImageUrl: data.user.profileImageUrl ?? null,
             role: normalizedRole === "super_admin" || normalizedRole === "admin" || normalizedRole === "itadmin"
               ? "it_admin"
               : normalizedRole,

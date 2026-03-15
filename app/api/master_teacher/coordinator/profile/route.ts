@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { getTableColumns, query } from "@/lib/db";
 import { normalizeMaterialSubject } from "@/lib/materials/shared";
+import { ensureUserProfileImageColumn } from "@/lib/server/profile-image";
+import { resolveAuthorizedProfileUserId } from "@/lib/server/profile-request";
 import { getMasterTeacherSessionFromCookies } from "@/lib/server/master-teacher-session";
 
 export const dynamic = "force-dynamic";
@@ -710,6 +712,7 @@ function buildName(
 
 type RawCoordinatorRow = RowDataPacket & {
   user_id: number;
+  user_profile_image_url?: string | null;
   mt_master_teacher_id?: string | null;
   mt_masterteacher_id?: string | null;
   mt_teacher_id?: string | null;
@@ -761,23 +764,24 @@ type RawCoordinatorRow = RowDataPacket & {
 };
 
 export async function GET(request: NextRequest) {
-  const url = new URL(request.url);
-  const userIdParam = url.searchParams.get("userId");
-
-  if (!userIdParam) {
+  const session = await getMasterTeacherSessionFromCookies().catch(() => null);
+  if (!session) {
     return NextResponse.json(
-      { success: false, error: "Missing userId query parameter." },
-      { status: 400 },
+      { success: false, error: "Master teacher session not found." },
+      { status: 401 },
     );
   }
 
-  const userId = Number(userIdParam);
-  if (!Number.isFinite(userId) || userId <= 0) {
-    return NextResponse.json({ success: false, error: "Invalid userId value." }, { status: 400 });
+  const targetUser = resolveAuthorizedProfileUserId(
+    request.nextUrl.searchParams.get("userId"),
+    session.userId,
+  );
+  if (!targetUser.ok) {
+    return targetUser.response;
   }
 
   try {
-    const userColumns = await safeGetColumns("users");
+    const userColumns = await ensureUserProfileImageColumn();
     if (userColumns.size === 0) {
       return NextResponse.json(
         { success: false, error: "Users table is not accessible." },
@@ -790,7 +794,7 @@ export async function GET(request: NextRequest) {
     const coordinatorColumns = await safeGetColumns(COORDINATOR_TABLE);
 
     const selectParts: string[] = [];
-    const params: Array<number> = [userId];
+    const params: Array<number> = [targetUser.userId];
 
     const addUserColumn = (column: string, alias: string) => {
       if (userColumns.has(column)) {
@@ -826,6 +830,7 @@ export async function GET(request: NextRequest) {
     addUserColumn("contact_number", "user_contact_number");
     addUserColumn("phone_number", "user_phone_number");
     addUserColumn("role", "user_role");
+    addUserColumn("profile_image_url", "user_profile_image_url");
 
     addMasterColumn("master_teacher_id", "mt_master_teacher_id");
     addMasterColumn("masterteacher_id", "mt_masterteacher_id");
@@ -967,8 +972,6 @@ export async function GET(request: NextRequest) {
     if (row.mt_masterteacher_id) handledIds.push(row.mt_masterteacher_id);
     if (row.mt_teacher_id) handledIds.push(row.mt_teacher_id);
 
-    const session = await getMasterTeacherSessionFromCookies().catch(() => null);
-    
     // Only use role-based filtering if the session belongs to the user being queried
     // This prevents cross-user data contamination when multiple users are logged in different browser windows
     const sessionUserId = session?.userId;
@@ -1072,6 +1075,7 @@ export async function GET(request: NextRequest) {
         section,
         email,
         contactNumber,
+        profileImageUrl: pickFirst(row.user_profile_image_url),
       },
       activities: coordinatorActivities,
       metadata: {

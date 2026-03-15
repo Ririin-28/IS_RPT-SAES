@@ -49,12 +49,17 @@ export type UseCoordinatorMaterialsResult = {
   updating: boolean;
   error: string | null;
   refresh: () => Promise<void>;
-  approveMaterial: (material: CoordinatorMaterialRow, options?: UpdateOptions) => Promise<void>;
-  rejectMaterial: (material: CoordinatorMaterialRow, reason: string, options?: UpdateOptions) => Promise<void>;
+  approveMaterial: (material: CoordinatorMaterialRow, options?: UpdateOptions) => Promise<UpdateResult>;
+  rejectMaterial: (material: CoordinatorMaterialRow, reason: string, options?: UpdateOptions) => Promise<UpdateResult>;
 };
 
 export type UpdateOptions = {
   skipRefresh?: boolean;
+};
+
+export type UpdateResult = {
+  success: boolean;
+  error?: string;
 };
 
 const PHONEMIC_LEVEL_ORDER = ["nonreader", "syllable", "word", "phrase", "sentence", "paragraph"] as const;
@@ -233,10 +238,16 @@ export function useCoordinatorMaterials({ subject, level, requestId }: UseCoordi
   }, [fetchMaterials]);
 
   const updateMaterialStatus = useCallback(
-    async (material: CoordinatorMaterialRow, status: MaterialStatus, rejectionReason?: string | null, options?: UpdateOptions) => {
+    async (
+      material: CoordinatorMaterialRow,
+      status: MaterialStatus,
+      rejectionReason?: string | null,
+      options?: UpdateOptions,
+    ): Promise<UpdateResult> => {
       if (!reviewerUserId) {
-        setError("Missing reviewer profile. Please re-login.");
-        return;
+        const message = "Missing reviewer profile. Please re-login.";
+        setError(message);
+        return { success: false, error: message };
       }
       setUpdating(true);
       setError(null);
@@ -281,9 +292,12 @@ export function useCoordinatorMaterials({ subject, level, requestId }: UseCoordi
         if (!options?.skipRefresh) {
           await fetchMaterials();
         }
+        return { success: true };
       } catch (err) {
         console.error("Failed to update material", err);
-        setError(err instanceof Error ? err.message : "Failed to update material");
+        const message = err instanceof Error ? err.message : "Failed to update material";
+        setError(message);
+        return { success: false, error: message };
       } finally {
         setUpdating(false);
       }
@@ -292,15 +306,15 @@ export function useCoordinatorMaterials({ subject, level, requestId }: UseCoordi
   );
 
   const approveMaterial = useCallback(
-    async (material: CoordinatorMaterialRow, options?: UpdateOptions) => {
-      await updateMaterialStatus(material, "approved", null, options);
+    async (material: CoordinatorMaterialRow, options?: UpdateOptions): Promise<UpdateResult> => {
+      return updateMaterialStatus(material, "approved", null, options);
     },
     [updateMaterialStatus],
   );
 
   const rejectMaterial = useCallback(
-    async (material: CoordinatorMaterialRow, reason: string, options?: UpdateOptions) => {
-      await updateMaterialStatus(material, "rejected", reason || "Rejected", options);
+    async (material: CoordinatorMaterialRow, reason: string, options?: UpdateOptions): Promise<UpdateResult> => {
+      return updateMaterialStatus(material, "rejected", reason || "Rejected", options);
     },
     [updateMaterialStatus],
   );

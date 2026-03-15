@@ -7,7 +7,9 @@ import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
+import ToastActivity from "@/components/ToastActivity";
 import BaseModal from "@/components/Common/Modals/BaseModal";
+import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
 import type { CalendarActivity } from "./ScheduledActivitiesList";
 
 interface PhonemicLevel {
@@ -36,6 +38,23 @@ export default function MaterialGridModal({ isOpen, onClose, activity, subject }
   const [targetLevelId, setTargetLevelId] = useState<number | null>(null);
   const [showRejectionModal, setShowRejectionModal] = useState(false);
   const [rejectionDetails, setRejectionDetails] = useState<{ levelName: string; reason: string | null } | null>(null);
+  const [showRemoveConfirmModal, setShowRemoveConfirmModal] = useState(false);
+  const [pendingRemoveMaterial, setPendingRemoveMaterial] = useState<{ id: number; fileName?: string | null } | null>(null);
+  const [removingMaterialId, setRemovingMaterialId] = useState<number | null>(null);
+  const [statusToast, setStatusToast] = useState<{
+    title: string;
+    message: string;
+    tone: "success" | "error" | "info";
+  } | null>(null);
+
+  useEffect(() => {
+    if (!statusToast) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => setStatusToast(null), 3200);
+    return () => window.clearTimeout(timeoutId);
+  }, [statusToast]);
 
   // Memoized load function to handle both initial load and quiet refreshes
   const loadData = useCallback(async (isInitial = false) => {
@@ -103,7 +122,11 @@ export default function MaterialGridModal({ isOpen, onClose, activity, subject }
     if (!file || targetLevelId === null) return;
 
     if (!file.name.toLowerCase().endsWith(".pptx")) {
-      alert(`Only .pptx files are supported. "${file.name}" is not a PPTX file.`);
+      setStatusToast({
+        title: "Invalid File",
+        message: `Only .pptx files are supported. "${file.name}" is not a PPTX file.`,
+        tone: "error",
+      });
       setTargetLevelId(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
@@ -143,8 +166,17 @@ export default function MaterialGridModal({ isOpen, onClose, activity, subject }
 
       // Quietly refresh just the data
       await loadData(false);
+      setStatusToast({
+        title: "Upload Successful",
+        message: "Material uploaded successfully.",
+        tone: "success",
+      });
     } catch (err: any) {
-      alert(err.message);
+      setStatusToast({
+        title: "Upload Failed",
+        message: err?.message ?? "Failed to upload material.",
+        tone: "error",
+      });
       // Reset uploading state on error
       setLevels(prev => prev.map(l => l.level.phonemic_id === targetLevelId ? { ...l, uploading: false } : l));
     } finally {
@@ -153,18 +185,44 @@ export default function MaterialGridModal({ isOpen, onClose, activity, subject }
     }
   };
 
-  const handleRemove = async (materialId: number) => {
-    if (!confirm("Are you sure you want to remove this material?")) return;
-    
+  const handleRemoveClick = (materialId: number, fileName?: string | null) => {
+    setPendingRemoveMaterial({ id: materialId, fileName: fileName ?? null });
+    setShowRemoveConfirmModal(true);
+  };
+
+  const handleRemoveConfirm = async () => {
+    if (!pendingRemoveMaterial) return;
+
+    const materialId = pendingRemoveMaterial.id;
+    setRemovingMaterialId(materialId);
     try {
       const res = await fetch(`/api/remedial-materials?id=${materialId}`, { method: "DELETE" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to remove material");
       
       await loadData(false);
+      setShowRemoveConfirmModal(false);
+      setPendingRemoveMaterial(null);
+      setStatusToast({
+        title: "Remove Successful",
+        message: "Material removed successfully.",
+        tone: "success",
+      });
     } catch (err: any) {
-      alert(err.message);
+      setStatusToast({
+        title: "Remove Failed",
+        message: err?.message ?? "Failed to remove material.",
+        tone: "error",
+      });
+    } finally {
+      setRemovingMaterialId(null);
     }
+  };
+
+  const handleRemoveCancel = () => {
+    if (removingMaterialId !== null) return;
+    setShowRemoveConfirmModal(false);
+    setPendingRemoveMaterial(null);
   };
 
   const modalFooter = (
@@ -276,7 +334,12 @@ export default function MaterialGridModal({ isOpen, onClose, activity, subject }
                         }} className="!px-4 !py-1.5 font-bold">
                           View
                         </UtilityButton>
-                        <DangerButton small onClick={() => handleRemove(material.material_id)} className="!px-4 !py-1.5 font-bold" disabled={uploading}>
+                        <DangerButton
+                          small
+                          onClick={() => handleRemoveClick(material.material_id, material.file_name)}
+                          className="!px-4 !py-1.5 font-bold"
+                          disabled={uploading || removingMaterialId === material.material_id}
+                        >
                           Remove
                         </DangerButton>
                       </div>
@@ -316,6 +379,24 @@ export default function MaterialGridModal({ isOpen, onClose, activity, subject }
           <p>{rejectionDetails?.reason ?? "No reason provided."}</p>
         </div>
       </BaseModal>
+      <ConfirmationModal
+        isOpen={showRemoveConfirmModal}
+        onClose={handleRemoveCancel}
+        onConfirm={() => {
+          void handleRemoveConfirm();
+        }}
+        title="Remove Material"
+        message="Are you sure you want to remove this material?"
+        fileName={pendingRemoveMaterial?.fileName ?? undefined}
+      />
+      {statusToast && (
+        <ToastActivity
+          title={statusToast.title}
+          message={statusToast.message}
+          tone={statusToast.tone}
+          onClose={() => setStatusToast(null)}
+        />
+      )}
     </>
   );
 }

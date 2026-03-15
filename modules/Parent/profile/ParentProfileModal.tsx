@@ -4,6 +4,7 @@ import { useState } from "react";
 import BaseModal, { ModalSection, ModalInfoItem } from "@/components/Common/Modals/BaseModal";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
+import UserAvatar from "@/components/Common/UserAvatar";
 
 type ParentProfileData = {
   firstName: string | null;
@@ -126,10 +127,14 @@ export default function ParentProfileModal({ show, onClose, parent }: ParentProf
       <div className="space-y-6">
         <div className="flex flex-col items-center gap-3">
           <div className="w-24 h-24 rounded-full bg-green-100 flex items-center justify-center border-4 border-white shadow-lg overflow-hidden">
-            <svg width="64" height="64" fill="none" stroke="#013300" strokeWidth="2" viewBox="0 0 24 24">
-              <circle cx="12" cy="8" r="5" />
-              <path d="M4 20v-2c0-3 4-5 8-5s8 2 8 5v2" />
-            </svg>
+            <UserAvatar
+              firstName={parent?.firstName}
+              lastName={parent?.lastName}
+              alt="Parent profile"
+              imageClassName="h-full w-full object-cover"
+              fallbackClassName="h-full w-full"
+              size={96}
+            />
           </div>
           <div className="px-4 py-1 bg-white/80 backdrop-blur-sm rounded-full border border-gray-200 shadow-sm">
             <span className="text-sm font-medium text-gray-700">Parent</span>

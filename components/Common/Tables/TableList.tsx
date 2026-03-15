@@ -63,6 +63,7 @@ export default function TableList({
       ? data
       : data.slice((activePage - 1) * effectivePageSize, activePage * effectivePageSize);
   const disabledSelectionIds = nonSelectableIds ?? new Set();
+  const showStandaloneFullScreenColumn = showFullScreenToggle && !actions;
   const headerSelectableRows = selectable
     ? data.reduce((count, row) => count + (disabledSelectionIds.has(row.id) ? 0 : 1), 0)
     : 0;
@@ -183,13 +184,6 @@ export default function TableList({
       <div className={`relative flex-1 min-h-0 rounded-lg border border-gray-200 bg-white shadow-md ${
         isFullScreen ? '' : 'mb-2' // Add margin bottom only in non-fullscreen
       }`}>
-        {showFullScreenToggle && !actions && (
-          <div className="absolute right-6 top-0 z-20">
-            {renderFullScreenToggle(
-              'p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors'
-            )}
-          </div>
-        )}
         <div className={`h-full w-full overflow-auto rounded-lg ${bodyMaxHeightClass}`}>
           <table className="min-w-full text-sm" role="table">
             <thead className="text-[#013300] bg-green-50 border-b border-gray-200 sticky top-0 z-10">
@@ -216,6 +210,15 @@ export default function TableList({
                     )}
                   </th>
                 ))}
+                {showStandaloneFullScreenColumn && (
+                  <th className="px-4 py-2 text-center w-14">
+                    <div className="flex items-center justify-center">
+                      {renderFullScreenToggle(
+                        'p-1 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors'
+                      )}
+                    </div>
+                  </th>
+                )}
                 {actions && (
                   <th className="px-4 py-2 text-center">
                     <div className="flex items-center justify-center gap-4">
@@ -229,7 +232,7 @@ export default function TableList({
               {paginatedData.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={columns.length + (actions ? 1 : 0) + (selectable ? 1 : 0)}
+                    colSpan={columns.length + (actions ? 1 : 0) + (selectable ? 1 : 0) + (showStandaloneFullScreenColumn ? 1 : 0)}
                     className="px-4 py-2 text-center text-gray-400"
                   >
                     No data available
@@ -264,6 +267,9 @@ export default function TableList({
                         {col.render ? col.render(row) : row[col.key]}
                       </td>
                     ))}
+                    {showStandaloneFullScreenColumn && (
+                      <td className="px-4 py-2 w-14" />
+                    )}
                     {actions && (
                       <td className="px-4 py-2 text-center">
                         <div className="flex gap-2 justify-center">{actions(row)}</div>

@@ -105,6 +105,7 @@ export default function SystemConfiguration() {
     `cursor-pointer rounded-lg border border-green-200 bg-white px-3 py-2 text-sm text-[#013300] transition hover:bg-green-50 focus:outline-none focus:ring-2 focus:ring-[#013300] ${disabled ? "cursor-not-allowed opacity-50" : ""}`;
 
   const liveCarousel = landingEditing ? carouselDraft : publishedLandingAssets.carouselImages;
+  const statusLooksLikeError = /unable|failed|could not|error|select/i.test(statusMessage);
 
   const parseStoredAsset = (value: string | null | undefined) => {
     if (!value) return null;
@@ -539,7 +540,13 @@ export default function SystemConfiguration() {
               </div>
 
               {statusMessage && (
-                <div className="mt-3 rounded-md border border-green-200 bg-green-50 px-4 py-2 text-sm text-[#013300]">
+                <div
+                  className={`mt-3 rounded-md px-4 py-2 text-sm ${
+                    statusLooksLikeError
+                      ? "border border-red-200 bg-red-50 text-red-700"
+                      : "border border-green-200 bg-green-50 text-[#013300]"
+                  }`}
+                >
                   {statusMessage}
                 </div>
               )}

@@ -1,10 +1,18 @@
 "use client";
+
 import { ChangeEvent, useEffect, useState } from "react";
 import Sidebar from "@/components/Principal/Sidebar";
 import Header from "@/components/Principal/Header";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
-import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
+import ProfileImageCropModal from "@/components/Common/Modals/ProfileImageCropModal";
+import ToastActivity from "@/components/ToastActivity";
+import UserAvatar from "@/components/Common/UserAvatar";
+import {
+  PROFILE_IMAGE_ACCEPT_ATTRIBUTE,
+  PROFILE_IMAGE_REQUIREMENTS_TEXT,
+  getProfileImageValidationMessage,
+} from "@/lib/profile-image-config";
 import { getStoredUserProfile, storeUserProfile } from "@/lib/utils/user-profile";
 
 type PrincipalProfileState = {
@@ -68,8 +76,6 @@ function formatRole(rawRole?: string | null): string {
 export default function PrincipalProfile() {
   const [isEditing, setIsEditing] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
-  const [showModal, setShowModal] = useState(false);
-  const [modalMessage, setModalMessage] = useState("");
   const [formData, setFormData] = useState<PrincipalProfileState>(() => createEmptyProfile());
   const [initialData, setInitialData] = useState<PrincipalProfileState | null>(null);
   const [passwordData, setPasswordData] = useState({
@@ -80,6 +86,13 @@ export default function PrincipalProfile() {
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [reloadVersion, setReloadVersion] = useState(0);
+  const [selectedProfileImageFile, setSelectedProfileImageFile] = useState<File | null>(null);
+  const [cropModalFile, setCropModalFile] = useState<File | null>(null);
+  const [saveToast, setSaveToast] = useState<{
+    title: string;
+    message: string;
+    tone: "success" | "error";
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -90,33 +103,17 @@ export default function PrincipalProfile() {
 
       try {
         const storedProfile = getStoredUserProfile();
-        const rawUserId = storedProfile?.userId;
-        const userIdNumber = typeof rawUserId === "string" ? Number(rawUserId) : rawUserId;
-
-        if (!userIdNumber || !Number.isFinite(userIdNumber)) {
-          throw new Error("Missing user information. Please log in again.");
-        }
-
-        const response = await fetch(
-          `/api/principal/profile?userId=${encodeURIComponent(String(userIdNumber))}`,
-          { cache: "no-store" },
-        );
-
-        let payload: any = null;
-        try {
-          payload = await response.json();
-        } catch {
-          payload = null;
-        }
+        const response = await fetch("/api/principal/profile", {
+          cache: "no-store",
+        });
+        const payload = await response.json().catch(() => null);
 
         if (cancelled) {
           return;
         }
 
         if (!response.ok || !payload?.success) {
-          const message = payload?.error ?? "Unable to load profile.";
-          setProfileError(message);
-          return;
+          throw new Error(payload?.error ?? "Unable to load profile.");
         }
 
         const profile = payload.profile ?? {};
@@ -133,24 +130,23 @@ export default function PrincipalProfile() {
           email: toText(profile.email).trim(),
           contactNumber: toText(profile.contactNumber).trim(),
           position: formatRole(derivedRole),
-          profilePicture: "",
+          profilePicture: toText(profile.profileImageUrl).trim(),
         };
 
-        try {
-          storeUserProfile({
-            firstName: nextState.firstName || storedProfile?.firstName || "",
-            middleName: nextState.middleName || storedProfile?.middleName || "",
-            lastName: nextState.lastName || storedProfile?.lastName || "",
-            role: derivedRole ?? storedProfile?.role ?? null,
-            userId: storedProfile?.userId ?? profile.userId ?? null,
-            email: nextState.email || storedProfile?.email || null,
-          });
-        } catch (error) {
-          console.warn("Unable to sync stored user profile", error);
-        }
+        storeUserProfile({
+          firstName: nextState.firstName || storedProfile?.firstName || "",
+          middleName: nextState.middleName || storedProfile?.middleName || "",
+          lastName: nextState.lastName || storedProfile?.lastName || "",
+          role: derivedRole ?? storedProfile?.role ?? null,
+          userId: storedProfile?.userId ?? profile.userId ?? null,
+          email: nextState.email || storedProfile?.email || null,
+          profileImageUrl: nextState.profilePicture || storedProfile?.profileImageUrl || null,
+        });
 
         setFormData(nextState);
         setInitialData(nextState);
+        setSelectedProfileImageFile(null);
+        setCropModalFile(null);
       } catch (error) {
         if (cancelled) {
           return;
@@ -165,97 +161,135 @@ export default function PrincipalProfile() {
       }
     }
 
-    loadProfile();
+    void loadProfile();
 
     return () => {
       cancelled = true;
     };
   }, [reloadVersion]);
 
+  useEffect(() => {
+    if (!saveToast) {
+      return;
+    }
+
+    const timerId = window.setTimeout(() => {
+      setSaveToast(null);
+    }, 3500);
+
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [saveToast]);
+
   const handleRetry = () => {
     setReloadVersion((previous) => previous + 1);
   };
 
-  const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+  const handleInputChange = (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    setFormData((previous) => ({ ...previous, [event.target.name]: event.target.value }));
   };
 
-  const handlePasswordChange = (e: ChangeEvent<HTMLInputElement>) => {
-    setPasswordData({ ...passwordData, [e.target.name]: e.target.value });
+  const handlePasswordChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setPasswordData((previous) => ({ ...previous, [event.target.name]: event.target.value }));
   };
 
   const handleSave = async () => {
     try {
       const storedProfile = getStoredUserProfile();
-      const rawUserId = storedProfile?.userId;
-      const userIdNumber = typeof rawUserId === "string" ? Number(rawUserId) : rawUserId;
+      const requestInit: RequestInit = { method: "PUT" };
 
-      if (!userIdNumber || !Number.isFinite(userIdNumber)) {
-        setModalMessage("Unable to save: Missing user information.");
-        setShowModal(true);
-        return;
-      }
-
-      const response = await fetch(
-        `/api/principal/profile?userId=${encodeURIComponent(String(userIdNumber))}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            firstName: formData.firstName,
-            middleName: formData.middleName,
-            lastName: formData.lastName,
-            email: formData.email,
-            contactNumber: formData.contactNumber,
-          }),
-        },
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData?.error || "Failed to save profile.");
-      }
-
-      setInitialData({ ...formData });
-      setIsEditing(false);
-      setModalMessage("Profile updated successfully!");
-      setShowModal(true);
-
-      try {
-        storeUserProfile({
-          firstName: formData.firstName || storedProfile?.firstName || "",
-          middleName: formData.middleName || storedProfile?.middleName || "",
-          lastName: formData.lastName || storedProfile?.lastName || "",
-          role: storedProfile?.role ?? null,
-          userId: storedProfile?.userId ?? null,
-          email: formData.email || storedProfile?.email || null,
+      if (selectedProfileImageFile) {
+        const requestBody = new FormData();
+        requestBody.set("firstName", formData.firstName);
+        requestBody.set("middleName", formData.middleName);
+        requestBody.set("lastName", formData.lastName);
+        requestBody.set("email", formData.email);
+        requestBody.set("contactNumber", formData.contactNumber);
+        requestBody.set("profileImage", selectedProfileImageFile);
+        requestInit.body = requestBody;
+      } else {
+        requestInit.headers = { "Content-Type": "application/json" };
+        requestInit.body = JSON.stringify({
+          firstName: formData.firstName,
+          middleName: formData.middleName,
+          lastName: formData.lastName,
+          email: formData.email,
+          contactNumber: formData.contactNumber,
         });
-      } catch (err) {
-        console.warn("Unable to update stored profile", err);
       }
+
+      const response = await fetch("/api/principal/profile", requestInit);
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error || "Failed to save profile.");
+      }
+
+      const nextProfileImageUrl =
+        typeof payload?.profile?.profileImageUrl === "string"
+          ? payload.profile.profileImageUrl
+          : initialData?.profilePicture ?? formData.profilePicture;
+
+      const nextState: PrincipalProfileState = {
+        ...formData,
+        profilePicture: nextProfileImageUrl || "",
+      };
+
+      setFormData(nextState);
+      setInitialData(nextState);
+      setSelectedProfileImageFile(null);
+      setCropModalFile(null);
+      setIsEditing(false);
+      setSaveToast({
+        title: "Profile Saved",
+        message: "Profile changes were saved successfully.",
+        tone: "success",
+      });
+
+      storeUserProfile({
+        firstName: nextState.firstName || storedProfile?.firstName || "",
+        middleName: nextState.middleName || storedProfile?.middleName || "",
+        lastName: nextState.lastName || storedProfile?.lastName || "",
+        role: storedProfile?.role ?? null,
+        userId: storedProfile?.userId ?? null,
+        email: nextState.email || storedProfile?.email || null,
+        profileImageUrl: nextState.profilePicture || null,
+      });
     } catch (error) {
       console.error("Failed to save profile", error);
-      setModalMessage(error instanceof Error ? error.message : "Failed to save profile.");
-      setShowModal(true);
+      setSaveToast({
+        title: "Save Failed",
+        message: error instanceof Error ? error.message : "Failed to save profile.",
+        tone: "error",
+      });
     }
   };
 
   const handleCancel = () => {
     if (initialData) {
-      setFormData({ ...initialData });
+      setFormData(initialData);
     }
+    setSelectedProfileImageFile(null);
+    setCropModalFile(null);
     setIsEditing(false);
   };
 
   const handlePasswordSave = async () => {
     if (passwordData.newPassword !== passwordData.confirmPassword) {
-      setModalMessage("New passwords do not match");
-      setShowModal(true);
+      setSaveToast({
+        title: "Update Failed",
+        message: "New passwords do not match.",
+        tone: "error",
+      });
       return;
     }
     if (passwordData.newPassword.length < 8) {
-      setModalMessage("Password must be at least 8 characters");
-      setShowModal(true);
+      setSaveToast({
+        title: "Update Failed",
+        message: "Password must be at least 8 characters.",
+        tone: "error",
+      });
       return;
     }
 
@@ -270,18 +304,27 @@ export default function PrincipalProfile() {
       });
 
       if (response.ok) {
-        setModalMessage("Password changed successfully");
-        setShowModal(true);
+        setSaveToast({
+          title: "Password Updated",
+          message: "Password changed successfully.",
+          tone: "success",
+        });
         setPasswordData({ currentPassword: "", newPassword: "", confirmPassword: "" });
         setIsChangingPassword(false);
       } else {
         const data = await response.json();
-        setModalMessage(data.error || "Failed to change password");
-        setShowModal(true);
+        setSaveToast({
+          title: "Update Failed",
+          message: data.error || "Failed to change password.",
+          tone: "error",
+        });
       }
-    } catch (error) {
-      setModalMessage("Error changing password");
-      setShowModal(true);
+    } catch {
+      setSaveToast({
+        title: "Update Failed",
+        message: "Error changing password.",
+        tone: "error",
+      });
     }
   };
 
@@ -290,15 +333,35 @@ export default function PrincipalProfile() {
     setIsChangingPassword(false);
   };
 
-  const handleImageUpload = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData({ ...formData, profilePicture: reader.result as string });
-      };
-      reader.readAsDataURL(file);
+  const handleImageUpload = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
     }
+
+    const validationMessage = getProfileImageValidationMessage(file);
+    if (validationMessage) {
+      event.target.value = "";
+      setSaveToast({
+        title: "Invalid Image",
+        message: validationMessage,
+        tone: "error",
+      });
+      return;
+    }
+
+    setCropModalFile(file);
+  };
+
+  const handleCropConfirm = (result: { file: File; previewUrl: string }) => {
+    setIsEditing(true);
+    setSelectedProfileImageFile(result.file);
+    setCropModalFile(null);
+    setFormData((previous) => ({
+      ...previous,
+      profilePicture: result.previewUrl,
+    }));
   };
 
   const positionDisplay = formData.position || "Principal";
@@ -328,25 +391,41 @@ export default function PrincipalProfile() {
                     <div className="flex flex-col items-center mb-6">
                       <div className="relative">
                         <div className="w-24 h-24 rounded-full bg-green-100 flex items-center justify-center border-4 border-white shadow-lg overflow-hidden">
-                          {formData.profilePicture ? (
-                            <img src={formData.profilePicture} alt="Profile" className="w-full h-full object-cover" />
-                          ) : (
-                            <svg width="64" height="64" fill="none" stroke="#013300" strokeWidth="2" viewBox="0 0 24 24">
-                              <circle cx="12" cy="8" r="5" />
-                              <path d="M4 20v-2c0-3 4-5 8-5s8 2 8 5v2" />
-                            </svg>
-                          )}
+                          <UserAvatar
+                            profileImageUrl={formData.profilePicture}
+                            firstName={formData.firstName}
+                            lastName={formData.lastName}
+                            alt="Principal profile"
+                            imageClassName="h-full w-full object-cover"
+                            fallbackClassName="h-full w-full"
+                            size={96}
+                          />
                         </div>
                         <label className="absolute bottom-0 right-0 w-8 h-8 bg-[#013300] rounded-full flex items-center justify-center cursor-pointer hover:bg-green-700 transition-colors shadow-md">
                           <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                             <path d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                           </svg>
-                          <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                          <input
+                            type="file"
+                            accept={PROFILE_IMAGE_ACCEPT_ATTRIBUTE}
+                            onChange={handleImageUpload}
+                            className="hidden"
+                          />
                         </label>
                       </div>
                       <div className="mt-3 px-4 py-1 bg-white/80 backdrop-blur-sm rounded-full border border-gray-200 shadow-sm">
                         <span className="text-sm font-medium text-gray-700">{positionDisplay}</span>
                       </div>
+                      <p className="mt-3 text-center text-xs text-gray-500">{PROFILE_IMAGE_REQUIREMENTS_TEXT}</p>
+                      {selectedProfileImageFile ? (
+                        <button
+                          type="button"
+                          onClick={() => setCropModalFile(selectedProfileImageFile)}
+                          className="mt-2 text-xs font-semibold text-[#013300] transition hover:text-green-800"
+                        >
+                          Adjust Photo
+                        </button>
+                      ) : null}
                     </div>
 
                     <div className="bg-gray-50 rounded-lg border border-gray-200 p-5 mb-5">
@@ -426,8 +505,6 @@ export default function PrincipalProfile() {
                       </div>
                     </div>
 
-
-
                     <div className="bg-gray-50 rounded-lg border border-gray-200 p-5">
                       <h3 className="text-lg font-semibold text-gray-800 mb-4">Security Settings</h3>
                       {!isChangingPassword ? (
@@ -485,13 +562,20 @@ export default function PrincipalProfile() {
           </div>
         </main>
       </div>
-      <ConfirmationModal
-        isOpen={showModal}
-        onClose={() => setShowModal(false)}
-        onConfirm={() => setShowModal(false)}
-        title="Profile Update"
-        message={modalMessage}
+      <ProfileImageCropModal
+        isOpen={Boolean(cropModalFile)}
+        file={cropModalFile}
+        onClose={() => setCropModalFile(null)}
+        onConfirm={handleCropConfirm}
       />
+      {saveToast && (
+        <ToastActivity
+          title={saveToast.title}
+          message={saveToast.message}
+          tone={saveToast.tone}
+          onClose={() => setSaveToast(null)}
+        />
+      )}
     </div>
   );
 }

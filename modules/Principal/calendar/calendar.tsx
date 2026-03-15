@@ -6,6 +6,7 @@ import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import BaseModal, { ModalInfoItem, ModalSection } from "@/components/Common/Modals/BaseModal";
+import ToastActivity from "@/components/ToastActivity";
 import {
   QUARTER_OPTIONS,
   type QuarterOption,
@@ -330,6 +331,19 @@ export default function PrincipalCalendar() {
   const [newAcademicYearConfirmText, setNewAcademicYearConfirmText] = useState("");
   const [newAcademicYearError, setNewAcademicYearError] = useState<string | null>(null);
   const [newAcademicYearSubmitting, setNewAcademicYearSubmitting] = useState(false);
+  const [feedbackToast, setFeedbackToast] = useState<{
+    title: string;
+    message: string;
+    tone: "success" | "error";
+  } | null>(null);
+
+  useEffect(() => {
+    if (!feedbackToast) return;
+    const timerId = window.setTimeout(() => {
+      setFeedbackToast(null);
+    }, 3500);
+    return () => window.clearTimeout(timerId);
+  }, [feedbackToast]);
 
   const loadSubjectSchedule = useCallback(async () => {
     setSubjectScheduleLoading(true);
@@ -365,7 +379,13 @@ export default function PrincipalCalendar() {
       setSubjectOptions(dedupeSubjects([...DEFAULT_SUBJECT_OPTIONS, ...optionSeeds]));
     } catch (error) {
       console.error("Failed to load subject schedule", error);
-      setSubjectScheduleError("Unable to load the weekly subject schedule. Please refresh or try again later.");
+      const message = "Unable to load the weekly subject schedule. Please refresh or try again later.";
+      setSubjectScheduleError(message);
+      setFeedbackToast({
+        title: "Load Failed",
+        message,
+        tone: "error",
+      });
     } finally {
       setSubjectScheduleLoading(false);
     }
@@ -394,7 +414,13 @@ export default function PrincipalCalendar() {
       }
     } catch (error) {
       console.error("Failed to load remedial schedule", error);
-      setScheduleError("Unable to load the remedial schedule. Showing the last saved version.");
+      const message = "Unable to load the remedial schedule. Showing the last saved version.";
+      setScheduleError(message);
+      setFeedbackToast({
+        title: "Load Failed",
+        message,
+        tone: "error",
+      });
     } finally {
       setScheduleLoading(false);
     }
@@ -1002,9 +1028,20 @@ export default function PrincipalCalendar() {
       const optionSeeds = Array.isArray(payload.options?.subjects) ? payload.options?.subjects : [];
       setSubjectOptions(dedupeSubjects([...DEFAULT_SUBJECT_OPTIONS, ...optionSeeds]));
       setSubjectMutationError(null);
+      setFeedbackToast({
+        title: "Schedule Saved",
+        message: "Weekly subject schedule was updated successfully.",
+        tone: "success",
+      });
     } catch (error) {
       console.error("Failed to update subject schedule", error);
-      setSubjectMutationError("Unable to update the subject schedule. Please try again.");
+      const message = "Unable to update the subject schedule. Please try again.";
+      setSubjectMutationError(message);
+      setFeedbackToast({
+        title: "Save Failed",
+        message,
+        tone: "error",
+      });
     } finally {
       setSubjectMutating(false);
     }
@@ -1039,9 +1076,20 @@ export default function PrincipalCalendar() {
       const optionSeeds = Array.isArray(payload.options?.subjects) ? payload.options?.subjects : [];
       setSubjectOptions(dedupeSubjects([...DEFAULT_SUBJECT_OPTIONS, ...optionSeeds]));
       setSubjectMutationError(null);
+      setFeedbackToast({
+        title: "Schedule Reset",
+        message: "Weekly subject schedule was reset successfully.",
+        tone: "success",
+      });
     } catch (error) {
       console.error("Failed to reset subject schedule", error);
-      setSubjectMutationError("Unable to reset the subject schedule. Please try again.");
+      const message = "Unable to reset the subject schedule. Please try again.";
+      setSubjectMutationError(message);
+      setFeedbackToast({
+        title: "Reset Failed",
+        message,
+        tone: "error",
+      });
     } finally {
       setSubjectMutating(false);
     }
@@ -1145,9 +1193,20 @@ export default function PrincipalCalendar() {
         schoolYear: schedule.schoolYear,
         quarters: schedule.quarters,
       });
+      setFeedbackToast({
+        title: "Period Saved",
+        message: "Remedial period settings were saved successfully.",
+        tone: "success",
+      });
     } catch (error) {
       console.error("Failed to save remedial schedule", error);
-      setScheduleError(error instanceof Error ? error.message : "Unable to save the remedial schedule. Please try again.");
+      const message = error instanceof Error ? error.message : "Unable to save the remedial schedule. Please try again.";
+      setScheduleError(message);
+      setFeedbackToast({
+        title: "Save Failed",
+        message,
+        tone: "error",
+      });
     } finally {
       setIsMutating(false);
     }
@@ -1204,11 +1263,20 @@ export default function PrincipalCalendar() {
       setSubjectScheduleError(null);
 
       await Promise.all([loadRemedialSchedule(), loadSubjectSchedule(), loadApprovedActivities()]);
+      setFeedbackToast({
+        title: "Academic Year Started",
+        message: "The current remedial setup was archived and a new academic year has started.",
+        tone: "success",
+      });
     } catch (error) {
       console.error("Failed to start new academic year", error);
-      setNewAcademicYearError(
-        error instanceof Error ? error.message : "Unable to archive the current remedial setup.",
-      );
+      const message = error instanceof Error ? error.message : "Unable to archive the current remedial setup.";
+      setNewAcademicYearError(message);
+      setFeedbackToast({
+        title: "Action Failed",
+        message,
+        tone: "error",
+      });
     } finally {
       setNewAcademicYearSubmitting(false);
     }
@@ -1234,9 +1302,20 @@ export default function PrincipalCalendar() {
       setShowActivityModal(false);
       setSelectedActivity(null);
       loadApprovedActivities();
+      setFeedbackToast({
+        title: "Activity Deleted",
+        message: "The activity was removed successfully.",
+        tone: "success",
+      });
     } catch (error) {
       console.error("Failed to remove activity", error);
-      setActivityRemoveError("Unable to remove the activity. Please try again.");
+      const message = "Unable to remove the activity. Please try again.";
+      setActivityRemoveError(message);
+      setFeedbackToast({
+        title: "Delete Failed",
+        message,
+        tone: "error",
+      });
     } finally {
       setActivityRemoving(false);
     }
@@ -2174,6 +2253,15 @@ export default function PrincipalCalendar() {
           }
         }
       `}</style>
+
+      {feedbackToast && (
+        <ToastActivity
+          title={feedbackToast.title}
+          message={feedbackToast.message}
+          tone={feedbackToast.tone}
+          onClose={() => setFeedbackToast(null)}
+        />
+      )}
     </div>
   );
 }

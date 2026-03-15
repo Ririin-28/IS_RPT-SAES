@@ -10,6 +10,245 @@ const MASTER_TEACHER_TABLE = "master_teacher";
 const MT_REMEDIAL_HANDLED_TABLE = "mt_remedialteacher_handled";
 const SUBJECT_TABLE_CANDIDATES = ["subject", "subjects"] as const;
 const GRADE_TABLE = "grade";
+const USER_TABLE = "users";
+const ROLE_TABLE_CANDIDATES: Record<"teacher" | "master_teacher", string[]> = {
+  teacher: ["teacher", "teachers", "teacher_info"],
+  master_teacher: ["master_teacher", "master_teachers", "master_teacher_info"],
+};
+const IDENTIFIER_COLUMNS = ["teacher_id", "employee_id", "id", "master_teacher_id", "masterteacher_id"] as const;
+
+type AssignmentHandlerType = "regular_teacher" | "master_remedial" | "master_coordinator";
+
+type AssignmentHandler = {
+  id: string;
+  handlerType: AssignmentHandlerType;
+  roleLabel: string;
+  name: string;
+  firstName: string | null;
+  lastName: string | null;
+  profileImageUrl: string | null;
+};
+
+const toNonEmptyString = (value: unknown): string | null => {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return text.length > 0 ? text : null;
+};
+
+const pickFirstColumn = (columns: Set<string>, candidates: readonly string[]): string | null => {
+  for (const candidate of candidates) {
+    if (columns.has(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+};
+
+const buildDisplayName = (
+  firstName: string | null,
+  middleName: string | null,
+  lastName: string | null,
+  fallback: string,
+) => {
+  const parts = [firstName, middleName, lastName].filter((value): value is string => Boolean(value));
+  return parts.length > 0 ? parts.join(" ") : fallback;
+};
+
+const resolveNameFromRow = (row: RowDataPacket, fallback: string) => {
+  const firstName = toNonEmptyString(row.user_first_name ?? row.table_first_name);
+  const middleName = toNonEmptyString(row.user_middle_name ?? row.table_middle_name);
+  const lastName = toNonEmptyString(row.user_last_name ?? row.table_last_name);
+  const username = toNonEmptyString(row.username);
+  return {
+    name: buildDisplayName(firstName, middleName, lastName, username ?? fallback),
+    firstName,
+    lastName,
+  };
+};
+
+const buildFallbackHandler = (
+  identifier: string,
+  handlerType: AssignmentHandlerType,
+  roleLabel: string,
+  fallbackName: string,
+): AssignmentHandler => ({
+  id: `${handlerType}:${identifier}`,
+  handlerType,
+  roleLabel,
+  name: fallbackName,
+  firstName: null,
+  lastName: null,
+  profileImageUrl: null,
+});
+
+const resolveRoleTable = async (role: "teacher" | "master_teacher") => {
+  for (const table of ROLE_TABLE_CANDIDATES[role]) {
+    const columns = await getTableColumns(table).catch(() => null);
+    if (columns && columns.has("user_id")) {
+      return { table, columns };
+    }
+  }
+  return null;
+};
+
+const buildUserSelectPart = (
+  userColumns: Set<string>,
+  column: string,
+  alias: string,
+) => (userColumns.has(column) ? `u.${column} AS ${alias}` : `NULL AS ${alias}`);
+
+const buildTableSelectPart = (
+  tableAlias: string,
+  tableColumns: Set<string>,
+  column: string,
+  alias: string,
+) => (tableColumns.has(column) ? `${tableAlias}.${column} AS ${alias}` : `NULL AS ${alias}`);
+
+const fetchRegularTeacherHandlers = async (
+  teacherIds: string[],
+): Promise<Map<string, AssignmentHandler>> => {
+  const uniqueTeacherIds = Array.from(new Set(teacherIds.map((value) => value.trim()).filter(Boolean)));
+  if (!uniqueTeacherIds.length) {
+    return new Map();
+  }
+
+  const teacherTable = await resolveRoleTable("teacher");
+  if (!teacherTable) {
+    return new Map();
+  }
+
+  const userColumns = await getTableColumns(USER_TABLE).catch(() => new Set<string>());
+  const identifierColumn = pickFirstColumn(teacherTable.columns, IDENTIFIER_COLUMNS) ?? "teacher_id";
+  const placeholders = uniqueTeacherIds.map(() => "?").join(", ");
+  const canJoinUsers = userColumns.size > 0;
+
+  const selectParts = [
+    `t.${identifierColumn} AS handler_identifier`,
+    canJoinUsers && userColumns.has("username") ? "u.username AS username" : "NULL AS username",
+    buildUserSelectPart(userColumns, "first_name", "user_first_name"),
+    buildUserSelectPart(userColumns, "middle_name", "user_middle_name"),
+    buildUserSelectPart(userColumns, "last_name", "user_last_name"),
+    buildUserSelectPart(userColumns, "profile_image_url", "profile_image_url"),
+    buildTableSelectPart("t", teacherTable.columns, "first_name", "table_first_name"),
+    buildTableSelectPart("t", teacherTable.columns, "middle_name", "table_middle_name"),
+    buildTableSelectPart("t", teacherTable.columns, "last_name", "table_last_name"),
+  ];
+
+  const [rows] = await query<RowDataPacket[]>(
+    `SELECT ${selectParts.join(", ")}
+     FROM \`${teacherTable.table}\` t
+     ${canJoinUsers ? `LEFT JOIN ${USER_TABLE} u ON u.user_id = t.user_id` : ""}
+     WHERE t.${identifierColumn} IN (${placeholders})`,
+    uniqueTeacherIds,
+  );
+
+  const handlerMap = new Map<string, AssignmentHandler>();
+  rows.forEach((row) => {
+    const teacherId = toNonEmptyString(row.handler_identifier);
+    if (!teacherId) {
+      return;
+    }
+
+    const resolvedName = resolveNameFromRow(row, `Teacher ${teacherId}`);
+    handlerMap.set(teacherId, {
+      id: `regular_teacher:${teacherId}`,
+      handlerType: "regular_teacher",
+      roleLabel: "Teacher",
+      name: resolvedName.name,
+      firstName: resolvedName.firstName,
+      lastName: resolvedName.lastName,
+      profileImageUrl: toNonEmptyString(row.profile_image_url),
+    });
+  });
+
+  return handlerMap;
+};
+
+const fetchMasterTeacherHandlers = async (
+  remedialRoleIds: string[],
+  currentMasterTeacherId: string | null,
+): Promise<Map<string, AssignmentHandler>> => {
+  const uniqueRemedialRoleIds = Array.from(new Set(remedialRoleIds.map((value) => value.trim()).filter(Boolean)));
+  if (!uniqueRemedialRoleIds.length) {
+    return new Map();
+  }
+
+  const remedialColumns = await getTableColumns(MT_REMEDIAL_HANDLED_TABLE).catch(() => new Set<string>());
+  if (!remedialColumns.has("remedial_role_id") || !remedialColumns.has("master_teacher_id")) {
+    return new Map();
+  }
+
+  const masterTeacherTable = await resolveRoleTable("master_teacher");
+  const userColumns = await getTableColumns(USER_TABLE).catch(() => new Set<string>());
+  const masterTeacherIdColumn = masterTeacherTable
+    ? pickFirstColumn(masterTeacherTable.columns, IDENTIFIER_COLUMNS) ?? "master_teacher_id"
+    : null;
+  const placeholders = uniqueRemedialRoleIds.map(() => "?").join(", ");
+  const canJoinUsers = Boolean(masterTeacherTable) && userColumns.size > 0;
+
+  const selectParts = [
+    "mrh.remedial_role_id AS remedial_role_id",
+    "mrh.master_teacher_id AS master_teacher_id",
+    canJoinUsers && userColumns.has("username") ? "u.username AS username" : "NULL AS username",
+    buildUserSelectPart(userColumns, "first_name", "user_first_name"),
+    buildUserSelectPart(userColumns, "middle_name", "user_middle_name"),
+    buildUserSelectPart(userColumns, "last_name", "user_last_name"),
+    buildUserSelectPart(userColumns, "profile_image_url", "profile_image_url"),
+    masterTeacherTable
+      ? buildTableSelectPart("mt", masterTeacherTable.columns, "first_name", "table_first_name")
+      : "NULL AS table_first_name",
+    masterTeacherTable
+      ? buildTableSelectPart("mt", masterTeacherTable.columns, "middle_name", "table_middle_name")
+      : "NULL AS table_middle_name",
+    masterTeacherTable
+      ? buildTableSelectPart("mt", masterTeacherTable.columns, "last_name", "table_last_name")
+      : "NULL AS table_last_name",
+  ];
+
+  const joinMasterTeacher = masterTeacherTable && masterTeacherIdColumn
+    ? `LEFT JOIN \`${masterTeacherTable.table}\` mt ON mt.${masterTeacherIdColumn} = mrh.master_teacher_id`
+    : "";
+  const joinUsers = canJoinUsers ? `LEFT JOIN ${USER_TABLE} u ON u.user_id = mt.user_id` : "";
+
+  const [rows] = await query<RowDataPacket[]>(
+    `SELECT DISTINCT ${selectParts.join(", ")}
+     FROM ${MT_REMEDIAL_HANDLED_TABLE} mrh
+     ${joinMasterTeacher}
+     ${joinUsers}
+     WHERE mrh.remedial_role_id IN (${placeholders})`,
+    uniqueRemedialRoleIds,
+  );
+
+  const handlerMap = new Map<string, AssignmentHandler>();
+  rows.forEach((row) => {
+    const remedialRoleId = toNonEmptyString(row.remedial_role_id);
+    if (!remedialRoleId) {
+      return;
+    }
+
+    const masterTeacherId = toNonEmptyString(row.master_teacher_id);
+    const handlerType: AssignmentHandlerType = currentMasterTeacherId && masterTeacherId === currentMasterTeacherId
+      ? "master_coordinator"
+      : "master_remedial";
+    const roleLabel = handlerType === "master_coordinator" ? "Coordinator" : "Remedial Teacher";
+    const resolvedName = resolveNameFromRow(
+      row,
+      `${roleLabel} ${masterTeacherId ?? remedialRoleId}`,
+    );
+
+    handlerMap.set(remedialRoleId, {
+      id: `${handlerType}:${masterTeacherId ?? remedialRoleId}`,
+      handlerType,
+      roleLabel,
+      name: resolvedName.name,
+      firstName: resolvedName.firstName,
+      lastName: resolvedName.lastName,
+      profileImageUrl: toNonEmptyString(row.profile_image_url),
+    });
+  });
+
+  return handlerMap;
+};
 
 const ensureAssignmentTable = async () => {
   await query(
@@ -328,6 +567,7 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    const session = await getMasterTeacherSessionFromCookies().catch(() => null);
     const { searchParams } = new URL(request.url);
     const subjectParam = searchParams.get("subject") ?? "";
     const gradeLevelParam = searchParams.get("gradeLevel") ?? "";
@@ -353,22 +593,82 @@ export async function GET(request: NextRequest) {
 
     const assignmentColumns = await getTableColumns(ASSIGNMENT_TABLE).catch(() => new Set<string>());
     const hasIsActive = assignmentColumns.has("is_active");
+    const hasTeacherId = assignmentColumns.has("teacher_id");
+    const hasRemedialRoleId = assignmentColumns.has("remedial_role_id");
     const activeClause = hasIsActive ? "AND sta.is_active = 1" : "";
 
-    const [assignedRows] = await query<RowDataPacket[]>(
-      `SELECT DISTINCT sta.student_id AS student_id
+    const [assignmentRows] = await query<RowDataPacket[]>(
+      `SELECT sta.student_id AS student_id,
+              ${hasTeacherId ? "sta.teacher_id" : "NULL"} AS teacher_id,
+              ${hasRemedialRoleId ? "sta.remedial_role_id" : "NULL"} AS remedial_role_id
        FROM ${ASSIGNMENT_TABLE} sta
        WHERE sta.grade_id = ? AND sta.subject_id = ? ${activeClause}`,
       [gradeId, subjectId],
     );
 
-    const assignedStudentIds = Array.isArray(assignedRows)
-      ? assignedRows
-          .map((row) => (row.student_id != null ? String(row.student_id).trim() : ""))
-          .filter((value) => value.length > 0)
+    const assignedStudentIds = Array.from(
+      new Set(
+        Array.isArray(assignmentRows)
+          ? assignmentRows
+              .map((row) => (row.student_id != null ? String(row.student_id).trim() : ""))
+              .filter((value) => value.length > 0)
+          : [],
+      ),
+    );
+
+    const teacherIds = Array.isArray(assignmentRows)
+      ? assignmentRows
+          .map((row) => toNonEmptyString(row.teacher_id))
+          .filter((value): value is string => Boolean(value))
+      : [];
+    const remedialRoleIds = Array.isArray(assignmentRows)
+      ? assignmentRows
+          .map((row) => toNonEmptyString(row.remedial_role_id))
+          .filter((value): value is string => Boolean(value))
       : [];
 
-    const [regularRows] = assignmentColumns.has("teacher_id")
+    const [regularTeacherHandlers, masterTeacherHandlers] = await Promise.all([
+      fetchRegularTeacherHandlers(teacherIds),
+      fetchMasterTeacherHandlers(remedialRoleIds, session?.masterTeacherId ?? null),
+    ]);
+
+    const handlerBuckets = new Map<string, Map<string, AssignmentHandler>>();
+    assignmentRows.forEach((row) => {
+      const studentId = toNonEmptyString(row.student_id);
+      if (!studentId) {
+        return;
+      }
+
+      if (!handlerBuckets.has(studentId)) {
+        handlerBuckets.set(studentId, new Map<string, AssignmentHandler>());
+      }
+
+      const bucket = handlerBuckets.get(studentId)!;
+      const teacherId = toNonEmptyString(row.teacher_id);
+      if (teacherId) {
+        const regularHandler = regularTeacherHandlers.get(teacherId)
+          ?? buildFallbackHandler(teacherId, "regular_teacher", "Teacher", `Teacher ${teacherId}`);
+        bucket.set(regularHandler.id, regularHandler);
+      }
+
+      const remedialRoleId = toNonEmptyString(row.remedial_role_id);
+      if (remedialRoleId) {
+        const masterHandler = masterTeacherHandlers.get(remedialRoleId)
+          ?? buildFallbackHandler(
+            remedialRoleId,
+            "master_remedial",
+            "Remedial Teacher",
+            `Remedial Teacher ${remedialRoleId}`,
+          );
+        bucket.set(masterHandler.id, masterHandler);
+      }
+    });
+
+    const handlersByStudentId = Object.fromEntries(
+      Array.from(handlerBuckets.entries()).map(([studentId, handlers]) => [studentId, Array.from(handlers.values())]),
+    );
+
+    const [regularRows] = hasTeacherId
       ? await query<RowDataPacket[]>(
           `SELECT sta.teacher_id AS teacher_id, COUNT(*) AS total
            FROM ${ASSIGNMENT_TABLE} sta
@@ -394,7 +694,7 @@ export async function GET(request: NextRequest) {
     const canJoinMasterTeacher = masterTeacherColumns.has("master_teacher_id") && masterTeacherColumns.has("user_id");
     const canJoinRemedial = remedialColumns.has("remedial_role_id") && remedialColumns.has("master_teacher_id");
 
-    const [masterRows] = canJoinRemedial && assignmentColumns.has("remedial_role_id")
+    const [masterRows] = canJoinRemedial && hasRemedialRoleId
       ? await query<RowDataPacket[]>(
           `SELECT mrh.master_teacher_id AS master_teacher_id,
                   ${canJoinMasterTeacher ? "mt.user_id" : "NULL"} AS user_id,
@@ -419,6 +719,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       assignedStudentIds,
+      handlersByStudentId,
       counts: {
         regular: regularCounts,
         master: masterCounts,

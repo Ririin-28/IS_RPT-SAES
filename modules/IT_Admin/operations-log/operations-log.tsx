@@ -6,6 +6,7 @@ import ITAdminHeader from "@/components/IT_Admin/Header";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
+import ToastActivity from "@/components/ToastActivity";
 
 const ACTION_OPTIONS = ["All", "Restore", "Delete", "Archive"] as const;
 
@@ -42,6 +43,19 @@ export default function ITAdminOperationsLog() {
   const [rows, setRows] = useState<LogRow[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [feedbackToast, setFeedbackToast] = useState<{
+    title: string;
+    message: string;
+    tone: "success" | "error";
+  } | null>(null);
+
+  useEffect(() => {
+    if (!feedbackToast) return;
+    const timerId = window.setTimeout(() => {
+      setFeedbackToast(null);
+    }, 3500);
+    return () => window.clearTimeout(timerId);
+  }, [feedbackToast]);
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total, pageSize]);
 
@@ -74,7 +88,13 @@ export default function ITAdminOperationsLog() {
     } catch (err) {
       setRows([]);
       setTotal(0);
-      setError(err instanceof Error ? err.message : "Failed to load critical operations history.");
+      const message = err instanceof Error ? err.message : "Failed to load critical operations history.";
+      setError(message);
+      setFeedbackToast({
+        title: "Load Failed",
+        message,
+        tone: "error",
+      });
     } finally {
       setIsLoading(false);
     }
@@ -194,6 +214,14 @@ export default function ITAdminOperationsLog() {
           </div>
         </main>
       </div>
+      {feedbackToast && (
+        <ToastActivity
+          title={feedbackToast.title}
+          message={feedbackToast.message}
+          tone={feedbackToast.tone}
+          onClose={() => setFeedbackToast(null)}
+        />
+      )}
     </div>
   );
 }

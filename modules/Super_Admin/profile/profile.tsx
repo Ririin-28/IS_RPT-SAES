@@ -5,6 +5,7 @@ import Header from "@/components/Super_Admin/Header";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
+import UserAvatar from "@/components/Common/UserAvatar";
 import { getStoredUserProfile, storeUserProfile } from "@/lib/utils/user-profile";
 
 type ProfileFormState = {
@@ -324,14 +325,15 @@ export default function ITAdminProfile() {
 										<div className="flex flex-col items-center mb-6">
 											<div className="relative">
 												<div className="w-24 h-24 rounded-full bg-green-100 flex items-center justify-center border-4 border-white shadow-lg overflow-hidden">
-													{formData.profilePicture ? (
-														<img src={formData.profilePicture} alt="Profile" className="w-full h-full object-cover" />
-													) : (
-														<svg width="64" height="64" fill="none" stroke="#013300" strokeWidth="2" viewBox="0 0 24 24">
-															<circle cx="12" cy="8" r="5" />
-															<path d="M4 20v-2c0-3 4-5 8-5s8 2 8 5v2" />
-														</svg>
-													)}
+													<UserAvatar
+														profileImageUrl={formData.profilePicture}
+														firstName={formData.firstName}
+														lastName={formData.lastName}
+														alt="Super admin profile"
+														imageClassName="h-full w-full object-cover"
+														fallbackClassName="h-full w-full"
+														size={96}
+													/>
 												</div>
 												<label className="absolute bottom-0 right-0 w-8 h-8 bg-[#013300] rounded-full flex items-center justify-center cursor-pointer hover:bg-green-700 transition-colors shadow-md">
 													<svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">

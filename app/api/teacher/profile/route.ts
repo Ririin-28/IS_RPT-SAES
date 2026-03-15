@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
-import { getTableColumns, query, tableExists } from "@/lib/db";
+import {
+  ensureUserProfileImageColumn,
+  uploadProfileImage,
+  cleanupProfileImage,
+  ProfileImageValidationError,
+} from "@/lib/server/profile-image";
+import { parseProfileMutationRequest, resolveAuthorizedProfileUserId } from "@/lib/server/profile-request";
+import { getTeacherSessionFromCookies } from "@/lib/server/teacher-session";
+import { getTableColumns, query, runWithConnection, tableExists } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -190,93 +198,166 @@ const resolveTeacherTable = async (): Promise<ResolvedTeacherTable | null> => {
 };
 
 export async function PUT(request: NextRequest) {
-  const userIdParam = request.nextUrl.searchParams.get("userId");
-  if (!userIdParam) {
+  const session = await getTeacherSessionFromCookies().catch(() => null);
+  if (!session) {
     return NextResponse.json(
-      { success: false, error: "Missing userId query parameter." },
-      { status: 400 },
+      { success: false, error: "Teacher session not found." },
+      { status: 401 },
     );
   }
 
-  const userId = Number(userIdParam);
-  if (!Number.isFinite(userId) || userId <= 0) {
-    return NextResponse.json(
-      { success: false, error: "Invalid userId value." },
-      { status: 400 },
-    );
+  const targetUser = resolveAuthorizedProfileUserId(
+    request.nextUrl.searchParams.get("userId"),
+    session.userId,
+  );
+  if (!targetUser.ok) {
+    return targetUser.response;
   }
 
-  let body: any;
+  let payload: Awaited<ReturnType<typeof parseProfileMutationRequest>>;
   try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ success: false, error: "Invalid request body." }, { status: 400 });
-  }
-
-  try {
-    const userColumns = await getTableColumns("users");
-    const updates: string[] = [];
-    const params: any[] = [];
-
-    if (body.firstName !== undefined && userColumns.has("first_name")) {
-      updates.push("first_name = ?");
-      params.push(body.firstName?.trim() || null);
-    }
-    if (body.middleName !== undefined && userColumns.has("middle_name")) {
-      updates.push("middle_name = ?");
-      params.push(body.middleName?.trim() || null);
-    }
-    if (body.lastName !== undefined && userColumns.has("last_name")) {
-      updates.push("last_name = ?");
-      params.push(body.lastName?.trim() || null);
-    }
-    if (body.email !== undefined && userColumns.has("email")) {
-      updates.push("email = ?");
-      params.push(body.email?.trim() || null);
-    }
-    if (body.contactNumber !== undefined && userColumns.has("contact_number")) {
-      updates.push("contact_number = ?");
-      params.push(body.contactNumber?.trim() || null);
-    }
-    if (body.subject !== undefined && userColumns.has("subject")) {
-      updates.push("subject = ?");
-      params.push(body.subject?.trim() || null);
-    }
-
-    if (updates.length > 0) {
-      params.push(userId);
-      await query(`UPDATE users SET ${updates.join(", ")} WHERE user_id = ?`, params);
-    }
-
-    return NextResponse.json({ success: true });
+    payload = await parseProfileMutationRequest(request);
   } catch (error) {
-    console.error("Failed to update teacher profile", error);
     return NextResponse.json(
-      { success: false, error: "Failed to update profile." },
+      { success: false, error: error instanceof Error ? error.message : "Invalid request body." },
+      { status: 400 },
+    );
+  }
+
+  let uploadedImageStoragePath: string | null = null;
+
+  try {
+    const userColumns = await ensureUserProfileImageColumn();
+    const body = payload.body;
+    const uploadedImage = payload.profileImage ? await uploadProfileImage(payload.profileImage) : null;
+    uploadedImageStoragePath = uploadedImage?.storagePath ?? null;
+
+    const result = await runWithConnection(async (connection) => {
+      await connection.beginTransaction();
+
+      try {
+        const [currentRows] = await connection.execute<RowDataPacket[]>(
+          "SELECT profile_image_url FROM users WHERE user_id = ? LIMIT 1",
+          [targetUser.userId],
+        );
+
+        if (!currentRows.length) {
+          await connection.rollback();
+          return {
+            notFound: true as const,
+            previousProfileImageUrl: null,
+            profileImageUrl: null,
+          };
+        }
+
+        const previousProfileImageUrl = toNullableString(currentRows[0]?.profile_image_url);
+        const updates: string[] = [];
+        const params: Array<string | number | null> = [];
+
+        if (body.firstName !== undefined && userColumns.has("first_name")) {
+          updates.push("first_name = ?");
+          params.push(typeof body.firstName === "string" ? body.firstName.trim() || null : null);
+        }
+        if (body.middleName !== undefined && userColumns.has("middle_name")) {
+          updates.push("middle_name = ?");
+          params.push(typeof body.middleName === "string" ? body.middleName.trim() || null : null);
+        }
+        if (body.lastName !== undefined && userColumns.has("last_name")) {
+          updates.push("last_name = ?");
+          params.push(typeof body.lastName === "string" ? body.lastName.trim() || null : null);
+        }
+        if (body.email !== undefined && userColumns.has("email")) {
+          updates.push("email = ?");
+          params.push(typeof body.email === "string" ? body.email.trim() || null : null);
+        }
+        if (body.contactNumber !== undefined && userColumns.has("contact_number")) {
+          updates.push("contact_number = ?");
+          params.push(typeof body.contactNumber === "string" ? body.contactNumber.trim() || null : null);
+        }
+        if (body.subject !== undefined && userColumns.has("subject")) {
+          updates.push("subject = ?");
+          params.push(typeof body.subject === "string" ? body.subject.trim() || null : null);
+        }
+        if (uploadedImage) {
+          updates.push("profile_image_url = ?");
+          params.push(uploadedImage.publicUrl);
+        }
+
+        if (updates.length > 0) {
+          params.push(targetUser.userId);
+          await connection.execute(`UPDATE users SET ${updates.join(", ")} WHERE user_id = ?`, params);
+        }
+
+        await connection.commit();
+        return {
+          notFound: false as const,
+          previousProfileImageUrl,
+          profileImageUrl: uploadedImage?.publicUrl ?? previousProfileImageUrl,
+        };
+      } catch (error) {
+        await connection.rollback();
+        throw error;
+      }
+    });
+
+    if (result.notFound) {
+      if (uploadedImage) {
+        await cleanupProfileImage(uploadedImage.storagePath);
+      }
+      return NextResponse.json({ success: false, error: "Teacher profile not found." }, { status: 404 });
+    }
+
+    if (
+      uploadedImage &&
+      result.previousProfileImageUrl &&
+      result.previousProfileImageUrl !== uploadedImage.publicUrl
+    ) {
+      await cleanupProfileImage(result.previousProfileImageUrl);
+    }
+
+    return NextResponse.json({
+      success: true,
+      profile: {
+        profileImageUrl: result.profileImageUrl,
+      },
+    });
+  } catch (error) {
+    if (uploadedImageStoragePath) {
+      await cleanupProfileImage(uploadedImageStoragePath);
+    }
+    console.error("Failed to update teacher profile", error);
+    if (error instanceof ProfileImageValidationError) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: error.status },
+      );
+    }
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : "Failed to update profile." },
       { status: 500 },
     );
   }
 }
 
 export async function GET(request: NextRequest) {
-  const userIdParam = request.nextUrl.searchParams.get("userId");
-  if (!userIdParam) {
+  const session = await getTeacherSessionFromCookies().catch(() => null);
+  if (!session) {
     return NextResponse.json(
-      { success: false, error: "Missing userId query parameter." },
-      { status: 400 },
+      { success: false, error: "Teacher session not found." },
+      { status: 401 },
     );
   }
 
-  const userId = Number(userIdParam);
-  if (!Number.isFinite(userId) || userId <= 0) {
-    return NextResponse.json(
-      { success: false, error: "Invalid userId value." },
-      { status: 400 },
-    );
+  const targetUser = resolveAuthorizedProfileUserId(
+    request.nextUrl.searchParams.get("userId"),
+    session.userId,
+  );
+  if (!targetUser.ok) {
+    return targetUser.response;
   }
 
   try {
-    const userColumns = await getTableColumns("users");
+    const userColumns = await ensureUserProfileImageColumn();
     if (!userColumns.size) {
       return NextResponse.json(
         { success: false, error: "Users table is unavailable." },
@@ -300,6 +381,7 @@ export async function GET(request: NextRequest) {
     addUserColumn("middle_name", "user_middle_name");
     addUserColumn("last_name", "user_last_name");
     addUserColumn("suffix", "user_suffix");
+    addUserColumn("profile_image_url", "user_profile_image_url");
     addUserColumn(userColumns.has("teacher_id") ? "teacher_id" : "", "user_teacher_id");
     addUserColumn(userColumns.has("role") ? "role" : "", "user_role");
     addUserColumn(userColumns.has("user_code") ? "user_code" : "", "user_code");
@@ -409,7 +491,7 @@ export async function GET(request: NextRequest) {
       LIMIT 1
     `;
 
-    const [rows] = await query<RowDataPacket[]>(sql, [userId]);
+    const [rows] = await query<RowDataPacket[]>(sql, [targetUser.userId]);
     if (!rows.length) {
       return NextResponse.json(
         { success: false, error: "Teacher profile not found." },
@@ -433,6 +515,7 @@ export async function GET(request: NextRequest) {
       user_middle_name?: unknown;
       user_last_name?: unknown;
       user_suffix?: unknown;
+      user_profile_image_url?: unknown;
       user_teacher_id?: unknown;
       user_code?: unknown;
       user_role?: unknown;
@@ -468,6 +551,7 @@ export async function GET(request: NextRequest) {
       contactNumber: toNullableString(row.teacher_contact) ?? toNullableString(row.user_contact),
       email: toNullableString(row.teacher_email) ?? toNullableString(row.user_email),
       teacherIdentifier: toNullableString(row.teacher_identifier),
+      profileImageUrl: toNullableString(row.user_profile_image_url),
     };
 
     if (!profilePayload.grade) {

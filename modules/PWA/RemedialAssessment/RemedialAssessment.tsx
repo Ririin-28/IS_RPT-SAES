@@ -24,6 +24,8 @@ type Assessment = {
   id: number;
   title: string;
   description?: string;
+  subjectId?: number | null;
+  subjectName?: string;
   questions: AssessmentQuestion[];
 };
 
@@ -46,6 +48,8 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
   const questions = useMemo(() => assessment.questions ?? [], [assessment.questions]);
 
   const item = questions[current];
+  const normalizedSubject = String(assessment.subjectName ?? "").trim().toLowerCase();
+  const isFilipinoAssessment = normalizedSubject === "filipino";
   const activeSectionTitle = item?.sectionTitle?.trim() ?? "";
   const activeSectionDescription = item?.sectionDescription?.trim() ?? "";
   const isLast = current === questions.length - 1;
@@ -59,6 +63,87 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
     "bg-[#9d27b0]", // Purple
     "bg-[#00bcd4]", // Cyan
   ];
+
+  const getChoiceColorClass = (choiceText: string | undefined, index: number) => {
+    if (item?.type === "true_false") {
+      const normalized = (choiceText ?? "").trim().toLowerCase();
+      if (normalized === "true") {
+        return "bg-[#1176d3]";
+      }
+      if (normalized === "false") {
+        return "bg-[#eb103b]";
+      }
+    }
+    return optionColors[index % optionColors.length];
+  };
+
+  const uiText = isFilipinoAssessment
+    ? {
+        noQuestions: "Wala pang mga tanong para sa assessment na ito.",
+        points: "puntos",
+        streak: "sunod-sunod",
+        readAloud: "Basahin nang malakas ang tanong",
+        streakBadge: "SUNOD-SUNOD!",
+        shortAnswerPlaceholder: "I-type ang iyong sagot dito...",
+        submitAnswer: "Ipasa ang Sagot",
+        nextQuestion: "Susunod na Tanong",
+        optionFallback: "Pagpipilian",
+        feedbackGreatJob: "Magaling!",
+        feedbackTryAgain: "Subukan muli!",
+        bestStreak: "Pinakamahabang sunod-sunod",
+        typeLabel: "Uri ng Tanong",
+        questionTypes: {
+          multiple_choice: "Maramihang Pagpipilian",
+          true_false: "Tama o Mali",
+          short_answer: "Maikling Sagot",
+        },
+        streakMilestone3Title: "Tatlong Sunod! 🔥",
+        streakMilestone3Subtext: "Tatlong sunod na tama! Ang galing mo!",
+        streakMilestone5Title: "Hindi Ka Matitinag! ⚡",
+        streakMilestone5Subtext: "Limang tamang sagot! Astig!",
+        streakMilestoneLegendTitle: "Alamat! 👑",
+        streakMilestoneLegendSubtext: (count: number) => `${count} na sunod-sunod! Napakahusay!`,
+        correctFeedback: "Ayos! Ituloy mo lang! 🌟",
+        shortAnswerCorrectFeedback: "Magaling! Ikaw ay mahusay! ⭐",
+        streakLossTitle: "Napaso ang Sunod! ❄️",
+        streakLossSubtext: (count: number) => `Umabot ka ng ${count} na sunod. Simulan natin ulit!`,
+        incorrectFeedback: "Muntik na! Makukuha mo rin sa susunod! 💪",
+        shortAnswerIncorrectFeedback: "Huwag susuko! Subukan ulit! 🚀",
+      }
+    : {
+        noQuestions: "No questions available for this assessment yet.",
+        points: "pts",
+        streak: "Streak",
+        readAloud: "Read question aloud",
+        streakBadge: "STREAK!",
+        shortAnswerPlaceholder: "Type your answer here...",
+        submitAnswer: "Submit Answer",
+        nextQuestion: "Next Question",
+        optionFallback: "Option",
+        feedbackGreatJob: "Great job!",
+        feedbackTryAgain: "Try again!",
+        bestStreak: "Best Streak",
+        typeLabel: "Question Type",
+        questionTypes: {
+          multiple_choice: "Multiple Choice",
+          true_false: "True / False",
+          short_answer: "Short Answer",
+        },
+        streakMilestone3Title: "Triple Threat! 🔥",
+        streakMilestone3Subtext: "3 in a row! You're on fire!",
+        streakMilestone5Title: "Unstoppable! ⚡",
+        streakMilestone5Subtext: "5 correct answers! Incredible!",
+        streakMilestoneLegendTitle: "Legendary! 👑",
+        streakMilestoneLegendSubtext: (count: number) => `${count} streak! You're a master!`,
+        correctFeedback: "Awesome! Keep it up! 🌟",
+        shortAnswerCorrectFeedback: "Great job! You're a star! ⭐",
+        streakLossTitle: "Streak Ended! ❄️",
+        streakLossSubtext: (count: number) => `You had a ${count} streak. Let's start a new one!`,
+        incorrectFeedback: "Nice try! You'll get it next time! 💪",
+        shortAnswerIncorrectFeedback: "Don't give up! Try another one! 🚀",
+      };
+
+  const questionTypeLabel = item ? uiText.questionTypes[item.type] : "";
 
   const speak = (text: string) => {
     if ("speechSynthesis" in window) {
@@ -103,19 +188,19 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
         
         // Streak milestones
         if (nextStreak === 3) {
-          setFeedback({ type: "streak_milestone", text: "Triple Threat! 🔥", subtext: "3 in a row! You're on fire!" });
+          setFeedback({ type: "streak_milestone", text: uiText.streakMilestone3Title, subtext: uiText.streakMilestone3Subtext });
         } else if (nextStreak === 5) {
-          setFeedback({ type: "streak_milestone", text: "Unstoppable! ⚡", subtext: "5 correct answers! Incredible!" });
+          setFeedback({ type: "streak_milestone", text: uiText.streakMilestone5Title, subtext: uiText.streakMilestone5Subtext });
         } else if (nextStreak >= 10 && nextStreak % 5 === 0) {
-          setFeedback({ type: "streak_milestone", text: "Legendary! 👑", subtext: `${nextStreak} streak! You're a master!` });
+          setFeedback({ type: "streak_milestone", text: uiText.streakMilestoneLegendTitle, subtext: uiText.streakMilestoneLegendSubtext(nextStreak) });
         } else {
-          setFeedback({ type: "correct", text: "Awesome! Keep it up! 🌟" });
+          setFeedback({ type: "correct", text: uiText.correctFeedback });
         }
       } else {
         if (streak >= 3) {
-          setFeedback({ type: "streak_loss", text: "Streak Ended! ❄️", subtext: `You had a ${streak} streak. Let's start a new one!` });
+          setFeedback({ type: "streak_loss", text: uiText.streakLossTitle, subtext: uiText.streakLossSubtext(streak) });
         } else {
-          setFeedback({ type: "incorrect", text: "Nice try! You'll get it next time! 💪" });
+          setFeedback({ type: "incorrect", text: uiText.incorrectFeedback });
         }
       }
 
@@ -154,19 +239,19 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
         
         // Streak milestones
         if (nextStreak === 3) {
-          setFeedback({ type: "streak_milestone", text: "Triple Threat! 🔥", subtext: "3 in a row! You're on fire!" });
+          setFeedback({ type: "streak_milestone", text: uiText.streakMilestone3Title, subtext: uiText.streakMilestone3Subtext });
         } else if (nextStreak === 5) {
-          setFeedback({ type: "streak_milestone", text: "Unstoppable! ⚡", subtext: "5 correct answers! Incredible!" });
+          setFeedback({ type: "streak_milestone", text: uiText.streakMilestone5Title, subtext: uiText.streakMilestone5Subtext });
         } else if (nextStreak >= 10 && nextStreak % 5 === 0) {
-          setFeedback({ type: "streak_milestone", text: "Legendary! 👑", subtext: `${nextStreak} streak! You're a master!` });
+          setFeedback({ type: "streak_milestone", text: uiText.streakMilestoneLegendTitle, subtext: uiText.streakMilestoneLegendSubtext(nextStreak) });
         } else {
-          setFeedback({ type: "correct", text: "Great job! You're a star! ⭐" });
+          setFeedback({ type: "correct", text: uiText.shortAnswerCorrectFeedback });
         }
       } else {
         if (streak >= 3) {
-          setFeedback({ type: "streak_loss", text: "Streak Ended! ❄️", subtext: `You had a ${streak} streak. Let's start a new one!` });
+          setFeedback({ type: "streak_loss", text: uiText.streakLossTitle, subtext: uiText.streakLossSubtext(streak) });
         } else {
-          setFeedback({ type: "incorrect", text: "Don't give up! Try another one! 🚀" });
+          setFeedback({ type: "incorrect", text: uiText.shortAnswerIncorrectFeedback });
         }
       }
       setShortAnswer("");
@@ -216,7 +301,7 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
       <div className="min-h-screen w-full bg-linear-to-b from-white to-green-50 flex items-center justify-center p-4">
         <div className="w-full max-w-md rounded-2xl border border-green-100 bg-white p-6 text-center shadow-lg">
           <h2 className="text-xl font-bold text-[#013300]">{assessment.title}</h2>
-          <p className="mt-3 text-sm text-[#013300]/70">No questions available for this assessment yet.</p>
+          <p className="mt-3 text-sm text-[#013300]/70">{uiText.noQuestions}</p>
         </div>
       </div>
     );
@@ -233,11 +318,11 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
             </div>
           </div>
           <div className="bg-green-100 rounded-full px-6 py-1 text-sm font-bold border border-green-200">
-            {points} pts
+            {points} {uiText.points}
           </div>
           <div className="flex items-center gap-1.5 bg-orange-100 rounded-full px-3 py-1 border border-orange-200">
             <span className="text-sm">🔥</span>
-            <span className="text-xs font-bold uppercase tracking-wider text-orange-700">{streak} Streak</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-orange-700">{streak} {uiText.streak}</span>
           </div>
         </div>
 
@@ -288,7 +373,7 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
                       <button 
                         onClick={() => speak(item.questionText)}
                         className="p-2 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors shadow-sm"
-                        title="Read question aloud"
+                        title={uiText.readAloud}
                       >
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
@@ -296,6 +381,10 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
                       </button>
                     </div>
                     
+                    <div className="mt-2 inline-flex items-center rounded-full border border-[#013300]/12 bg-green-50 px-3 py-1 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[#013300]/70">
+                      {uiText.typeLabel}: {questionTypeLabel}
+                    </div>
+
                     {/* Streak Badge */}
                     {streak > 1 && (
                       <motion.div
@@ -303,7 +392,7 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
                         animate={{ scale: 1 }}
                         className="inline-flex items-center gap-1 bg-orange-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-md mt-2"
                       >
-                        <span className="text-sm">🔥</span> {streak} STREAK!
+                        <span className="text-sm">🔥</span> {streak} {uiText.streakBadge}
                       </motion.div>
                     )}
                   </div>
@@ -317,11 +406,12 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
                           key={choice.id}
                           onClick={() => handleChoiceSelect(choice.id)}
                           disabled={isSaving || isSubmitting}
-                          className={`w-full rounded-2xl py-5 text-lg font-black text-white shadow-[0_6px_0_0_rgba(0,0,0,0.2)] transition-all duration-100 active:translate-y-1 active:shadow-none sm:py-6 sm:text-xl ${
-                            optionColors[index % optionColors.length]
-                          } ${isSaving || isSubmitting ? 'opacity-50 grayscale' : 'hover:brightness-110'}`}
+                          className={`w-full rounded-2xl py-5 text-lg font-black text-white shadow-[0_6px_0_0_rgba(0,0,0,0.2)] transition-all duration-100 active:translate-y-1 active:shadow-none sm:py-6 sm:text-xl ${getChoiceColorClass(
+                            choice.text,
+                            index,
+                          )} ${isSaving || isSubmitting ? 'opacity-50 grayscale' : 'hover:brightness-110'}`}
                         >
-                          {choice.text?.trim() || `Option ${index + 1}`}
+                          {choice.text?.trim() || `${uiText.optionFallback} ${index + 1}`}
                         </button>
                       ))}
                     </div>
@@ -334,7 +424,7 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
                           value={shortAnswer}
                           onChange={(event) => setShortAnswer(event.target.value)}
                           rows={4}
-                          placeholder="Type your answer here..."
+                          placeholder={uiText.shortAnswerPlaceholder}
                           className="w-full resize-none rounded-2xl border-4 border-gray-100 bg-gray-50 p-4 text-lg font-bold text-[#222] outline-none transition-all focus:border-[#461a92] focus:bg-white sm:p-6"
                         />
                       </div>
@@ -343,7 +433,7 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
                         disabled={isSaving || isSubmitting || shortAnswer.trim().length === 0}
                         className="w-full rounded-2xl bg-[#46a301] py-5 text-xl font-black text-white shadow-[0_6px_0_0_rgba(0,0,0,0.2)] transition-all active:translate-y-1 active:shadow-none"
                       >
-                        {isLast ? "Submit Answer" : "Next Question"}
+                        {isLast ? uiText.submitAnswer : uiText.nextQuestion}
                       </button>
                     </div>
                   )}
@@ -375,7 +465,7 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
                 )}
                 {!feedback.subtext && (
                   <p className="text-lg font-bold opacity-90 sm:text-xl">
-                    {feedback.type === "correct" ? "Great job!" : "Try again!"}
+                    {feedback.type === "correct" ? uiText.feedbackGreatJob : uiText.feedbackTryAgain}
                   </p>
                 )}
               </div>
@@ -387,7 +477,7 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
         <div className="flex items-center justify-center gap-3 px-4 pb-4 text-center text-[0.65rem] font-bold uppercase tracking-[0.22em] text-[#011330] sm:gap-4 sm:text-xs sm:tracking-widest">
           <span>{assessment.title}</span>
           <span>•</span>
-          <span>Best Streak: {bestStreak}</span>
+          <span>{uiText.bestStreak}: {bestStreak}</span>
         </div>
       </div>
     </div>

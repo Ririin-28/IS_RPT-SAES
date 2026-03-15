@@ -8,6 +8,8 @@ type AssessmentRow = RowDataPacket & {
 	assessment_id: number;
 	title: string;
 	description: string | null;
+	subject_id: number | null;
+	subject_name: string | null;
 	start_time: string | Date | null;
 	end_time: string | Date | null;
 	qr_token: string | null;
@@ -100,8 +102,9 @@ export async function POST(request: NextRequest) {
 				questionColumns.has("section_description");
 
 			const [assessmentRows] = await connection.query<AssessmentRow[]>(
-				`SELECT assessment_id, title, description, start_time, end_time, qr_token, is_published
-				 FROM assessments
+				`SELECT a.assessment_id, a.title, a.description, a.subject_id, s.subject_name, a.start_time, a.end_time, a.qr_token, a.is_published
+				 FROM assessments a
+				 LEFT JOIN subject s ON s.subject_id = a.subject_id
 				 WHERE quiz_code = ?
 				 LIMIT 1`,
 				[quizCode]
@@ -206,6 +209,8 @@ export async function POST(request: NextRequest) {
 					id: assessment.assessment_id,
 					title: assessment.title,
 					description: assessment.description ?? "",
+					subjectId: assessment.subject_id ?? null,
+					subjectName: assessment.subject_name ?? "",
 					questions: questionRows.map((question) => ({
 						id: question.question_id,
 						questionText: question.question_text,

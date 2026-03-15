@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useState, type Dispatch, type SetStateAction, type ReactNode } from "react";
+import { useMemo, useCallback, useState, useEffect, type Dispatch, type SetStateAction, type ReactNode } from "react";
 import TableList from "@/components/Common/Tables/TableList";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
@@ -9,6 +9,7 @@ import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
 import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
 import AccountRestoredModal, { type RestoredAccountInfo } from "@/components/Common/Modals/AccountRestoredModal";
 import AccountDeletedModal from "@/components/Common/Modals/AccountDeletedModal";
+import ToastActivity from "@/components/ToastActivity";
 import { useArchiveRestoreDelete } from "../Common/useArchiveRestoreDelete";
 import { ensureArchiveRowKey } from "../Common/archiveRowKey";
 import { exportArchiveRows } from "../utils/export-columns";
@@ -63,7 +64,16 @@ export default function MasterTeacherTab({
   const [restoredAccounts, setRestoredAccounts] = useState<RestoredAccountInfo[]>([]);
   const [deletedCount, setDeletedCount] = useState(0);
   const [showDeletedModal, setShowDeletedModal] = useState(false);
+  const [feedbackToast, setFeedbackToast] = useState<{ title: string; message: string; tone: "success" | "error" } | null>(null);
   const normalizedLabel = gradeLabel ?? (gradeFilter ? `Grade ${gradeFilter}` : "All Grades");
+
+  useEffect(() => {
+    if (!feedbackToast) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => setFeedbackToast(null), 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [feedbackToast]);
 
   const resolveTeacherId = useCallback((teacher: any) => {
     return (
@@ -121,8 +131,12 @@ export default function MasterTeacherTab({
       );
 
       if (archiveIds.length === 0) {
-        if (selectedRecords.length > 0 && typeof window !== "undefined") {
-          window.alert("Selected archive entries are missing identifiers. Please refresh and try again.");
+        if (selectedRecords.length > 0) {
+          setFeedbackToast({
+            title: "Invalid Selection",
+            message: "Selected archive entries are missing identifiers. Please refresh and try again.",
+            tone: "error",
+          });
         }
         resetSelection();
         return;
@@ -179,11 +193,15 @@ export default function MasterTeacherTab({
 
         if (Array.isArray(data?.errors) && data.errors.length > 0) {
           console.warn("Some archive entries failed to restore:", data.errors);
-          if (restoredEntries.length === 0 && typeof window !== "undefined") {
+          if (restoredEntries.length === 0) {
             const errorLines = data.errors
               .map((err: any) => `#${err?.archiveId ?? "?"}: ${err?.message ?? "Unable to restore."}`)
               .join("\n");
-            window.alert(`Unable to restore the selected accounts.\n\n${errorLines}`);
+            setFeedbackToast({
+              title: "Restore Failed",
+              message: `Unable to restore the selected accounts. ${errorLines}`,
+              tone: "error",
+            });
           }
         }
 
@@ -192,10 +210,8 @@ export default function MasterTeacherTab({
         }
       } catch (error) {
         console.error("Failed to restore archived Master Teacher accounts", error);
-        if (typeof window !== "undefined") {
-          const message = error instanceof Error ? error.message : "Failed to restore archived accounts.";
-          window.alert(message);
-        }
+        const message = error instanceof Error ? error.message : "Failed to restore archived accounts.";
+        setFeedbackToast({ title: "Restore Failed", message, tone: "error" });
       }
     },
     [resolveRecordsByKeys, setTeachers, onEntriesRemoved],
@@ -217,8 +233,12 @@ export default function MasterTeacherTab({
       );
 
       if (archiveIds.length === 0) {
-        if (selectedRecords.length > 0 && typeof window !== "undefined") {
-          window.alert("Selected archive entries are missing identifiers. Please refresh and try again.");
+        if (selectedRecords.length > 0) {
+          setFeedbackToast({
+            title: "Invalid Selection",
+            message: "Selected archive entries are missing identifiers. Please refresh and try again.",
+            tone: "error",
+          });
         }
         resetSelection();
         return;
@@ -268,10 +288,8 @@ export default function MasterTeacherTab({
         resetSelection();
       } catch (error) {
         console.error("Failed to delete archived Master Teacher accounts", error);
-        if (typeof window !== "undefined") {
-          const message = error instanceof Error ? error.message : "Failed to delete archived accounts.";
-          window.alert(message);
-        }
+        const message = error instanceof Error ? error.message : "Failed to delete archived accounts.";
+        setFeedbackToast({ title: "Delete Failed", message, tone: "error" });
       }
     },
     [resolveRecordsByKeys, setTeachers, onEntriesRemoved],
@@ -560,6 +578,14 @@ export default function MasterTeacherTab({
         roleLabel="Master Teacher"
         count={deletedCount}
       />
+      {feedbackToast && (
+        <ToastActivity
+          title={feedbackToast.title}
+          message={feedbackToast.message}
+          tone={feedbackToast.tone}
+          onClose={() => setFeedbackToast(null)}
+        />
+      )}
     </div>
   );
 }

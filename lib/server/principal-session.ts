@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { cookies } from "next/headers";
-import type { PoolConnection, RowDataPacket } from "mysql2/promise";
+import type { Connection, PoolConnection, RowDataPacket } from "mysql2/promise";
 
 /* ======================
    Config
@@ -36,7 +36,7 @@ function generateToken(): string {
 ====================== */
 
 export async function createPrincipalSession(
-  db: PoolConnection,
+  db: PoolConnection | Connection,
   principalId: string,
   userId: number,
   deviceName?: string | null,

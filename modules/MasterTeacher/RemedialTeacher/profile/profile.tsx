@@ -1,11 +1,18 @@
 "use client";
+
+import { ChangeEvent, useEffect, useState } from "react";
 import Sidebar from "@/components/MasterTeacher/RemedialTeacher/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
-import Image from "next/image";
-import { useEffect, useState } from "react";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
-import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
+import ProfileImageCropModal from "@/components/Common/Modals/ProfileImageCropModal";
+import ToastActivity from "@/components/ToastActivity";
+import UserAvatar from "@/components/Common/UserAvatar";
+import {
+  PROFILE_IMAGE_ACCEPT_ATTRIBUTE,
+  PROFILE_IMAGE_REQUIREMENTS_TEXT,
+  getProfileImageValidationMessage,
+} from "@/lib/profile-image-config";
 import { getStoredUserProfile, storeUserProfile } from "@/lib/utils/user-profile";
 
 type ProfileFormState = {
@@ -77,8 +84,6 @@ function formatDisplay(value: string): string {
 export default function MasterTeacherProfile() {
   const [isEditing, setIsEditing] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
-  const [showModal, setShowModal] = useState(false);
-  const [modalMessage, setModalMessage] = useState("");
   const [formData, setFormData] = useState<ProfileFormState>(() => createEmptyProfileState());
   const [initialData, setInitialData] = useState<ProfileFormState | null>(null);
   const [passwordData, setPasswordData] = useState({
@@ -89,7 +94,14 @@ export default function MasterTeacherProfile() {
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [reloadVersion, setReloadVersion] = useState(0);
-  const [coordinatorProfile, setCoordinatorProfile] = useState<{gradeLevel: string; coordinatorSubject: string} | null>(null);
+  const [selectedProfileImageFile, setSelectedProfileImageFile] = useState<File | null>(null);
+  const [cropModalFile, setCropModalFile] = useState<File | null>(null);
+  const [saveToast, setSaveToast] = useState<{
+    title: string;
+    message: string;
+    tone: "success" | "error";
+  } | null>(null);
+  const [coordinatorProfile, setCoordinatorProfile] = useState<{ gradeLevel: string; coordinatorSubject: string } | null>(null);
   const [isLoadingCoordinator, setIsLoadingCoordinator] = useState(true);
 
   useEffect(() => {
@@ -98,18 +110,9 @@ export default function MasterTeacherProfile() {
     async function loadCoordinatorProfile() {
       setIsLoadingCoordinator(true);
       try {
-        const storedProfile = getStoredUserProfile();
-        const userId = storedProfile?.userId ?? null;
-
-        if (!userId) {
-          return;
-        }
-
-        const response = await fetch(
-          `/api/master_teacher/coordinator/profile?userId=${encodeURIComponent(String(userId))}`,
-          { cache: "no-store" },
-        );
-
+        const response = await fetch("/api/master_teacher/coordinator/profile", {
+          cache: "no-store",
+        });
         const payload = await response.json().catch(() => null);
 
         if (cancelled) {
@@ -131,7 +134,7 @@ export default function MasterTeacherProfile() {
       }
     }
 
-    loadCoordinatorProfile();
+    void loadCoordinatorProfile();
 
     return () => {
       cancelled = true;
@@ -146,23 +149,10 @@ export default function MasterTeacherProfile() {
       setProfileError(null);
       try {
         const storedProfile = getStoredUserProfile();
-        const userId = storedProfile?.userId ?? null;
-
-        if (!userId) {
-          throw new Error("Missing user information. Please log in again.");
-        }
-
-        const response = await fetch(
-          `/api/master_teacher/profile?userId=${encodeURIComponent(String(userId))}`,
-          { cache: "no-store" },
-        );
-
-        let payload: any = null;
-        try {
-          payload = await response.json();
-        } catch {
-          payload = null;
-        }
+        const response = await fetch("/api/master_teacher/profile", {
+          cache: "no-store",
+        });
+        const payload = await response.json().catch(() => null);
 
         if (cancelled) {
           return;
@@ -191,24 +181,23 @@ export default function MasterTeacherProfile() {
           remedialGrade: profile.gradeLabel || profile.grade || "",
           remedialSubjects: profile.remedialSubjects ?? "",
           position: formatRoleLabel(derivedRole),
-          profilePicture: "",
+          profilePicture: profile.profileImageUrl ?? "",
         };
 
-        try {
-          storeUserProfile({
-            firstName: nextState.firstName || storedProfile?.firstName || "",
-            middleName: nextState.middleName || storedProfile?.middleName || "",
-            lastName: nextState.lastName || storedProfile?.lastName || "",
-            role: derivedRole ?? storedProfile?.role ?? null,
-            userId: storedProfile?.userId ?? profile.userId ?? null,
-            email: profile.email ?? storedProfile?.email ?? null,
-          });
-        } catch (err) {
-          console.warn("Unable to sync stored user profile", err);
-        }
+        storeUserProfile({
+          firstName: nextState.firstName || storedProfile?.firstName || "",
+          middleName: nextState.middleName || storedProfile?.middleName || "",
+          lastName: nextState.lastName || storedProfile?.lastName || "",
+          role: derivedRole ?? storedProfile?.role ?? null,
+          userId: storedProfile?.userId ?? profile.userId ?? null,
+          email: profile.email ?? storedProfile?.email ?? null,
+          profileImageUrl: nextState.profilePicture || storedProfile?.profileImageUrl || null,
+        });
 
         setFormData(nextState);
         setInitialData(nextState);
+        setSelectedProfileImageFile(null);
+        setCropModalFile(null);
       } catch (error) {
         if (cancelled) {
           return;
@@ -223,79 +212,110 @@ export default function MasterTeacherProfile() {
       }
     }
 
-    loadProfile();
+    void loadProfile();
 
     return () => {
       cancelled = true;
     };
   }, [reloadVersion, coordinatorProfile]);
 
+  useEffect(() => {
+    if (!saveToast) {
+      return;
+    }
+
+    const timerId = window.setTimeout(() => {
+      setSaveToast(null);
+    }, 3500);
+
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [saveToast]);
+
   const handleRetry = () => {
     setReloadVersion((prev) => prev + 1);
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+  const handleInputChange = (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    setFormData((previous) => ({ ...previous, [event.target.name]: event.target.value }));
   };
 
-  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setPasswordData({ ...passwordData, [e.target.name]: e.target.value });
+  const handlePasswordChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setPasswordData((previous) => ({ ...previous, [event.target.name]: event.target.value }));
   };
 
   const handleSave = async () => {
     try {
       const storedProfile = getStoredUserProfile();
-      const userId = storedProfile?.userId;
+      const requestInit: RequestInit = { method: "PUT" };
 
-      if (!userId) {
-        setModalMessage("Unable to save: Missing user information.");
-        setShowModal(true);
-        return;
-      }
-
-      const response = await fetch(
-        `/api/master_teacher/profile?userId=${encodeURIComponent(String(userId))}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            firstName: formData.firstName,
-            middleName: formData.middleName,
-            lastName: formData.lastName,
-            email: formData.email,
-            contactNumber: formData.contactNumber,
-            grade: formData.coordinatorGrade,
-            subject: formData.coordinatorSubject,
-          }),
-        },
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData?.error || "Failed to save profile.");
-      }
-
-      setInitialData(formData);
-      setIsEditing(false);
-      setModalMessage("Profile updated successfully!");
-      setShowModal(true);
-
-      try {
-        storeUserProfile({
-          firstName: formData.firstName || storedProfile?.firstName || "",
-          middleName: formData.middleName || storedProfile?.middleName || "",
-          lastName: formData.lastName || storedProfile?.lastName || "",
-          role: storedProfile?.role ?? null,
-          userId: storedProfile?.userId ?? null,
-          email: formData.email || storedProfile?.email || null,
+      if (selectedProfileImageFile) {
+        const requestBody = new FormData();
+        requestBody.set("firstName", formData.firstName);
+        requestBody.set("middleName", formData.middleName);
+        requestBody.set("lastName", formData.lastName);
+        requestBody.set("email", formData.email);
+        requestBody.set("contactNumber", formData.contactNumber);
+        requestBody.set("subject", formData.coordinatorSubject);
+        requestBody.set("profileImage", selectedProfileImageFile);
+        requestInit.body = requestBody;
+      } else {
+        requestInit.headers = { "Content-Type": "application/json" };
+        requestInit.body = JSON.stringify({
+          firstName: formData.firstName,
+          middleName: formData.middleName,
+          lastName: formData.lastName,
+          email: formData.email,
+          contactNumber: formData.contactNumber,
+          subject: formData.coordinatorSubject,
         });
-      } catch (err) {
-        console.warn("Unable to update stored profile", err);
       }
+
+      const response = await fetch("/api/master_teacher/profile", requestInit);
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error || "Failed to save profile.");
+      }
+
+      const nextProfileImageUrl =
+        typeof payload?.profile?.profileImageUrl === "string"
+          ? payload.profile.profileImageUrl
+          : initialData?.profilePicture ?? formData.profilePicture;
+
+      const nextState: ProfileFormState = {
+        ...formData,
+        profilePicture: nextProfileImageUrl || "",
+      };
+
+      setFormData(nextState);
+      setInitialData(nextState);
+      setSelectedProfileImageFile(null);
+      setCropModalFile(null);
+      setIsEditing(false);
+      setSaveToast({
+        title: "Profile Saved",
+        message: "Profile changes were saved successfully.",
+        tone: "success",
+      });
+
+      storeUserProfile({
+        firstName: nextState.firstName || storedProfile?.firstName || "",
+        middleName: nextState.middleName || storedProfile?.middleName || "",
+        lastName: nextState.lastName || storedProfile?.lastName || "",
+        role: storedProfile?.role ?? null,
+        userId: storedProfile?.userId ?? null,
+        email: nextState.email || storedProfile?.email || null,
+        profileImageUrl: nextState.profilePicture || null,
+      });
     } catch (error) {
       console.error("Failed to save profile", error);
-      setModalMessage(error instanceof Error ? error.message : "Failed to save profile.");
-      setShowModal(true);
+      setSaveToast({
+        title: "Save Failed",
+        message: error instanceof Error ? error.message : "Failed to save profile.",
+        tone: "error",
+      });
     }
   };
 
@@ -303,21 +323,29 @@ export default function MasterTeacherProfile() {
     if (initialData) {
       setFormData(initialData);
     }
+    setSelectedProfileImageFile(null);
+    setCropModalFile(null);
     setIsEditing(false);
   };
 
   const handlePasswordSave = async () => {
     if (passwordData.newPassword !== passwordData.confirmPassword) {
-      setModalMessage("New passwords do not match");
-      setShowModal(true);
+      setSaveToast({
+        title: "Password Mismatch",
+        message: "New passwords do not match.",
+        tone: "error",
+      });
       return;
     }
     if (passwordData.newPassword.length < 8) {
-      setModalMessage("Password must be at least 8 characters");
-      setShowModal(true);
+      setSaveToast({
+        title: "Invalid Password",
+        message: "Password must be at least 8 characters.",
+        tone: "error",
+      });
       return;
     }
-    
+
     try {
       const response = await fetch("/api/auth/change-password", {
         method: "POST",
@@ -327,20 +355,29 @@ export default function MasterTeacherProfile() {
           newPassword: passwordData.newPassword,
         }),
       });
-      
+
       if (response.ok) {
-        setModalMessage("Password changed successfully");
-        setShowModal(true);
+        setSaveToast({
+          title: "Password Updated",
+          message: "Password changed successfully.",
+          tone: "success",
+        });
         setPasswordData({ currentPassword: "", newPassword: "", confirmPassword: "" });
         setIsChangingPassword(false);
       } else {
         const data = await response.json();
-        setModalMessage(data.error || "Failed to change password");
-        setShowModal(true);
+        setSaveToast({
+          title: "Update Failed",
+          message: data.error || "Failed to change password.",
+          tone: "error",
+        });
       }
     } catch (error) {
-      setModalMessage("Error changing password");
-      setShowModal(true);
+      setSaveToast({
+        title: "Update Failed",
+        message: "Error changing password.",
+        tone: "error",
+      });
     }
   };
 
@@ -349,15 +386,35 @@ export default function MasterTeacherProfile() {
     setIsChangingPassword(false);
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData({ ...formData, profilePicture: reader.result as string });
-      };
-      reader.readAsDataURL(file);
+  const handleImageUpload = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
     }
+
+    const validationMessage = getProfileImageValidationMessage(file);
+    if (validationMessage) {
+      event.target.value = "";
+      setSaveToast({
+        title: "Invalid Image",
+        message: validationMessage,
+        tone: "error",
+      });
+      return;
+    }
+
+    setCropModalFile(file);
+  };
+
+  const handleCropConfirm = (result: { file: File; previewUrl: string }) => {
+    setIsEditing(true);
+    setSelectedProfileImageFile(result.file);
+    setCropModalFile(null);
+    setFormData((previous) => ({
+      ...previous,
+      profilePicture: result.previewUrl,
+    }));
   };
 
   const coordinatorGradeDisplay = formatGradeLabel(formData.coordinatorGrade);
@@ -391,32 +448,41 @@ export default function MasterTeacherProfile() {
                     <div className="flex flex-col items-center mb-6">
                       <div className="relative">
                         <div className="w-24 h-24 rounded-full bg-green-100 flex items-center justify-center border-4 border-white shadow-lg overflow-hidden">
-                          {formData.profilePicture ? (
-                            <Image 
-                              src={formData.profilePicture} 
-                              alt="Profile" 
-                              width={96}
-                              height={96}
-                              className="w-full h-full object-cover" 
-                              unoptimized
-                            />
-                          ) : (
-                            <svg width="64" height="64" fill="none" stroke="#013300" strokeWidth="2" viewBox="0 0 24 24">
-                              <circle cx="12" cy="8" r="5" />
-                              <path d="M4 20v-2c0-3 4-5 8-5s8 2 8 5v2" />
-                            </svg>
-                          )}
+                          <UserAvatar
+                            profileImageUrl={formData.profilePicture}
+                            firstName={formData.firstName}
+                            lastName={formData.lastName}
+                            alt="Master teacher profile"
+                            imageClassName="h-full w-full object-cover"
+                            fallbackClassName="h-full w-full"
+                            size={96}
+                          />
                         </div>
                         <label className="absolute bottom-0 right-0 w-8 h-8 bg-[#013300] rounded-full flex items-center justify-center cursor-pointer hover:bg-green-700 transition-colors shadow-md">
                           <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                             <path d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                           </svg>
-                          <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                          <input
+                            type="file"
+                            accept={PROFILE_IMAGE_ACCEPT_ATTRIBUTE}
+                            onChange={handleImageUpload}
+                            className="hidden"
+                          />
                         </label>
                       </div>
                       <div className="mt-3 px-4 py-1 bg-white/80 backdrop-blur-sm rounded-full border border-gray-200 shadow-sm">
                         <span className="text-sm font-medium text-gray-700">{positionDisplay}</span>
                       </div>
+                      <p className="mt-3 text-center text-xs text-gray-500">{PROFILE_IMAGE_REQUIREMENTS_TEXT}</p>
+                      {selectedProfileImageFile ? (
+                        <button
+                          type="button"
+                          onClick={() => setCropModalFile(selectedProfileImageFile)}
+                          className="mt-2 text-xs font-semibold text-[#013300] transition hover:text-green-800"
+                        >
+                          Adjust Photo
+                        </button>
+                      ) : null}
                     </div>
 
                     <div className="bg-gray-50 rounded-lg border border-gray-200 p-5 mb-5">
@@ -504,8 +570,7 @@ export default function MasterTeacherProfile() {
 
                     <div className="bg-gray-50 rounded-lg border border-gray-200 p-5 mb-5">
                       <h3 className="text-lg font-semibold text-gray-800 mb-4">Teaching Details</h3>
-                      
-                      {/* 1st Row: Position */}
+
                       <div className="mb-4">
                         <div className="space-y-1">
                           <label className="block text-sm font-medium text-gray-700">Position</label>
@@ -515,7 +580,6 @@ export default function MasterTeacherProfile() {
                         </div>
                       </div>
 
-                      {/* 2nd Row: Coordinator Details */}
                       <div className="mb-4">
                         <h4 className="text-sm font-semibold text-gray-700 mb-2">Coordinator Details</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -534,7 +598,6 @@ export default function MasterTeacherProfile() {
                         </div>
                       </div>
 
-                      {/* 3rd Row: Remedial Teacher Details */}
                       <div>
                         <h4 className="text-sm font-semibold text-gray-700 mb-2">Remedial Teacher Details</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -547,7 +610,7 @@ export default function MasterTeacherProfile() {
                           <div className="space-y-1">
                             <label className="block text-sm font-medium text-gray-700">Remedial Teacher Subjects</label>
                             <div className="w-full bg-gray-100 border border-gray-200 text-gray-600 rounded-md px-3 py-2 text-sm">
-                                {remedialSubjectsDisplay || "Not assigned"}
+                              {remedialSubjectsDisplay || "Not assigned"}
                             </div>
                           </div>
                         </div>
@@ -615,13 +678,20 @@ export default function MasterTeacherProfile() {
           </div>
         </main>
       </div>
-      <ConfirmationModal
-        isOpen={showModal}
-        onClose={() => setShowModal(false)}
-        onConfirm={() => setShowModal(false)}
-        title="Password Change"
-        message={modalMessage}
+      <ProfileImageCropModal
+        isOpen={Boolean(cropModalFile)}
+        file={cropModalFile}
+        onClose={() => setCropModalFile(null)}
+        onConfirm={handleCropConfirm}
       />
+      {saveToast && (
+        <ToastActivity
+          title={saveToast.title}
+          message={saveToast.message}
+          tone={saveToast.tone}
+          onClose={() => setSaveToast(null)}
+        />
+      )}
     </div>
   );
 }

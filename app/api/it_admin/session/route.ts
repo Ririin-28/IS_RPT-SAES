@@ -1,5 +1,6 @@
 ﻿import type { RowDataPacket } from "mysql2/promise";
 import { runWithConnection } from "@/lib/db";
+import { ensureUserProfileImageColumn } from "@/lib/server/profile-image";
 import { normalizeRoleName, resolveCanonicalRole, resolveUserRole } from "@/lib/server/role-resolution";
 import { ensureItAdminPhaseOneMigration } from "@/lib/server/it-admin-migration";
 import { requireItAdmin } from "@/lib/server/it-admin-auth";
@@ -10,6 +11,7 @@ interface AdminUserRow extends RowDataPacket {
   first_name: string | null;
   middle_name: string | null;
   last_name: string | null;
+  profile_image_url?: string | null;
   role?: string | null;
   role_id?: number | null;
   user_code?: string | null;
@@ -29,9 +31,10 @@ export async function GET(request: Request): Promise<Response> {
   try {
     const payload = await runWithConnection(async (connection) => {
       await ensureItAdminPhaseOneMigration(connection);
+      await ensureUserProfileImageColumn();
 
       const [rows] = await connection.execute<AdminUserRow[]>(
-        "SELECT user_id, email, first_name, middle_name, last_name, role_id, user_code FROM users WHERE user_id = ? LIMIT 1",
+        "SELECT user_id, email, first_name, middle_name, last_name, profile_image_url, role_id, user_code FROM users WHERE user_id = ? LIMIT 1",
         [auth.userId],
       );
 
@@ -49,6 +52,7 @@ export async function GET(request: Request): Promise<Response> {
         firstName: user.first_name,
         middleName: user.middle_name,
         lastName: user.last_name,
+        profileImageUrl: user.profile_image_url ?? null,
         role: canonicalizeRole(roleForLogic),
       };
     });

@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
-import { getTableColumns, query, tableExists } from "@/lib/db";
+import {
+  ensureUserProfileImageColumn,
+  uploadProfileImage,
+  cleanupProfileImage,
+  ProfileImageValidationError,
+} from "@/lib/server/profile-image";
+import { parseProfileMutationRequest, resolveAuthorizedProfileUserId } from "@/lib/server/profile-request";
+import { getMasterTeacherSessionFromCookies } from "@/lib/server/master-teacher-session";
+import { getTableColumns, query, runWithConnection, tableExists } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -101,6 +109,7 @@ async function resolveMasterTeacherIds(userId: number): Promise<string[]> {
 type RawProfileRow = RowDataPacket & {
   user_id: number;
   user_master_teacher_id?: string | null;
+  user_profile_image_url?: string | null;
   mt_master_teacher_id?: string | null;
   mt_masterteacher_id?: string | null;
   mt_teacher_id?: string | null;
@@ -438,99 +447,176 @@ async function loadAllCoordinatorSubjects(
 }
 
 export async function PUT(request: NextRequest) {
-  const url = new URL(request.url);
-  const userIdParam = url.searchParams.get("userId");
-
-  if (!userIdParam) {
+  const session = await getMasterTeacherSessionFromCookies().catch(() => null);
+  if (!session) {
     return NextResponse.json(
-      { success: false, error: "Missing userId query parameter." },
+      { success: false, error: "Master teacher session not found." },
+      { status: 401 },
+    );
+  }
+
+  const targetUser = resolveAuthorizedProfileUserId(
+    request.nextUrl.searchParams.get("userId"),
+    session.userId,
+  );
+  if (!targetUser.ok) {
+    return targetUser.response;
+  }
+
+  let payload: Awaited<ReturnType<typeof parseProfileMutationRequest>>;
+  try {
+    payload = await parseProfileMutationRequest(request);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : "Invalid request body." },
       { status: 400 },
     );
   }
 
-  const userId = Number(userIdParam);
-  if (!Number.isFinite(userId) || userId <= 0) {
-    return NextResponse.json({ success: false, error: "Invalid userId value." }, { status: 400 });
-  }
-
-  let body: any;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ success: false, error: "Invalid request body." }, { status: 400 });
-  }
+  let uploadedImageStoragePath: string | null = null;
 
   try {
-    const userColumns = await safeGetColumns("users");
+    const userColumns = await ensureUserProfileImageColumn();
     const coordinatorColumns = await safeGetColumns(COORDINATOR_TABLE);
-    // const coordinatorTableExists = coordinatorColumns.size > 0 || await safeTableExists(COORDINATOR_TABLE);
+    const body = payload.body;
+    const uploadedImage = payload.profileImage ? await uploadProfileImage(payload.profileImage) : null;
+    uploadedImageStoragePath = uploadedImage?.storagePath ?? null;
 
-    const updates: string[] = [];
-    const params: any[] = [];
+    const result = await runWithConnection(async (connection) => {
+      await connection.beginTransaction();
 
-    if (body.firstName !== undefined && userColumns.has("first_name")) {
-      updates.push("first_name = ?");
-      params.push(body.firstName?.trim() || null);
-    }
-    if (body.middleName !== undefined && userColumns.has("middle_name")) {
-      updates.push("middle_name = ?");
-      params.push(body.middleName?.trim() || null);
-    }
-    if (body.lastName !== undefined && userColumns.has("last_name")) {
-      updates.push("last_name = ?");
-      params.push(body.lastName?.trim() || null);
-    }
-    if (body.email !== undefined && userColumns.has("email")) {
-      updates.push("email = ?");
-      params.push(body.email?.trim() || null);
-    }
-    if (body.contactNumber !== undefined && userColumns.has("contact_number")) {
-      updates.push("contact_number = ?");
-      params.push(body.contactNumber?.trim() || null);
-    }
+      try {
+        const [currentRows] = await connection.execute<RowDataPacket[]>(
+          "SELECT user_id, profile_image_url FROM users WHERE user_id = ? LIMIT 1",
+          [targetUser.userId],
+        );
+        if (!currentRows.length) {
+          await connection.rollback();
+          return {
+            notFound: true as const,
+            previousProfileImageUrl: null,
+            profileImageUrl: null,
+          };
+        }
 
-    if (updates.length > 0) {
-      params.push(userId);
-      await query(`UPDATE users SET ${updates.join(", ")} WHERE user_id = ?`, params);
-    }
+        const previousProfileImageUrl = pickFirst(currentRows[0]?.profile_image_url);
+        const updates: string[] = [];
+        const params: Array<string | number | null> = [];
 
-    // No remedial_teachers table available; grade and room updates are skipped here.
+        if (body.firstName !== undefined && userColumns.has("first_name")) {
+          updates.push("first_name = ?");
+          params.push(typeof body.firstName === "string" ? body.firstName.trim() || null : null);
+        }
+        if (body.middleName !== undefined && userColumns.has("middle_name")) {
+          updates.push("middle_name = ?");
+          params.push(typeof body.middleName === "string" ? body.middleName.trim() || null : null);
+        }
+        if (body.lastName !== undefined && userColumns.has("last_name")) {
+          updates.push("last_name = ?");
+          params.push(typeof body.lastName === "string" ? body.lastName.trim() || null : null);
+        }
+        if (body.email !== undefined && userColumns.has("email")) {
+          updates.push("email = ?");
+          params.push(typeof body.email === "string" ? body.email.trim() || null : null);
+        }
+        if (body.contactNumber !== undefined && userColumns.has("contact_number")) {
+          updates.push("contact_number = ?");
+          params.push(typeof body.contactNumber === "string" ? body.contactNumber.trim() || null : null);
+        }
+        if (uploadedImage) {
+          updates.push("profile_image_url = ?");
+          params.push(uploadedImage.publicUrl);
+        }
 
-    if (body.subject !== undefined && coordinatorColumns.size > 0) {
-      const subjectCol = coordinatorColumns.has("subject_handled") ? "subject_handled" : coordinatorColumns.has("coordinator_subject") ? "coordinator_subject" : null;
-      if (subjectCol) {
-        await query(`UPDATE \`${COORDINATOR_TABLE}\` SET ${subjectCol} = ? WHERE user_id = ?`, [body.subject?.trim() || null, userId]);
+        if (updates.length > 0) {
+          params.push(targetUser.userId);
+          await connection.execute(`UPDATE users SET ${updates.join(", ")} WHERE user_id = ?`, params);
+        }
+
+        if (body.subject !== undefined && coordinatorColumns.size > 0) {
+          const subjectCol = coordinatorColumns.has("subject_handled")
+            ? "subject_handled"
+            : coordinatorColumns.has("coordinator_subject")
+              ? "coordinator_subject"
+              : null;
+          if (subjectCol) {
+            await connection.execute(
+              `UPDATE \`${COORDINATOR_TABLE}\` SET ${subjectCol} = ? WHERE user_id = ?`,
+              [typeof body.subject === "string" ? body.subject.trim() || null : null, targetUser.userId],
+            );
+          }
+        }
+
+        await connection.commit();
+        return {
+          notFound: false as const,
+          previousProfileImageUrl,
+          profileImageUrl: uploadedImage?.publicUrl ?? previousProfileImageUrl,
+        };
+      } catch (error) {
+        await connection.rollback();
+        throw error;
       }
+    });
+
+    if (result.notFound) {
+      if (uploadedImage) {
+        await cleanupProfileImage(uploadedImage.storagePath);
+      }
+      return NextResponse.json({ success: false, error: "Master teacher profile not found." }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true });
+    if (
+      uploadedImage &&
+      result.previousProfileImageUrl &&
+      result.previousProfileImageUrl !== uploadedImage.publicUrl
+    ) {
+      await cleanupProfileImage(result.previousProfileImageUrl);
+    }
+
+    return NextResponse.json({
+      success: true,
+      profile: {
+        profileImageUrl: result.profileImageUrl,
+      },
+    });
   } catch (error) {
+    if (uploadedImageStoragePath) {
+      await cleanupProfileImage(uploadedImageStoragePath);
+    }
     console.error("Failed to update master teacher profile", error);
+    if (error instanceof ProfileImageValidationError) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: error.status },
+      );
+    }
     return NextResponse.json(
-      { success: false, error: "Failed to update profile." },
+      { success: false, error: error instanceof Error ? error.message : "Failed to update profile." },
       { status: 500 },
     );
   }
 }
 
 export async function GET(request: NextRequest) {
-  const url = new URL(request.url);
-  const userIdParam = url.searchParams.get("userId");
-
-  if (!userIdParam) {
+  const session = await getMasterTeacherSessionFromCookies().catch(() => null);
+  if (!session) {
     return NextResponse.json(
-      { success: false, error: "Missing userId query parameter." },
-      { status: 400 },
+      { success: false, error: "Master teacher session not found." },
+      { status: 401 },
     );
   }
 
-  const userId = Number(userIdParam);
-  if (!Number.isFinite(userId) || userId <= 0) {
-    return NextResponse.json({ success: false, error: "Invalid userId value." }, { status: 400 });
+  const targetUser = resolveAuthorizedProfileUserId(
+    request.nextUrl.searchParams.get("userId"),
+    session.userId,
+  );
+  if (!targetUser.ok) {
+    return targetUser.response;
   }
 
   try {
-    const userColumns = await safeGetColumns("users");
+    const userColumns = await ensureUserProfileImageColumn();
     const coordinatorColumns = await safeGetColumns(COORDINATOR_TABLE);
     const coordinatorTableExists = coordinatorColumns.size > 0 || await safeTableExists(COORDINATOR_TABLE);
 
@@ -555,6 +641,7 @@ export async function GET(request: NextRequest) {
     };
 
     addUserColumn("master_teacher_id", "user_master_teacher_id");
+    addUserColumn("profile_image_url", "user_profile_image_url");
 
     for (const { column, alias } of NAME_COLUMNS) {
       addUserColumn(column, alias);
@@ -594,7 +681,7 @@ export async function GET(request: NextRequest) {
       LIMIT 1
     `;
 
-    const [rows] = await query<RawProfileRow[]>(sql, [userId]);
+    const [rows] = await query<RawProfileRow[]>(sql, [targetUser.userId]);
     if (rows.length === 0) {
       return NextResponse.json(
         { success: false, error: "Profile was not found." },
@@ -616,7 +703,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Also resolve master_teacher.master_teacher_id linked to this user_id
-    const masterTeacherIds = await resolveMasterTeacherIds(userId);
+    const masterTeacherIds = await resolveMasterTeacherIds(targetUser.userId);
     masterTeacherIds.forEach((id) => handledIds.push(id));
 
     const handled = await loadRemedialHandled(handledIds);
@@ -667,6 +754,7 @@ export async function GET(request: NextRequest) {
         subjectHandled,
         remedialSubjects: remedialSubjects.length > 0 ? remedialSubjects.join(", ") : null,
         role: pickFirst(row.user_role),
+        profileImageUrl: pickFirst(row.user_profile_image_url),
       },
     });
   } catch (error) {

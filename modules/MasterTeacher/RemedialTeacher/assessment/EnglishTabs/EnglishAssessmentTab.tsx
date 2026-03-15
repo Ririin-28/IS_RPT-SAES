@@ -11,6 +11,7 @@ import ScheduledActivitiesList, { type CalendarActivity } from "@/modules/Master
 import DeleteConfirmationModal from "../Modals/DeleteConfirmationModal";
 import UpdateConfirmationModal from "../Modals/UpdateConfirmationModal";
 import { cloneResponses, type QuizResponse } from "../types";
+import ToastActivity from "@/components/ToastActivity";
 import { downloadPrintableQuizPdf } from "@/lib/assessments/printable";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 import { buildQuizDraftFromSchedule, toScheduleDateKey } from "@/lib/assessments/schedule-utils";
@@ -503,12 +504,26 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
   const [isUpdateConfirmOpen, setIsUpdateConfirmOpen] = useState(false);
   const [pendingUpdateData, setPendingUpdateData] = useState<QuizData | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [statusToast, setStatusToast] = useState<{
+    title: string;
+    message: string;
+    tone: "success" | "error" | "info";
+  } | null>(null);
   const [draftQuizData, setDraftQuizData] = useState<QuizData | null>(null);
   const [scheduleActivities, setScheduleActivities] = useState<CalendarActivity[]>([]);
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
 
   const quizzes = quizzesByLevel[level] ?? [];
+
+  useEffect(() => {
+    if (!statusToast) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => setStatusToast(null), 3200);
+    return () => window.clearTimeout(timeoutId);
+  }, [statusToast]);
 
   const getRemedialUserId = () => {
     const profile = getStoredUserProfile();
@@ -572,7 +587,11 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
 
   const handleEditQuiz = (quiz: Quiz) => {
     if ((quiz.submittedCount ?? 0) > 0) {
-      alert("This quiz already has submitted attempts and can no longer be edited.");
+      setStatusToast({
+        title: "Edit Blocked",
+        message: "This quiz already has submitted attempts and can no longer be edited.",
+        tone: "info",
+      });
       return;
     }
     setEditingQuiz(quiz);
@@ -588,7 +607,11 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
   const confirmDelete = async () => {
     const userId = getRemedialUserId();
     if (!userId) {
-      alert("Missing user information. Please log in again.");
+      setStatusToast({
+        title: "Session Required",
+        message: "Missing user information. Please log in again.",
+        tone: "error",
+      });
       return;
     }
 
@@ -599,9 +622,18 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
       setSelectedQuizzes(new Set());
       setSelectMode(false);
       setShowDeleteModal(false);
+      setStatusToast({
+        title: "Delete Successful",
+        message: "Selected quiz records were deleted.",
+        tone: "success",
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to delete quiz.";
-      alert(message);
+      setStatusToast({
+        title: "Delete Failed",
+        message,
+        tone: "error",
+      });
     } finally {
       setIsSaving(false);
     }
@@ -610,7 +642,11 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
   const handleSaveQuiz = async (quizData: QuizData) => {
     const userId = getRemedialUserId();
     if (!userId) {
-      alert("Missing user information. Please log in again.");
+      setStatusToast({
+        title: "Session Required",
+        message: "Missing user information. Please log in again.",
+        tone: "error",
+      });
       return;
     }
 
@@ -646,9 +682,18 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
       await loadAssessments(userId);
       setIsModalOpen(false);
       setEditingQuiz(null);
+      setStatusToast({
+        title: "Save Successful",
+        message: editingQuiz ? "Quiz changes were saved." : "Quiz was created successfully.",
+        tone: "success",
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to save quiz.";
-      alert(message);
+      setStatusToast({
+        title: "Save Failed",
+        message,
+        tone: "error",
+      });
     } finally {
       setIsSaving(false);
     }
@@ -850,6 +895,14 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
         entityLabel={selectedQuizzes.size === 1 ? "quiz" : "quizzes"}
         description={`Are you sure you want to delete ${selectedQuizzes.size} selected quiz${selectedQuizzes.size === 1 ? '' : 'zes'}? This action cannot be undone.`}
       />
+      {statusToast && (
+        <ToastActivity
+          title={statusToast.title}
+          message={statusToast.message}
+          tone={statusToast.tone}
+          onClose={() => setStatusToast(null)}
+        />
+      )}
     </div>
   );
 }

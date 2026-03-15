@@ -6,9 +6,10 @@ import { usePathname, useRouter } from "next/navigation";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import ScheduledActivitiesList, { type CalendarActivity } from "./ScheduledActivitiesList";
-import NoContentModal from "./NoContentModal";
+import ToastActivity from "@/components/ToastActivity";
 import { buildFlashcardContentKey } from "@/lib/utils/flashcards-storage";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
+import { buildFutureScheduleMessage, getScheduleDateKey, isScheduleInFuture } from "@/lib/remedial-schedule";
 
 // Tabs
 // English Tabs
@@ -57,13 +58,25 @@ export default function MasterTeacherRemedial() {
   
   const [phonemicLevels, setPhonemicLevels] = useState<Array<{ phonemic_id: number; level_name: string }>>([]);
   const [validatingActivityId, setValidatingActivityId] = useState<string | null>(null);
-  const [showNoContentModal, setShowNoContentModal] = useState(false);
+  const [statusToast, setStatusToast] = useState<{
+    title: string;
+    message: string;
+    tone: "error" | "info" | "success";
+  } | null>(null);
 
   // Update subject when path changes
   useEffect(() => {
     const newSubject = getSubjectFromPath();
     setSubject(newSubject);
   }, [pathname]);
+
+  useEffect(() => {
+    if (!statusToast) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => setStatusToast(null), 3200);
+    return () => window.clearTimeout(timeoutId);
+  }, [statusToast]);
 
   const currentTabOptions = subject === "English" ? ENGLISH_LEVELS : subject === "Filipino" ? FILIPINO_LEVELS : subject === "Math" ? MATH_LEVELS : ASSESSMENT_LEVELS;
   
@@ -181,8 +194,21 @@ export default function MasterTeacherRemedial() {
     const phonemicId = resolveActivePhonemicId;
     const phonemicLevelName = activeTab;
 
+    if (isScheduleInFuture(activity.date)) {
+      setStatusToast({
+        title: "Session Locked",
+        message: buildFutureScheduleMessage(activity.date),
+        tone: "info",
+      });
+      return;
+    }
+
     if (!phonemicId) {
-        setShowNoContentModal(true);
+        setStatusToast({
+          title: "No Level Match",
+          message: "Selected phonemic level is not available for this subject.",
+          tone: "info",
+        });
         return;
     }
 
@@ -203,6 +229,8 @@ export default function MasterTeacherRemedial() {
           const materialIdParam = materialId ? `&materialId=${encodeURIComponent(String(materialId))}` : "";
           const phonemicParam = phonemicId ? `&phonemicId=${encodeURIComponent(String(phonemicId))}` : "";
           const phonemicNameParam = phonemicLevelName ? `&phonemicName=${encodeURIComponent(phonemicLevelName)}` : "";
+          const scheduleDateKey = getScheduleDateKey(activity.date);
+          const scheduleDateParam = scheduleDateKey ? `&scheduleDate=${encodeURIComponent(scheduleDateKey)}` : "";
 
           const cards = payload?.content?.flashcardsOverride ?? payload?.content?.flashcards;
           const baseKey = subject === "English"
@@ -234,14 +262,22 @@ export default function MasterTeacherRemedial() {
           else if (subject === "Filipino") flashcardsPath = "FilipinoFlashcards";
           else if (subject === "Math") flashcardsPath = "MathFlashcards";
 
-          const playPath = `/MasterTeacher/RemedialTeacher/remedial/${flashcardsPath}?subject=${encodeURIComponent(subject)}&activity=${encodeURIComponent(activity.id)}${subjectIdParam}${gradeIdParam}${materialIdParam}${phonemicParam}${phonemicNameParam}`;
+          const playPath = `/MasterTeacher/RemedialTeacher/remedial/${flashcardsPath}?subject=${encodeURIComponent(subject)}&activity=${encodeURIComponent(activity.id)}${subjectIdParam}${gradeIdParam}${materialIdParam}${phonemicParam}${phonemicNameParam}${scheduleDateParam}`;
           router.push(playPath);
       } else {
-        setShowNoContentModal(true);
+        setStatusToast({
+          title: "No Content Found",
+          message: "No flashcard content is available for this schedule and phonemic level yet.",
+          tone: "info",
+        });
       }
     } catch (error) {
       console.error("Validation failed", error);
-      setShowNoContentModal(true);
+      setStatusToast({
+        title: "Validation Failed",
+        message: "Unable to validate remedial content right now. Please try again.",
+        tone: "error",
+      });
     } finally {
       setValidatingActivityId(null);
     }
@@ -313,10 +349,14 @@ export default function MasterTeacherRemedial() {
         </main>
       </div>
       
-      <NoContentModal
-        isOpen={showNoContentModal}
-        onClose={() => setShowNoContentModal(false)}
-      />
+      {statusToast && (
+        <ToastActivity
+          title={statusToast.title}
+          message={statusToast.message}
+          tone={statusToast.tone}
+          onClose={() => setStatusToast(null)}
+        />
+      )}
     </div>
   );
 }

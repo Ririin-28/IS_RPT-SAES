@@ -8,6 +8,7 @@ import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import BaseModal from "@/components/Common/Modals/BaseModal";
+import ToastActivity from "@/components/ToastActivity";
 
 type RecoveryEntity =
   | "student"
@@ -62,6 +63,11 @@ export default function ITAdminRecoveryCenter() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [feedbackToast, setFeedbackToast] = useState<{
+    title: string;
+    message: string;
+    tone: "success" | "error";
+  } | null>(null);
 
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
@@ -128,7 +134,9 @@ export default function ITAdminRecoveryCenter() {
     } catch (err) {
       setRecords([]);
       setTotal(0);
-      setError(err instanceof Error ? err.message : "Failed to load recovery list.");
+      const loadErrorMessage = err instanceof Error ? err.message : "Failed to load recovery list.";
+      setError(loadErrorMessage);
+      setFeedbackToast({ title: "Load Failed", message: loadErrorMessage, tone: "error" });
     } finally {
       setLoading(false);
     }
@@ -141,6 +149,15 @@ export default function ITAdminRecoveryCenter() {
   useEffect(() => {
     void fetchList();
   }, [fetchList]);
+
+  useEffect(() => {
+    if (!feedbackToast) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => setFeedbackToast(null), 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [feedbackToast]);
 
   const selectedCount = selectedIds.size;
 
@@ -164,7 +181,9 @@ export default function ITAdminRecoveryCenter() {
 
   const handlePreview = useCallback(async () => {
     if (selectedIdValues.length === 0) {
-      setError("Select at least one record to preview.");
+      const validationMessage = "Select at least one record to preview.";
+      setError(validationMessage);
+      setFeedbackToast({ title: "Validation Failed", message: validationMessage, tone: "error" });
       return;
     }
 
@@ -188,7 +207,9 @@ export default function ITAdminRecoveryCenter() {
       });
       setShowPreviewModal(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to preview recovery.");
+      const previewErrorMessage = err instanceof Error ? err.message : "Failed to preview recovery.";
+      setError(previewErrorMessage);
+      setFeedbackToast({ title: "Preview Failed", message: previewErrorMessage, tone: "error" });
     } finally {
       setPreviewLoading(false);
     }
@@ -239,12 +260,19 @@ export default function ITAdminRecoveryCenter() {
       }
 
       setMessage(`Emergency restore completed: ${payload.restoredCount ?? 0} record(s) restored.`);
+      setFeedbackToast({
+        title: "Restore Completed",
+        message: `Emergency restore completed: ${payload.restoredCount ?? 0} record(s) restored.`,
+        tone: "success",
+      });
       setShowRestoreModal(false);
       setPreview(null);
       setSelectedIds(new Set());
       await Promise.all([fetchList(), fetchSummary()]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to perform emergency restore.");
+      const restoreErrorMessage = err instanceof Error ? err.message : "Failed to perform emergency restore.";
+      setError(restoreErrorMessage);
+      setFeedbackToast({ title: "Restore Failed", message: restoreErrorMessage, tone: "error" });
     } finally {
       setRestoreLoading(false);
     }
@@ -490,6 +518,14 @@ export default function ITAdminRecoveryCenter() {
           </div>
         </div>
       </BaseModal>
+      {feedbackToast && (
+        <ToastActivity
+          title={feedbackToast.title}
+          message={feedbackToast.message}
+          tone={feedbackToast.tone}
+          onClose={() => setFeedbackToast(null)}
+        />
+      )}
     </div>
   );
 }

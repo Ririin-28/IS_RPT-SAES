@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BarChart3, GraduationCap, Printer } from "lucide-react";
+import { BarChart3, CalendarDays, GraduationCap, Printer } from "lucide-react";
 import { FaChalkboardTeacher } from "react-icons/fa";
 import {
   CartesianGrid,
@@ -211,6 +211,15 @@ export default function PrincipalDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const todayDateLabel = useMemo(
+    () =>
+      new Date().toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }),
+    [],
+  );
 
   const loadDashboard = useCallback(async () => {
     try {
@@ -420,7 +429,7 @@ export default function PrincipalDashboard() {
             >
               <div className="mb-5 flex items-start justify-between gap-3">
                 <div>
-                  <SecondaryHeader title="Remedial Progress" />
+                  <SecondaryHeader title="Principal Overview" />
                 </div>
 
                 <div className="no-print flex shrink-0 items-center gap-2">
@@ -694,7 +703,7 @@ export default function PrincipalDashboard() {
 
               {error ? <p className="mb-4 text-sm font-medium text-red-600">{error}</p> : null}
 
-              <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <button
                   type="button"
                   onClick={() => router.push("/Principal/students")}
@@ -735,13 +744,25 @@ export default function PrincipalDashboard() {
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="text-3xl font-semibold text-slate-900">{isLoading ? "..." : `${reportRate}%`}</p>
-                      <p className="text-sm font-medium text-slate-600">Current Report Submission Rate</p>
+                      <p className="text-sm font-medium text-slate-600">Report Submission</p>
                     </div>
                     <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
                       <BarChart3 className="h-4.5 w-4.5" />
                     </span>
                   </div>
                 </button>
+
+                <div className="cursor-pointer rounded-xl border border-white/70 bg-white/60 px-4 py-3 text-left shadow-[0_10px_26px_rgba(15,23,42,0.08)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-[0_14px_28px_rgba(15,23,42,0.12)]">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-3xl font-semibold text-slate-900">{todayDateLabel}</p>
+                      <p className="text-sm font-medium text-slate-600">Date Today</p>
+                    </div>
+                    <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+                      <CalendarDays className="h-4.5 w-4.5" />
+                    </span>
+                  </div>
+                </div>
               </div>
 
               <section className="mb-8">

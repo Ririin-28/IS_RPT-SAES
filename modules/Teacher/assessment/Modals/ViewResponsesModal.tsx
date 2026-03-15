@@ -198,13 +198,13 @@ const openResponsesSheet = (
   const sheetWindow = window.open("", "_blank", "noopener,noreferrer,width=1000,height=800");
 
   if (!sheetWindow) {
-    window.alert("Please allow pop-ups to view the responses in Sheets view.");
-    return;
+    return false;
   }
 
   const html = buildSheetsHtml(responses, questions, quizTitle, totalStudents);
   sheetWindow.document.write(html);
   sheetWindow.document.close();
+  return true;
 };
 
 export default function ViewResponsesModal({
@@ -289,7 +289,12 @@ export default function ViewResponsesModal({
       <UtilityButton
         type="button"
         small
-        onClick={() => openResponsesSheet(responses, questionsDisplay, quizTitle, totalStudents)}
+        onClick={() => {
+          const opened = openResponsesSheet(responses, questionsDisplay, quizTitle, totalStudents);
+          if (!opened) {
+            setError("Please allow pop-ups to view the responses in Sheets view.");
+          }
+        }}
       >
         View in Sheets
       </UtilityButton>

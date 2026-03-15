@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { query } from "@/lib/db";
 import { ensurePerformanceSchema } from "@/lib/performance/schema";
+import { getPriorScheduleBlocksByStudent } from "@/lib/server/remedial-sequence";
 
 const toNumber = (value: number | string | null | undefined): number | null => {
   if (value === null || value === undefined) return null;
@@ -87,7 +88,16 @@ export async function POST(request: NextRequest) {
       };
     }
 
-    return NextResponse.json({ success: true, statusByStudent });
+    const priorScheduleBlockByStudent = await getPriorScheduleBlocksByStudent(
+      {
+        query: <T extends RowDataPacket[]>(sql: string, params: Array<string | number | null | undefined | Date> = []) =>
+          query<T>(sql, params),
+      },
+      approvedScheduleId,
+      studentIds,
+    );
+
+    return NextResponse.json({ success: true, statusByStudent, priorScheduleBlockByStudent });
   } catch (error) {
     console.error("Failed to load remedial session status", error);
     return NextResponse.json({ success: false, error: "Server error." }, { status: 500 });

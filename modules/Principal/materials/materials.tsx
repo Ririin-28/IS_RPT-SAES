@@ -7,6 +7,7 @@ import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import { FaTimes } from "react-icons/fa";
 import ScheduledActivitiesList, { type CalendarActivity } from "./ScheduledActivitiesList";
 import BaseModal from "@/components/Common/Modals/BaseModal";
+import ToastActivity from "@/components/ToastActivity";
 import MaterialTabContent from "@/modules/MasterTeacher/Coordinator/materials/MaterialsTab";
 
 const GRADE_OPTIONS = ["Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"];
@@ -45,6 +46,17 @@ export default function PrincipalMaterials({ subjectSlug }: PrincipalMaterialsPr
   const [scheduleActivities, setScheduleActivities] = useState<CalendarActivity[]>([]);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState<CalendarActivity | null>(null);
+  const [feedbackToast, setFeedbackToast] = useState<{
+    title: string;
+    message: string;
+    tone: "success" | "error";
+  } | null>(null);
+
+  useEffect(() => {
+    if (!feedbackToast) return;
+    const timerId = window.setTimeout(() => setFeedbackToast(null), 3500);
+    return () => window.clearTimeout(timerId);
+  }, [feedbackToast]);
 
   // Fetch Schedule
   useEffect(() => {
@@ -90,7 +102,13 @@ export default function PrincipalMaterials({ subjectSlug }: PrincipalMaterialsPr
         }
       } catch (error) {
         if (!cancelled) {
-          setScheduleError("Unable to load schedule. Please try again later.");
+          const message = "Unable to load schedule. Please try again later.";
+          setScheduleError(message);
+          setFeedbackToast({
+            title: "Load Failed",
+            message,
+            tone: "error",
+          });
           setScheduleActivities([]);
         }
       } finally {
@@ -193,6 +211,14 @@ export default function PrincipalMaterials({ subjectSlug }: PrincipalMaterialsPr
           />
         </div>
       </BaseModal>
+      {feedbackToast && (
+        <ToastActivity
+          title={feedbackToast.title}
+          message={feedbackToast.message}
+          tone={feedbackToast.tone}
+          onClose={() => setFeedbackToast(null)}
+        />
+      )}
     </div>
   );
 }

@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
+import ToastActivity from "@/components/ToastActivity";
 import { useCoordinatorMaterials, type CoordinatorMaterialRow } from "@/modules/MasterTeacher/Coordinator/materials/useCoordinatorMaterials";
 import type { MaterialStatus } from "@/lib/materials/shared";
 import RejectConfirmationModal from "./RejectConfirmationModal";
@@ -20,7 +21,7 @@ export default function MaterialTabContent({
   category,
   requestId,
 }: MaterialTabContentProps) {
-  const { materials, loading, updating, error, approveMaterial, rejectMaterial } = useCoordinatorMaterials({
+  const { materials, loading, updating, error, refresh, approveMaterial, rejectMaterial } = useCoordinatorMaterials({
     subject,
     level: category,
     requestId,
@@ -32,6 +33,30 @@ export default function MaterialTabContent({
   const [rejectReason, setRejectReason] = useState("");
   const [rejectReasonError, setRejectReasonError] = useState<string | null>(null);
   const [bulkProcessing, setBulkProcessing] = useState(false);
+  const [statusToast, setStatusToast] = useState<{
+    title: string;
+    message: string;
+    tone: "success" | "info" | "error";
+  } | null>(null);
+
+  useEffect(() => {
+    if (!statusToast) return;
+    const timerId = window.setTimeout(() => {
+      setStatusToast(null);
+    }, 3000);
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [statusToast]);
+
+  useEffect(() => {
+    if (!error) return;
+    setStatusToast({
+      title: "Action Failed",
+      message: error,
+      tone: "error",
+    });
+  }, [error]);
 
   const formatDate = useCallback((value: string) => {
     const parsed = new Date(value);
@@ -66,7 +91,62 @@ export default function MaterialTabContent({
     if (updating || bulkProcessing) return;
     setBulkProcessing(true);
     try {
-      await approveMaterial(material);
+      const result = await approveMaterial(material);
+      if (result.success) {
+        setStatusToast({
+          title: "Material Approved",
+          message: `Approved \"${material.title}\" successfully.`,
+          tone: "success",
+        });
+      } else {
+        setStatusToast({
+          title: "Approval Failed",
+          message: result.error ?? "Unable to approve material.",
+          tone: "error",
+        });
+      }
+    } finally {
+      setBulkProcessing(false);
+    }
+  };
+
+  const handleApproveAll = async () => {
+    if (updating || bulkProcessing) return;
+    const pendingMaterials = filteredMaterials.filter((material) => material.status.toLowerCase() === "pending");
+    if (pendingMaterials.length === 0) return;
+
+    setBulkProcessing(true);
+    try {
+      let successCount = 0;
+      let failedCount = 0;
+      let firstError: string | null = null;
+
+      for (const material of pendingMaterials) {
+        const result = await approveMaterial(material, { skipRefresh: true });
+        if (result.success) {
+          successCount += 1;
+        } else {
+          failedCount += 1;
+          if (!firstError && result.error) {
+            firstError = result.error;
+          }
+        }
+      }
+      await refresh();
+
+      if (failedCount === 0) {
+        setStatusToast({
+          title: "Bulk Approve Complete",
+          message: `Approved ${successCount} material${successCount === 1 ? "" : "s"}.`,
+          tone: "success",
+        });
+      } else {
+        setStatusToast({
+          title: "Bulk Approve Partial",
+          message: `Approved ${successCount}, failed ${failedCount}.${firstError ? ` ${firstError}` : ""}`,
+          tone: "info",
+        });
+      }
     } finally {
       setBulkProcessing(false);
     }
@@ -95,10 +175,24 @@ export default function MaterialTabContent({
       return;
     }
     setRejectReasonError(null);
-    await rejectMaterial(pendingRejectRow, normalizedReason);
+    const result = await rejectMaterial(pendingRejectRow, normalizedReason);
     setShowRejectModal(false);
     setPendingRejectRow(null);
     setRejectReason("");
+
+    if (result.success) {
+      setStatusToast({
+        title: "Material Rejected",
+        message: "Material has been rejected successfully.",
+        tone: "success",
+      });
+    } else {
+      setStatusToast({
+        title: "Rejection Failed",
+        message: result.error ?? "Unable to reject material.",
+        tone: "error",
+      });
+    }
   };
 
   const handleOpenMaterial = (material: CoordinatorMaterialRow) => {
@@ -181,6 +275,16 @@ export default function MaterialTabContent({
           SUBMISSIONS ({filteredMaterials.length})
         </p>
         <div className="flex flex-wrap items-center gap-2">
+          {statusFilter === "pending" && filteredMaterials.length > 0 && (
+            <PrimaryButton
+              small
+              onClick={handleApproveAll}
+              disabled={updating || bulkProcessing}
+              className="px-4! py-1.5! font-bold"
+            >
+              {bulkProcessing ? "Approving all..." : "Approve All Materials"}
+            </PrimaryButton>
+          )}
           <div className="inline-flex flex-wrap items-center gap-2 rounded-xl border border-gray-100 bg-white p-1">
             {(
               [
@@ -213,7 +317,6 @@ export default function MaterialTabContent({
               );
             })}
           </div>
-          {error && <span className="text-xs text-red-600 font-medium">{error}</span>}
         </div>
       </div>
 
@@ -231,7 +334,7 @@ export default function MaterialTabContent({
                 <span className="text-sm font-black text-[#013300] uppercase tracking-[0.3em] whitespace-nowrap">
                     {level}
                 </span>
-                <div className="h-[1px] flex-1 bg-gray-100" />
+                <div className="h-px flex-1 bg-gray-100" />
             </div>
 
             <div className="flex flex-col gap-3">
@@ -244,7 +347,7 @@ export default function MaterialTabContent({
                     >
                     <div className="flex items-center gap-4 min-w-0">
                         {/* Date Box */}
-                        <div className="flex-shrink-0 flex flex-col items-center justify-center w-12 h-14 bg-gray-50 text-gray-500 rounded-lg border border-gray-100">
+                        <div className="shrink-0 flex flex-col items-center justify-center w-12 h-14 bg-gray-50 text-gray-500 rounded-lg border border-gray-100">
                         <span className="text-[0.6rem] font-bold uppercase tracking-wide leading-none">{dateInfo.month}</span>
                         <span className="text-lg font-black leading-none mt-1 text-[#013300]">{dateInfo.day}</span>
                         </div>
@@ -271,8 +374,8 @@ export default function MaterialTabContent({
                         </div>
                     </div>
 
-                    <div className="ml-4 flex-shrink-0 flex items-center gap-2">
-                        <UtilityButton small onClick={() => handleOpenMaterial(material)} className="!px-4 !py-1.5 font-bold">
+                    <div className="ml-4 shrink-0 flex items-center gap-2">
+                      <UtilityButton small onClick={() => handleOpenMaterial(material)} className="px-4! py-1.5! font-bold">
                         View
                         </UtilityButton>
                         
@@ -282,7 +385,7 @@ export default function MaterialTabContent({
                             small 
                             onClick={() => handleApprove(material)} 
                             disabled={updating || bulkProcessing}
-                            className="!px-4 !py-1.5 font-bold"
+                            className="px-4! py-1.5! font-bold"
                             >
                             Approve
                             </PrimaryButton>
@@ -290,7 +393,7 @@ export default function MaterialTabContent({
                             small 
                             onClick={() => openRejectModal(material)} 
                             disabled={updating || bulkProcessing}
-                            className="!px-4 !py-1.5 font-bold"
+                            className="px-4! py-1.5! font-bold"
                             >
                             Reject
                             </DangerButton>
@@ -315,6 +418,15 @@ export default function MaterialTabContent({
         errorMessage={rejectReasonError}
         materialTitle={pendingRejectRow?.title}
       />
+
+      {statusToast && (
+        <ToastActivity
+          title={statusToast.title}
+          message={statusToast.message}
+          tone={statusToast.tone}
+          onClose={() => setStatusToast(null)}
+        />
+      )}
     </div>
   );
 }

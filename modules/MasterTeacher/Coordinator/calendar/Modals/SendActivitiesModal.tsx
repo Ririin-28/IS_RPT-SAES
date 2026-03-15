@@ -16,7 +16,6 @@ interface SendActivitiesModalProps {
   onClose: () => void;
   onConfirm: () => void;
   loading: boolean;
-  error: string | null;
   activities: ActivityPreview[];
   gradeLabel: string;
   subjectSummary: string | null;
@@ -40,7 +39,6 @@ export default function SendActivitiesModal({
   onClose,
   onConfirm,
   loading,
-  error,
   activities,
   gradeLabel,
   subjectSummary,
@@ -103,11 +101,6 @@ export default function SendActivitiesModal({
               value={activities.length > 0 ? `${activities.length}` : "No activities scheduled"}
             />
           </div>
-          {error && (
-            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-              {error}
-            </div>
-          )}
         </ModalSection>
 
         <ModalSection title="Schedule Preview">

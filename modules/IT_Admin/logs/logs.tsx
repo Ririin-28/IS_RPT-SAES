@@ -6,6 +6,7 @@ import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import TableList from "@/components/Common/Tables/TableList";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
+import ToastActivity from "@/components/ToastActivity";
 import { exportLogRows } from "./utils/export-columns";
 
 const ROLE_OPTIONS = [
@@ -85,6 +86,19 @@ export default function ITAdminLogs() {
   const [totalCount, setTotalCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [feedbackToast, setFeedbackToast] = useState<{
+    title: string;
+    message: string;
+    tone: "success" | "error";
+  } | null>(null);
+
+  useEffect(() => {
+    if (!feedbackToast) return;
+    const timerId = window.setTimeout(() => {
+      setFeedbackToast(null);
+    }, 3500);
+    return () => window.clearTimeout(timerId);
+  }, [feedbackToast]);
 
   useEffect(() => {
     let isActive = true;
@@ -151,7 +165,13 @@ export default function ITAdminLogs() {
         if (payload.metadata?.missingTables?.includes("account_logs")) {
           setLogs([]);
           setTotalCount(0);
-          setError("Logs table not available in database");
+          const message = "Logs table not available in database";
+          setError(message);
+          setFeedbackToast({
+            title: "Load Failed",
+            message,
+            tone: "error",
+          });
           return;
         }
 
@@ -209,6 +229,11 @@ export default function ITAdminLogs() {
         const errorMessage = err instanceof Error ? err.message : "Unable to load account logs.";
         console.error("Fetch error:", err);
         setError(errorMessage);
+        setFeedbackToast({
+          title: "Load Failed",
+          message: errorMessage,
+          tone: "error",
+        });
         setLogs([]);
         setTotalCount(0);
       } finally {
@@ -379,6 +404,14 @@ export default function ITAdminLogs() {
           </div>
         </main>
       </div>
+      {feedbackToast && (
+        <ToastActivity
+          title={feedbackToast.title}
+          message={feedbackToast.message}
+          tone={feedbackToast.tone}
+          onClose={() => setFeedbackToast(null)}
+        />
+      )}
     </div>
   );
 }

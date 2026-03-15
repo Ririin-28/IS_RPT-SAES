@@ -15,6 +15,7 @@ import PrincipalTab from "./PrincipalTab/PrincipalTab";
 import ITAdminArchiveTab from "./ITAdminTab/ITAdminTab";
 // Student Tab
 import StudentArchiveTab from "./StudentTab/StudentTab";
+import ToastActivity from "@/components/ToastActivity";
 
 const GRADE_OPTIONS = ["All Grades", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"] as const;
 const ACCOUNT_OPTIONS = ["IT Admin", "Principal", "Master Teachers", "Teachers"] as const;
@@ -226,6 +227,19 @@ export default function ITAdminArchive() {
   const [archiveRecords, setArchiveRecords] = useState<ArchiveEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [feedbackToast, setFeedbackToast] = useState<{
+    title: string;
+    message: string;
+    tone: "success" | "error";
+  } | null>(null);
+
+  useEffect(() => {
+    if (!feedbackToast) return;
+    const timerId = window.setTimeout(() => {
+      setFeedbackToast(null);
+    }, 3500);
+    return () => window.clearTimeout(timerId);
+  }, [feedbackToast]);
 
   const handleArchiveRemoval = useCallback((removedArchiveIds: number[]) => {
     if (!removedArchiveIds || removedArchiveIds.length === 0) {
@@ -262,7 +276,13 @@ export default function ITAdminArchive() {
         if ((err as Error).name === "AbortError") {
           return;
         }
-        setError(err instanceof Error ? err.message : "Unable to load archived accounts.");
+        const message = err instanceof Error ? err.message : "Unable to load archived accounts.";
+        setError(message);
+        setFeedbackToast({
+          title: "Load Failed",
+          message,
+          tone: "error",
+        });
         setArchiveRecords([]);
       } finally {
         if (isActive) {
@@ -404,6 +424,14 @@ export default function ITAdminArchive() {
 		  </div>
 		</main>
 	  </div>
+    {feedbackToast && (
+    <ToastActivity
+      title={feedbackToast.title}
+      message={feedbackToast.message}
+      tone={feedbackToast.tone}
+      onClose={() => setFeedbackToast(null)}
+    />
+    )}
 	</div>
   );
 }

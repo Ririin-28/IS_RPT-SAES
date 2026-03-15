@@ -208,13 +208,13 @@ const openResponsesSheet = (
   const sheetWindow = window.open("", "_blank", "noopener,noreferrer,width=1000,height=800");
 
   if (!sheetWindow) {
-    window.alert("Please allow pop-ups to view the responses in Sheets view.");
-    return;
+    return false;
   }
 
   const html = buildSheetsHtml(responses, questions, quizTitle, totalStudents);
   sheetWindow.document.write(html);
   sheetWindow.document.close();
+  return true;
 };
 
 export default function ViewResponsesModal({
@@ -232,23 +232,31 @@ export default function ViewResponsesModal({
     itemAnalysis?: ItemAnalysis[];
     responses?: any[];
   } | null>(null);
+  const [sheetError, setSheetError] = useState("");
 
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     if (isOpen && quizCode && teacherId) {
       setIsLoading(true);
+      setSheetError("");
       fetch(`/api/assessments/analysis?code=${quizCode}&teacherId=${teacherId}`)
         .then((res) => res.json())
         .then((data) => {
           if (data.success) {
             setAnalysisData(data);
+          } else {
+            setSheetError(data.error || "Failed to load analysis data.");
           }
         })
-        .catch((err) => console.error("Failed to load analysis", err))
+        .catch((err) => {
+          console.error("Failed to load analysis", err);
+          setSheetError("Could not load analysis data.");
+        })
         .finally(() => setIsLoading(false));
     } else {
       setAnalysisData(null);
+      setSheetError("");
     }
   }, [isOpen, quizCode, teacherId]);
 
@@ -286,7 +294,12 @@ export default function ViewResponsesModal({
       <UtilityButton
         type="button"
         small
-        onClick={() => openResponsesSheet(responses, questions, quizTitle, totalStudents)}
+        onClick={() => {
+          const opened = openResponsesSheet(responses, questions, quizTitle, totalStudents);
+          if (!opened) {
+            setSheetError("Please allow pop-ups to view the responses in Sheets view.");
+          }
+        }}
       >
         View in Sheets
       </UtilityButton>
@@ -304,6 +317,7 @@ export default function ViewResponsesModal({
       footer={footer}
     >
       <div className="space-y-6">
+        {sheetError ? <div className="rounded-lg bg-red-50 p-4 text-red-600">{sheetError}</div> : null}
         <ModalSection title="Summary">
           <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
             <div className="grid grid-cols-1 divide-y divide-slate-200 sm:grid-cols-3 sm:divide-x sm:divide-y-0">

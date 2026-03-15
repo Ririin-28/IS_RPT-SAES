@@ -2,6 +2,8 @@ import { type NextRequest, NextResponse } from "next/server";
 import { type RowDataPacket } from "mysql2/promise";
 import { runWithConnection } from "@/lib/db";
 import { ensurePerformanceSchema } from "@/lib/performance/schema";
+import { buildFutureScheduleMessage, isScheduleInFuture } from "@/lib/remedial-schedule";
+import { getPriorScheduleBlocksByStudent } from "@/lib/server/remedial-sequence";
 
 type SlidePerformance = {
   flashcardIndex: number;
@@ -278,6 +280,25 @@ export async function POST(request: NextRequest) {
           return { status: 404, payload: { success: false, error: "Approved schedule not found." } };
         }
 
+        const scheduledSessionDate = scheduleRows[0]?.schedule_date ?? null;
+        if (isScheduleInFuture(scheduledSessionDate)) {
+          await connection.rollback();
+          return {
+            status: 403,
+            payload: { success: false, error: buildFutureScheduleMessage(scheduledSessionDate) },
+          };
+        }
+
+        const priorScheduleBlocks = await getPriorScheduleBlocksByStudent(connection, approvedScheduleId, [studentId]);
+        const priorScheduleBlock = priorScheduleBlocks[studentId] ?? null;
+        if (priorScheduleBlock) {
+          await connection.rollback();
+          return {
+            status: 403,
+            payload: { success: false, error: priorScheduleBlock.message },
+          };
+        }
+
         const [existingRows] = await connection.query<RowDataPacket[]>(
           `SELECT session_id, completed_at
            FROM student_remedial_session
@@ -402,13 +423,13 @@ export async function POST(request: NextRequest) {
         const scheduleTitle = typeof scheduleRows[0]?.title === "string"
           ? scheduleRows[0].title
           : "Remedial Session";
-        const scheduleDate = scheduleRows[0]?.schedule_date ?? new Date();
+        const activityScheduleDate = scheduleRows[0]?.schedule_date ?? new Date();
 
         const [activityRows] = await connection.query<RowDataPacket[]>(
           `SELECT activity_id FROM activities
            WHERE type = ? AND subject = ? AND title = ? AND DATE(date) = DATE(?)
            LIMIT 1`,
-          ["remedial", subjectName, scheduleTitle, scheduleDate],
+          ["remedial", subjectName, scheduleTitle, activityScheduleDate],
         );
         let activityId = activityRows.length ? Number(activityRows[0].activity_id) : null;
 
@@ -421,7 +442,7 @@ export async function POST(request: NextRequest) {
               subjectName,
               scheduleTitle,
               `Remedial flashcards session for ${subjectName}.`,
-              scheduleDate,
+              activityScheduleDate,
             ],
           );
           activityId = Number((activityInsert as unknown as { insertId?: number }).insertId);
@@ -552,6 +573,35 @@ export async function GET(request: NextRequest) {
     }
 
     const result = await runWithConnection(async (connection) => {
+      const [scheduleRows] = await connection.query<RowDataPacket[]>(
+        `SELECT request_id, schedule_date
+         FROM approved_remedial_schedule
+         WHERE request_id = ?
+         LIMIT 1`,
+        [approvedScheduleId],
+      );
+
+      if (!scheduleRows.length) {
+        return { status: 404, payload: { success: false, error: "Approved schedule not found." } };
+      }
+
+      const requestedScheduleDate = scheduleRows[0]?.schedule_date ?? null;
+      if (isScheduleInFuture(requestedScheduleDate)) {
+        return {
+          status: 403,
+          payload: { success: false, error: buildFutureScheduleMessage(requestedScheduleDate) },
+        };
+      }
+
+      const priorScheduleBlocks = await getPriorScheduleBlocksByStudent(connection, approvedScheduleId, [studentId]);
+      const priorScheduleBlock = priorScheduleBlocks[studentId] ?? null;
+      if (priorScheduleBlock) {
+        return {
+          status: 403,
+          payload: { success: false, error: priorScheduleBlock.message },
+        };
+      }
+
       const [sessionRows] = await connection.query<RowDataPacket[]>(
         `SELECT session_id, overall_average, ai_remarks, completed_at
          FROM student_remedial_session

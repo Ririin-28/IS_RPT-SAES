@@ -508,7 +508,7 @@ export default function TeacherCalendar() {
       }
 
       const userId = String(storedProfile.userId);
-      const response = await fetch(`/api/teacher/profile?userId=${encodeURIComponent(userId)}`, {
+      const response = await fetch("/api/teacher/profile", {
         cache: "no-store",
       });
       const payload = (await response.json().catch(() => null)) as TeacherProfileResponse | null;

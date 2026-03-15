@@ -306,7 +306,7 @@ export default function TeacherDashboard() {
         }
 
         const response = await fetch(
-          `/api/master_teacher/profile?userId=${encodeURIComponent(String(userId))}`,
+          "/api/master_teacher/profile",
           { cache: "no-store" },
         );
 
@@ -564,7 +564,7 @@ export default function TeacherDashboard() {
           <div className="relative p-4 h-full sm:p-5 md:p-6">
             <div className="relative h-full min-h-100 overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.10)] backdrop-blur-xl sm:p-5 md:p-6">
               <div className="mb-3 flex flex-col md:flex-row md:items-center md:justify-between">
-                <SecondaryHeader title="Teacher Overview" />
+                <SecondaryHeader title="Teacher's Profile" />
               </div>
 
               <div className="mb-6 min-w-full rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg sm:mb-7 sm:p-5 md:mb-8 md:p-6">

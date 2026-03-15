@@ -31,6 +31,7 @@ interface UserRow extends RowDataPacket {
   first_name: string | null;
   middle_name: string | null;
   last_name: string | null;
+  profile_image_url?: string | null;
 }
 
 /* =======================
@@ -424,6 +425,7 @@ export async function POST(req: Request): Promise<Response> {
             middle_name: user.middle_name,
             last_name: user.last_name,
             email: user.email,
+            profileImageUrl: user.profile_image_url ?? null,
           });
         }
 
@@ -510,6 +512,7 @@ export async function POST(req: Request): Promise<Response> {
             middle_name: user.middle_name,
             last_name: user.last_name,
             email: user.email,
+            profileImageUrl: user.profile_image_url ?? null,
           },
           cookies.length ? { "Set-Cookie": cookies } : undefined,
         );

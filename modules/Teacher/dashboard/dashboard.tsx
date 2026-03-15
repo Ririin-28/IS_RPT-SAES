@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Filter, Printer } from "lucide-react";
+import { CalendarDays, Filter, Printer } from "lucide-react";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -217,6 +217,15 @@ export default function TeacherDashboard() {
 
   const [selectedSections, setSelectedSections] = useState<string[]>([]);
   const [studentRows, setStudentRows] = useState<DashboardStudentRow[]>([]);
+  const todayDateLabel = useMemo(
+    () =>
+      new Date().toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }),
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -540,7 +549,7 @@ export default function TeacherDashboard() {
           <div className="relative h-full p-4 sm:p-5 md:p-6">
             <div className="relative h-full min-h-100 overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.10)] backdrop-blur-xl sm:p-5 md:p-6">
               <div className="mb-3 flex flex-col md:flex-row md:items-center md:justify-between">
-                <SecondaryHeader title="Teacher Overview" />
+                <SecondaryHeader title="Teacher's Profile" />
               </div>
 
               <div className="mb-6 min-w-full rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg sm:mb-7 sm:p-5 md:mb-8 md:p-6">
@@ -883,7 +892,7 @@ export default function TeacherDashboard() {
                 </div>
               </div>
 
-              <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <DashboardMetricCard
                   value={isLoadingCounts ? "..." : handledCounts.English.toLocaleString()}
                   label="English Handled Students"
@@ -901,6 +910,11 @@ export default function TeacherDashboard() {
                   label="Math Handled Students"
                   icon={<MathCardIcon />}
                   onClick={() => handleNavigate("/Teacher/students/subject/math")}
+                />
+                <DashboardMetricCard
+                  value={todayDateLabel}
+                  label="Date Today"
+                  icon={<CalendarDays className="h-4.5 w-4.5" />}
                 />
               </div>
 

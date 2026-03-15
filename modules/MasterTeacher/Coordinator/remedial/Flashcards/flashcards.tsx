@@ -68,7 +68,7 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 		const loadCoordinatorProfile = async () => {
 			try {
 				const response = await fetch(
-					`/api/master_teacher/coordinator/profile?userId=${encodeURIComponent(String(userId))}`,
+					"/api/master_teacher/coordinator/profile",
 					{ cache: "no-store", signal: controller.signal },
 				);
 				const payload = await response.json().catch(() => null);

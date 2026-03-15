@@ -60,7 +60,7 @@ interface ExportLogsRowsOptions<T> {
 export async function exportLogRows<T>({ rows, roleLabel, emptyMessage }: ExportLogsRowsOptions<T>): Promise<void> {
   if (!rows.length) {
     const fallback = emptyMessage ?? `No ${roleLabel.toLowerCase()} log records available to export.`;
-    window.alert(fallback);
+    console.warn(fallback);
     return;
   }
 

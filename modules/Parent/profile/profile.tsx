@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import ProfileDropdown from "@/components/Common/ProfileDropdown";
+import UserAvatar from "@/components/Common/UserAvatar";
 import { performClientLogout } from "@/lib/utils/logout";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 import ParentProfileModal from "./ParentProfileModal";
@@ -235,10 +236,16 @@ export default function ParentProfile() {
                 onClick={() => setShowProfileDropdown((value) => !value)}
                 className="w-10 h-10 flex items-center justify-center rounded-full border border-[#013300] hover:border-[#013300] hover:border-2 hover:scale-[1.08] hover:shadow transition"
               >
-                <svg width="32" height="32" fill="none" stroke="#013300" strokeWidth="2" viewBox="0 0 24 24">
-                  <circle cx="12" cy="8" r="4" />
-                  <path d="M4 20v-2c0-2.5 3.5-4 8-4s8 1.5 8 4v2" />
-                </svg>
+                <div className="h-full w-full overflow-hidden rounded-full">
+                  <UserAvatar
+                    firstName={parent?.firstName}
+                    lastName={parent?.lastName}
+                    alt="Parent profile"
+                    imageClassName="h-full w-full object-cover"
+                    fallbackClassName="h-full w-full"
+                    size={32}
+                  />
+                </div>
               </button>
               {showProfileDropdown && (
                 <div ref={dropdownRef}>
@@ -278,11 +285,15 @@ export default function ParentProfile() {
             <>
               <div className="flex flex-col items-center gap-3 text-center">
                 <div className="relative">
-                  <div className="flex h-24 w-24 items-center justify-center rounded-full border-4 border-white bg-[#E4F7E4] shadow-lg">
-                    <svg width="64" height="64" fill="none" stroke="#013300" strokeWidth="2" viewBox="0 0 24 24">
-                      <circle cx="12" cy="8" r="5" />
-                      <path d="M4 20v-2c0-3 4-5 8-5s8 2 8 5v2" />
-                    </svg>
+                  <div className="flex h-24 w-24 items-center justify-center rounded-full border-4 border-white bg-[#E4F7E4] shadow-lg overflow-hidden">
+                    <UserAvatar
+                      firstName={parent?.firstName}
+                      lastName={parent?.lastName}
+                      alt="Parent profile"
+                      imageClassName="h-full w-full object-cover"
+                      fallbackClassName="h-full w-full"
+                      size={96}
+                    />
                   </div>
                   <button
                     type="button"

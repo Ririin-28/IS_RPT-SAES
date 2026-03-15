@@ -6,9 +6,10 @@ import BaseModal from "@/components/Common/Modals/BaseModal";
 import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
+import ToastActivity from "@/components/ToastActivity";
 import { FaTimes } from "react-icons/fa";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import StudentTab, { type CoordinatorStudent } from "./StudentsTab";
+import StudentTab, { type CoordinatorStudent, type CoordinatorStudentHandler } from "./StudentsTab";
 import { type MaterialSubject } from "@/lib/materials/shared";
 import { useCoordinatorTeachers, type CoordinatorTeacher } from "../teachers/useCoordinatorTeachers";
 import { formatFullNameWithMiddleInitial, getStoredUserProfile } from "@/lib/utils/user-profile";
@@ -28,6 +29,7 @@ type AssignmentTeacherType = "master_coordinator" | "master_remedial" | "regular
 
 type AssignmentStatus = {
   assignedStudentIds: string[];
+  handlersByStudentId: Record<string, CoordinatorStudentHandler[]>;
   regularCounts: Record<string, number>;
   masterCounts: Array<{ masterTeacherId: string | null; userId: number | null; count: number }>;
   loading: boolean;
@@ -66,10 +68,14 @@ export default function MasterTeacherStudents() {
   const [assignmentPreview, setAssignmentPreview] = useState<AssignmentGroup[]>([]);
   const [remedialTeachers, setRemedialTeachers] = useState<CoordinatorTeacher[]>([]);
   const [assignmentSaving, setAssignmentSaving] = useState(false);
-  const [assignmentError, setAssignmentError] = useState<string | null>(null);
-  const [assignmentSuccess, setAssignmentSuccess] = useState<string | null>(null);
+  const [assignmentToast, setAssignmentToast] = useState<{
+    title: string;
+    message: string;
+    tone: "success" | "error" | "info";
+  } | null>(null);
   const [assignmentStatus, setAssignmentStatus] = useState<AssignmentStatus>({
     assignedStudentIds: [],
+    handlersByStudentId: {},
     regularCounts: {},
     masterCounts: [],
     loading: false,
@@ -290,8 +296,6 @@ export default function MasterTeacherStudents() {
 
   const handleOpenAssignmentModal = () => {
     setAssignmentPreview(buildAssignmentPreview());
-    setAssignmentError(null);
-    setAssignmentSuccess(null);
     setShowAssignmentModal(true);
   };
 
@@ -306,20 +310,26 @@ export default function MasterTeacherStudents() {
 
   const handleConfirmAssign = async () => {
     if (!studentMeta.gradeLevel) {
-      setAssignmentError("Grade assignment is required before saving assignments.");
       setShowAssignConfirm(false);
+      setAssignmentToast({
+        title: "Assignment Failed",
+        message: "Grade assignment is required before saving assignments.",
+        tone: "error",
+      });
       return;
     }
 
     if (!assignmentPreview.length) {
-      setAssignmentError("No assignments were generated.");
       setShowAssignConfirm(false);
+      setAssignmentToast({
+        title: "Assignment Failed",
+        message: "No assignments were generated.",
+        tone: "error",
+      });
       return;
     }
 
     setAssignmentSaving(true);
-    setAssignmentError(null);
-    setAssignmentSuccess(null);
 
     try {
       const gradeMatch = studentMeta.gradeLevel.match(/\d+/);
@@ -369,23 +379,42 @@ export default function MasterTeacherStudents() {
         throw new Error(result?.error ?? "Unable to save student assignments.");
       }
 
-      setAssignmentSuccess("Assignments saved successfully.");
+      setAssignmentToast({
+        title: "Assignments Saved",
+        message: "Student assignments were saved successfully.",
+        tone: "success",
+      });
       setAssignmentStatus((prev) => ({ ...prev, loading: true }));
       await fetchAssignmentStatus();
       setShowAssignConfirm(false);
       setShowAssignmentModal(false);
     } catch (error) {
-      setAssignmentError(error instanceof Error ? error.message : "Unable to save student assignments.");
+      setAssignmentToast({
+        title: "Assignment Failed",
+        message: error instanceof Error ? error.message : "Unable to save student assignments.",
+        tone: "error",
+      });
       setShowAssignConfirm(false);
     } finally {
       setAssignmentSaving(false);
     }
   };
 
+  useEffect(() => {
+    if (!assignmentToast) return;
+    const timerId = window.setTimeout(() => {
+      setAssignmentToast(null);
+    }, 3000);
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [assignmentToast]);
+
   const fetchAssignmentStatus = useCallback(async () => {
     if (!studentMeta.gradeLevel || !studentMeta.gradeLevel.trim()) {
       setAssignmentStatus({
         assignedStudentIds: [],
+        handlersByStudentId: {},
         regularCounts: {},
         masterCounts: [],
         loading: false,
@@ -410,6 +439,10 @@ export default function MasterTeacherStudents() {
 
       setAssignmentStatus({
         assignedStudentIds: Array.isArray(payload?.assignedStudentIds) ? payload.assignedStudentIds : [],
+        handlersByStudentId:
+          payload?.handlersByStudentId && typeof payload.handlersByStudentId === "object"
+            ? payload.handlersByStudentId
+            : {},
         regularCounts: payload?.counts?.regular ?? {},
         masterCounts: Array.isArray(payload?.counts?.master) ? payload.counts.master : [],
         loading: false,
@@ -484,6 +517,7 @@ export default function MasterTeacherStudents() {
                   searchTerm={searchTerm}
                   onMetaChange={handleMetaChange}
                   onAssignStudents={handleOpenAssignmentModal}
+                  handlersByStudentId={assignmentStatus.handlersByStudentId}
                   assignStudentsDisabled={
                     teachersLoading
                     || assignmentStatus.loading
@@ -539,16 +573,6 @@ export default function MasterTeacherStudents() {
 
         <div className="space-y-3">
           <p className="text-sm font-semibold text-gray-700">Division of Students</p>
-          {assignmentError && (
-            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-              {assignmentError}
-            </div>
-          )}
-          {assignmentSuccess && (
-            <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-              {assignmentSuccess}
-            </div>
-          )}
           {totalTeachers === 0 || totalStudents === 0 ? (
             <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
               Add teachers and students before running the assignment.
@@ -589,6 +613,15 @@ export default function MasterTeacherStudents() {
         title="Confirm Assignment"
         message={`Assign ${totalStudents} students to ${totalTeachers} teachers for Grade ${studentMeta.gradeLevel ?? "-"} (${studentMeta.subject})?`}
       />
+
+      {assignmentToast && (
+        <ToastActivity
+          title={assignmentToast.title}
+          message={assignmentToast.message}
+          tone={assignmentToast.tone}
+          onClose={() => setAssignmentToast(null)}
+        />
+      )}
     </div>
   );
 }

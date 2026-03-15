@@ -9,6 +9,7 @@ export type StoredUserProfile = {
   userId?: string | number | null;
   email?: string | null;
   gradeLevel?: string | null;
+  profileImageUrl?: string | null;
 };
 
 const sanitize = (value?: string | null): string => {
@@ -19,8 +20,13 @@ const sanitize = (value?: string | null): string => {
 export function storeUserProfile(profile: StoredUserProfile) {
   if (typeof window === "undefined") return;
   try {
-    sessionStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(profile));
-    window.dispatchEvent(new CustomEvent(USER_PROFILE_EVENT, { detail: profile }));
+    const existingProfile = getStoredUserProfile() ?? {};
+    const nextProfile = {
+      ...existingProfile,
+      ...profile,
+    };
+    sessionStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(nextProfile));
+    window.dispatchEvent(new CustomEvent(USER_PROFILE_EVENT, { detail: nextProfile }));
   } catch (error) {
     console.warn("Unable to persist user profile", error);
   }

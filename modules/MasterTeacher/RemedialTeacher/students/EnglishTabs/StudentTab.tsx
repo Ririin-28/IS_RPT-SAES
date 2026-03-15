@@ -17,6 +17,7 @@ import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
 import BodyText from "@/components/Common/Texts/BodyText";
 import BodyLabel from "@/components/Common/Texts/BodyLabel";
+import ToastActivity from "@/components/ToastActivity";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 import { resolveRemedialPlayTarget } from "@/lib/utils/remedial-play";
 
@@ -272,6 +273,11 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
   const [playLoadingId, setPlayLoadingId] = useState<string | null>(null);
   const [promoteLoadingId, setPromoteLoadingId] = useState<string | null>(null);
   const [promotionRecommendationRefreshKey, setPromotionRecommendationRefreshKey] = useState(0);
+  const [statusToast, setStatusToast] = useState<{
+    title: string;
+    message: string;
+    tone: "success" | "error" | "info";
+  } | null>(null);
 
   const userProfile = useMemo(() => getStoredUserProfile(), []);
   const userId = useMemo(() => {
@@ -283,6 +289,15 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
     }
     return null;
   }, [userProfile]);
+
+  useEffect(() => {
+    if (!statusToast) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => setStatusToast(null), 3200);
+    return () => window.clearTimeout(timeoutId);
+  }, [statusToast]);
 
   useEffect(() => {
     return () => {
@@ -437,7 +452,11 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
 
   const handleExport = () => {
     if (sortedStudents.length === 0) {
-      alert("No students available to export.");
+      setStatusToast({
+        title: "Nothing to Export",
+        message: "No students are available to export.",
+        tone: "info",
+      });
       return;
     }
 
@@ -506,7 +525,11 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
     const validTypes = ['.xlsx', '.xls'];
     const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
     if (!validTypes.includes(fileExtension)) {
-      alert('Please upload only Excel files (.xlsx or .xls)');
+      setStatusToast({
+        title: "Invalid File",
+        message: "Please upload only Excel files (.xlsx or .xls).",
+        tone: "error",
+      });
       return;
     }
 
@@ -547,10 +570,18 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
         });
 
         setStudents([...students, ...newStudents]);
-        alert(`Successfully imported ${newStudents.length} students`);
+        setStatusToast({
+          title: "Import Successful",
+          message: `Successfully imported ${newStudents.length} students.`,
+          tone: "success",
+        });
       } catch (error) {
         console.error(error);
-        alert('Error reading Excel file. Please check the format and column headers.');
+        setStatusToast({
+          title: "Import Failed",
+          message: "Error reading Excel file. Please check the format and column headers.",
+          tone: "error",
+        });
       }
     };
     reader.readAsArrayBuffer(selectedFile);
@@ -573,13 +604,21 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
     const run = async () => {
       const studentId = student?.studentId ?? student?.id ?? "";
       if (!studentId) {
-        alert("Student ID is missing.");
+        setStatusToast({
+          title: "Missing Student",
+          message: "Student ID is missing.",
+          tone: "error",
+        });
         return;
       }
 
       const phonemicLevel = String(student?.englishPhonemic ?? student?.english ?? "").trim();
       if (!phonemicLevel) {
-        alert("Student phonemic level is missing.");
+        setStatusToast({
+          title: "Missing Level",
+          message: "Student phonemic level is missing.",
+          tone: "error",
+        });
         return;
       }
 
@@ -595,14 +634,22 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
         });
 
         if ("error" in result) {
-          alert(result.error);
+          setStatusToast({
+            title: "Unable to Start Session",
+            message: result.error,
+            tone: "error",
+          });
           return;
         }
 
         router.push(result.playPath);
       } catch (error) {
         console.error("Failed to start remedial session", error);
-        alert("Unable to start remedial session.");
+        setStatusToast({
+          title: "Unable to Start Session",
+          message: "Unable to start remedial session.",
+          tone: "error",
+        });
       } finally {
         setPlayLoadingId(null);
       }
@@ -615,7 +662,11 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
     const run = async () => {
       const studentId = selectedStudent?.studentId ?? selectedStudent?.id ?? "";
       if (!studentId) {
-        alert("Student ID is missing.");
+        setStatusToast({
+          title: "Missing Student",
+          message: "Student ID is missing.",
+          tone: "error",
+        });
         return;
       }
 
@@ -685,7 +736,11 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
           setPromotionRecommendationRefreshKey((prev) => prev + 1);
         }
       } catch (error) {
-        alert(error instanceof Error ? error.message : "Failed to promote student.");
+        setStatusToast({
+          title: "Promotion Failed",
+          message: error instanceof Error ? error.message : "Failed to promote student.",
+          tone: "error",
+        });
       } finally {
         setPromoteLoadingId(null);
       }
@@ -838,6 +893,14 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
         title="Confirm Delete"
         message={`Are you sure you want to delete ${selectedStudents.size} selected student${selectedStudents.size > 1 ? 's' : ''}? This action cannot be undone.`}
       />
+      {statusToast && (
+        <ToastActivity
+          title={statusToast.title}
+          message={statusToast.message}
+          tone={statusToast.tone}
+          onClose={() => setStatusToast(null)}
+        />
+      )}
     </div>
   );
 }

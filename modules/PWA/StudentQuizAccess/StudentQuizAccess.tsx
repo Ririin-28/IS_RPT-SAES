@@ -14,6 +14,7 @@ type StudentQuizAccessProps = {
 export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
   const [quizCode, setQuizCode] = useState("");
   const [studentId, setStudentId] = useState("");
+  const [showQuizIntro, setShowQuizIntro] = useState(false);
   const [showAssessment, setShowAssessment] = useState(false);
   const [assessment, setAssessment] = useState<any | null>(null);
   const [attemptId, setAttemptId] = useState<number | null>(null);
@@ -230,7 +231,8 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
       setStudentName(data?.student?.name ?? null);
       setStudentLrn(data?.student?.lrn ?? studentId.trim());
       setCompletedSummary(null);
-      setShowAssessment(true);
+      setShowQuizIntro(true);
+      setShowAssessment(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to access quiz.";
       setErrorMessage(message);
@@ -251,6 +253,28 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
       />
     );
   }
+
+  const quizTitle = String(assessment?.title ?? "RPT Quiz");
+  const quizDescription = String(assessment?.description ?? "").trim();
+  const quizQuestions = Array.isArray(assessment?.questions) ? assessment.questions.length : 0;
+  const isFilipinoAssessment = String(assessment?.subjectName ?? "").trim().toLowerCase() === "filipino";
+  const introText = isFilipinoAssessment
+    ? {
+        ready: "Handa ka na ba",
+        details: "Detalye ng Quiz",
+        questions: "Mga Tanong",
+        student: "Mag-aaral",
+        learner: "Mag-aaral",
+        start: "Simulan ang Quiz",
+      }
+    : {
+        ready: "Ready to start",
+        details: "Quiz details",
+        questions: "Questions",
+        student: "Student",
+        learner: "Learner",
+        start: "Start Quiz",
+      };
 
   const totalQuestions = completedSummary?.total ?? 0;
   const rightAnswers = completedSummary?.correct ?? 0;
@@ -358,6 +382,49 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
 
             <PrimaryButton onClick={onBack} className="w-full mt-6 py-3.5 rounded-xl text-base font-semibold">
               Go Back
+            </PrimaryButton>
+          </div>
+        ) : showQuizIntro && assessment && attemptId ? (
+          <div className="mx-auto w-full max-w-[36rem] rounded-[28px] border border-green-100/70 bg-white p-4 shadow-xl sm:p-6 md:p-7">
+            <div className="flex flex-col items-center text-center mb-6 mt-1">
+              <Image
+                src="/RPT-SAES/RPTLogo.png"
+                alt="RPT-SAES Logo"
+                width={72}
+                height={72}
+                className="h-14 w-14 object-contain drop-shadow-md sm:h-16 sm:w-16"
+              />
+              <p className="mt-3 text-xs font-semibold uppercase tracking-[0.2em] text-[#013300]/55">{introText.ready}</p>
+              <h1 className="mt-2 text-[1.9rem] font-black leading-[1.02] tracking-[-0.04em] text-[#013300] sm:text-4xl">
+                {quizTitle}
+              </h1>
+              {quizDescription ? (
+                <p className="mt-2 max-w-xl text-sm font-medium text-[#013300]/70 sm:text-base">{quizDescription}</p>
+              ) : null}
+            </div>
+
+            <div className="rounded-2xl border border-green-100 bg-[#f7fbf7] p-4 text-center sm:p-5">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#013300]/55">{introText.details}</p>
+              <div className="mt-3 grid grid-cols-2 gap-3 text-center">
+                <div className="rounded-xl border border-green-100 bg-white p-3">
+                  <p className="text-[0.7rem] font-bold uppercase tracking-[0.15em] text-[#013300]/55">{introText.questions}</p>
+                  <p className="mt-1 text-2xl font-black text-[#013300]">{quizQuestions}</p>
+                </div>
+                <div className="rounded-xl border border-green-100 bg-white p-3">
+                  <p className="text-[0.7rem] font-bold uppercase tracking-[0.15em] text-[#013300]/55">{introText.student}</p>
+                  <p className="mt-1 text-sm font-bold text-[#013300]">{studentName || studentLrn || introText.learner}</p>
+                </div>
+              </div>
+            </div>
+
+            <PrimaryButton
+              onClick={() => {
+                setShowQuizIntro(false);
+                setShowAssessment(true);
+              }}
+              className="w-full mt-6 py-3.5 rounded-xl text-base font-semibold"
+            >
+              {introText.start}
             </PrimaryButton>
           </div>
         ) : (

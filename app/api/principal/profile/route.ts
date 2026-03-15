@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
-import { getTableColumns, query, tableExists } from "@/lib/db";
+import {
+  ensureUserProfileImageColumn,
+  uploadProfileImage,
+  cleanupProfileImage,
+  ProfileImageValidationError,
+} from "@/lib/server/profile-image";
+import { parseProfileMutationRequest, resolveAuthorizedProfileUserId } from "@/lib/server/profile-request";
+import { getPrincipalSessionFromCookies } from "@/lib/server/principal-session";
+import { getTableColumns, query, runWithConnection, tableExists } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -101,155 +109,220 @@ const resolvePrincipalTable = async (): Promise<PrincipalTable | null> => {
 };
 
 export async function PUT(request: NextRequest) {
-  const userIdParam = request.nextUrl.searchParams.get("userId");
-  if (!userIdParam) {
+  const session = await getPrincipalSessionFromCookies().catch(() => null);
+  if (!session) {
     return NextResponse.json(
-      { success: false, error: "Missing userId query parameter." },
-      { status: 400 },
+      { success: false, error: "Principal session not found." },
+      { status: 401 },
     );
   }
 
-  const userId = Number(userIdParam);
-  if (!Number.isFinite(userId) || userId <= 0) {
-    return NextResponse.json(
-      { success: false, error: "Invalid userId value." },
-      { status: 400 },
-    );
+  const targetUser = resolveAuthorizedProfileUserId(
+    request.nextUrl.searchParams.get("userId"),
+    session.userId,
+  );
+  if (!targetUser.ok) {
+    return targetUser.response;
   }
 
-  let body: any;
+  let payload: Awaited<ReturnType<typeof parseProfileMutationRequest>>;
   try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ success: false, error: "Invalid request body." }, { status: 400 });
-  }
-
-  try {
-    const userColumns = await getTableColumns("users");
-    const principalTable = await resolvePrincipalTable();
-    const updates: string[] = [];
-    const params: any[] = [];
-
-    const [userRows] = await query<RowDataPacket[]>(
-      "SELECT user_id, principal_id, user_code FROM users WHERE user_id = ? LIMIT 1",
-      [userId],
-    );
-    if (!userRows.length) {
-      return NextResponse.json({ success: false, error: "User not found." }, { status: 404 });
-    }
-
-    const existingPrincipalId = toNullableString(userRows[0]?.principal_id) ?? toNullableString(userRows[0]?.user_code);
-
-    const firstNameCol = pickColumn(userColumns, FIRST_NAME_COLUMNS);
-    if (body.firstName !== undefined && firstNameCol) {
-      updates.push(`${firstNameCol} = ?`);
-      params.push(body.firstName?.trim() || null);
-    }
-    const middleNameCol = pickColumn(userColumns, MIDDLE_NAME_COLUMNS);
-    if (body.middleName !== undefined && middleNameCol) {
-      updates.push(`${middleNameCol} = ?`);
-      params.push(body.middleName?.trim() || null);
-    }
-
-    const lastNameCol = pickColumn(userColumns, LAST_NAME_COLUMNS);
-    if (body.lastName !== undefined && lastNameCol) {
-      updates.push(`${lastNameCol} = ?`);
-      params.push(body.lastName?.trim() || null);
-    }
-
-    const emailCol = pickColumn(userColumns, EMAIL_COLUMNS);
-    if (body.email !== undefined && emailCol) {
-      updates.push(`${emailCol} = ?`);
-      params.push(body.email?.trim() || null);
-    }
-
-    const contactCol = pickColumn(userColumns, CONTACT_COLUMNS);
-    if (body.contactNumber !== undefined && contactCol) {
-      updates.push(`${contactCol} = ?`);
-      params.push(body.contactNumber?.trim() || null);
-    }
-
-    if (updates.length > 0) {
-      params.push(userId);
-      await query(`UPDATE users SET ${updates.join(", ")} WHERE user_id = ?`, params);
-    }
-
-    if (principalTable) {
-      const { name, columns } = principalTable;
-      const principalUpdates: string[] = [];
-      const principalParams: any[] = [];
-
-      const pushUpdate = (candidate: readonly string[], value: any) => {
-        const column = pickColumn(columns, candidate);
-        if (column !== null && value !== undefined) {
-          principalUpdates.push(`p.${column} = ?`);
-          principalParams.push(value?.trim ? value.trim() : value);
-        }
-      };
-
-      pushUpdate(FIRST_NAME_COLUMNS, body.firstName);
-      pushUpdate(MIDDLE_NAME_COLUMNS, body.middleName);
-      pushUpdate(LAST_NAME_COLUMNS, body.lastName);
-      pushUpdate(SUFFIX_COLUMNS, body.suffix);
-      pushUpdate(EMAIL_COLUMNS, body.email);
-      pushUpdate(CONTACT_COLUMNS, body.contactNumber);
-      pushUpdate(SCHOOL_COLUMNS, body.school);
-
-      if (principalUpdates.length > 0) {
-        const whereParts: string[] = [];
-        const whereParams: any[] = [];
-
-        if (columns.has("user_id")) {
-          whereParts.push("p.user_id = ?");
-          whereParams.push(userId);
-        }
-        if (columns.has("principal_id") && existingPrincipalId) {
-          whereParts.push("p.principal_id = ?");
-          whereParams.push(existingPrincipalId);
-        }
-        if (!whereParts.length && columns.has("principal_id")) {
-          whereParts.push("p.principal_id = ?");
-          whereParams.push(String(userId));
-        }
-
-        if (whereParts.length) {
-          await query(
-            `UPDATE \`${name}\` AS p SET ${principalUpdates.join(", ")} WHERE ${whereParts.join(" OR ")} LIMIT 1`,
-            [...principalParams, ...whereParams],
-          );
-        }
-      }
-    }
-
-    return NextResponse.json({ success: true });
+    payload = await parseProfileMutationRequest(request);
   } catch (error) {
-    console.error("Failed to update principal profile", error);
     return NextResponse.json(
-      { success: false, error: "Failed to update profile." },
+      { success: false, error: error instanceof Error ? error.message : "Invalid request body." },
+      { status: 400 },
+    );
+  }
+
+  let uploadedImageStoragePath: string | null = null;
+
+  try {
+    const userColumns = await ensureUserProfileImageColumn();
+    const principalTable = await resolvePrincipalTable();
+    const body = payload.body;
+    const uploadedImage = payload.profileImage ? await uploadProfileImage(payload.profileImage) : null;
+    uploadedImageStoragePath = uploadedImage?.storagePath ?? null;
+
+    const result = await runWithConnection(async (connection) => {
+      await connection.beginTransaction();
+
+      try {
+        const [userRows] = await connection.execute<RowDataPacket[]>(
+          "SELECT user_id, principal_id, user_code, profile_image_url FROM users WHERE user_id = ? LIMIT 1",
+          [targetUser.userId],
+        );
+        if (!userRows.length) {
+          await connection.rollback();
+          return {
+            notFound: true as const,
+            previousProfileImageUrl: null,
+            profileImageUrl: null,
+          };
+        }
+
+        const existingPrincipalId =
+          toNullableString(userRows[0]?.principal_id) ?? toNullableString(userRows[0]?.user_code);
+        const previousProfileImageUrl = toNullableString(userRows[0]?.profile_image_url);
+        const updates: string[] = [];
+        const params: Array<string | number | null> = [];
+
+        const firstNameCol = pickColumn(userColumns, FIRST_NAME_COLUMNS);
+        if (body.firstName !== undefined && firstNameCol) {
+          updates.push(`${firstNameCol} = ?`);
+          params.push(typeof body.firstName === "string" ? body.firstName.trim() || null : null);
+        }
+        const middleNameCol = pickColumn(userColumns, MIDDLE_NAME_COLUMNS);
+        if (body.middleName !== undefined && middleNameCol) {
+          updates.push(`${middleNameCol} = ?`);
+          params.push(typeof body.middleName === "string" ? body.middleName.trim() || null : null);
+        }
+
+        const lastNameCol = pickColumn(userColumns, LAST_NAME_COLUMNS);
+        if (body.lastName !== undefined && lastNameCol) {
+          updates.push(`${lastNameCol} = ?`);
+          params.push(typeof body.lastName === "string" ? body.lastName.trim() || null : null);
+        }
+
+        const emailCol = pickColumn(userColumns, EMAIL_COLUMNS);
+        if (body.email !== undefined && emailCol) {
+          updates.push(`${emailCol} = ?`);
+          params.push(typeof body.email === "string" ? body.email.trim() || null : null);
+        }
+
+        const contactCol = pickColumn(userColumns, CONTACT_COLUMNS);
+        if (body.contactNumber !== undefined && contactCol) {
+          updates.push(`${contactCol} = ?`);
+          params.push(typeof body.contactNumber === "string" ? body.contactNumber.trim() || null : null);
+        }
+
+        if (uploadedImage) {
+          updates.push("profile_image_url = ?");
+          params.push(uploadedImage.publicUrl);
+        }
+
+        if (updates.length > 0) {
+          params.push(targetUser.userId);
+          await connection.execute(`UPDATE users SET ${updates.join(", ")} WHERE user_id = ?`, params);
+        }
+
+        if (principalTable) {
+          const { name, columns } = principalTable;
+          const principalUpdates: string[] = [];
+          const principalParams: Array<string | number | null> = [];
+
+          const pushUpdate = (candidate: readonly string[], value: unknown) => {
+            const column = pickColumn(columns, candidate);
+            if (column !== null && value !== undefined) {
+              principalUpdates.push(`p.${column} = ?`);
+              principalParams.push(typeof value === "string" ? value.trim() || null : (value as any));
+            }
+          };
+
+          pushUpdate(FIRST_NAME_COLUMNS, body.firstName);
+          pushUpdate(MIDDLE_NAME_COLUMNS, body.middleName);
+          pushUpdate(LAST_NAME_COLUMNS, body.lastName);
+          pushUpdate(SUFFIX_COLUMNS, body.suffix);
+          pushUpdate(EMAIL_COLUMNS, body.email);
+          pushUpdate(CONTACT_COLUMNS, body.contactNumber);
+          pushUpdate(SCHOOL_COLUMNS, body.school);
+
+          if (principalUpdates.length > 0) {
+            const whereParts: string[] = [];
+            const whereParams: Array<string | number> = [];
+
+            if (columns.has("user_id")) {
+              whereParts.push("p.user_id = ?");
+              whereParams.push(targetUser.userId);
+            }
+            if (columns.has("principal_id") && existingPrincipalId) {
+              whereParts.push("p.principal_id = ?");
+              whereParams.push(existingPrincipalId);
+            }
+            if (!whereParts.length && columns.has("principal_id")) {
+              whereParts.push("p.principal_id = ?");
+              whereParams.push(String(targetUser.userId));
+            }
+
+            if (whereParts.length) {
+              await connection.execute(
+                `UPDATE \`${name}\` AS p SET ${principalUpdates.join(", ")} WHERE ${whereParts.join(" OR ")} LIMIT 1`,
+                [...principalParams, ...whereParams],
+              );
+            }
+          }
+        }
+
+        await connection.commit();
+        return {
+          notFound: false as const,
+          previousProfileImageUrl,
+          profileImageUrl: uploadedImage?.publicUrl ?? previousProfileImageUrl,
+        };
+      } catch (error) {
+        await connection.rollback();
+        throw error;
+      }
+    });
+
+    if (result.notFound) {
+      if (uploadedImage) {
+        await cleanupProfileImage(uploadedImage.storagePath);
+      }
+      return NextResponse.json({ success: false, error: "Principal profile not found." }, { status: 404 });
+    }
+
+    if (
+      uploadedImage &&
+      result.previousProfileImageUrl &&
+      result.previousProfileImageUrl !== uploadedImage.publicUrl
+    ) {
+      await cleanupProfileImage(result.previousProfileImageUrl);
+    }
+
+    return NextResponse.json({
+      success: true,
+      profile: {
+        profileImageUrl: result.profileImageUrl,
+      },
+    });
+  } catch (error) {
+    if (uploadedImageStoragePath) {
+      await cleanupProfileImage(uploadedImageStoragePath);
+    }
+    console.error("Failed to update principal profile", error);
+    if (error instanceof ProfileImageValidationError) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: error.status },
+      );
+    }
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : "Failed to update profile." },
       { status: 500 },
     );
   }
 }
 
 export async function GET(request: NextRequest) {
-  const userIdParam = request.nextUrl.searchParams.get("userId");
-  if (!userIdParam) {
+  const session = await getPrincipalSessionFromCookies().catch(() => null);
+  if (!session) {
     return NextResponse.json(
-      { success: false, error: "Missing userId query parameter." },
-      { status: 400 },
+      { success: false, error: "Principal session not found." },
+      { status: 401 },
     );
   }
 
-  const userId = Number(userIdParam);
-  if (!Number.isFinite(userId) || userId <= 0) {
-    return NextResponse.json(
-      { success: false, error: "Invalid userId value." },
-      { status: 400 },
-    );
+  const targetUser = resolveAuthorizedProfileUserId(
+    request.nextUrl.searchParams.get("userId"),
+    session.userId,
+  );
+  if (!targetUser.ok) {
+    return targetUser.response;
   }
 
   try {
-    const userColumns = await getTableColumns("users");
+    const userColumns = await ensureUserProfileImageColumn();
     if (!userColumns.size) {
       return NextResponse.json(
         { success: false, error: "Users table is unavailable." },
@@ -277,6 +350,7 @@ export async function GET(request: NextRequest) {
     addUserColumn(pickColumn(userColumns, SUFFIX_COLUMNS), "user_suffix");
     addUserColumn(pickColumn(userColumns, EMAIL_COLUMNS), "user_email");
     addUserColumn(pickColumn(userColumns, CONTACT_COLUMNS), "user_contact_number");
+    addUserColumn(userColumns.has("profile_image_url") ? "profile_image_url" : null, "user_profile_image_url");
     addUserColumn(userColumns.has("role") ? "role" : null, "user_role");
     addUserColumn(userColumns.has("principal_id") ? "principal_id" : null, "user_principal_id");
     addUserColumn(userColumns.has("user_code") ? "user_code" : null, "user_code");
@@ -335,7 +409,7 @@ export async function GET(request: NextRequest) {
       LIMIT 1
     `;
 
-    const [rows] = await query<RowDataPacket[]>(sql, [userId]);
+    const [rows] = await query<RowDataPacket[]>(sql, [targetUser.userId]);
     if (!rows.length) {
       return NextResponse.json(
         { success: false, error: "Principal profile not found." },
@@ -362,6 +436,7 @@ export async function GET(request: NextRequest) {
         contactNumber:
           toNullableString(row.principal_contact_number) ??
           toNullableString(row.user_contact_number),
+        profileImageUrl: toNullableString(row.user_profile_image_url),
         school: toNullableString(row.principal_school),
         principalId:
           toNullableString(row.principal_principal_id) ??

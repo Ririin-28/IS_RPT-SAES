@@ -82,7 +82,7 @@ export default function MasterTeacherArchive() {
         }
 
         const response = await fetch(
-          `/api/master_teacher/coordinator/profile?userId=${encodeURIComponent(String(userId))}`,
+          "/api/master_teacher/coordinator/profile",
           { cache: "no-store" },
         );
 

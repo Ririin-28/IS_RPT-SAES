@@ -1,4 +1,5 @@
 import { buildFlashcardContentKey } from "@/lib/utils/flashcards-storage";
+import { buildFutureScheduleMessage, isScheduleInFuture } from "@/lib/remedial-schedule";
 
 type SubjectName = "English" | "Filipino" | "Math";
 
@@ -294,6 +295,10 @@ export const resolveRemedialPlayTarget = async (options: ResolvePlayOptions): Pr
     const inProgress = await hasInProgressSession(options.studentId, activity.id);
     if (!inProgress) continue;
 
+    if (isScheduleInFuture(activity.date)) {
+      return { error: buildFutureScheduleMessage(activity.date) };
+    }
+
     const material = await fetchMaterialContent(activity.id, phonemicId);
     if (!material) continue;
 
@@ -340,6 +345,10 @@ export const resolveRemedialPlayTarget = async (options: ResolvePlayOptions): Pr
 
     if (completed) {
       continue;
+    }
+
+    if (isScheduleInFuture(activity.date)) {
+      return { error: buildFutureScheduleMessage(activity.date) };
     }
 
     const material = await fetchMaterialContent(activity.id, phonemicId);

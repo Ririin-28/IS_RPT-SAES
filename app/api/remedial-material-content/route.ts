@@ -119,7 +119,7 @@ export async function PUT(request: NextRequest) {
 
     await ensureContentTable();
 
-    const overrideJson = JSON.stringify(body?.flashcardsOverride ?? null);
+    const overrideJson = JSON.stringify(body?.flashcardsOverride ?? []);
 
     // Update the newest row for this request+phonemic.
     const [rows] = await query<RowDataPacket[]>(
@@ -127,23 +127,61 @@ export async function PUT(request: NextRequest) {
       [requestId, phonemicId],
     );
     const row = rows[0] as any;
-    const materialId = body?.materialId
+    let materialId = body?.materialId
       ? Number.parseInt(String(body.materialId), 10)
       : row?.material_id
         ? Number.parseInt(String(row.material_id), 10)
         : null;
 
     if (!materialId) {
-      return NextResponse.json(
-        { success: false, error: "No extracted content found to update." },
-        { status: 404 },
+      const [maxRows] = await query<RowDataPacket[]>(
+        `SELECT COALESCE(MAX(material_id), 0) AS maxMaterialId FROM ${CONTENT_TABLE}`,
+        [],
       );
+
+      const maxMaterialId = Number.parseInt(String((maxRows?.[0] as any)?.maxMaterialId ?? 0), 10);
+      materialId = Number.isFinite(maxMaterialId) ? maxMaterialId + 1 : 1;
+
+      await query<ResultSetHeader>(
+        `INSERT INTO ${CONTENT_TABLE}
+          (material_id, request_id, phonemic_id, file_path, extracted_slides_json, flashcards_json, flashcards_override_json, extraction_status, extraction_error, extracted_at)
+         VALUES (?, ?, ?, NULL, ?, ?, ?, 'error', ?, NOW())`,
+        [
+          materialId,
+          requestId,
+          phonemicId,
+          JSON.stringify([]),
+          JSON.stringify([]),
+          overrideJson,
+          "Manual flashcards fallback created from editor",
+        ],
+      );
+
+      return NextResponse.json({ success: true, createdFallback: true });
     }
 
-    await query<ResultSetHeader>(
+    const [updateResult] = await query<ResultSetHeader>(
       `UPDATE ${CONTENT_TABLE} SET flashcards_override_json = ?, updated_at = NOW() WHERE material_id = ?`,
       [overrideJson, materialId],
     );
+
+    if (!updateResult.affectedRows) {
+      await query<ResultSetHeader>(
+        `INSERT INTO ${CONTENT_TABLE}
+          (material_id, request_id, phonemic_id, file_path, extracted_slides_json, flashcards_json, flashcards_override_json, extraction_status, extraction_error, extracted_at)
+         VALUES (?, ?, ?, NULL, ?, ?, ?, 'error', ?, NOW())`,
+        [
+          materialId,
+          requestId,
+          phonemicId,
+          JSON.stringify([]),
+          JSON.stringify([]),
+          overrideJson,
+          "Manual flashcards fallback created from editor",
+        ],
+      );
+      return NextResponse.json({ success: true, createdFallback: true });
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -101,6 +101,7 @@ export default function VerificationForm({ email, user_id, role, redirectPath, o
         middleName: data.middle_name ?? null,
         lastName: data.last_name ?? null,
         role: data.role ?? role ?? null,
+        profileImageUrl: data.profileImageUrl ?? null,
       });
       localStorage.setItem("deviceToken", data.deviceToken);
       localStorage.setItem("device_token", data.deviceToken);

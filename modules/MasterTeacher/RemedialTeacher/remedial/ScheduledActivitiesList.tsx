@@ -317,7 +317,7 @@ export default function ScheduledActivitiesList({ activities, subject, loading, 
                       className={`group flex flex-row items-center justify-between w-full rounded-xl p-4 transition-all duration-300 ${
                         isCurrentAnchor
                           ? "current-schedule-card border border-[#013300] bg-[#013300] shadow-[0_16px_36px_-24px_rgba(1,51,0,0.45)]"
-                          : "border border-gray-200 hover:border-[#013300]/30 hover:shadow-lg"
+                          : "border border-gray-200 bg-white hover:border-[#013300]/30 hover:shadow-lg"
                       }`}
                     >
                       <div className="flex items-center gap-4 min-w-0">

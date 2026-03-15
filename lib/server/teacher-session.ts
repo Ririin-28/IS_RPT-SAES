@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { cookies } from "next/headers";
-import type { PoolConnection, RowDataPacket } from "mysql2/promise";
+import type { Connection, PoolConnection, RowDataPacket } from "mysql2/promise";
 
 const COOKIE_NAME = "rpt_teacher_session";
 const SESSION_DURATION_HOURS = 24;
@@ -21,7 +21,7 @@ function generateToken(): string {
 }
 
 export async function createTeacherSession(
-  db: PoolConnection,
+  db: PoolConnection | Connection,
   teacherId: string | null,
   userId: number,
   deviceName?: string | null,
