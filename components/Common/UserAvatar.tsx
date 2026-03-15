@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
 
 type UserAvatarProps = {
@@ -59,9 +60,12 @@ export default function UserAvatar({
 
   if (profileImageUrl && !hasImageError) {
     return (
-      <img
+      <Image
         src={profileImageUrl}
         alt={alt}
+        width={size}
+        height={size}
+        unoptimized
         className={imageClassName}
         onError={() => setHasImageError(true)}
       />

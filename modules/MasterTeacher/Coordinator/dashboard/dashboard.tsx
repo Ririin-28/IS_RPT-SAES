@@ -1,6 +1,6 @@
 "use client";
-import { useState, useCallback, useEffect, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useCallback, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import Sidebar from "@/components/MasterTeacher/Coordinator/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
 // Text Components
@@ -26,7 +26,7 @@ import {
   CartesianGrid,
   Tooltip as ReTooltip,
   Legend as ReLegend,
-} from 'recharts';
+} from "recharts";
 import type { StudentRecordDto } from "@/lib/students/shared";
 
 type CoordinatorProfile = {
@@ -198,14 +198,11 @@ const scoreFromLevel = (value?: string | null): number => {
   return 58;
 };
 
-const dateLabel = (date: Date): string =>
-  date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+const dateLabel = (date: Date): string => date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
-const monthLabel = (date: Date): string =>
-  date.toLocaleDateString("en-US", { month: "short" });
+const monthLabel = (date: Date): string => date.toLocaleDateString("en-US", { month: "short" });
 
-const clamp = (value: number, min: number, max: number): number =>
-  Math.max(min, Math.min(max, value));
+const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
 const parseIsoDate = (value: string): Date | null => {
   if (!value) return null;
@@ -230,17 +227,16 @@ function DashboardMetricCard({
   icon: React.ReactNode;
   onClick?: () => void;
 }) {
-  const cardClassName = "cursor-pointer rounded-xl border border-white/70 bg-white/60 px-4 py-3 text-left shadow-[0_10px_26px_rgba(15,23,42,0.08)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-[0_14px_28px_rgba(15,23,42,0.12)]";
+  const cardClassName =
+    "cursor-pointer rounded-xl border border-white/70 bg-white/60 px-4 py-3 text-left shadow-[0_10px_26px_rgba(15,23,42,0.08)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-[0_14px_28px_rgba(15,23,42,0.12)]";
 
   const content = (
     <div className="flex items-center justify-between gap-3">
       <div>
-        <p className="text-3xl font-semibold text-slate-900">{value}</p>
+        <p className="text-2xl font-semibold text-slate-900">{value}</p>
         <p className="text-sm font-medium text-slate-600">{label}</p>
       </div>
-      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
-        {icon}
-      </span>
+      <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">{icon}</span>
     </div>
   );
 
@@ -257,9 +253,12 @@ function DashboardMetricCard({
 
 export default function MasterTeacherDashboard() {
   const router = useRouter();
-  const handleNavigate = useCallback((path: string) => {
-    router.push(path);
-  }, [router]);
+  const handleNavigate = useCallback(
+    (path: string) => {
+      router.push(path);
+    },
+    [router]
+  );
 
   const storedProfile = useMemo(() => getStoredUserProfile(), []);
 
@@ -293,7 +292,7 @@ export default function MasterTeacherDashboard() {
   const [gradeCounts, setGradeCounts] = useState<{ students: number; teachers: number } | null>(null);
   const [isLoadingGradeCounts, setIsLoadingGradeCounts] = useState(false);
   const [gradeCountsError, setGradeCountsError] = useState<string | null>(null);
-  const [selectedSubject, setSelectedSubject] = useState<CoordinatorSubject>('Math');
+  const [selectedSubject, setSelectedSubject] = useState<CoordinatorSubject>("Math");
   const [selectedSection, setSelectedSection] = useState<string>("All Sections");
   const [selectedGrade, setSelectedGrade] = useState<string>("Grade Assigned");
   const [selectedRange, setSelectedRange] = useState<DateRangeFilter>("6m");
@@ -306,7 +305,7 @@ export default function MasterTeacherDashboard() {
         day: "numeric",
         year: "numeric",
       }),
-    [],
+    []
   );
 
   useEffect(() => {
@@ -325,10 +324,9 @@ export default function MasterTeacherDashboard() {
           throw new Error("Missing user information. Please log in again.");
         }
 
-        const response = await fetch(
-          `/api/master_teacher/coordinator/profile?userId=${encodeURIComponent(String(userId))}`,
-          { cache: "no-store" },
-        );
+        const response = await fetch(`/api/master_teacher/coordinator/profile?userId=${encodeURIComponent(String(userId))}`, {
+          cache: "no-store",
+        });
 
         const payload: CoordinatorApiResponse | null = await response.json().catch(() => null);
 
@@ -386,10 +384,10 @@ export default function MasterTeacherDashboard() {
           params.set("gradeLevel", gradeValue);
         }
 
-        const response = await fetch(
-          `/api/master_teacher/coordinator/students?${params.toString()}`,
-          { cache: "no-store", signal: controller.signal },
-        );
+        const response = await fetch(`/api/master_teacher/coordinator/students?${params.toString()}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
         const payload = (await response.json()) as CoordinatorStudentResponse;
         if (!response.ok || !payload.success || !Array.isArray(payload.data)) {
           throw new Error(payload?.error ?? "Failed to load students.");
@@ -474,10 +472,7 @@ export default function MasterTeacherDashboard() {
       setApprovedMaterialsCount(null);
 
       try {
-        const [pendingTotal, approvedTotal] = await Promise.all([
-          fetchMaterialCount("pending"),
-          fetchMaterialCount("approved"),
-        ]);
+        const [pendingTotal, approvedTotal] = await Promise.all([fetchMaterialCount("pending"), fetchMaterialCount("approved")]);
 
         if (!cancelled) {
           setPendingApprovalsCount(pendingTotal);
@@ -598,13 +593,9 @@ export default function MasterTeacherDashboard() {
   }, [selectedRange]);
 
   const sectionOptions = useMemo(() => {
-    const values = Array.from(
-      new Set(
-        students
-          .map((student) => sanitize(student.section))
-          .filter((value) => value.length > 0),
-      ),
-    ).sort((a, b) => a.localeCompare(b));
+    const values = Array.from(new Set(students.map((student) => sanitize(student.section)).filter((value) => value.length > 0))).sort(
+      (a, b) => a.localeCompare(b)
+    );
     return ["All Sections", ...values];
   }, [students]);
 
@@ -613,13 +604,10 @@ export default function MasterTeacherDashboard() {
     const to = parseIsoDate(dateBounds.to);
 
     return students.filter((student) => {
-      const matchesSection =
-        selectedSection === "All Sections" || sanitize(student.section) === selectedSection;
+      const matchesSection = selectedSection === "All Sections" || sanitize(student.section) === selectedSection;
       const matchesGrade = !selectedGrade || selectedGrade === "Grade Assigned" || sanitize(student.gradeLevel) === selectedGrade;
       const updatedDate = parseIsoDate(student.updatedAt);
-      const matchesDate =
-        (!from || (updatedDate && updatedDate >= from)) &&
-        (!to || (updatedDate && updatedDate <= to));
+      const matchesDate = (!from || (updatedDate && updatedDate >= from)) && (!to || (updatedDate && updatedDate <= to));
       return matchesSection && matchesGrade && matchesDate;
     });
   }, [dateBounds.from, dateBounds.to, selectedGrade, selectedSection, students]);
@@ -636,10 +624,7 @@ export default function MasterTeacherDashboard() {
             : scoreFromLevel(student.mathProficiency);
       return clamp(rawScore + (index % 6) - 2, 20, 98);
     });
-    const avgScore =
-      subjectScores.length > 0
-        ? subjectScores.reduce((sum, score) => sum + score, 0) / subjectScores.length
-        : 0;
+    const avgScore = subjectScores.length > 0 ? subjectScores.reduce((sum, score) => sum + score, 0) / subjectScores.length : 0;
 
     const now = new Date();
     const monthlyProgress = Array.from({ length: 6 }, (_, index) => {
@@ -662,20 +647,14 @@ export default function MasterTeacherDashboard() {
       { name: "Advanced", value: mastery.advanced, color: dashboardAccent },
     ];
 
-    const sections = Array.from(
-      new Set(base.map((student) => sanitize(student.section)).filter(Boolean)),
-    );
+    const sections = Array.from(new Set(base.map((student) => sanitize(student.section)).filter(Boolean)));
     const sectionList = sections.length ? sections : ["Section A", "Section B"];
     const competencies = ["Phonics", "Vocabulary", "Comprehension", "Numeracy", "Reasoning"];
 
     const skillGapHeatmap: HeatmapPoint[] = [];
     sectionList.forEach((section, row) => {
       competencies.forEach((competency, col) => {
-        const value = clamp(
-          Math.round(35 + (avgScore % 24) + row * 7 - col * 6 + (row + col) % 3 * 5),
-          10,
-          95,
-        );
+        const value = clamp(Math.round(35 + (avgScore % 24) + row * 7 - col * 6 + ((row + col) % 3) * 5), 10, 95);
         skillGapHeatmap.push({ x: competency, y: section, value });
       });
     });
@@ -683,10 +662,7 @@ export default function MasterTeacherDashboard() {
     const atRiskTrend = Array.from({ length: 8 }, (_, index) => {
       const pointDate = new Date(now);
       pointDate.setDate(now.getDate() - (7 - index) * 7);
-      const projected = Math.max(
-        0,
-        Math.round((count * 0.28 - index * 0.35 + ((index + 1) % 2) * 0.6) * 10) / 10,
-      );
+      const projected = Math.max(0, Math.round((count * 0.28 - index * 0.35 + ((index + 1) % 2) * 0.6) * 10) / 10);
       return { week: `W${index + 1}`, date: dateLabel(pointDate), count: projected };
     });
 
@@ -730,12 +706,8 @@ export default function MasterTeacherDashboard() {
     ];
 
     const attendancePerformance = base.map((student, index) => {
-      const attendance = clamp(76 + (index * 3) % 24, 70, 99);
-      const performance = clamp(
-        Math.round((subjectScores[index] ?? avgScore) * 0.86 + attendance * 0.22 - 10),
-        35,
-        99,
-      );
+      const attendance = clamp(76 + ((index * 3) % 24), 70, 99);
+      const performance = clamp(Math.round((subjectScores[index] ?? avgScore) * 0.86 + attendance * 0.22 - 10), 35, 99);
       return {
         student: student.fullName.split(" ")[0] ?? `S${index + 1}`,
         attendance,
@@ -756,11 +728,7 @@ export default function MasterTeacherDashboard() {
     const difficultCompetencyHeatmap: HeatmapPoint[] = [];
     ["Word Analysis", "Computation", "Inference", "Problem Solving", "Fluency"].forEach((comp, row) => {
       sectionList.forEach((section, col) => {
-        const diff = clamp(
-          Math.round(65 - avgScore * 0.4 + row * 8 - col * 2 + ((row + col) % 2) * 6),
-          8,
-          92,
-        );
+        const diff = clamp(Math.round(65 - avgScore * 0.4 + row * 8 - col * 2 + ((row + col) % 2) * 6), 8, 92);
         difficultCompetencyHeatmap.push({ x: section, y: comp, value: diff });
       });
     });
@@ -782,11 +750,7 @@ export default function MasterTeacherDashboard() {
 
     const progressForecast = Array.from({ length: 12 }, (_, index) => {
       const isForecast = index >= 8;
-      const score = clamp(
-        Number((avgScore * 0.72 + 32 + index * (isForecast ? 2.4 : 1.6)).toFixed(1)),
-        35,
-        98,
-      );
+      const score = clamp(Number((avgScore * 0.72 + 32 + index * (isForecast ? 2.4 : 1.6)).toFixed(1)), 35, 98);
       return { point: `W${index + 1}`, actual: isForecast ? null : score, forecast: isForecast ? score : null };
     });
 
@@ -819,9 +783,9 @@ export default function MasterTeacherDashboard() {
   }, []);
 
   const pendingReviewsCount = pendingApprovalsCount ?? 0;
-  const pendingReviewsValue = isLoadingApprovals ? '—' : approvalsError ? '—' : pendingReviewsCount;
-  const totalStudentsValue = isLoadingGradeCounts ? '—' : gradeCountsError ? '—' : (gradeCounts?.students ?? 0);
-  const teacherCardValue = isLoadingGradeCounts ? '—' : gradeCountsError ? '—' : (gradeCounts?.teachers ?? 0);
+  const pendingReviewsValue = isLoadingApprovals ? "—" : approvalsError ? "—" : pendingReviewsCount;
+  const totalStudentsValue = isLoadingGradeCounts ? "—" : gradeCountsError ? "—" : (gradeCounts?.students ?? 0);
+  const teacherCardValue = isLoadingGradeCounts ? "—" : gradeCountsError ? "—" : (gradeCounts?.teachers ?? 0);
   const gradeDescriptor = formatGradeDescriptor(coordinatorProfile?.gradeHandled);
   const subjectDescriptor = formatSubjectDescriptor(coordinatorProfile?.subjectAssigned);
   const readableGrade = gradeDescriptor === "their assigned grade" ? "the assigned grade" : gradeDescriptor;
@@ -861,10 +825,7 @@ export default function MasterTeacherDashboard() {
       .filter((item) => item.value > 0)
       .map((item) => ({ ...item }));
   }, [filteredStudents, selectedSubject, selectedSubjectKey]);
-  const hasPhonemicLevelPieData = useMemo(
-    () => phonemicLevelPieData.some((item) => item.value > 0),
-    [phonemicLevelPieData],
-  );
+  const hasPhonemicLevelPieData = useMemo(() => phonemicLevelPieData.some((item) => item.value > 0), [phonemicLevelPieData]);
 
   return (
     <div className="print-page relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
@@ -890,8 +851,7 @@ export default function MasterTeacherDashboard() {
               {/* Teacher Info Section */}
               <div className="flex flex-col mb-3 md:flex-row md:items-center md:justify-between">
                 <SecondaryHeader title="Teacher's Profile" />
-                <div className="flex space-x-2 mt-2 md:mt-0">
-                </div>
+                <div className="flex space-x-2 mt-2 md:mt-0"></div>
               </div>
 
               <div className="mb-6 min-w-full rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg sm:mb-7 sm:p-5 md:mb-8 md:p-6">
@@ -935,26 +895,22 @@ export default function MasterTeacherDashboard() {
                 <DashboardMetricCard
                   value={totalStudentsValue}
                   label="Total Students"
-                  icon={<GraduationCap className="h-4.5 w-4.5" />}
+                  icon={<GraduationCap className="h-5.5 w-5.5" />}
                   onClick={() => handleNavigate("/MasterTeacher/Coordinator/students")}
                 />
                 <DashboardMetricCard
                   value={teacherCardValue}
                   label="Total Teachers"
-                  icon={<FaChalkboardTeacher className="h-4.5 w-4.5" />}
+                  icon={<FaChalkboardTeacher className="h-5.5 w-5.5" />}
                   onClick={() => handleNavigate("/MasterTeacher/Coordinator/teachers")}
                 />
                 <DashboardMetricCard
                   value={pendingReviewsValue}
                   label="Pending Materials"
-                  icon={<FolderOpen className="h-4.5 w-4.5" />}
+                  icon={<FolderOpen className="h-5.5 w-5.5" />}
                   onClick={() => handleNavigate("/MasterTeacher/Coordinator/materials?status=pending")}
                 />
-                <DashboardMetricCard
-                  value={todayDateLabel}
-                  label="Date Today"
-                  icon={<CalendarDays className="h-4.5 w-4.5" />}
-                />
+                <DashboardMetricCard value={todayDateLabel} label="Date Today" icon={<CalendarDays className="h-5.5 w-5.5" />} />
               </div>
 
               <hr className="border-gray-200 mb-4 sm:mb-5 md:mb-6" />
@@ -1145,7 +1101,6 @@ export default function MasterTeacherDashboard() {
                       </div>
                     </div>
                   </div>
-
                 </div>
               </div>
             </div>
@@ -1169,7 +1124,6 @@ export default function MasterTeacherDashboard() {
       `}</style>
     </div>
   );
-
 }
 
 function FilterChip({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
@@ -1178,9 +1132,7 @@ function FilterChip({ active, label, onClick }: { active: boolean; label: string
       type="button"
       onClick={onClick}
       className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-        active
-          ? "border-emerald-700 bg-emerald-700 text-white"
-          : "border-emerald-100 bg-white/70 text-emerald-900 hover:border-emerald-300"
+        active ? "border-emerald-700 bg-emerald-700 text-white" : "border-emerald-100 bg-white/70 text-emerald-900 hover:border-emerald-300"
       }`}
     >
       {label}

@@ -1,7 +1,7 @@
 "use client";
-import { useState, useCallback, useEffect, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
-import { Filter, Printer } from 'lucide-react';
+import { useState, useCallback, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { CalendarDays, Filter, Printer } from "lucide-react";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -34,15 +34,16 @@ function DashboardMetricCard({
   icon: React.ReactNode;
   onClick?: () => void;
 }) {
-  const cardClassName = "cursor-pointer rounded-xl border border-white/70 bg-white/60 px-4 py-3 text-left shadow-[0_10px_26px_rgba(15,23,42,0.08)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-[0_14px_28px_rgba(15,23,42,0.12)]";
+  const cardClassName =
+    "cursor-pointer rounded-xl border border-white/70 bg-white/60 px-4 py-3 text-left shadow-[0_10px_26px_rgba(15,23,42,0.08)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-[0_14px_28px_rgba(15,23,42,0.12)]";
 
   const content = (
     <div className="flex items-center justify-between gap-3">
       <div>
-        <p className="text-3xl font-semibold text-slate-900">{value}</p>
+        <p className="text-2xl font-semibold text-slate-900">{value}</p>
         <p className="text-sm font-medium text-slate-600">{label}</p>
       </div>
-      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-700 bg-emerald-100 text-emerald-700">
+      <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-emerald-700 bg-emerald-100 text-emerald-700">
         {icon}
       </span>
     </div>
@@ -60,23 +61,20 @@ function DashboardMetricCard({
 }
 
 const EnglishCardIcon = () => (
-  <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-emerald-100 text-[13px] font-bold leading-none text-emerald-700">
+  <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-emerald-100 text-[15px] font-bold leading-none text-emerald-700">
     E
   </span>
 );
 
 const FilipinoCardIcon = () => (
-  <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-emerald-100 text-[13px] font-bold leading-none text-emerald-700">
+  <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-emerald-100 text-[15px] font-bold leading-none text-emerald-700">
     F
   </span>
 );
 
 const MathCardIcon = () => (
-  <span className="grid h-6 w-6 grid-cols-2 grid-rows-2 place-items-center rounded-md bg-emerald-100 text-[10px] font-bold leading-none text-emerald-700">
-    <span>+</span>
-    <span>−</span>
-    <span>×</span>
-    <span>÷</span>
+  <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-emerald-100 text-[15px] font-bold leading-none text-emerald-700">
+    M
   </span>
 );
 
@@ -220,9 +218,12 @@ function normalizeSubjectList(raw?: string | null): Array<(typeof REMEDIAL_SUBJE
 
 export default function TeacherDashboard() {
   const router = useRouter();
-  const handleNavigate = useCallback((path: string) => {
-    router.push(path);
-  }, [router]);
+  const handleNavigate = useCallback(
+    (path: string) => {
+      router.push(path);
+    },
+    [router]
+  );
 
   const [teacherProfile, setTeacherProfile] = useState<TeacherProfile | null>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
@@ -247,6 +248,15 @@ export default function TeacherDashboard() {
   const [selectedSections, setSelectedSections] = useState<string[]>([]);
   const [studentRows, setStudentRows] = useState<DashboardStudentRow[]>([]);
   const [studentsLoadError, setStudentsLoadError] = useState<string | null>(null);
+  const todayDateLabel = useMemo(
+    () =>
+      new Date().toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }),
+    []
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -257,10 +267,9 @@ export default function TeacherDashboard() {
       setCountsError(null);
       setTrendsError(null);
       try {
-        const response = await fetch(
-          `/api/master_teacher/remedialteacher/dashboard?userId=${encodeURIComponent(String(userId))}`,
-          { cache: "no-store" },
-        );
+        const response = await fetch(`/api/master_teacher/remedialteacher/dashboard?userId=${encodeURIComponent(String(userId))}`, {
+          cache: "no-store",
+        });
         const payload: RemedialCountsResponse | null = await response.json().catch(() => null);
 
         if (cancelled) return;
@@ -305,10 +314,7 @@ export default function TeacherDashboard() {
           throw new Error("Missing user information. Please log in again.");
         }
 
-        const response = await fetch(
-          "/api/master_teacher/profile",
-          { cache: "no-store" },
-        );
+        const response = await fetch("/api/master_teacher/profile", { cache: "no-store" });
 
         const payload: TeacherApiResponse | null = await response.json().catch(() => null);
 
@@ -319,11 +325,9 @@ export default function TeacherDashboard() {
           throw new Error(message);
         }
 
-        const nameParts = [
-          payload.profile.firstName,
-          payload.profile.middleName,
-          payload.profile.lastName,
-        ].filter((part): part is string => typeof part === "string" && part.trim().length > 0);
+        const nameParts = [payload.profile.firstName, payload.profile.middleName, payload.profile.lastName].filter(
+          (part): part is string => typeof part === "string" && part.trim().length > 0
+        );
 
         const teacherName = nameParts.length > 0 ? nameParts.join(" ") : "Teacher";
         setDashboardUserId(userId);
@@ -360,26 +364,22 @@ export default function TeacherDashboard() {
     };
   }, []);
 
-  const [selectedSubject, setSelectedSubject] = useState('English');
-  const fallbackMonths = ['September', 'October', 'November', 'December', 'January', 'February', 'March'];
+  const [selectedSubject, setSelectedSubject] = useState("English");
+  const fallbackMonths = ["September", "October", "November", "December", "January", "February", "March"];
   const monthOptions = trendData?.months?.length ? trendData.months.map((item) => item.label) : fallbackMonths;
   const filterMonthOptions = useMemo(
     () =>
       trendData?.months?.length
         ? trendData.months.map((item) => ({ key: item.key, label: item.label }))
         : fallbackMonths.map((label, index) => ({ key: `fallback-${index}`, label })),
-    [trendData?.months],
+    [trendData?.months]
   );
 
   const selectedSubjectKey = useMemo<SubjectKey>(() => toSubjectKey(selectedSubject), [selectedSubject]);
 
   const sectionOptions = useMemo(() => {
     return Array.from(
-      new Set(
-        studentRows
-          .map((row) => (typeof row.section === "string" ? row.section.trim() : ""))
-          .filter((section) => section.length > 0),
-      ),
+      new Set(studentRows.map((row) => (typeof row.section === "string" ? row.section.trim() : "")).filter((section) => section.length > 0))
     ).sort((a, b) => a.localeCompare(b));
   }, [studentRows]);
 
@@ -399,24 +399,29 @@ export default function TeacherDashboard() {
       if (from <= to) return index >= from && index <= to;
       return index >= from || index <= to;
     },
-    [monthRangeIndices.from, monthRangeIndices.to],
+    [monthRangeIndices.from, monthRangeIndices.to]
   );
 
   const filteredMonthIndices = useMemo(() => {
-    return filterMonthOptions
-      .map((_, index) => index)
-      .filter((index) => shouldIncludeByRange(index));
+    return filterMonthOptions.map((_, index) => index).filter((index) => shouldIncludeByRange(index));
   }, [filterMonthOptions, shouldIncludeByRange]);
 
-  const fallbackLevelLabels = selectedSubject === 'Math'
-    ? ['Emerging - Not Proficient', 'Emerging - Low Proficient', 'Developing - Nearly Proficient', 'Transitioning - Proficient', 'At Grade Level - Highly Proficient']
-    : ['Non-Reader', 'Syllable Reader', 'Word Reader', 'Phrase Reader', 'Sentence Reader', 'Paragraph Reader'];
+  const fallbackLevelLabels =
+    selectedSubject === "Math"
+      ? [
+          "Emerging - Not Proficient",
+          "Emerging - Low Proficient",
+          "Developing - Nearly Proficient",
+          "Transitioning - Proficient",
+          "At Grade Level - Highly Proficient",
+        ]
+      : ["Non-Reader", "Syllable Reader", "Word Reader", "Phrase Reader", "Sentence Reader", "Paragraph Reader"];
 
   const subjectTrend = trendData?.subjects?.[selectedSubject as keyof SubjectCountsState];
   const resolvedLevelLabels = subjectTrend?.levelLabels?.length ? subjectTrend.levelLabels : fallbackLevelLabels;
   const periodLabels = monthOptions;
   const periodValues = subjectTrend?.monthly;
-  const normalizedPeriodValues = periodLabels.map((_, index) => (periodValues?.[index] ?? 0));
+  const normalizedPeriodValues = periodLabels.map((_, index) => periodValues?.[index] ?? 0);
   const filteredPeriodLabels = filteredMonthIndices.map((index) => periodLabels[index]).filter(Boolean);
   const filteredPeriodValues = filteredMonthIndices.map((index) => normalizedPeriodValues[index] ?? 0);
 
@@ -431,8 +436,12 @@ export default function TeacherDashboard() {
   const normalizedDistributionValues = resolvedLevelLabels.map((_, index) => distributionValues?.[index] ?? 0);
 
   const monthlyProgressData = useMemo(
-    () => filteredPeriodLabels.map((label, index) => ({ month: label.slice(0, 3), score: Math.max(0, Math.min(100, (filteredPeriodValues[index] ?? 0) * 12)) })),
-    [filteredPeriodLabels, filteredPeriodValues],
+    () =>
+      filteredPeriodLabels.map((label, index) => ({
+        month: label.slice(0, 3),
+        score: Math.max(0, Math.min(100, (filteredPeriodValues[index] ?? 0) * 12)),
+      })),
+    [filteredPeriodLabels, filteredPeriodValues]
   );
 
   const beforeAfterData = useMemo(() => {
@@ -454,9 +463,13 @@ export default function TeacherDashboard() {
         setStudentsLoadError(null);
         const response = await fetch(
           `/api/master_teacher/remedialteacher/students?userId=${encodeURIComponent(String(dashboardUserId))}&subject=${encodeURIComponent(selectedSubject.toLowerCase())}`,
-          { cache: "no-store" },
+          { cache: "no-store" }
         );
-        const payload = (await response.json().catch(() => null)) as { success?: boolean; students?: DashboardStudentRow[]; error?: string } | null;
+        const payload = (await response.json().catch(() => null)) as {
+          success?: boolean;
+          students?: DashboardStudentRow[];
+          error?: string;
+        } | null;
 
         if (cancelled) return;
 
@@ -486,17 +499,12 @@ export default function TeacherDashboard() {
 
   const filteredStudentRows = useMemo(() => {
     return studentRows.filter((row) => {
-      const sectionMatch =
-        selectedSections.length === 0 ||
-        (typeof row.section === "string" && selectedSections.includes(row.section));
+      const sectionMatch = selectedSections.length === 0 || (typeof row.section === "string" && selectedSections.includes(row.section));
       return sectionMatch;
     });
   }, [studentRows, selectedSections]);
 
-  const filteredHandledCount = useMemo(
-    () => filteredStudentRows.length,
-    [filteredStudentRows],
-  );
+  const filteredHandledCount = useMemo(() => filteredStudentRows.length, [filteredStudentRows]);
 
   const phonemicLevelPieData = useMemo(() => {
     const levelMap = new Map<string, number>();
@@ -534,10 +542,7 @@ export default function TeacherDashboard() {
     setSelectedSections([]);
   }, []);
 
-  const hasPhonemicLevelPieData = useMemo(
-    () => phonemicLevelPieData.some((item) => item.value > 0),
-    [phonemicLevelPieData],
-  );
+  const hasPhonemicLevelPieData = useMemo(() => phonemicLevelPieData.some((item) => item.value > 0), [phonemicLevelPieData]);
 
   const gradeNumberLabel = useMemo(() => {
     const raw = teacherProfile?.gradeHandled ?? "";
@@ -696,8 +701,21 @@ export default function TeacherDashboard() {
                                   }}
                                   className="relative z-20 flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm"
                                 >
-                                  <span>{monthRangeFrom ? filterMonthOptions.find((item) => item.key === monthRangeFrom)?.label ?? "From month" : "From month"}</span>
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <span>
+                                    {monthRangeFrom
+                                      ? (filterMonthOptions.find((item) => item.key === monthRangeFrom)?.label ?? "From month")
+                                      : "From month"}
+                                  </span>
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    className="h-4 w-4 text-slate-500"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
                                     <polyline points="6 9 12 15 18 9" />
                                   </svg>
                                 </button>
@@ -757,8 +775,21 @@ export default function TeacherDashboard() {
                                   }}
                                   className="relative z-20 flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm"
                                 >
-                                  <span>{monthRangeTo ? filterMonthOptions.find((item) => item.key === monthRangeTo)?.label ?? "To month" : "To month"}</span>
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <span>
+                                    {monthRangeTo
+                                      ? (filterMonthOptions.find((item) => item.key === monthRangeTo)?.label ?? "To month")
+                                      : "To month"}
+                                  </span>
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    className="h-4 w-4 text-slate-500"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
                                     <polyline points="6 9 12 15 18 9" />
                                   </svg>
                                 </button>
@@ -818,10 +849,11 @@ export default function TeacherDashboard() {
                                   {section}
                                 </button>
                               ))}
-                              {sectionOptions.length === 0 ? <span className="text-xs text-slate-500">No section options available.</span> : null}
+                              {sectionOptions.length === 0 ? (
+                                <span className="text-xs text-slate-500">No section options available.</span>
+                              ) : null}
                             </div>
                           </div>
-
                         </div>
 
                         <div className="mt-5 flex items-center justify-end gap-2">
@@ -860,29 +892,38 @@ export default function TeacherDashboard() {
                 </div>
               </div>
 
-              <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <DashboardMetricCard
                   value={isLoadingCounts ? "..." : handledCounts.English.toLocaleString()}
-                  label="English Handled Students"
+                  label="English Students"
                   icon={<EnglishCardIcon />}
                   onClick={() => handleNavigate("/MasterTeacher/RemedialTeacher/students/subject/english")}
                 />
                 <DashboardMetricCard
                   value={isLoadingCounts ? "..." : handledCounts.Filipino.toLocaleString()}
-                  label="Filipino Handled Students"
+                  label="Filipino Students"
                   icon={<FilipinoCardIcon />}
                   onClick={() => handleNavigate("/MasterTeacher/RemedialTeacher/students/subject/filipino")}
                 />
                 <DashboardMetricCard
                   value={isLoadingCounts ? "..." : handledCounts.Math.toLocaleString()}
-                  label="Math Handled Students"
+                  label="Math Students"
                   icon={<MathCardIcon />}
                   onClick={() => handleNavigate("/MasterTeacher/RemedialTeacher/students/subject/math")}
                 />
+                <DashboardMetricCard value={todayDateLabel} label="Date Today" icon={<CalendarDays className="h-5.5 w-5.5" />} />
               </div>
 
-              {countsError ? <div className="mb-3 text-sm text-red-600" role="alert">{countsError}</div> : null}
-              {studentsLoadError ? <div className="mb-6 text-sm text-red-600" role="alert">{studentsLoadError}</div> : null}
+              {countsError ? (
+                <div className="mb-3 text-sm text-red-600" role="alert">
+                  {countsError}
+                </div>
+              ) : null}
+              {studentsLoadError ? (
+                <div className="mb-6 text-sm text-red-600" role="alert">
+                  {studentsLoadError}
+                </div>
+              ) : null}
 
               <div className="space-y-8">
                 <div>
@@ -909,7 +950,6 @@ export default function TeacherDashboard() {
                       </div>
                     </div>
                   </div>
-
                 </div>
 
                 <div>
@@ -964,7 +1004,6 @@ export default function TeacherDashboard() {
                   </div>
                 </div>
               </div>
-
             </div>
           </div>
         </main>

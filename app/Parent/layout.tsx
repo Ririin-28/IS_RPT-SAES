@@ -1,6 +1,7 @@
 import { ReactNode } from "react";
 import Script from "next/script";
 import { redirect } from "next/navigation";
+import HydrationBoundary from "@/components/Common/HydrationBoundary";
 import ParentSessionGuard from "@/components/Parent/ParentSessionGuard";
 import { getParentSessionFromCookies } from "@/lib/server/parent-session";
 
@@ -55,7 +56,9 @@ export default async function ParentLayout({ children }: { children: ReactNode }
 })();`,
         }}
       />
-      <ParentSessionGuard>{children}</ParentSessionGuard>
+      <ParentSessionGuard>
+        <HydrationBoundary>{children}</HydrationBoundary>
+      </ParentSessionGuard>
     </>
   );
 }

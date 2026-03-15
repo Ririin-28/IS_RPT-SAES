@@ -4,19 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BarChart3, CalendarDays, GraduationCap, Printer } from "lucide-react";
 import { FaChalkboardTeacher } from "react-icons/fa";
-import {
-  CartesianGrid,
-  Cell,
-  Legend,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import PrincipalHeader from "@/components/Principal/Header";
 import PrincipalSidebar from "@/components/Principal/Sidebar";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
@@ -218,7 +206,7 @@ export default function PrincipalDashboard() {
         day: "numeric",
         year: "numeric",
       }),
-    [],
+    []
   );
 
   const loadDashboard = useCallback(async () => {
@@ -239,7 +227,7 @@ export default function PrincipalDashboard() {
           remedialAverageHeatmap: [],
           performanceTrend: [],
           averageStudentsPerSubject: [],
-        },
+        }
       );
       setLastUpdated(new Date());
       setError(null);
@@ -261,10 +249,8 @@ export default function PrincipalDashboard() {
 
   const filteredHeatmapSource = useMemo(
     () =>
-      analytics.remedialAverageHeatmap.filter(
-        (entry) => selectedSubjects.includes(entry.subject) && selectedGrades.includes(entry.grade),
-      ),
-    [analytics.remedialAverageHeatmap, selectedSubjects, selectedGrades],
+      analytics.remedialAverageHeatmap.filter((entry) => selectedSubjects.includes(entry.subject) && selectedGrades.includes(entry.grade)),
+    [analytics.remedialAverageHeatmap, selectedSubjects, selectedGrades]
   );
 
   const remedialAverageHeatmap = useMemo<HeatCell[]>(() => {
@@ -311,10 +297,7 @@ export default function PrincipalDashboard() {
     });
   }, [analytics.performanceTrend, selectedQuarter, monthRangeFrom, monthRangeTo, monthInRange]);
 
-  const visibleTrendSubjects = useMemo(
-    () => ["All Subjects", ...selectedSubjects] as TrendSubjectFilter[],
-    [selectedSubjects],
-  );
+  const visibleTrendSubjects = useMemo(() => ["All Subjects", ...selectedSubjects] as TrendSubjectFilter[], [selectedSubjects]);
 
   useEffect(() => {
     if (trendSubjectFilter === "All Subjects") return;
@@ -362,7 +345,7 @@ export default function PrincipalDashboard() {
 
   const hasStudentsPerSubjectData = useMemo(
     () => averageStudentsPerSubject.some((entry) => entry.students > 0),
-    [averageStudentsPerSubject],
+    [averageStudentsPerSubject]
   );
 
   const clearFilters = useCallback(() => {
@@ -402,9 +385,10 @@ export default function PrincipalDashboard() {
 
   const totalTeachers = overviewTotals?.teachers ?? 0;
   const totalStudents = overviewTotals?.students ?? 0;
-  const reportRate = reportStats.currentMonth && reportStats.currentMonth.total > 0
-    ? Math.round((reportStats.currentMonth.submitted / reportStats.currentMonth.total) * 100)
-    : 0;
+  const reportRate =
+    reportStats.currentMonth && reportStats.currentMonth.total > 0
+      ? Math.round((reportStats.currentMonth.submitted / reportStats.currentMonth.total) * 100)
+      : 0;
 
   return (
     <div className="dashboard-page flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
@@ -459,7 +443,16 @@ export default function PrincipalDashboard() {
                       aria-label="Filter dashboard"
                       title="Filter"
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-4.5 w-4.5"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
                         <polygon points="3 4 21 4 14 12 14 19 10 21 10 12 3 4" />
                       </svg>
                     </button>
@@ -527,7 +520,16 @@ export default function PrincipalDashboard() {
                                   className="relative z-20 flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm"
                                 >
                                   <span>{monthRangeFrom ? getMonthLabel(monthRangeFrom) : "From month"}</span>
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    className="h-4 w-4 text-slate-500"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
                                     <polyline points="6 9 12 15 18 9" />
                                   </svg>
                                 </button>
@@ -586,7 +588,16 @@ export default function PrincipalDashboard() {
                                   className="relative z-20 flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm"
                                 >
                                   <span>{monthRangeTo ? getMonthLabel(monthRangeTo) : "To month"}</span>
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    className="h-4 w-4 text-slate-500"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
                                     <polyline points="6 9 12 15 18 9" />
                                   </svg>
                                 </button>
@@ -714,8 +725,8 @@ export default function PrincipalDashboard() {
                       <p className="text-3xl font-semibold text-slate-900">{isLoading ? "..." : totalStudents.toLocaleString()}</p>
                       <p className="text-sm font-medium text-slate-600">Total Students</p>
                     </div>
-                    <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
-                      <GraduationCap className="h-4.5 w-4.5" />
+                    <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+                      <GraduationCap className="h-5.5 w-5.5" />
                     </span>
                   </div>
                 </button>
@@ -730,8 +741,8 @@ export default function PrincipalDashboard() {
                       <p className="text-3xl font-semibold text-slate-900">{isLoading ? "..." : totalTeachers.toLocaleString()}</p>
                       <p className="text-sm font-medium text-slate-600">Teaching Staff</p>
                     </div>
-                    <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
-                      <FaChalkboardTeacher className="h-4.5 w-4.5" />
+                    <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+                      <FaChalkboardTeacher className="h-5.5 w-5.5" />
                     </span>
                   </div>
                 </button>
@@ -746,8 +757,8 @@ export default function PrincipalDashboard() {
                       <p className="text-3xl font-semibold text-slate-900">{isLoading ? "..." : `${reportRate}%`}</p>
                       <p className="text-sm font-medium text-slate-600">Report Submission</p>
                     </div>
-                    <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
-                      <BarChart3 className="h-4.5 w-4.5" />
+                    <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+                      <BarChart3 className="h-5.5 w-5.5" />
                     </span>
                   </div>
                 </button>
@@ -755,11 +766,11 @@ export default function PrincipalDashboard() {
                 <div className="cursor-pointer rounded-xl border border-white/70 bg-white/60 px-4 py-3 text-left shadow-[0_10px_26px_rgba(15,23,42,0.08)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-[0_14px_28px_rgba(15,23,42,0.12)]">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <p className="text-3xl font-semibold text-slate-900">{todayDateLabel}</p>
+                      <p className="text-2xl font-semibold text-slate-900">{todayDateLabel}</p>
                       <p className="text-sm font-medium text-slate-600">Date Today</p>
                     </div>
-                    <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
-                      <CalendarDays className="h-4.5 w-4.5" />
+                    <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+                      <CalendarDays className="h-5.5 w-5.5" />
                     </span>
                   </div>
                 </div>
@@ -769,8 +780,7 @@ export default function PrincipalDashboard() {
                 <div className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-3">
                   <div className="xl:col-span-2">
                     <GlassChartCard title="Performance Trend" subtitle="Average remedial score trend over time.">
-                      <div className="mb-3 flex items-center justify-end gap-2">
-                      </div>
+                      <div className="mb-3 flex items-center justify-end gap-2"></div>
                       {hasPerformanceTrendData ? (
                         <ResponsiveContainer width="100%" height="100%">
                           <LineChart data={performanceTrendSeries}>
@@ -790,7 +800,10 @@ export default function PrincipalDashboard() {
                   </div>
 
                   <div className="xl:col-span-1">
-                    <GlassChartCard title="Students per Subject Ratio" subtitle="Distinct students participating in remedial sessions by subject.">
+                    <GlassChartCard
+                      title="Students per Subject Ratio"
+                      subtitle="Distinct students participating in remedial sessions by subject."
+                    >
                       {hasStudentsPerSubjectData ? (
                         <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
@@ -807,7 +820,12 @@ export default function PrincipalDashboard() {
                               ))}
                             </Pie>
                             <Legend />
-                            <Tooltip formatter={(value: number, name: string, item: { payload?: { percentage?: number } }) => [`${value} (${item?.payload?.percentage ?? 0}%)`, name]} />
+                            <Tooltip
+                              formatter={(value: number, name: string, item: { payload?: { percentage?: number } }) => [
+                                `${value} (${item?.payload?.percentage ?? 0}%)`,
+                                name,
+                              ]}
+                            />
                           </PieChart>
                         </ResponsiveContainer>
                       ) : (
@@ -832,7 +850,10 @@ export default function PrincipalDashboard() {
                       colors={HEATMAP_SCORE_COLORS}
                     />
                   ) : (
-                    <GlassChartCard title="Remedial Average Heatmap" subtitle="Average remedial performance score per subject and grade level.">
+                    <GlassChartCard
+                      title="Remedial Average Heatmap"
+                      subtitle="Average remedial performance score per subject and grade level."
+                    >
                       <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/40 text-sm font-medium text-slate-500">
                         No remedial average data available.
                       </div>
@@ -840,8 +861,6 @@ export default function PrincipalDashboard() {
                   )}
                 </div>
               </section>
-
-              
             </div>
           </div>
         </main>

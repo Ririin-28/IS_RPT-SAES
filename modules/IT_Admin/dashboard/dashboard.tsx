@@ -3,20 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Printer } from "lucide-react";
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import Sidebar from "@/components/IT_Admin/Sidebar";
 import Header from "@/components/IT_Admin/Header";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
@@ -76,15 +63,7 @@ interface DashboardPayload {
 }
 
 type DateRangeValue = "daily" | "weekly" | "30d" | "3m" | "6m";
-type RoleFilterValue =
-  | "all"
-  | "it admin"
-  | "principal"
-  | "coordinator"
-  | "master teacher"
-  | "teacher"
-  | "parent"
-  | "student";
+type RoleFilterValue = "all" | "it admin" | "principal" | "coordinator" | "master teacher" | "teacher" | "parent" | "student";
 
 const ROLE_ORDER = ["IT Admin", "Principal", "Coordinator", "Master Teacher", "Teacher", "Parent", "Student"] as const;
 const ROLE_FILTER_OPTIONS: RoleFilterValue[] = [
@@ -159,13 +138,7 @@ function GlassChartCard({ title, subtitle, children }: { title: string; subtitle
   );
 }
 
-function ChartStateFallback({
-  state,
-  emptyMessage,
-}: {
-  state: ChartState<unknown>;
-  emptyMessage: string;
-}) {
+function ChartStateFallback({ state, emptyMessage }: { state: ChartState<unknown>; emptyMessage: string }) {
   if (state.loading && state.data.length === 0) {
     return <div className="flex h-full items-center justify-center text-sm text-slate-500">Loading chart...</div>;
   }
@@ -221,7 +194,11 @@ function OverviewCard({
           <p className="text-3xl font-semibold text-slate-900">{value}</p>
           <p className="text-sm font-medium text-slate-600">{label}</p>
         </div>
-        {icon && <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">{icon}</span>}
+        {icon && (
+          <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+            {icon}
+          </span>
+        )}
       </div>
     </>
   );
@@ -300,7 +277,7 @@ export default function ITAdminDashboard() {
     (path: string) => {
       router.push(path);
     },
-    [router],
+    [router]
   );
 
   const closeFilterPanel = useCallback(() => {
@@ -342,7 +319,7 @@ export default function ITAdminDashboard() {
             newUsersThisWeek: null,
             pendingOnboarding: null,
             archivedAccounts: null,
-          },
+          }
         );
         setMetadata(payload.metadata ?? { newUsersSourceColumn: null });
       } catch (error) {
@@ -448,7 +425,6 @@ export default function ITAdminDashboard() {
     };
   }, [buildCommonQuery, monthRangeFrom, monthRangeTo, selectedRoleQuery]);
 
-
   const chartLoginsByRole = useMemo(() => {
     const roleMap = new Map<string, number>();
     for (const item of loginsState.data) {
@@ -504,9 +480,7 @@ export default function ITAdminDashboard() {
       return `Ensure the trusted_devices table includes one of these timestamp columns: ${columns.join(", ")}.`;
     }
 
-    return metadata.newUsersSourceColumn
-      ? `Using ${metadata.newUsersSourceColumn} to determine when devices were registered.`
-      : null;
+    return metadata.newUsersSourceColumn ? `Using ${metadata.newUsersSourceColumn} to determine when devices were registered.` : null;
   }, [metadata]);
 
   const overviewCards = useMemo(
@@ -517,7 +491,16 @@ export default function ITAdminDashboard() {
         tooltip: "Total registered accounts.",
         value: overview.totalUsers,
         icon: (
-          <svg width="19" height="19" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="22"
+            height="22"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
             <path d="M16 3.128a4 4 0 0 1 0 7.744" />
             <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
@@ -532,7 +515,16 @@ export default function ITAdminDashboard() {
         tooltip: "Total newly added accounts.",
         value: overview.newUsersThisWeek,
         icon: (
-          <svg width="19" height="19" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="22"
+            height="22"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
             <circle cx="9" cy="7" r="4" />
             <line x1="19" x2="19" y1="8" y2="14" />
@@ -547,7 +539,16 @@ export default function ITAdminDashboard() {
         tooltip: "Total accounts created but not yet activated by users.",
         value: overview.pendingOnboarding,
         icon: (
-          <svg width="19" height="19" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="22"
+            height="22"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
             <circle cx="9" cy="7" r="4" />
             <line x1="17" y1="8" x2="22" y2="13" />
@@ -562,7 +563,16 @@ export default function ITAdminDashboard() {
         tooltip: "Total archived accounts.",
         value: overview.archivedAccounts,
         icon: (
-          <svg width="19" height="19" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="22"
+            height="22"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <rect x="3" y="4" width="18" height="4" rx="1" />
             <path d="M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8" />
             <line x1="10" y1="12" x2="14" y2="12" />
@@ -571,7 +581,7 @@ export default function ITAdminDashboard() {
         onClick: () => handleNavigation("/IT_Admin/archive"),
       },
     ],
-    [handleNavigation, overview],
+    [handleNavigation, overview]
   );
 
   return (
@@ -590,13 +600,21 @@ export default function ITAdminDashboard() {
             <div className="no-print pointer-events-none absolute -top-16 right-10 h-52 w-52 rounded-full bg-emerald-200/55 blur-3xl" />
             <div className="no-print pointer-events-none absolute bottom-8 left-8 h-56 w-56 rounded-full bg-emerald-100/45 blur-3xl" />
 
-            <div id="it-admin-export-root" className="relative h-full min-h-95 overflow-hidden rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.10)] backdrop-blur-xl sm:p-5 md:p-6">
+            <div
+              id="it-admin-export-root"
+              className="relative h-full min-h-95 overflow-hidden rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.10)] backdrop-blur-xl sm:p-5 md:p-6"
+            >
               <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <SecondaryHeader title="IT Admin Overview" />
                 <div className="no-print flex shrink-0 items-center gap-2">
                   <div className="relative">
                     {isFilterModalOpen && (
-                      <button type="button" className="fixed inset-0 z-10 cursor-default" onClick={closeFilterPanel} aria-label="Close filter panel" />
+                      <button
+                        type="button"
+                        className="fixed inset-0 z-10 cursor-default"
+                        onClick={closeFilterPanel}
+                        aria-label="Close filter panel"
+                      />
                     )}
 
                     <button
@@ -612,7 +630,16 @@ export default function ITAdminDashboard() {
                       aria-label="Filter dashboard"
                       title="Filter"
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-4.5 w-4.5"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
                         <polygon points="3 4 21 4 14 12 14 19 10 21 10 12 3 4" />
                       </svg>
                     </button>
@@ -621,14 +648,20 @@ export default function ITAdminDashboard() {
                       <div className="absolute right-0 z-20 mt-2 w-[min(58rem,94vw)] rounded-2xl border border-gray-200 bg-white p-5 shadow-[0_24px_48px_rgba(15,23,42,0.22)]">
                         <div className="mb-4 flex items-center justify-between gap-3">
                           <p className="text-base font-semibold text-slate-900">Filter Dashboard</p>
-                          <button type="button" onClick={closeFilterPanel} className="rounded-full border border-emerald-100 bg-white px-2.5 py-1 text-xs font-semibold text-emerald-900">
+                          <button
+                            type="button"
+                            onClick={closeFilterPanel}
+                            className="rounded-full border border-emerald-100 bg-white px-2.5 py-1 text-xs font-semibold text-emerald-900"
+                          >
                             Close
                           </button>
                         </div>
 
                         <div className="grid grid-cols-1 gap-5">
                           <div>
-                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Global Date Range (all 4 charts)</p>
+                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                              Global Date Range (all 4 charts)
+                            </p>
                             <div className="flex flex-wrap gap-2">
                               {DATE_RANGE_OPTIONS.map((option) => (
                                 <button
@@ -648,13 +681,22 @@ export default function ITAdminDashboard() {
                           </div>
 
                           <div className="rounded-xl border border-slate-100 p-3">
-                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">User Analytics Filters (Logins per Role + Monthly Growth)</p>
+                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                              User Analytics Filters (Logins per Role + Monthly Growth)
+                            </p>
                             <div className="grid grid-cols-1 gap-4">
                               <div>
                                 <p className="mb-2 text-xs font-semibold text-slate-600">Month Range</p>
                                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
                                   <div className="relative">
-                                    {monthFromMenuOpen && <button type="button" className="fixed inset-0 z-10 cursor-default" onClick={() => setMonthFromMenuOpen(false)} aria-label="Close month-from menu" />}
+                                    {monthFromMenuOpen && (
+                                      <button
+                                        type="button"
+                                        className="fixed inset-0 z-10 cursor-default"
+                                        onClick={() => setMonthFromMenuOpen(false)}
+                                        aria-label="Close month-from menu"
+                                      />
+                                    )}
                                     <button
                                       type="button"
                                       onClick={() => {
@@ -668,9 +710,28 @@ export default function ITAdminDashboard() {
                                     </button>
                                     {monthFromMenuOpen && (
                                       <div className="absolute left-0 right-0 z-20 mt-2 max-h-64 overflow-y-auto rounded-xl border border-gray-200 bg-white p-2 shadow-lg">
-                                        <button type="button" onClick={() => { setMonthRangeFrom(null); setMonthFromMenuOpen(false); }} className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-100">Any month</button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setMonthRangeFrom(null);
+                                            setMonthFromMenuOpen(false);
+                                          }}
+                                          className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                                        >
+                                          Any month
+                                        </button>
                                         {MONTH_OPTIONS.map((option) => (
-                                          <button key={`from-${option.value}`} type="button" onClick={() => { setMonthRangeFrom(option.value); setMonthFromMenuOpen(false); }} className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-100">{option.label}</button>
+                                          <button
+                                            key={`from-${option.value}`}
+                                            type="button"
+                                            onClick={() => {
+                                              setMonthRangeFrom(option.value);
+                                              setMonthFromMenuOpen(false);
+                                            }}
+                                            className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                                          >
+                                            {option.label}
+                                          </button>
                                         ))}
                                       </div>
                                     )}
@@ -679,7 +740,14 @@ export default function ITAdminDashboard() {
                                   <span className="justify-self-center text-sm font-semibold text-slate-500">to</span>
 
                                   <div className="relative">
-                                    {monthToMenuOpen && <button type="button" className="fixed inset-0 z-10 cursor-default" onClick={() => setMonthToMenuOpen(false)} aria-label="Close month-to menu" />}
+                                    {monthToMenuOpen && (
+                                      <button
+                                        type="button"
+                                        className="fixed inset-0 z-10 cursor-default"
+                                        onClick={() => setMonthToMenuOpen(false)}
+                                        aria-label="Close month-to menu"
+                                      />
+                                    )}
                                     <button
                                       type="button"
                                       onClick={() => {
@@ -693,9 +761,28 @@ export default function ITAdminDashboard() {
                                     </button>
                                     {monthToMenuOpen && (
                                       <div className="absolute left-0 right-0 z-20 mt-2 max-h-64 overflow-y-auto rounded-xl border border-gray-200 bg-white p-2 shadow-lg">
-                                        <button type="button" onClick={() => { setMonthRangeTo(null); setMonthToMenuOpen(false); }} className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-100">Any month</button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setMonthRangeTo(null);
+                                            setMonthToMenuOpen(false);
+                                          }}
+                                          className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                                        >
+                                          Any month
+                                        </button>
                                         {MONTH_OPTIONS.map((option) => (
-                                          <button key={`to-${option.value}`} type="button" onClick={() => { setMonthRangeTo(option.value); setMonthToMenuOpen(false); }} className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-100">{option.label}</button>
+                                          <button
+                                            key={`to-${option.value}`}
+                                            type="button"
+                                            onClick={() => {
+                                              setMonthRangeTo(option.value);
+                                              setMonthToMenuOpen(false);
+                                            }}
+                                            className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                                          >
+                                            {option.label}
+                                          </button>
                                         ))}
                                       </div>
                                     )}
@@ -728,14 +815,21 @@ export default function ITAdminDashboard() {
                               </div>
                             </div>
                           </div>
-
                         </div>
 
                         <div className="mt-5 flex items-center justify-end gap-2">
-                          <button type="button" onClick={clearFilters} className="rounded-md border border-emerald-100 bg-white/80 px-3 py-2 text-xs font-semibold text-emerald-800">
+                          <button
+                            type="button"
+                            onClick={clearFilters}
+                            className="rounded-md border border-emerald-100 bg-white/80 px-3 py-2 text-xs font-semibold text-emerald-800"
+                          >
                             Clear All
                           </button>
-                          <button type="button" className="rounded-md bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800" onClick={closeFilterPanel}>
+                          <button
+                            type="button"
+                            className="rounded-md bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800"
+                            onClick={closeFilterPanel}
+                          >
                             Apply Filters
                           </button>
                         </div>
@@ -820,7 +914,13 @@ export default function ITAdminDashboard() {
                           <XAxis dataKey="month" tick={{ fill: palette.text, fontSize: 11 }} />
                           <YAxis tick={{ fill: palette.text, fontSize: 11 }} />
                           <Tooltip />
-                          <Area type="monotone" dataKey="totalAccounts" stroke={palette.secondary} strokeWidth={2.5} fill="url(#growthFillItAdmin)" />
+                          <Area
+                            type="monotone"
+                            dataKey="totalAccounts"
+                            stroke={palette.secondary}
+                            strokeWidth={2.5}
+                            fill="url(#growthFillItAdmin)"
+                          />
                         </AreaChart>
                       </ResponsiveContainer>
                     )}

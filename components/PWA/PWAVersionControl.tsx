@@ -71,7 +71,6 @@ export default function PWAVersionControl({ versionLabel }: PWAVersionControlPro
     }
 
     let isMounted = true;
-    let activeRegistration: ServiceWorkerRegistration | null = null;
     let observedInstallingWorker: ServiceWorker | null = null;
     const cleanupCallbacks: Array<() => void> = [];
 
@@ -110,8 +109,6 @@ export default function PWAVersionControl({ versionLabel }: PWAVersionControlPro
         return;
       }
 
-      activeRegistration = registration;
-
       if (registration.waiting && navigator.serviceWorker.controller) {
         markUpdateReady();
       } else if (isMounted) {
@@ -140,7 +137,6 @@ export default function PWAVersionControl({ versionLabel }: PWAVersionControlPro
       isMounted = false;
       navigator.serviceWorker.removeEventListener("controllerchange", handleControllerChange);
       cleanupCallbacks.forEach((callback) => callback());
-      activeRegistration = null;
       observedInstallingWorker = null;
     };
   }, []);
