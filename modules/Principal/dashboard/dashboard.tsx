@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BarChart3, Printer, Users } from "lucide-react";
+import { BarChart3, GraduationCap, Printer } from "lucide-react";
 import { FaChalkboardTeacher } from "react-icons/fa";
 import {
   CartesianGrid,
@@ -175,7 +175,7 @@ function HeatmapCard({
 function GlassChartCard({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
     <section className="rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg sm:p-5">
-      <div className="mb-3">
+      <div className="mb-3 min-h-14">
         <h3 className="text-sm font-semibold text-slate-900 sm:text-base">{title}</h3>
         {subtitle ? <p className="mt-1 text-xs text-slate-500">{subtitle}</p> : null}
       </div>
@@ -706,7 +706,7 @@ export default function PrincipalDashboard() {
                       <p className="text-sm font-medium text-slate-600">Total Students</p>
                     </div>
                     <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
-                      <Users className="h-4.5 w-4.5" />
+                      <GraduationCap className="h-4.5 w-4.5" />
                     </span>
                   </div>
                 </button>
@@ -745,26 +745,57 @@ export default function PrincipalDashboard() {
               </div>
 
               <section className="mb-8">
-                <div className="mt-3 grid grid-cols-1 gap-4">
-                  <GlassChartCard title="Performance Trend" subtitle="Average remedial score trend over time.">
-                    <div className="mb-3 flex items-center justify-end gap-2">
-                    </div>
-                    {hasPerformanceTrendData ? (
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={performanceTrendSeries}>
-                          <CartesianGrid strokeDasharray="3 3" stroke={palette.grid} />
-                          <XAxis dataKey="period" tick={{ fill: palette.text, fontSize: 11 }} />
-                          <YAxis domain={[0, 100]} tick={{ fill: palette.text, fontSize: 11 }} />
-                          <Tooltip />
-                          <Line type="monotone" dataKey="value" stroke={palette.primary} strokeWidth={2.5} dot={false} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    ) : (
-                      <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/40 text-sm font-medium text-slate-500">
-                        No performance trend data available.
+                <div className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-3">
+                  <div className="xl:col-span-2">
+                    <GlassChartCard title="Performance Trend" subtitle="Average remedial score trend over time.">
+                      <div className="mb-3 flex items-center justify-end gap-2">
                       </div>
-                    )}
-                  </GlassChartCard>
+                      {hasPerformanceTrendData ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={performanceTrendSeries}>
+                            <CartesianGrid strokeDasharray="3 3" stroke={palette.grid} />
+                            <XAxis dataKey="period" tick={{ fill: palette.text, fontSize: 11 }} />
+                            <YAxis domain={[0, 100]} tick={{ fill: palette.text, fontSize: 11 }} />
+                            <Tooltip />
+                            <Line type="monotone" dataKey="value" stroke={palette.primary} strokeWidth={2.5} dot={false} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/40 text-sm font-medium text-slate-500">
+                          No performance trend data available.
+                        </div>
+                      )}
+                    </GlassChartCard>
+                  </div>
+
+                  <div className="xl:col-span-1">
+                    <GlassChartCard title="Students per Subject Ratio" subtitle="Distinct students participating in remedial sessions by subject.">
+                      {hasStudentsPerSubjectData ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={averageStudentsPerSubject}
+                              dataKey="students"
+                              nameKey="subject"
+                              innerRadius={52}
+                              outerRadius={90}
+                              paddingAngle={2}
+                            >
+                              {averageStudentsPerSubject.map((entry, index) => (
+                                <Cell key={entry.subject} fill={PIE_SOFT_COLORS[index % PIE_SOFT_COLORS.length]} />
+                              ))}
+                            </Pie>
+                            <Legend />
+                            <Tooltip formatter={(value: number, name: string, item: { payload?: { percentage?: number } }) => [`${value} (${item?.payload?.percentage ?? 0}%)`, name]} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/40 text-sm font-medium text-slate-500">
+                          No student participation data available.
+                        </div>
+                      )}
+                    </GlassChartCard>
+                  </div>
                 </div>
               </section>
 
@@ -789,36 +820,7 @@ export default function PrincipalDashboard() {
                 </div>
               </section>
 
-              <section>
-                <div className="mt-3 grid grid-cols-1 gap-4">
-                  <GlassChartCard title="Students per Subject Ratio" subtitle="Distinct students participating in remedial sessions by subject.">
-                    {hasStudentsPerSubjectData ? (
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={averageStudentsPerSubject}
-                            dataKey="students"
-                            nameKey="subject"
-                            innerRadius={52}
-                            outerRadius={90}
-                            paddingAngle={2}
-                          >
-                            {averageStudentsPerSubject.map((entry, index) => (
-                              <Cell key={entry.subject} fill={PIE_SOFT_COLORS[index % PIE_SOFT_COLORS.length]} />
-                            ))}
-                          </Pie>
-                          <Legend />
-                          <Tooltip formatter={(value: number, name: string, item: { payload?: { percentage?: number } }) => [`${value} (${item?.payload?.percentage ?? 0}%)`, name]} />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    ) : (
-                      <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/40 text-sm font-medium text-slate-500">
-                        No student participation data available.
-                      </div>
-                    )}
-                  </GlassChartCard>
-                </div>
-              </section>
+              
             </div>
           </div>
         </main>

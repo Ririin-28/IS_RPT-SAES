@@ -220,10 +220,6 @@ export default function TableList({
                   <th className="px-4 py-2 text-center">
                     <div className="flex items-center justify-center gap-4">
                       <TertiaryHeader title={actionHeaderLabel || "Actions"} className="mb-0" />
-                      {showFullScreenToggle &&
-                        renderFullScreenToggle(
-                          'p-1 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors'
-                        )}
                     </div>
                   </th>
                 )}
@@ -284,7 +280,7 @@ export default function TableList({
       {/* Pagination - Improved mobile styling */}
       {!hidePagination && totalItemCount > 0 && (
         <div
-          className={`flex shrink-0 flex-col gap-2 border-t border-gray-200 bg-white py-2 text-sm sm:text-base rounded-lg shadow-sm ${
+          className={`flex shrink-0 flex-col gap-2 py-2 text-sm sm:text-base ${
             isFullScreen ? 'sticky bottom-0 left-0 right-0' : ''
           }`}
         >
@@ -399,7 +395,7 @@ export default function TableList({
 
   if (isFullScreen && mounted) {
     return createPortal(
-      <div className="fixed inset-0 z-[1200] bg-white p-6">
+      <div className="fixed inset-0 z-1200 bg-white p-6">
         {tableContent}
       </div>,
       document.body,

@@ -10,6 +10,7 @@ import { FaTimes } from "react-icons/fa";
 import TeacherAllGradesTab from "./TeacherTab/AllGradesTab";
 // Master Teacher Tabs
 import MasterTeacherAllGradesTab from "./MasterTeacherTab/AllGradesTab";
+import AllTeachingStaffTab from "./AllTeachingStaffTab";
 
 
 const GRADE_OPTIONS = ["All Grades", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"] as const;
@@ -21,7 +22,7 @@ const normalizeGradeTab = (value: string): string => {
 
 export default function PrincipalTeachers() {
   const [activeTab, setActiveTab] = useState<string>("All Grades");
-  const [teacherType, setTeacherType] = useState("Master Teachers");
+  const [teacherType, setTeacherType] = useState("All Teaching Staff");
   const [teachers, setTeachers] = useState<any[]>([]);
   const [masterTeachers, setMasterTeachers] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -84,11 +85,13 @@ export default function PrincipalTeachers() {
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
                 <div className="flex items-center gap-0">
                   <HeaderDropdown
-                    options={[("Master Teachers"), ("Teachers")]}
+                    options={["All Teaching Staff", "Master Teachers", "Teachers"]}
                     value={teacherType}
                     onChange={setTeacherType}
                   />
-                  <SecondaryHeader title="in" />
+                  <div className="ml-2">
+                    <SecondaryHeader title="in" />
+                  </div>
                   {activeTab !== "All Grades" && (
                     <div className="">
                       <SecondaryHeader title="" />
@@ -135,6 +138,14 @@ export default function PrincipalTeachers() {
 
               {/*---------------------------------Tab Content---------------------------------*/}
               <div className="mt-4 sm:mt-6">
+                {teacherType === "All Teaching Staff" && (
+                  <AllTeachingStaffTab
+                    teachers={teachers}
+                    masterTeachers={masterTeachers}
+                    searchTerm={searchTerm}
+                    gradeFilter={activeTab}
+                  />
+                )}
                 {teacherType === "Master Teachers" && (
                   <MasterTeacherAllGradesTab
                     teachers={masterTeachers}

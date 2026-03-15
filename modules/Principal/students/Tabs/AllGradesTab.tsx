@@ -145,6 +145,34 @@ const getStudentPhonemicValue = (student: any): string =>
       "",
   ).trim();
 
+const formatParentFullName = (student: any): string => {
+  const first = String(
+    student?.parentFirstName ??
+      student?.parent_first_name ??
+      student?.guardianFirstName ??
+      student?.guardian_first_name ??
+      "",
+  ).trim();
+  const middle = String(
+    student?.parentMiddleName ??
+      student?.parent_middle_name ??
+      student?.guardianMiddleName ??
+      student?.guardian_middle_name ??
+      "",
+  ).trim();
+  const last = String(
+    student?.parentLastName ??
+      student?.parent_last_name ??
+      student?.guardianLastName ??
+      student?.guardian_last_name ??
+      "",
+  ).trim();
+
+  const middleInitial = middle ? `${middle.charAt(0).toUpperCase()}.` : "";
+  const fullName = [first, middleInitial, last].filter(Boolean).join(" ").trim();
+  return fullName || "-";
+};
+
 export default function AllGradesTab({ students, searchTerm, gradeFilter = "All Grades" }: AllGradesTabProps) {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
@@ -324,14 +352,14 @@ export default function AllGradesTab({ students, searchTerm, gradeFilter = "All 
           },
           { key: "name", title: "Full Name" },
           { key: "grade", title: "Grade" },
-          { key: "phonemic", title: "Phonemic" },
+          { key: "parentFullName", title: "Parent Name" },
         ]}
         data={sortedStudents.map((student: any, idx: number) => ({
           ...student,
           no: idx + 1,
           fullLrn: normalizeLrn(student.lrn) ?? "N/A",
           maskedLrn: maskLrnForDisplay(student.lrn),
-          phonemic: getStudentPhonemicValue(student),
+          parentFullName: formatParentFullName(student),
         }))}
         actions={(row: any) => (
           <UtilityButton small onClick={() => handleViewDetails(row)}>

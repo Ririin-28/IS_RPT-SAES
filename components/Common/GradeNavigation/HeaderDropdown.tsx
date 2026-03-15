@@ -55,17 +55,17 @@ const HeaderDropdown = ({ options, value, onChange, className = "", openOnHover 
     >
       <button
         type="button"
-        className="flex items-center gap-2 pl-0 pr-0 py-1.5 mb-2 font-semibold lg:text-xl md:text-lg text-[#013300] cursor-pointer focus:outline-none group"
+        className="flex items-center gap-2 whitespace-nowrap pl-0 pr-0 py-1.5 mb-2 font-semibold lg:text-xl md:text-lg text-[#013300] cursor-pointer focus:outline-none"
         onClick={handleButtonClick}
       >
         {value}
-        {/* Arrow wrapper: 0 width by default; expands on hover or when open */}
+        {/* Arrow is always visible; only rotation changes when open. */}
         <span
-          className={`inline-flex overflow-hidden transition-[width] duration-200 ease-out ${isOpen ? 'w-4' : 'w-0'} group-hover:w-4`}
+          className="inline-flex w-4 overflow-hidden"
           aria-hidden="true"
         >
           <svg
-            className={`h-4 w-4 transition-transform duration-200 ease-out ${isOpen ? 'rotate-180 translate-x-0' : 'translate-x-2 group-hover:translate-x-0'}`}
+            className={`h-4 w-4 transition-transform duration-200 ease-out ${isOpen ? 'rotate-180' : 'rotate-0'}`}
             fill="currentColor"
             viewBox="0 0 20 20"
           >
@@ -75,11 +75,11 @@ const HeaderDropdown = ({ options, value, onChange, className = "", openOnHover 
       </button>
       
       {isOpen && (
-        <div className="absolute z-50 mt-1 left-0 bg-white border border-gray-200 rounded-md shadow-lg w-41 overflow-hidden">
+        <div className="absolute z-50 mt-1 left-0 min-w-41 w-max bg-white border border-gray-200 rounded-md shadow-lg overflow-hidden">
           {options.map((option) => (
             <div
               key={option}
-              className={`px-4 py-2 cursor-pointer transition-colors ${
+              className={`px-4 py-2 whitespace-nowrap cursor-pointer transition-colors ${
                 option === value
                   ? "bg-[#013300] text-white"
                   : "text-[#013300] hover:bg-gray-100"

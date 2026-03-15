@@ -14,6 +14,7 @@ import DeleteConfirmationModal from "./Modals/DeleteConfirmationModal";
 import WeeklyScheduleModal, { WEEKDAY_ORDER, WeeklyScheduleFormData, Weekday } from "./Modals/WeeklyScheduleModal";
 import SendActivitiesModal from "./Modals/SendActivitiesModal";
 import { getStoredUserProfile, StoredUserProfile } from "@/lib/utils/user-profile";
+import { Printer } from "lucide-react";
 import * as XLSX from "xlsx";
 
 interface Activity {
@@ -62,6 +63,11 @@ interface RemedialScheduleWindow {
 type WeeklySubjectSchedule = Record<Weekday, string> & {
   startTime?: string;
   endTime?: string;
+};
+
+type RemedialQuarterSchedule = {
+  schoolYear: string;
+  quarters: Record<string, { startMonth: number | null; endMonth: number | null }>;
 };
 
 const SUBJECT_DAY_LABELS: Record<Weekday, string> = {
@@ -561,6 +567,41 @@ const isWeekendDate = (date: Date): boolean => {
   return day === 0 || day === 6;
 };
 
+const toDateKey = (date: Date): string =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+
+const buildMonthMatrix = (year: number, month: number): Array<Array<Date | null>> => {
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const weeks: Array<Array<Date | null>> = [];
+  let day = 1;
+
+  for (let week = 0; week < 6; week += 1) {
+    const row: Array<Date | null> = [];
+    for (let dayIndex = 0; dayIndex < 7; dayIndex += 1) {
+      if ((week === 0 && dayIndex < firstDay) || day > daysInMonth) {
+        row.push(null);
+      } else {
+        row.push(new Date(year, month, day));
+        day += 1;
+      }
+    }
+    weeks.push(row);
+    if (day > daysInMonth) break;
+  }
+
+  return weeks;
+};
+
+const getPrintSubjectTone = (subject: string | null | undefined) => {
+  const value = subject?.toLowerCase() ?? "";
+  if (value.includes("english")) return "border-emerald-300 bg-emerald-100 text-emerald-900";
+  if (value.includes("filipino")) return "border-blue-300 bg-blue-100 text-blue-900";
+  if (value.includes("math")) return "border-rose-300 bg-rose-100 text-rose-900";
+  if (value.includes("assessment")) return "border-amber-300 bg-amber-100 text-amber-900";
+  return "border-gray-300 bg-gray-100 text-gray-800";
+};
+
 export default function MasterTeacherCalendar() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -594,6 +635,7 @@ export default function MasterTeacherCalendar() {
   const [coordinatorName, setCoordinatorName] = useState<string | null>(null);
   const [coordinatorUserId, setCoordinatorUserId] = useState<number | null>(null);
   const [remedialWindow, setRemedialWindow] = useState<RemedialScheduleWindow | null>(null);
+  const [remedialSchedule, setRemedialSchedule] = useState<RemedialQuarterSchedule | null>(null);
   const [remedialWindowLoading, setRemedialWindowLoading] = useState<boolean>(true);
   const [remedialWindowError, setRemedialWindowError] = useState<string | null>(null);
   const [remedialGuardMessage, setRemedialGuardMessage] = useState<string | null>(null);
@@ -833,6 +875,98 @@ export default function MasterTeacherCalendar() {
     return null;
   }, [allowedSubjects, gradeLabel, remedialWindowError, remedialWindowLoading, remedialWindowStatus, scheduleWindowLabel]);
 
+  const activitiesByDate = useMemo(() => {
+    const grouped = new Map<string, Activity[]>();
+    for (const activity of activities) {
+      const key = toDateKey(activity.date);
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.push(activity);
+      } else {
+        grouped.set(key, [activity]);
+      }
+    }
+    for (const [, items] of grouped) {
+      items.sort((a, b) => a.date.getTime() - b.date.getTime());
+    }
+    return grouped;
+  }, [activities]);
+
+  const approvedActivities = useMemo(() => {
+    return activities.filter((activity) => {
+      const normalizedStatus = normalizeStatusLabel(activity.status);
+      if (normalizedStatus === "Approved") {
+        return true;
+      }
+      if (activity.approvedAt) {
+        return true;
+      }
+      const source = (activity.sourceTable ?? "").toLowerCase();
+      return source.includes("approved");
+    });
+  }, [activities]);
+
+  const approvedActivitiesByDate = useMemo(() => {
+    const grouped = new Map<string, Activity[]>();
+    for (const activity of approvedActivities) {
+      const key = toDateKey(activity.date);
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.push(activity);
+      } else {
+        grouped.set(key, [activity]);
+      }
+    }
+    for (const [, items] of grouped) {
+      items.sort((a, b) => a.date.getTime() - b.date.getTime());
+    }
+    return grouped;
+  }, [approvedActivities]);
+
+  const printableMonths = useMemo(() => {
+    if (!remedialSchedule?.quarters) {
+      return [
+        {
+          month: currentDate.getMonth() + 1,
+          year: currentDate.getFullYear(),
+          key: `${currentDate.getFullYear()}-${currentDate.getMonth() + 1}`,
+        },
+      ];
+    }
+
+    const allMonths: Array<{ month: number; year: number; key: string }> = [];
+    const schoolYear = remedialSchedule.schoolYear || resolveDefaultSchoolYear();
+    for (const range of Object.values(remedialSchedule.quarters)) {
+      if (!range?.startMonth || !range?.endMonth) continue;
+      for (let monthValue = range.startMonth; monthValue <= range.endMonth; monthValue += 1) {
+        const resolvedYear = yearForMonth(schoolYear, monthValue);
+        if (!resolvedYear) continue;
+        allMonths.push({ month: monthValue, year: resolvedYear, key: `${resolvedYear}-${monthValue}` });
+      }
+    }
+
+    const deduped = Array.from(new Map(allMonths.map((item) => [item.key, item])).values());
+    deduped.sort((a, b) => new Date(a.year, a.month - 1, 1).getTime() - new Date(b.year, b.month - 1, 1).getTime());
+    return deduped.length
+      ? deduped
+      : [
+          {
+            month: currentDate.getMonth() + 1,
+            year: currentDate.getFullYear(),
+            key: `${currentDate.getFullYear()}-${currentDate.getMonth() + 1}`,
+          },
+        ];
+  }, [currentDate, remedialSchedule]);
+
+  const handlePrint = useCallback(() => {
+    setScheduleOverviewCollapsed(false);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        window.print();
+      });
+    });
+  }, []);
+
   useEffect(() => {
     if (hasActiveRemedialWindow) {
       setRemedialGuardMessage(null);
@@ -877,6 +1011,7 @@ export default function MasterTeacherCalendar() {
       const response = await fetch("/api/master_teacher/coordinator/calendar/remedial-schedule", { cache: "no-store" });
       if (response.status === 404) {
         setRemedialWindow(null);
+        setRemedialSchedule(null);
         return;
       }
       if (!response.ok) {
@@ -894,6 +1029,7 @@ export default function MasterTeacherCalendar() {
       }
       const schedule = payload.schedule;
       if (schedule && "startDate" in schedule && schedule.startDate && schedule.endDate) {
+        setRemedialSchedule(null);
         setRemedialWindow({
           quarter: schedule.quarter ?? null,
           startDate: schedule.startDate,
@@ -905,6 +1041,7 @@ export default function MasterTeacherCalendar() {
 
       if (schedule && "quarters" in schedule && schedule.quarters) {
         const schoolYear = schedule.schoolYear ?? resolveDefaultSchoolYear();
+        setRemedialSchedule({ schoolYear, quarters: schedule.quarters });
         const quarterEntries = Object.entries(schedule.quarters)
           .map(([label, range]) => {
             const window = buildQuarterRange(schoolYear, range?.startMonth ?? null, range?.endMonth ?? null);
@@ -936,9 +1073,11 @@ export default function MasterTeacherCalendar() {
       }
 
       setRemedialWindow(null);
+      setRemedialSchedule(null);
     } catch (error) {
       console.error("Failed to load remedial window", error);
       setRemedialWindowError("Unable to load the remedial window. Try refreshing the page.");
+      setRemedialSchedule(null);
     } finally {
       setRemedialWindowLoading(false);
     }
@@ -2485,7 +2624,7 @@ export default function MasterTeacherCalendar() {
   const templateButtonDisabled = templateDownloading || !hasConfiguredRemedialWindow;
 
   return (
-    <div className="relative flex h-screen overflow-hidden bg-[#f2f7f4]">
+    <div className="coordinator-calendar-page relative flex h-screen overflow-hidden bg-[#f2f7f4]">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -top-32 right-[-10%] h-80 w-80 rounded-full bg-emerald-200/35 blur-3xl" />
         <div className="absolute bottom-[-10%] left-[-5%] h-96 w-96 rounded-full bg-emerald-100/50 blur-3xl" />
@@ -2498,14 +2637,18 @@ export default function MasterTeacherCalendar() {
         className="hidden"
         onChange={handleImportInputChange}
       />
-      <Sidebar />
+      <div className="print-hidden">
+        <Sidebar />
+      </div>
       <div className="relative z-10 flex-1 pt-16 flex flex-col overflow-hidden">
-        <Header title="Calendar" />
+        <div className="print-hidden">
+          <Header title="Calendar" />
+        </div>
         <main className="flex-1 overflow-y-auto">
-          <div className="p-4 h-full sm:p-5 md:p-6">
-            <div className="relative z-10 h-full min-h-100 overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_20px_45px_-28px_rgba(15,23,42,0.45)] backdrop-blur-xl sm:p-5 md:p-6">
+          <div className="coordinator-calendar-scroll p-4 h-full sm:p-5 md:p-6">
+            <div className="coordinator-calendar-surface relative z-10 h-full min-h-100 overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_20px_45px_-28px_rgba(15,23,42,0.45)] backdrop-blur-xl sm:p-5 md:p-6">
               {/* Calendar Controls */}
-              <div className="flex flex-col gap-3 mb-4">
+              <div className="print-hidden flex flex-col gap-3 mb-4">
                 {profileLoading && !profileError && (
                   <div className="rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
                     Syncing coordinator schedule…
@@ -2576,6 +2719,15 @@ export default function MasterTeacherCalendar() {
                       </button>
                     </div>
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:space-x-2">
+                      <button
+                        type="button"
+                        onClick={handlePrint}
+                        className="inline-flex items-center justify-center rounded-full border border-gray-200 bg-white p-2 text-gray-700 transition hover:bg-gray-100"
+                        aria-label="Print calendar"
+                        title="Print"
+                      >
+                        <Printer className="h-5 w-5" />
+                      </button>
                       <KebabMenu
                         small
                         align="right"
@@ -2856,6 +3008,198 @@ export default function MasterTeacherCalendar() {
           }
         />
       )}
+
+      <div className="print-calendar-document print-only">
+        {printableMonths.map((item, monthIndex) => {
+          const monthDate = new Date(item.year, item.month - 1, 1);
+          const matrix = buildMonthMatrix(item.year, item.month - 1);
+          const normalizedGrade = normalizeGradeLabel(gradeLabel) ?? `Grade ${gradeLabel}`;
+
+          return (
+            <section className="print-month-page" key={item.key}>
+              <header className="print-month-header">
+                <h1 className="text-xl font-bold text-gray-900">{normalizedGrade} Calendar</h1>
+                <p className="text-sm text-gray-700">
+                  {monthDate.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+                </p>
+              </header>
+
+              <div className="print-month-overview rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs">
+                <div className="grid grid-cols-3 gap-2 font-semibold text-emerald-900">
+                  <div>Remedial Time</div>
+                  <div>Remedial Subjects</div>
+                  <div>Remedial Period</div>
+                </div>
+                <div className="mt-2 grid grid-cols-3 gap-2 text-gray-700">
+                  <div>{subjectScheduleTimeLabel}</div>
+                  <div>{WEEKDAY_ORDER.map((day) => `${SUBJECT_DAY_LABELS[day]}:${weeklySubjectSchedule?.[day] || "--"}`).join(" | ")}</div>
+                  <div>{activeRemedialQuarterLabel}</div>
+                </div>
+              </div>
+
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-gray-700">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-600">Legend</span>
+                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-700">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                  English
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-blue-700">
+                  <span className="h-2 w-2 rounded-full bg-blue-500" />
+                  Filipino
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-rose-700">
+                  <span className="h-2 w-2 rounded-full bg-rose-500" />
+                  Math
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-700">
+                  <span className="h-2 w-2 rounded-full bg-amber-500" />
+                  Assessment
+                </span>
+              </div>
+
+              <div className="mt-3 rounded-lg border border-gray-300 bg-white">
+                <div className="grid grid-cols-7 bg-gray-100 text-xs font-semibold text-gray-700">
+                  {["S", "M", "T", "W", "T", "F", "S"].map((day, index) => (
+                    <div key={`print-${item.key}-${day}-${index}`} className="border-r border-gray-200 px-2 py-1 text-center last:border-r-0">
+                      {day}
+                    </div>
+                  ))}
+                </div>
+                <div className="divide-y divide-gray-200">
+                  {matrix.map((week, weekIndex) => (
+                    <div key={`print-week-${item.key}-${weekIndex}`} className="grid grid-cols-7">
+                      {week.map((cellDate, dayIndex) => {
+                        if (!cellDate) {
+                          return (
+                            <div
+                              key={`print-day-${item.key}-${weekIndex}-${dayIndex}`}
+                              className="h-20 border-r border-gray-200 bg-gray-50 last:border-r-0"
+                            />
+                          );
+                        }
+
+                        const weekdayLabel = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][cellDate.getDay()] ?? "";
+                        const subjectForDay = WEEKDAY_ORDER.includes(weekdayLabel as Weekday)
+                          ? weeklySubjectSchedule?.[weekdayLabel as Weekday] ?? ""
+                          : "";
+                        const cellActivities = approvedActivitiesByDate.get(toDateKey(cellDate)) ?? [];
+
+                        return (
+                          <div
+                            key={`print-day-${item.key}-${weekIndex}-${dayIndex}`}
+                            className={`h-[92px] border-r border-gray-200 px-1.5 py-1 align-top last:border-r-0 ${getSubjectColor(subjectForDay)}`}
+                          >
+                            <div className="text-right text-[11px] font-semibold leading-none text-gray-800">{cellDate.getDate()}</div>
+                            <div className="mt-1 space-y-0.5 overflow-visible">
+                              {cellActivities.map((activity) => {
+                                const activitySubject = resolveActivitySubject(activity.title, activity.subject ?? subjectForDay);
+                                return (
+                                  <div
+                                    key={`print-activity-${item.key}-${activity.id}`}
+                                    className={`rounded border px-1 py-[1px] text-[9px] font-semibold leading-[1.2] break-words whitespace-normal ${getPrintSubjectTone(activitySubject)}`}
+                                    title={activity.title}
+                                  >
+                                    {activity.title}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-2 text-right text-[11px] text-gray-500">
+                {monthIndex + 1} / {printableMonths.length}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+
+      <style jsx global>{`
+        .print-only {
+          display: none;
+        }
+
+        @media print {
+          @page {
+            size: landscape;
+            margin: 8mm;
+          }
+
+          .print-hidden {
+            display: none !important;
+          }
+
+          .print-only {
+            display: block !important;
+          }
+
+          .coordinator-calendar-page > :not(.print-calendar-document) {
+            display: none !important;
+          }
+
+          .print-calendar-document {
+            display: block !important;
+            width: 100% !important;
+            max-width: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: visible !important;
+            background: #ffffff !important;
+          }
+
+          .print-month-page {
+            break-inside: avoid;
+            page-break-inside: avoid;
+            page-break-after: always;
+            width: 100%;
+            min-height: 0;
+            padding: 0;
+          }
+
+          .print-month-page:last-child {
+            page-break-after: auto;
+          }
+
+          .print-month-header {
+            margin-bottom: 8px;
+          }
+
+          .print-month-overview {
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+
+          .coordinator-calendar-page,
+          .coordinator-calendar-scroll,
+          .coordinator-calendar-surface,
+          .print-calendar-document {
+            height: auto !important;
+            min-height: 0 !important;
+            overflow: visible !important;
+            background: #ffffff !important;
+          }
+
+          .coordinator-calendar-surface {
+            border: 0 !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+          }
+
+          .print-calendar-document,
+          .print-calendar-document * {
+            position: static !important;
+            overflow: visible !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }

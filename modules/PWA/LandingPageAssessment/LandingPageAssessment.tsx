@@ -49,12 +49,12 @@ const LOGO_THEMES: Record<
 
 function ParentPortalBadge() {
   return (
-    <div className="relative h-32 w-full max-w-52.5 sm:h-40 sm:max-w-60" aria-hidden="true">
+    <div className="relative h-40 w-full max-w-64 sm:h-48 sm:max-w-72" aria-hidden="true">
       <Image
-        src="/PWA/Parent Illustration.png"
+        src="/PWA/PARENT.png"
         alt=""
         fill
-        sizes="(min-width: 640px) 240px, 210px"
+        sizes="(min-width: 640px) 280px, 240px"
         className="object-contain"
       />
     </div>
@@ -63,12 +63,12 @@ function ParentPortalBadge() {
 
 function StudentQuizBadge() {
   return (
-    <div className="relative h-32 w-full max-w-52.5 sm:h-40 sm:max-w-60" aria-hidden="true">
+    <div className="relative h-40 w-full max-w-64 sm:h-48 sm:max-w-72" aria-hidden="true">
       <Image
-        src="/PWA/Student Illustration.png"
+        src="/PWA/STUDENT.png"
         alt=""
         fill
-        sizes="(min-width: 640px) 240px, 210px"
+        sizes="(min-width: 640px) 280px, 240px"
         className="object-contain"
       />
     </div>
@@ -371,24 +371,23 @@ export default function LandingPageAssessment() {
               <button
                 type="button"
                 onClick={() => openPortal("parent")}
-                className="group relative isolate overflow-hidden rounded-3xl border border-[#0d6039]/30 bg-[linear-gradient(155deg,#0d6039_0%,#0e7a4a_58%,#0a5f3a_100%)] p-5 text-left text-white transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_18px_36px_rgba(9,74,45,0.28)] sm:rounded-[30px] sm:p-6"
+                className="group relative isolate overflow-hidden rounded-3xl border border-[#0d6039]/35 bg-[linear-gradient(152deg,#0d6039_0%,#0f8050_50%,#0a5c39_100%)] p-5 text-left text-white shadow-[0_12px_28px_rgba(5,61,35,0.18)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_20px_40px_rgba(9,74,45,0.32)] sm:rounded-[30px] sm:p-6"
               >
-                <div className="pointer-events-none absolute -right-16 -top-16 h-44 w-44 rounded-full bg-white/10" />
-                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-linear-to-t from-black/12 to-transparent" />
-                <div className="pointer-events-none absolute inset-0 rounded-3xl ring-1 ring-inset ring-white/12 sm:rounded-[30px]" />
+                <div className="pointer-events-none absolute -right-16 -top-16 h-44 w-44 rounded-full bg-white/12" />
+                <div className="pointer-events-none absolute -left-14 bottom-3 h-32 w-32 rounded-full bg-white/10 blur-xl" />
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-30 bg-linear-to-t from-black/14 to-transparent" />
+                <div className="pointer-events-none absolute inset-0 rounded-3xl ring-1 ring-inset ring-white/16 sm:rounded-[30px]" />
                 <div className="pointer-events-none absolute left-6 top-5 h-px w-20 bg-white/25" />
                 <div className="relative flex min-h-48.5 flex-col sm:min-h-59">
-                  <div className="mx-auto w-full max-w-65 rounded-[22px] border border-white/18 bg-white/12 p-2.5 backdrop-blur-[2px] sm:rounded-3xl sm:p-3">
-                    <div className="flex items-center justify-center">
-                      <ParentPortalBadge />
-                    </div>
+                  <div className="flex items-center justify-center pt-1 sm:pt-2">
+                    <ParentPortalBadge />
                   </div>
                   <div className="mt-auto flex items-end justify-between gap-4">
                     <div>
                       <h2 className="mt-1 max-w-[11ch] text-[1.62rem] font-semibold leading-[0.96] tracking-[-0.045em] sm:text-[2.15rem]">
                         Enter as Parent
                       </h2>
-                      <p className="mt-1 text-xs font-medium text-white/70 sm:text-sm">Sign in to view student progress</p>
+                      <p className="mt-1 text-xs font-medium text-white/70 sm:text-sm">Sign in to view your child's progress</p>
                     </div>
                     <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/22 bg-white/20 text-white shadow-[0_6px_16px_rgba(0,0,0,0.14)] transition group-hover:translate-x-0.5 sm:h-12 sm:w-12">
                       <FiArrowUpRight className="h-5 w-5" />
@@ -400,17 +399,16 @@ export default function LandingPageAssessment() {
               <button
                 type="button"
                 onClick={() => openPortal("student")}
-                className="group relative isolate overflow-hidden rounded-3xl border border-[#c7d9b8] bg-[linear-gradient(170deg,#f7fcf2_0%,#eaf5e2_62%,#e2efd8_100%)] p-5 text-left text-[#013300] transition duration-200 hover:-translate-y-0.5 hover:border-[#adc79a] hover:shadow-[0_18px_34px_rgba(27,77,25,0.12)] sm:rounded-[30px] sm:p-6"
+                className="group relative isolate overflow-hidden rounded-3xl border border-[#c4d6b3] bg-[linear-gradient(165deg,#f8fcf4_0%,#edf6e6_56%,#e4efd9_100%)] p-5 text-left text-[#013300] shadow-[0_12px_28px_rgba(27,77,25,0.09)] transition duration-200 hover:-translate-y-0.5 hover:border-[#adc79a] hover:shadow-[0_20px_38px_rgba(27,77,25,0.15)] sm:rounded-[30px] sm:p-6"
               >
                 <div className="pointer-events-none absolute -right-14 -top-14 h-44 w-44 rounded-full bg-[#d9eaca]" />
-                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-linear-to-t from-[#e1edd7]/70 to-transparent" />
-                <div className="pointer-events-none absolute inset-0 rounded-3xl ring-1 ring-inset ring-white/55 sm:rounded-[30px]" />
+                <div className="pointer-events-none absolute -left-14 bottom-4 h-30 w-30 rounded-full bg-[#dcebd0]/65 blur-xl" />
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-linear-to-t from-[#e1edd7]/75 to-transparent" />
+                <div className="pointer-events-none absolute inset-0 rounded-3xl ring-1 ring-inset ring-white/65 sm:rounded-[30px]" />
                 <div className="pointer-events-none absolute left-6 top-5 h-px w-20 bg-[#013300]/18" />
                 <div className="relative flex min-h-48.5 flex-col sm:min-h-59">
-                  <div className="mx-auto w-full max-w-65 rounded-[22px] border border-[#d4e2c7] bg-[#fbfff8] p-2.5 sm:rounded-3xl sm:p-3">
-                    <div className="flex items-center justify-center">
-                      <StudentQuizBadge />
-                    </div>
+                  <div className="flex items-center justify-center pt-1 sm:pt-2">
+                    <StudentQuizBadge />
                   </div>
                   <div className="mt-auto flex items-end justify-between gap-4">
                     <div>

@@ -166,6 +166,8 @@ export async function GET(request: NextRequest) {
     const statusParam = normalizeStatus(searchParams.get("status"));
     const fromParam = normalizeDateParam(searchParams.get("from"));
     const toParam = normalizeDateParam(searchParams.get("to"));
+    const reviewerUserIdParam = searchParams.get("userId")?.trim() || null;
+    const reviewerUserId = reviewerUserIdParam ? Number.parseInt(reviewerUserIdParam, 10) : null;
     const pageSize = Number(searchParams.get("pageSize")) || 10;
     const page = Number(searchParams.get("page")) || 1;
 
@@ -207,6 +209,12 @@ export async function GET(request: NextRequest) {
 
     const dateColumn = pickDateColumn(materialColumns);
     const statusValue = statusParam === "approved" ? "approved" : "pending";
+    if (statusValue === "approved" && !Number.isFinite(reviewerUserId)) {
+      return NextResponse.json(
+        { success: false, error: "userId is required when status is approved." },
+        { status: 400 },
+      );
+    }
     const gradeNumber = gradeParam ? extractGradeNumber(gradeParam) : null;
     const gradeTerms = gradeParam ? buildGradeTerms(gradeParam) : [];
     const gradeTableColumns = gradeParam ? await safeGetColumns(GRADE_TABLE) : new Set<string>();
@@ -217,6 +225,16 @@ export async function GET(request: NextRequest) {
 
     whereParts.push("LOWER(rm.status) = ?");
     params.push(statusValue);
+
+    if (statusValue === "approved" && Number.isFinite(reviewerUserId)) {
+      // approved_by is varchar in DB, so cast both sides to CHAR for stable comparison.
+      whereParts.push("CAST(rm.approved_by AS CHAR) = CAST(? AS CHAR)");
+      params.push(reviewerUserId as number);
+    }
+
+    if (materialColumns.has("is_archived")) {
+      whereParts.push("COALESCE(rm.is_archived, 0) = 0");
+    }
 
     if (requestColumns.has("subject_id")) {
       whereParts.push("rrs.subject_id = ?");
@@ -304,6 +322,9 @@ export async function GET(request: NextRequest) {
         dateFilterApplied: Boolean(dateColumn && (fromParam || toParam)),
         gradeFilterApplied: Boolean(gradeParam),
         subjectId,
+        reviewerUserId: Number.isFinite(reviewerUserId) ? reviewerUserId : null,
+        approvedByFilterApplied: Boolean(statusValue === "approved" && Number.isFinite(reviewerUserId)),
+        archivedExcluded: materialColumns.has("is_archived"),
       },
     });
   } catch (error) {

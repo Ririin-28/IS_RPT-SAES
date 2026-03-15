@@ -1,17 +1,16 @@
 "use client";
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar from "@/components/MasterTeacher/Coordinator/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
-// Button Components
-import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
-import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 // Text Components
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
 import BodyText from "@/components/Common/Texts/BodyText";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 import { normalizeMaterialSubject } from "@/lib/materials/shared";
+import { Filter, FolderOpen, GraduationCap, Printer } from "lucide-react";
+import { FaChalkboardTeacher } from "react-icons/fa";
 
 import {
   ResponsiveContainer,
@@ -19,6 +18,8 @@ import {
   Bar,
   AreaChart,
   Area,
+  PieChart,
+  Pie,
   Cell,
   XAxis,
   YAxis,
@@ -102,6 +103,7 @@ const formatSubjectDescriptor = (value?: string | null): string => {
 };
 
 type CoordinatorSubject = "Math" | "English" | "Filipino";
+type SubjectKey = "english" | "filipino" | "math";
 type CoordinatorStudentResponse = {
   success: boolean;
   data?: StudentRecordDto[];
@@ -143,6 +145,36 @@ const dashboardSecondary = "#2f7d57";
 const dashboardAccent = "#6da98b";
 const dashboardWarn = "#bc8b5b";
 const dashboardDanger = "#b86b5c";
+const chartMultiPalette = ["#0f766e", "#16a34a", "#65a30d", "#0ea5a4", "#84cc16", "#2f7d57"];
+
+const PHONEMIC_LEVELS: Record<SubjectKey, string[]> = {
+  english: ["Non-Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"],
+  filipino: ["Non-Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"],
+  math: ["Not Proficient", "Low Proficient", "Nearly Proficient", "Proficient", "Highly Proficient"],
+};
+
+function normalizePhonemicLevel(level: string | null | undefined, subject: SubjectKey): string | null {
+  const text = typeof level === "string" ? level.trim().toLowerCase() : "";
+  if (!text) return null;
+
+  if (subject === "math") {
+    if (text.includes("not proficient") || text.includes("emerging - not")) return "Not Proficient";
+    if (text.includes("low proficient") || text.includes("emerging - low")) return "Low Proficient";
+    if (text.includes("nearly proficient") || text.includes("developing")) return "Nearly Proficient";
+    if (text.includes("highly proficient") || text.includes("at grade level")) return "Highly Proficient";
+    if (text.includes("proficient") || text.includes("transitioning")) return "Proficient";
+    return null;
+  }
+
+  if (text.includes("non-reader") || text.includes("non reader")) return "Non-Reader";
+  if (text.includes("syllable")) return "Syllable";
+  if (text.includes("word")) return "Word";
+  if (text.includes("phrase")) return "Phrase";
+  if (text.includes("sentence")) return "Sentence";
+  if (text.includes("paragraph")) return "Paragraph";
+
+  return null;
+}
 
 const rangeOptions: { label: string; value: DateRangeFilter }[] = [
   { label: "Last 3 Months", value: "3m" },
@@ -181,67 +213,50 @@ const parseIsoDate = (value: string): Date | null => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
-// OverviewCard component with responsive styles
-function OverviewCard({
+function toSubjectKey(subject: CoordinatorSubject): SubjectKey {
+  if (subject === "English") return "english";
+  if (subject === "Filipino") return "filipino";
+  return "math";
+}
+
+function DashboardMetricCard({
   value,
   label,
   icon,
-  className = "",
   onClick,
-  tooltip,
 }: {
   value: React.ReactNode;
   label: string;
-  icon?: React.ReactNode;
-  className?: string;
+  icon: React.ReactNode;
   onClick?: () => void;
-  tooltip?: string;
 }) {
-    const baseClasses = `relative group rounded-2xl border border-white/70 bg-white/60 shadow-[0_10px_26px_rgba(15,23,42,0.08)] backdrop-blur-xl
-      flex flex-col items-center justify-center p-5 min-w-[160px] min-h-[110px]
-      transition duration-200 hover:border-gray-200 hover:bg-white/70
-      sm:p-6 sm:min-w-[180px] sm:min-h-30
-      lg:p-7 ${className}`;
-
-  const tooltipNode = tooltip ? (
-    <span className="pointer-events-none absolute -top-2 left-1/2 z-10 mb-2 hidden w-56 -translate-x-1/2 -translate-y-full rounded-md bg-slate-700 px-3 py-2 text-center text-xs font-medium text-white opacity-0 shadow-lg transition-opacity duration-200 group-hover:block group-hover:opacity-100">
-      {tooltip}
-    </span>
-  ) : null;
+  const cardClassName = "cursor-pointer rounded-xl border border-white/70 bg-white/60 px-4 py-3 text-left shadow-[0_10px_26px_rgba(15,23,42,0.08)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-[0_14px_28px_rgba(15,23,42,0.12)]";
 
   const content = (
-    <>
-      {tooltipNode}
-      <div className="flex flex-row items-center justify-center">
-        <span className="text-4xl font-semibold text-slate-900 sm:text-5xl">
-          {value}
-        </span>
-        {icon && <span className="ml-1 sm:ml-2">{icon}</span>}
+    <div className="flex items-center justify-between gap-3">
+      <div>
+        <p className="text-3xl font-semibold text-slate-900">{value}</p>
+        <p className="text-sm font-medium text-slate-600">{label}</p>
       </div>
-      <div className="text-slate-600 text-sm font-medium mt-1 text-center tracking-wide sm:text-base sm:mt-2">
-        {label}
-      </div>
-    </>
+      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+        {icon}
+      </span>
+    </div>
   );
 
   if (typeof onClick === "function") {
     return (
-      <button
-        type="button"
-        onClick={onClick}
-        className={`${baseClasses} focus:outline-none cursor-pointer`}
-      >
+      <button type="button" onClick={onClick} className={cardClassName}>
         {content}
       </button>
     );
   }
 
-  return <div className={baseClasses}>{content}</div>;
+  return <div className={cardClassName}>{content}</div>;
 }
 
 export default function MasterTeacherDashboard() {
   const router = useRouter();
-  const analyticsRef = useRef<HTMLDivElement | null>(null);
   const handleNavigate = useCallback((path: string) => {
     router.push(path);
   }, [router]);
@@ -272,7 +287,7 @@ export default function MasterTeacherDashboard() {
   const [, setIsLoadingStudents] = useState(true);
   const [, setStudentsError] = useState<string | null>(null);
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number | null>(null);
-  const [, setApprovedMaterialsCount] = useState<number | null>(null);
+  const [approvedMaterialsCount, setApprovedMaterialsCount] = useState<number | null>(null);
   const [isLoadingApprovals, setIsLoadingApprovals] = useState(false);
   const [approvalsError, setApprovalsError] = useState<string | null>(null);
   const [gradeCounts, setGradeCounts] = useState<{ students: number; teachers: number } | null>(null);
@@ -284,8 +299,6 @@ export default function MasterTeacherDashboard() {
   const [selectedRange, setSelectedRange] = useState<DateRangeFilter>("6m");
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
-  const [pdfError, setPdfError] = useState<string | null>(null);
-  const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   useEffect(() => {
     const timer = window.setInterval(() => setRefreshTick((prev) => prev + 1), 90_000);
@@ -323,7 +336,7 @@ export default function MasterTeacherDashboard() {
 
         setCoordinatorProfile({
           fullName: coordinatorName,
-          role: formatRoleLabel(storedProfile?.role),
+          role: "Master Teacher",
           gradeHandled: payload.coordinator.gradeLevel?.trim() || "Not assigned",
           subjectAssigned: payload.coordinator.coordinatorSubject?.trim() || "Not assigned",
         });
@@ -406,6 +419,9 @@ export default function MasterTeacherDashboard() {
     let cancelled = false;
     const fetchMaterialCount = async (status: "pending" | "approved"): Promise<number> => {
       const params = new URLSearchParams({ status, pageSize: "1" });
+      if (status === "approved" && userId !== null) {
+        params.set("userId", String(userId));
+      }
       const gradeValue = coordinatorProfile?.gradeHandled?.trim();
       if (gradeValue && gradeValue.toLowerCase() !== "not assigned") {
         params.set("grade", gradeValue);
@@ -414,13 +430,6 @@ export default function MasterTeacherDashboard() {
         throw new Error("Subject is required (English, Filipino, or Math).");
       }
       params.set("subject", subjectFilter);
-      const weekRange = getWeekRange();
-      if (weekRange.from) {
-        params.set("from", weekRange.from);
-      }
-      if (weekRange.to) {
-        params.set("to", weekRange.to);
-      }
       const response = await fetch(`/api/master_teacher/coordinator/materials?${params.toString()}`, { cache: "no-store" });
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
@@ -550,15 +559,6 @@ export default function MasterTeacherDashboard() {
 
     return () => controller.abort();
   }, [coordinatorProfile?.gradeHandled, coordinatorProfile?.subjectAssigned, userId, refreshTick]);
-
-  // Get today's date in simplified month format (same as Principal)
-  const today = new Date();
-  const dayShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const monthShort = [
-    'Jan.', 'Feb.', 'Mar.', 'Apr.', 'May.', 'Jun.',
-    'Jul.', 'Aug.', 'Sep.', 'Oct.', 'Nov.', 'Dec.'
-  ];
-  const dateToday = `${dayShort[today.getDay()]}, ${monthShort[today.getMonth()]} ${today.getDate()}, ${today.getFullYear()}`;
 
   useEffect(() => {
     const normalized = normalizeMaterialSubject(coordinatorProfile?.subjectAssigned);
@@ -809,52 +809,8 @@ export default function MasterTeacherDashboard() {
     setSelectedSection("All Sections");
   }, []);
 
-  const handleExportPdf = useCallback(async () => {
-    if (!analyticsRef.current || isExportingPdf) {
-      return;
-    }
-    setPdfError(null);
-    setIsExportingPdf(true);
-    try {
-      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
-        import("html2canvas"),
-        import("jspdf"),
-      ]);
-      const canvas = await html2canvas(analyticsRef.current, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: "#eef8f2",
-      });
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF("p", "mm", "a4");
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const imgWidth = pageWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      let heightLeft = imgHeight;
-      let position = 0;
-
-      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
-      }
-
-      pdf.save(`teacher-dashboard-${new Date().toISOString().slice(0, 10)}.pdf`);
-    } catch (error) {
-      console.error("PDF export failed", error);
-      setPdfError("Unable to export PDF right now.");
-    } finally {
-      setIsExportingPdf(false);
-    }
-  }, [isExportingPdf]);
-
-  const pendingCount = pendingApprovalsCount ?? 0;
-  const pendingMaterialsValue = isLoadingApprovals ? '—' : approvalsError ? '—' : pendingCount;
+  const pendingReviewsCount = pendingApprovalsCount ?? 0;
+  const pendingReviewsValue = isLoadingApprovals ? '—' : approvalsError ? '—' : pendingReviewsCount;
   const totalStudentsValue = isLoadingGradeCounts ? '—' : gradeCountsError ? '—' : (gradeCounts?.students ?? 0);
   const teacherCardValue = isLoadingGradeCounts ? '—' : gradeCountsError ? '—' : (gradeCounts?.teachers ?? 0);
   const gradeDescriptor = formatGradeDescriptor(coordinatorProfile?.gradeHandled);
@@ -862,6 +818,44 @@ export default function MasterTeacherDashboard() {
   const readableGrade = gradeDescriptor === "their assigned grade" ? "the assigned grade" : gradeDescriptor;
   const hasSpecificSubject = subjectDescriptor !== "their subject focus";
   const subjectSuffix = hasSpecificSubject ? ` (${subjectDescriptor})` : "";
+  const gradeNumberLabel = useMemo(() => {
+    const raw = coordinatorProfile?.gradeHandled ?? "";
+    const normalized = raw.replace(/^grade\s*/i, "").trim();
+    return normalized.length > 0 ? `Grade ${normalized}` : "Grade";
+  }, [coordinatorProfile?.gradeHandled]);
+  const coordinatorLabel = useMemo(() => {
+    const subject = coordinatorProfile?.subjectAssigned?.trim();
+    if (!subject || subject.toLowerCase() === "not assigned") return "Coordinator";
+    return `${subject} Coordinator`;
+  }, [coordinatorProfile?.subjectAssigned]);
+  const selectedSubjectKey = useMemo<SubjectKey>(() => toSubjectKey(selectedSubject), [selectedSubject]);
+  const phonemicLevelPieData = useMemo(() => {
+    const levelMap = new Map<string, number>();
+    filteredStudents.forEach((student) => {
+      const rawLevel =
+        selectedSubject === "English"
+          ? student.englishPhonemic
+          : selectedSubject === "Filipino"
+            ? student.filipinoPhonemic
+            : student.mathProficiency;
+      const normalized = normalizePhonemicLevel(rawLevel, selectedSubjectKey);
+      if (!normalized) return;
+      levelMap.set(normalized, (levelMap.get(normalized) ?? 0) + 1);
+    });
+
+    return PHONEMIC_LEVELS[selectedSubjectKey]
+      .map((name, index) => ({
+        name,
+        value: levelMap.get(name) ?? 0,
+        color: chartMultiPalette[index % chartMultiPalette.length],
+      }))
+      .filter((item) => item.value > 0)
+      .map((item) => ({ ...item }));
+  }, [filteredStudents, selectedSubject, selectedSubjectKey]);
+  const hasPhonemicLevelPieData = useMemo(
+    () => phonemicLevelPieData.some((item) => item.value > 0),
+    [phonemicLevelPieData],
+  );
 
   return (
     <div className="print-page relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
@@ -891,7 +885,7 @@ export default function MasterTeacherDashboard() {
                 </div>
               </div>
 
-              <div className="mb-6 min-w-full min-h-30 rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg sm:mb-7 sm:p-5 md:mb-8 md:p-6">
+              <div className="mb-6 min-w-full rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg sm:mb-7 sm:p-5 md:mb-8 md:p-6">
                 {isLoadingProfile ? (
                   <div className="flex h-full items-center justify-center">
                     <BodyText title="Loading profile..." />
@@ -901,24 +895,18 @@ export default function MasterTeacherDashboard() {
                     <BodyText title={profileError} />
                   </div>
                 ) : coordinatorProfile ? (
-                  <div className="flex flex-col w-full">
-                    <div className="flex flex-col mb-2 md:flex-row md:items-start md:justify-between md:mb-0">
-                      <div className="mb-3 md:mb-0 md:w-1/3">
-                        <TertiaryHeader title="Full Name:" />
-                        <BodyText title={coordinatorProfile.fullName} />
-                      </div>
-                      <div className="mb-3 md:mb-0 md:w-1/3">
-                        <TertiaryHeader title="Position:" />
-                        <BodyText title={coordinatorProfile.role} />
-                      </div>
-                      <div className="mb-3 md:mb-0 md:w-1/3">
-                        <TertiaryHeader title="Grade Assigned:" />
-                        <BodyText title={coordinatorProfile.gradeHandled} />
-                      </div>
+                  <div className="grid grid-cols-1 gap-2 text-sm font-medium text-slate-700 sm:text-base md:grid-cols-4 md:gap-0">
+                    <div className="md:border-r md:border-slate-200 md:pr-3">
+                      <p className="font-semibold text-slate-900 md:text-center">{coordinatorProfile.fullName}</p>
                     </div>
-                    <div className="mt-3 md:mt-2">
-                      <TertiaryHeader title="Subject Assigned:" />
-                      <BodyText title={coordinatorProfile.subjectAssigned} />
+                    <div className="md:border-r md:border-slate-200 md:px-3">
+                      <p className="font-semibold text-slate-900 md:text-center">{coordinatorProfile.role}</p>
+                    </div>
+                    <div className="md:border-r md:border-slate-200 md:px-3">
+                      <p className="font-semibold text-slate-900 md:text-center">{gradeNumberLabel}</p>
+                    </div>
+                    <div className="md:pl-3">
+                      <p className="font-semibold text-slate-900 md:text-center">{coordinatorLabel}</p>
                     </div>
                   </div>
                 ) : (
@@ -934,148 +922,141 @@ export default function MasterTeacherDashboard() {
               <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
                 <SecondaryHeader title="Coordinator Overview" />
               </div>
-              <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2 sm:gap-5 sm:mb-7 lg:grid-cols-4 lg:gap-6 lg:mb-8">
-                <OverviewCard
+              <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2 sm:gap-5 sm:mb-7 lg:grid-cols-3 lg:gap-6 lg:mb-8">
+                <DashboardMetricCard
                   value={totalStudentsValue}
                   label="Total Students"
-                  tooltip={`Total students in ${readableGrade}.`}
-                  icon={
-                    <svg width="38" height="38" fill="none" viewBox="0 0 24 24">
-                      <ellipse cx="12" cy="8" rx="4" ry="4" stroke="#013300" strokeWidth="2" />
-                      <path d="M4 18v-2c0-2.66 5.33-4 8-4s8 1.34 8 4v2" stroke="#013300" strokeWidth="2" strokeLinecap="round" />
-                    </svg>
-                  }
-                  onClick={() => handleNavigate("/MasterTeacher/RemedialTeacher/students")}
+                  icon={<GraduationCap className="h-4.5 w-4.5" />}
+                  onClick={() => handleNavigate("/MasterTeacher/Coordinator/students")}
                 />
-                <OverviewCard
+                <DashboardMetricCard
                   value={teacherCardValue}
                   label="Total Teachers"
-                  tooltip={`Total teachers in ${readableGrade}.`}
-                  icon={
-                    <svg width="38" height="38" fill="none" viewBox="0 0 24 24">
-                      <path d="M12 15V17M12 7V13M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="#013300" strokeWidth="2" strokeLinecap="round" />
-                    </svg>
-                  }
+                  icon={<FaChalkboardTeacher className="h-4.5 w-4.5" />}
                   onClick={() => handleNavigate("/MasterTeacher/Coordinator/teachers")}
                 />
-                <OverviewCard
-                  value={pendingMaterialsValue}
+                <DashboardMetricCard
+                  value={pendingReviewsValue}
                   label="Pending Materials"
-                  tooltip={`Pending materials awaiting review for ${readableGrade}${subjectSuffix}.`}
-                  icon={
-                    <svg width="38" height="38" fill="none" viewBox="0 0 24 24">
-                      <rect x="3" y="7" width="18" height="14" rx="2" stroke="#013300" strokeWidth="2" />
-                      <rect x="7" y="3" width="10" height="4" rx="1" stroke="#013300" strokeWidth="2" />
-                    </svg>
-                  }
-                  onClick={() => handleNavigate("/MasterTeacher/Coordinator/materials?view=pending")}
-                />
-                <OverviewCard
-                  value={<span className="text-xl">{dateToday}</span>}
-                  label="Date Today"
-                  onClick={() => handleNavigate("/MasterTeacher/Coordinator/calendar")}
+                  icon={<FolderOpen className="h-4.5 w-4.5" />}
+                  onClick={() => handleNavigate("/MasterTeacher/Coordinator/materials?status=pending")}
                 />
               </div>
 
               <hr className="border-gray-200 mb-4 sm:mb-5 md:mb-6" />
 
               {/* Charts Section */}
-              <div ref={analyticsRef}>
+              <div>
                 <div className="no-print mb-4 p-1">
                   <div className="flex items-start justify-end gap-3">
                     <div className="flex shrink-0 items-center gap-2">
-                      <SecondaryButton
-                        small
-                        className="flex h-[42px] items-center gap-2 border border-emerald-100 bg-white/70 px-3"
-                        onClick={() => setIsFilterModalOpen(true)}
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M3 5h18" />
-                          <path d="M6 12h12" />
-                          <path d="M10 19h4" />
-                        </svg>
-                        <span>Filter</span>
-                      </SecondaryButton>
-                      <SecondaryButton small className="h-[42px] border border-emerald-100 bg-white/70 px-3" onClick={handlePrint}>
-                        Print
-                      </SecondaryButton>
-                      <PrimaryButton small className="h-[42px] px-3" disabled={isExportingPdf} onClick={() => void handleExportPdf()}>
-                        {isExportingPdf ? "Exporting..." : "Export to PDF"}
-                      </PrimaryButton>
-                    </div>
-                  </div>
-                  {pdfError ? <p className="mt-2 text-xs text-red-600">{pdfError}</p> : null}
-                </div>
-
-                {isFilterModalOpen ? (
-                  <div className="no-print fixed inset-0 z-50 flex items-center justify-center p-4">
-                    <div className="w-full max-w-3xl rounded-2xl border border-white/75 bg-white/85 p-5 shadow-[0_24px_48px_rgba(15,23,42,0.20)]">
-                      <div className="mb-4 flex items-center justify-between gap-3">
-                        <p className="text-base font-semibold text-slate-900">Filter Dashboard</p>
+                      <div className="relative">
+                        {isFilterModalOpen && (
+                          <button
+                            type="button"
+                            className="fixed inset-0 z-10 cursor-default"
+                            onClick={() => setIsFilterModalOpen(false)}
+                            aria-label="Close filter panel"
+                          />
+                        )}
                         <button
                           type="button"
-                          onClick={() => setIsFilterModalOpen(false)}
-                          className="rounded-full border border-emerald-100 bg-white px-2.5 py-1 text-xs font-semibold text-emerald-900"
+                          onClick={() => setIsFilterModalOpen((prev) => !prev)}
+                          className="relative z-20 inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 shadow-sm transition hover:bg-gray-100"
+                          aria-label="Filter dashboard"
+                          title="Filter"
                         >
-                          Close
+                          <Filter className="h-4.5 w-4.5" />
                         </button>
+
+                        {isFilterModalOpen ? (
+                          <div className="absolute right-0 z-20 mt-2 w-[min(56rem,92vw)] rounded-2xl border border-gray-200 bg-white p-5 shadow-[0_24px_48px_rgba(15,23,42,0.22)]">
+                            <div className="mb-4 flex items-center justify-between gap-3">
+                              <p className="text-base font-semibold text-slate-900">Filter Dashboard</p>
+                              <button
+                                type="button"
+                                onClick={() => setIsFilterModalOpen(false)}
+                                className="rounded-full border border-emerald-100 bg-white px-2.5 py-1 text-xs font-semibold text-emerald-900"
+                              >
+                                Close
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                              <div>
+                                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Date Range</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {rangeOptions.map((option) => (
+                                    <FilterChip
+                                      key={option.value}
+                                      label={option.label}
+                                      active={selectedRange === option.value}
+                                      onClick={() => setSelectedRange(option.value)}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                              <div>
+                                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Sections</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {sectionOptions.map((section) => (
+                                    <FilterChip
+                                      key={section}
+                                      label={section}
+                                      active={selectedSection === section}
+                                      onClick={() => setSelectedSection(section)}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                              <div>
+                                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Subject</p>
+                                <div className="flex flex-wrap gap-2">
+                                  <FilterChip active label={selectedSubject} onClick={() => {}} />
+                                </div>
+                              </div>
+                              <div>
+                                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Grade Level</p>
+                                <div className="flex flex-wrap gap-2">
+                                  <FilterChip active label={selectedGrade} onClick={() => {}} />
+                                </div>
+                              </div>
+                            </div>
+                            <div className="mt-5 flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                className="rounded-lg border border-emerald-100 bg-white/80 px-3 py-1.5 text-xs font-semibold text-emerald-900"
+                                onClick={clearFilters}
+                              >
+                                Clear All
+                              </button>
+                              <button
+                                type="button"
+                                className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white"
+                                onClick={() => setIsFilterModalOpen(false)}
+                              >
+                                Apply Filters
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
-                      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-                        <div>
-                          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Date Range</p>
-                          <div className="flex flex-wrap gap-2">
-                            {rangeOptions.map((option) => (
-                              <FilterChip
-                                key={option.value}
-                                label={option.label}
-                                active={selectedRange === option.value}
-                                onClick={() => setSelectedRange(option.value)}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                        <div>
-                          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Sections</p>
-                          <div className="flex flex-wrap gap-2">
-                            {sectionOptions.map((section) => (
-                              <FilterChip
-                                key={section}
-                                label={section}
-                                active={selectedSection === section}
-                                onClick={() => setSelectedSection(section)}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                        <div>
-                          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Subject</p>
-                          <div className="flex flex-wrap gap-2">
-                            <FilterChip active label={selectedSubject} onClick={() => {}} />
-                          </div>
-                        </div>
-                        <div>
-                          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Grade Level</p>
-                          <div className="flex flex-wrap gap-2">
-                            <FilterChip active label={selectedGrade} onClick={() => {}} />
-                          </div>
-                        </div>
-                      </div>
-                      <div className="mt-5 flex items-center justify-end gap-2">
-                        <SecondaryButton small className="border border-emerald-100 bg-white/80 px-3" onClick={clearFilters}>
-                          Clear All
-                        </SecondaryButton>
-                        <PrimaryButton small className="px-3" onClick={() => setIsFilterModalOpen(false)}>
-                          Apply Filters
-                        </PrimaryButton>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={handlePrint}
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 shadow-sm transition hover:bg-gray-100"
+                        aria-label="Print dashboard"
+                        title="Print"
+                      >
+                        <Printer className="h-4.5 w-4.5" />
+                      </button>
                     </div>
                   </div>
-                ) : null}
+                </div>
 
                 <div className="space-y-8">
                   <div>
-                    <TertiaryHeader title="Class Progress Overview" />
-                    <div className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-2">
+                    <SecondaryHeader title="Class Progress Overview" />
+                    <div className="mt-3 grid grid-cols-1 gap-4">
                       <div className="rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg">
                         <p className="text-sm font-semibold text-slate-700">Monthly Student Progress</p>
                         <div className="mt-3 h-64">
@@ -1096,31 +1077,13 @@ export default function MasterTeacherDashboard() {
                           </ResponsiveContainer>
                         </div>
                       </div>
-                      <div className="rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg">
-                        <p className="text-sm font-semibold text-slate-700">Mastery Level Distribution</p>
-                        <div className="mt-3 h-64">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={metrics.masteryDistribution}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#d1fae5" />
-                              <XAxis dataKey="name" />
-                              <YAxis allowDecimals={false} />
-                              <ReTooltip />
-                              <Bar dataKey="value" radius={[10, 10, 0, 0]}>
-                                {metrics.masteryDistribution.map((entry) => (
-                                  <Cell key={entry.name} fill={entry.color} />
-                                ))}
-                              </Bar>
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </div>
                     </div>
                   </div>
 
                   <div>
-                    <TertiaryHeader title="Intervention Tracking" />
-                    <div className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-1">
-                      <div className="rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg">
+                    <SecondaryHeader title="Intervention Tracking" />
+                    <div className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-3">
+                      <div className="rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg xl:col-span-2">
                         <p className="text-sm font-semibold text-slate-700">Student Improvement (Before vs After)</p>
                         <div className="mt-3 h-64">
                           <ResponsiveContainer width="100%" height="100%">
@@ -1134,6 +1097,36 @@ export default function MasterTeacherDashboard() {
                               <Bar dataKey="after" fill={dashboardSecondary} radius={[8, 8, 0, 0]} />
                             </BarChart>
                           </ResponsiveContainer>
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg xl:col-span-1">
+                        <p className="text-sm font-semibold text-slate-700">Students per Phonemic Level ({selectedSubject})</p>
+                        <div className="mt-3 h-64">
+                          {hasPhonemicLevelPieData ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Pie
+                                  data={phonemicLevelPieData}
+                                  dataKey="value"
+                                  nameKey="name"
+                                  innerRadius={48}
+                                  outerRadius={90}
+                                  paddingAngle={2}
+                                >
+                                  {phonemicLevelPieData.map((entry) => (
+                                    <Cell key={entry.name} fill={entry.color} />
+                                  ))}
+                                </Pie>
+                                <ReLegend />
+                                <ReTooltip />
+                              </PieChart>
+                            </ResponsiveContainer>
+                          ) : (
+                            <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/40 text-sm font-medium text-slate-500">
+                              No phonemic level data available.
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>

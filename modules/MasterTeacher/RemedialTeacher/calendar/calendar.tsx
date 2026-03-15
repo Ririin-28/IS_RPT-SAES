@@ -2,7 +2,8 @@
 import Sidebar from "@/components/MasterTeacher/RemedialTeacher/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Printer } from "lucide-react";
 import ActivityDetailModal from "./Modals/ActivityDetailModal";
 
 
@@ -26,6 +27,16 @@ type WeeklySubjectSchedule = {
   Friday?: string;
   startTime?: string;
   endTime?: string;
+};
+
+type QuarterRange = {
+  startMonth: number | null;
+  endMonth: number | null;
+};
+
+type RemedialQuarterSchedule = {
+  schoolYear: string;
+  quarters: Record<string, QuarterRange>;
 };
 
 const SCHEDULE_WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"] as const;
@@ -81,6 +92,64 @@ const resolveGradeTitle = (items: Activity[], fallbackGrade?: string | null): st
   return "Remedial Calendar";
 };
 
+const resolveDefaultSchoolYear = (): string => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = today.getMonth();
+  return month >= 5 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
+};
+
+const parseSchoolYear = (schoolYear: string | null | undefined): { startYear: number; endYear: number } | null => {
+  if (!schoolYear) return null;
+  const parts = schoolYear.split("-").map((value) => Number(value));
+  if (parts.length !== 2) return null;
+  const [startYear, endYear] = parts;
+  if (!Number.isFinite(startYear) || !Number.isFinite(endYear)) return null;
+  return { startYear, endYear };
+};
+
+const yearForMonth = (schoolYear: string, month: number): number | null => {
+  const parsed = parseSchoolYear(schoolYear);
+  if (!parsed) return null;
+  return month >= 6 ? parsed.startYear : parsed.endYear;
+};
+
+const toDateKey = (date: Date): string =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+
+const buildMonthMatrix = (year: number, month: number): Array<Array<Date | null>> => {
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const weeks: Array<Array<Date | null>> = [];
+  let day = 1;
+
+  for (let week = 0; week < 6; week += 1) {
+    const row: Array<Date | null> = [];
+    for (let dayIndex = 0; dayIndex < 7; dayIndex += 1) {
+      if ((week === 0 && dayIndex < firstDay) || day > daysInMonth) {
+        row.push(null);
+      } else {
+        row.push(new Date(year, month, day));
+        day += 1;
+      }
+    }
+    weeks.push(row);
+    if (day > daysInMonth) break;
+  }
+
+  return weeks;
+};
+
+const getPrintSubjectTone = (subject: string | null | undefined) => {
+  const value = subject?.toLowerCase() ?? "";
+  if (value.includes("english")) return "border-emerald-300 bg-emerald-100 text-emerald-900";
+  if (value.includes("filipino")) return "border-blue-300 bg-blue-100 text-blue-900";
+  if (value.includes("math")) return "border-rose-300 bg-rose-100 text-rose-900";
+  if (value.includes("assessment")) return "border-amber-300 bg-amber-100 text-amber-900";
+  return "border-gray-300 bg-gray-100 text-gray-800";
+};
+
 export default function MasterTeacherCalendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState("month");
@@ -90,6 +159,7 @@ export default function MasterTeacherCalendar() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [weeklySubjectSchedule, setWeeklySubjectSchedule] = useState<WeeklySubjectSchedule | null>(null);
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
+  const [remedialSchedule, setRemedialSchedule] = useState<RemedialQuarterSchedule | null>(null);
 
   const loadApprovedActivities = useCallback(async () => {
     try {
@@ -167,6 +237,100 @@ export default function MasterTeacherCalendar() {
   useEffect(() => {
     loadWeeklySubjectSchedule();
   }, [loadWeeklySubjectSchedule]);
+
+  useEffect(() => {
+    const loadRemedialSchedule = async () => {
+      try {
+        const response = await fetch("/api/master_teacher/coordinator/calendar/remedial-schedule", { cache: "no-store" });
+        if (!response.ok) {
+          setRemedialSchedule(null);
+          return;
+        }
+        const payload = (await response.json().catch(() => null)) as {
+          success?: boolean;
+          schedule?: { schoolYear?: string | null; quarters?: Record<string, QuarterRange> | null } | null;
+        } | null;
+
+        if (!payload?.success || !payload?.schedule?.quarters) {
+          setRemedialSchedule(null);
+          return;
+        }
+
+        setRemedialSchedule({
+          schoolYear: payload.schedule.schoolYear ?? resolveDefaultSchoolYear(),
+          quarters: payload.schedule.quarters,
+        });
+      } catch {
+        setRemedialSchedule(null);
+      }
+    };
+
+    loadRemedialSchedule();
+  }, []);
+
+  const activitiesByDate = useMemo(() => {
+    const grouped = new Map<string, Activity[]>();
+    for (const activity of activities) {
+      const key = toDateKey(activity.date);
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.push(activity);
+      } else {
+        grouped.set(key, [activity]);
+      }
+    }
+    for (const [, items] of grouped) {
+      items.sort((a, b) => a.date.getTime() - b.date.getTime());
+    }
+    return grouped;
+  }, [activities]);
+
+  const printableMonths = useMemo(() => {
+    if (!remedialSchedule?.quarters) {
+      return [
+        {
+          month: currentDate.getMonth() + 1,
+          year: currentDate.getFullYear(),
+          key: `${currentDate.getFullYear()}-${currentDate.getMonth() + 1}`,
+        },
+      ];
+    }
+
+    const allMonths: Array<{ month: number; year: number; key: string }> = [];
+    const schoolYear = remedialSchedule.schoolYear || resolveDefaultSchoolYear();
+    for (const range of Object.values(remedialSchedule.quarters)) {
+      if (!range?.startMonth || !range?.endMonth) continue;
+      for (let monthValue = range.startMonth; monthValue <= range.endMonth; monthValue += 1) {
+        const resolvedYear = yearForMonth(schoolYear, monthValue);
+        if (!resolvedYear) continue;
+        allMonths.push({
+          month: monthValue,
+          year: resolvedYear,
+          key: `${resolvedYear}-${monthValue}`,
+        });
+      }
+    }
+
+    const deduped = Array.from(new Map(allMonths.map((item) => [item.key, item])).values());
+    deduped.sort((a, b) => new Date(a.year, a.month - 1, 1).getTime() - new Date(b.year, b.month - 1, 1).getTime());
+    return deduped.length
+      ? deduped
+      : [
+          {
+            month: currentDate.getMonth() + 1,
+            year: currentDate.getFullYear(),
+            key: `${currentDate.getFullYear()}-${currentDate.getMonth() + 1}`,
+          },
+        ];
+  }, [currentDate, remedialSchedule]);
+
+  const handlePrint = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        window.print();
+      });
+    });
+  }, []);
 
   // Get week number for a date
   const getWeekNumber = (date: Date): number => {
@@ -558,19 +722,23 @@ export default function MasterTeacherCalendar() {
   };
 
   return (
-    <div className="relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
+    <div className="remedial-calendar-page relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -top-24 right-0 h-72 w-72 rounded-full bg-emerald-100/25 blur-3xl" />
         <div className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-emerald-200/30 blur-3xl" />
       </div>
-      <Sidebar />
+      <div className="print-hidden">
+        <Sidebar />
+      </div>
       <div className="relative z-10 flex-1 pt-16 flex flex-col overflow-hidden">
-        <Header title="Calendar" />
+        <div className="print-hidden">
+          <Header title="Calendar" />
+        </div>
         <main className="flex-1 overflow-y-auto">
-          <div className="p-4 h-full sm:p-5 md:p-6">
-            <div className="relative z-10 h-full min-h-100 overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_20px_45px_-28px_rgba(15,23,42,0.45)] backdrop-blur-xl sm:p-5 md:p-6">
+          <div className="remedial-calendar-scroll p-4 h-full sm:p-5 md:p-6">
+            <div className="remedial-calendar-surface relative z-10 h-full min-h-100 overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_20px_45px_-28px_rgba(15,23,42,0.45)] backdrop-blur-xl sm:p-5 md:p-6">
               {/* Calendar Controls */}
-              <div className="flex flex-col space-y-3 mb-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
+              <div className="print-hidden flex flex-col space-y-3 mb-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
                 <div className="flex items-center space-x-2 sm:space-x-3">
                   <div className="flex items-center space-x-1">
                     <button onClick={prevPeriod} className="p-2 rounded-md hover:bg-gray-100 text-gray-700">
@@ -612,6 +780,15 @@ export default function MasterTeacherCalendar() {
                       Week
                     </button>
                   </div>
+                  <button
+                    type="button"
+                    onClick={handlePrint}
+                    className="inline-flex items-center justify-center rounded-full border border-gray-200 bg-white p-2 text-gray-700 transition hover:bg-gray-100"
+                    aria-label="Print calendar"
+                    title="Print"
+                  >
+                    <Printer className="h-5 w-5" />
+                  </button>
                 </div>
               </div>
 
@@ -634,6 +811,180 @@ export default function MasterTeacherCalendar() {
           </div>
         </main>
       </div>
+
+      <div className="print-calendar-document print-only">
+        {printableMonths.map((item, monthIndex) => {
+          const monthDate = new Date(item.year, item.month - 1, 1);
+          const matrix = buildMonthMatrix(item.year, item.month - 1);
+          const storedProfile = getStoredUserProfile();
+          const profileGrade =
+            storedProfile?.gradeLevel ??
+            (storedProfile as { gradeLabel?: string | null })?.gradeLabel ??
+            (storedProfile as { grade?: string | null })?.grade ??
+            (storedProfile as { gradeRaw?: string | null })?.gradeRaw ??
+            (storedProfile as { gradeNumber?: string | number | null })?.gradeNumber ??
+            null;
+          const gradeTitle = resolveGradeTitle(activities, typeof profileGrade === "number" ? String(profileGrade) : profileGrade);
+
+          return (
+            <section className="print-month-page" key={item.key}>
+              <header className="print-month-header">
+                <h1 className="text-xl font-bold text-gray-900">{gradeTitle}</h1>
+                <p className="text-sm text-gray-700">
+                  {monthDate.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+                </p>
+              </header>
+
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-gray-700">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-600">Legend</span>
+                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-700">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                  English
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-blue-700">
+                  <span className="h-2 w-2 rounded-full bg-blue-500" />
+                  Filipino
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-rose-700">
+                  <span className="h-2 w-2 rounded-full bg-rose-500" />
+                  Math
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-700">
+                  <span className="h-2 w-2 rounded-full bg-amber-500" />
+                  Assessment
+                </span>
+              </div>
+
+              <div className="mt-3 rounded-lg border border-gray-300 bg-white">
+                <div className="grid grid-cols-7 bg-gray-100 text-xs font-semibold text-gray-700">
+                  {["S", "M", "T", "W", "T", "F", "S"].map((dayLabel, index) => (
+                    <div key={`print-${item.key}-${dayLabel}-${index}`} className="border-r border-gray-200 px-2 py-1 text-center last:border-r-0">
+                      {dayLabel}
+                    </div>
+                  ))}
+                </div>
+                <div className="divide-y divide-gray-200">
+                  {matrix.map((week, weekIndex) => (
+                    <div key={`print-week-${item.key}-${weekIndex}`} className="grid grid-cols-7">
+                      {week.map((cellDate, dayIndex) => {
+                        if (!cellDate) {
+                          return (
+                            <div
+                              key={`print-day-${item.key}-${weekIndex}-${dayIndex}`}
+                              className="h-20 border-r border-gray-200 bg-gray-50 last:border-r-0"
+                            />
+                          );
+                        }
+
+                        const cellActivities = activitiesByDate.get(toDateKey(cellDate)) ?? [];
+                        return (
+                          <div
+                            key={`print-day-${item.key}-${weekIndex}-${dayIndex}`}
+                            className="h-[92px] border-r border-gray-200 px-1.5 py-1 align-top last:border-r-0"
+                          >
+                            <div className="text-right text-[11px] font-semibold leading-none text-gray-800">{cellDate.getDate()}</div>
+                            <div className="mt-1 space-y-0.5 overflow-visible">
+                              {cellActivities.map((activity) => (
+                                <div
+                                  key={`print-activity-${item.key}-${activity.id}`}
+                                  className={`rounded border px-1 py-[1px] text-[9px] font-semibold leading-[1.2] break-words whitespace-normal ${getPrintSubjectTone(activity.subject)}`}
+                                  title={activity.title}
+                                >
+                                  {activity.title}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-2 text-right text-[11px] text-gray-500">
+                {monthIndex + 1} / {printableMonths.length}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+
+      <style jsx global>{`
+        .print-only {
+          display: none;
+        }
+
+        @media print {
+          @page {
+            size: landscape;
+            margin: 8mm;
+          }
+
+          .print-hidden {
+            display: none !important;
+          }
+
+          .print-only {
+            display: block !important;
+          }
+
+          .remedial-calendar-page > :not(.print-calendar-document) {
+            display: none !important;
+          }
+
+          .print-calendar-document {
+            display: block !important;
+            width: 100% !important;
+            max-width: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: visible !important;
+            background: #ffffff !important;
+          }
+
+          .print-month-page {
+            break-inside: avoid;
+            page-break-inside: avoid;
+            page-break-after: always;
+            width: 100%;
+            min-height: 0;
+            padding: 0;
+          }
+
+          .print-month-page:last-child {
+            page-break-after: auto;
+          }
+
+          .print-month-header {
+            margin-bottom: 8px;
+          }
+
+          .remedial-calendar-page,
+          .remedial-calendar-scroll,
+          .remedial-calendar-surface,
+          .print-calendar-document {
+            height: auto !important;
+            min-height: 0 !important;
+            overflow: visible !important;
+            background: #ffffff !important;
+          }
+
+          .remedial-calendar-surface {
+            border: 0 !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+          }
+
+          .print-calendar-document,
+          .print-calendar-document * {
+            position: static !important;
+            overflow: visible !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }

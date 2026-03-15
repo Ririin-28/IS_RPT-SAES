@@ -2,12 +2,11 @@
 import React, { useCallback } from "react";
 import RPTLogoTitle from "../Common/RPTLogoTitle";
 import { useRouter, usePathname } from "next/navigation";
+import { CalendarDays, ClipboardList, FileText, FolderOpen, GraduationCap } from "lucide-react";
+import { FaChalkboardTeacher } from "react-icons/fa";
 
 const MaterialsIcon = React.memo(() => (
-  <svg width="24" height="24" fill="none" viewBox="0 0 24 24">
-    <rect x="3" y="7" width="18" height="14" rx="2" stroke="#013300" strokeWidth="2" />
-    <rect x="7" y="3" width="10" height="4" rx="1" stroke="#013300" strokeWidth="2" />
-  </svg>
+  <FolderOpen className="h-6 w-6" />
 ));
 
 // Memoized SVG icons to prevent unnecessary re-renders
@@ -21,56 +20,23 @@ const DashboardIcon = React.memo(() => (
 ));
 
 const CalendarIcon = React.memo(() => (
-  <svg width="24" height="24" fill="none" viewBox="0 0 24 24">
-    <rect x="3" y="5" width="18" height="16" rx="2" stroke="#013300" strokeWidth="2" />
-    <rect x="3" y="8" width="18" height="2" stroke="#013300" strokeWidth="2" />
-    <rect x="7" y="12" width="2" height="2" stroke="#013300" strokeWidth="2" />
-    <rect x="11" y="12" width="2" height="2" stroke="#013300" strokeWidth="2" />
-    <rect x="15" y="12" width="2" height="2" stroke="#013300" strokeWidth="2" />
-  </svg>
+  <CalendarDays className="h-6 w-6" />
 ));
 
 const StudentsIcon = React.memo(() => (
-  <svg width="24" height="24" fill="none" viewBox="0 0 24 24">
-    <ellipse cx="12" cy="8" rx="4" ry="4" stroke="#013300" strokeWidth="2" />
-    <path d="M4 18v-2c0-2.66 5.33-4 8-4s8 1.34 8 4v2" stroke="#013300" strokeWidth="2" strokeLinecap="round" />
-  </svg>
+  <GraduationCap className="h-6 w-6" />
 ));
 
 const TeachersIcon = React.memo(() => (
-  <svg width="24" height="24" fill="none" viewBox="0 0 24 24">
-    <circle cx="8" cy="8" r="4" stroke="#013300" strokeWidth="2" />
-    <circle cx="16" cy="8" r="4" stroke="#013300" strokeWidth="2" />
-    <rect x="2" y="16" width="20" height="4" rx="2" stroke="#013300" strokeWidth="2" />
-  </svg>
+  <FaChalkboardTeacher className="h-6 w-6" />
 ));
 
 const ReportsIcon = React.memo(() => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="24"
-    height="24"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    className="lucide lucide-file-chart-line-icon lucide-file-chart-line"
-  >
-    <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
-    <path d="M14 2v4a2 2 0 0 0 2 2h4" />
-    <path d="m16 13-3.5 3.5-2-2L8 17" />
-  </svg>
+  <FileText className="h-6 w-6" />
 ));
 
 const RequestsIcon = React.memo(() => (
-  <svg width="24" height="24" fill="none" viewBox="0 0 24 24">
-    <rect x="4" y="3" width="16" height="18" rx="2" stroke="#013300" strokeWidth="2" />
-    <path d="M8 7h8" stroke="#013300" strokeWidth="2" strokeLinecap="round" />
-    <path d="M8 12h8" stroke="#013300" strokeWidth="2" strokeLinecap="round" />
-    <path d="M8 17h5" stroke="#013300" strokeWidth="2" strokeLinecap="round" />
-  </svg>
+  <ClipboardList className="h-6 w-6" />
 ));
 
 type MenuChild = {

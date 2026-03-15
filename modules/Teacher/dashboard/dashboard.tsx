@@ -1,12 +1,16 @@
 "use client";
-import { useState, useCallback, useEffect, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+
+import { useState, useCallback, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { Filter, Printer } from "lucide-react";
 import {
   ResponsiveContainer,
   AreaChart,
   Area,
   BarChart,
   Bar,
+  PieChart,
+  Pie,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -17,92 +21,66 @@ import {
 import TeacherSidebar from "@/components/Teacher/Sidebar";
 import TeacherHeader from "@/components/Teacher/Header";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
-import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
 import BodyText from "@/components/Common/Texts/BodyText";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 
-// Custom styled dropdown component
-function CustomDropdown({ value, onChange, options, className = "" }: {
-  value: string;
-  onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
-  options: string[];
-  className?: string;
-}) {
-  return (
-    <div className={`relative ${className}`}>
-      <select
-        value={value}
-        onChange={onChange}
-        className="w-full rounded-xl border border-white/65 bg-white/55 px-3.5 py-2.5 pr-10 text-sm text-slate-700 shadow-[0_6px_18px_rgba(15,23,42,0.08)] backdrop-blur-md transition-colors duration-150 hover:border-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-200/80 focus:border-gray-300 appearance-none cursor-pointer"
-      >
-        {options.map(option => (
-          <option key={option} value={option}>{option}</option>
-        ))}
-      </select>
-      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-emerald-700/70">
-        <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-        </svg>
-      </div>
-    </div>
-  );
-}
-
-// OverviewCard component with responsive styles
-function OverviewCard({
+function DashboardMetricCard({
   value,
   label,
   icon,
-  className = "",
   onClick,
 }: {
   value: React.ReactNode;
   label: string;
-  icon?: React.ReactNode;
-  className?: string;
+  icon: React.ReactNode;
   onClick?: () => void;
 }) {
-  const sanitizeContent = (content: any): React.ReactNode => {
-    if (typeof content === 'string') {
-      return content;
-    }
-    return content;
-  };
-
-    const baseClasses = `rounded-2xl border border-white/70 bg-white/60 shadow-[0_10px_26px_rgba(15,23,42,0.08)] backdrop-blur-xl
-      flex flex-col items-center justify-center p-5 min-w-[160px] min-h-[110px]
-      transition duration-200 hover:border-gray-200 hover:bg-white/70
-      sm:p-6 sm:min-w-[180px] sm:min-h-[120px]
-      lg:p-7 ${className}`;
+  const cardClassName =
+    "cursor-pointer rounded-xl border border-white/70 bg-white/60 px-4 py-3 text-left shadow-[0_10px_26px_rgba(15,23,42,0.08)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-[0_14px_28px_rgba(15,23,42,0.12)]";
 
   const content = (
-    <>
-      <div className="flex flex-row items-center">
-        <span className="text-4xl font-semibold text-emerald-950 sm:text-5xl">
-          {sanitizeContent(value)}
-        </span>
-        {icon && <span className="ml-1 text-emerald-900/80 sm:ml-2">{icon}</span>}
+    <div className="flex items-center justify-between gap-3">
+      <div>
+        <p className="text-3xl font-semibold text-slate-900">{value}</p>
+        <p className="text-sm font-medium text-slate-600">{label}</p>
       </div>
-      <div className="mt-1 text-sm font-medium text-slate-600 sm:mt-2 sm:text-base">
-        {sanitizeContent(label)}
-      </div>
-    </>
+      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-700 bg-emerald-100 text-emerald-700">
+        {icon}
+      </span>
+    </div>
   );
 
   if (typeof onClick === "function") {
     return (
-      <button
-        type="button"
-        onClick={onClick}
-        className={`${baseClasses} focus:outline-none cursor-pointer text-left`}
-      >
+      <button type="button" onClick={onClick} className={cardClassName}>
         {content}
       </button>
     );
   }
 
-  return <div className={baseClasses}>{content}</div>;
+  return <div className={cardClassName}>{content}</div>;
 }
+
+const EnglishCardIcon = () => (
+  <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-emerald-100 text-[13px] font-bold leading-none text-emerald-700">
+    E
+  </span>
+);
+
+const FilipinoCardIcon = () => (
+  <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-emerald-100 text-[13px] font-bold leading-none text-emerald-700">
+    F
+  </span>
+);
+
+const MathCardIcon = () => (
+  <span className="grid h-6 w-6 grid-cols-2 grid-rows-2 place-items-center rounded-md bg-emerald-100 text-[10px] font-bold leading-none text-emerald-700">
+    <span>+</span>
+    <span>−</span>
+    <span>×</span>
+    <span>÷</span>
+  </span>
+);
 
 type TeacherProfile = {
   fullName: string;
@@ -125,11 +103,15 @@ type TeacherApiResponse = {
   error?: string;
 };
 
-type SubjectCounts = Record<"English" | "Filipino" | "Math", number>;
+type SubjectCountsState = {
+  English: number;
+  Filipino: number;
+  Math: number;
+};
 
 type HandledCountsResponse = {
   success: boolean;
-  counts?: SubjectCounts;
+  counts?: SubjectCountsState;
   trends?: TrendPayload;
   error?: string;
 };
@@ -144,70 +126,137 @@ type TrendSubjectData = {
 type TrendPayload = {
   months: Array<{ key: string; label: string }>;
   weeks: string[];
-  subjects: Record<keyof SubjectCounts, TrendSubjectData>;
+  subjects: Record<keyof SubjectCountsState, TrendSubjectData>;
 };
 
-type AiInsightsResponse = {
-  success: boolean;
-  data?: {
-    weakSkills?: Array<{ skill: string; gap: number }>;
-    metadata?: { sessions?: number; materials?: number };
-  };
-  error?: string;
+type SubjectKey = "english" | "filipino" | "math";
+type SubjectFilter = "All Subjects" | "English" | "Filipino" | "Math";
+
+type DashboardStudentRow = {
+  studentId?: string | null;
+  section?: string | null;
+  english?: string | null;
+  filipino?: string | null;
+  math?: string | null;
 };
 
-const DEFAULT_SUBJECT_COUNTS: SubjectCounts = {
-  English: 0,
-  Filipino: 0,
-  Math: 0,
+const REMEDIAL_SUBJECTS = ["English", "Filipino", "Math"] as const;
+
+const PHONEMIC_LEVELS: Record<SubjectKey, string[]> = {
+  english: ["Non-Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"],
+  filipino: ["Non-Reader", "Syllable", "Word", "Phrase", "Sentence", "Paragraph"],
+  math: ["Not Proficient", "Low Proficient", "Nearly Proficient", "Proficient", "Highly Proficient"],
 };
 
-const ROLE_LABELS: Record<string, string> = {
-  teacher: "Teacher",
-  master_teacher: "Master Teacher",
-  coordinator: "Coordinator",
-};
+function normalizePhonemicLevel(level: string | null | undefined, subject: SubjectKey): string | null {
+  const text = typeof level === "string" ? level.trim().toLowerCase() : "";
+  if (!text) return null;
 
-const formatGradeValue = (value?: string | null): string => {
-  if (!value) return "Not assigned";
-  const trimmed = value.trim();
-  if (!trimmed) return "Not assigned";
-
-  const gradeMatch = trimmed.match(/grade\s*(\d+)/i);
-  if (gradeMatch) {
-    return gradeMatch[1];
+  if (subject === "math") {
+    if (text.includes("not proficient") || text.includes("emerging - not")) return "Not Proficient";
+    if (text.includes("low proficient") || text.includes("emerging - low")) return "Low Proficient";
+    if (text.includes("nearly proficient") || text.includes("developing")) return "Nearly Proficient";
+    if (text.includes("highly proficient") || text.includes("at grade level")) return "Highly Proficient";
+    if (text.includes("proficient") || text.includes("transitioning")) return "Proficient";
+    return null;
   }
 
-  return trimmed;
-};
+  if (text.includes("non-reader") || text.includes("non reader")) return "Non-Reader";
+  if (text.includes("syllable")) return "Syllable";
+  if (text.includes("word")) return "Word";
+  if (text.includes("phrase")) return "Phrase";
+  if (text.includes("sentence")) return "Sentence";
+  if (text.includes("paragraph")) return "Paragraph";
 
-function formatRoleLabel(role?: string | null): string {
-  if (!role) return "Teacher";
-  const key = role.toLowerCase().replace(/[\s-]+/g, "_");
-  return ROLE_LABELS[key] ?? role;
+  return null;
 }
+
+function toSubjectKey(subject: string): SubjectKey {
+  const normalized = subject.toLowerCase();
+  if (normalized === "english") return "english";
+  if (normalized === "filipino") return "filipino";
+  return "math";
+}
+
+const dashboardPrimary = "#1f5f46";
+const dashboardSecondary = "#2f7d57";
+const dashboardWarn = "#bc8b5b";
+const chartMultiPalette = ["#0f766e", "#16a34a", "#65a30d", "#0ea5a4", "#84cc16", "#2f7d57"];
 
 export default function TeacherDashboard() {
   const router = useRouter();
-  const handleNavigate = useCallback((path: string) => {
-    router.push(path);
-  }, [router]);
+  const handleNavigate = useCallback(
+    (path: string) => {
+      router.push(path);
+    },
+    [router],
+  );
 
   const [teacherProfile, setTeacherProfile] = useState<TeacherProfile | null>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
-  const [handledCounts, setHandledCounts] = useState<SubjectCounts>(() => ({ ...DEFAULT_SUBJECT_COUNTS }));
+  const [handledCounts, setHandledCounts] = useState<SubjectCountsState>({
+    English: 0,
+    Filipino: 0,
+    Math: 0,
+  });
   const [isLoadingCounts, setIsLoadingCounts] = useState(true);
   const [countsError, setCountsError] = useState<string | null>(null);
   const [trendData, setTrendData] = useState<TrendPayload | null>(null);
-  const [isLoadingTrends, setIsLoadingTrends] = useState(true);
-  const [trendsError, setTrendsError] = useState<string | null>(null);
-  const [aiWeakSkills, setAiWeakSkills] = useState<Array<{ skill: string; gap: number }>>([]);
-  const [aiMeta, setAiMeta] = useState<{ sessions?: number; materials?: number } | null>(null);
-  const [aiError, setAiError] = useState<string | null>(null);
+  const [studentsLoadError, setStudentsLoadError] = useState<string | null>(null);
+
+  const [dashboardUserId, setDashboardUserId] = useState<string | number | null>(null);
+  const [selectedSubject, setSelectedSubject] = useState("English");
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+  const [subjectFilter, setSubjectFilter] = useState<SubjectFilter>("English");
+
+  const [monthRangeFrom, setMonthRangeFrom] = useState<string | null>(null);
+  const [monthRangeTo, setMonthRangeTo] = useState<string | null>(null);
+  const [monthFromMenuOpen, setMonthFromMenuOpen] = useState(false);
+  const [monthToMenuOpen, setMonthToMenuOpen] = useState(false);
+
+  const [selectedSections, setSelectedSections] = useState<string[]>([]);
+  const [studentRows, setStudentRows] = useState<DashboardStudentRow[]>([]);
 
   useEffect(() => {
     let cancelled = false;
+
+    async function loadCounts(userId: string | number) {
+      setIsLoadingCounts(true);
+      setCountsError(null);
+      try {
+        const response = await fetch(`/api/teacher/dashboard?userId=${encodeURIComponent(String(userId))}`, {
+          cache: "no-store",
+        });
+        const payload: HandledCountsResponse | null = await response.json().catch(() => null);
+
+        if (cancelled) return;
+
+        if (!response.ok || !payload?.success || !payload.counts) {
+          const message = payload?.error ?? "Unable to load handled student counts.";
+          throw new Error(message);
+        }
+
+        setHandledCounts({
+          English: Number(payload.counts.English) || 0,
+          Filipino: Number(payload.counts.Filipino) || 0,
+          Math: Number(payload.counts.Math) || 0,
+        });
+        setTrendData(payload.trends ?? null);
+      } catch (error) {
+        if (!cancelled) {
+          const message =
+            error instanceof Error ? error.message : "Failed to load handled student counts.";
+          setCountsError(message);
+          setHandledCounts({ English: 0, Filipino: 0, Math: 0 });
+          setTrendData(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingCounts(false);
+        }
+      }
+    }
 
     async function loadTeacherProfile() {
       setIsLoadingProfile(true);
@@ -220,10 +269,9 @@ export default function TeacherDashboard() {
           throw new Error("Missing user information. Please log in again.");
         }
 
-        const response = await fetch(
-          `/api/teacher/profile?userId=${encodeURIComponent(String(userId))}`,
-          { cache: "no-store" },
-        );
+        const response = await fetch(`/api/teacher/profile?userId=${encodeURIComponent(String(userId))}`, {
+          cache: "no-store",
+        });
 
         const payload: TeacherApiResponse | null = await response.json().catch(() => null);
 
@@ -234,25 +282,30 @@ export default function TeacherDashboard() {
           throw new Error(message);
         }
 
-        const nameParts = [
-          payload.profile.firstName,
-          payload.profile.middleName,
-          payload.profile.lastName,
-        ].filter((part): part is string => typeof part === "string" && part.trim().length > 0);
+        const nameParts = [payload.profile.firstName, payload.profile.middleName, payload.profile.lastName].filter(
+          (part): part is string => typeof part === "string" && part.trim().length > 0,
+        );
 
         const teacherName = nameParts.length > 0 ? nameParts.join(" ") : "Teacher";
 
+        setDashboardUserId(userId);
+        setSelectedSubject("English");
+        setSubjectFilter("English");
         setTeacherProfile({
           fullName: teacherName,
-          role: formatRoleLabel(payload.profile.role ?? storedProfile?.role),
-          gradeHandled: formatGradeValue(payload.profile.gradeLabel ?? payload.profile.grade ?? ""),
-          subjectAssigned: payload.profile.subjectHandled?.trim() || "English, Filipino, Math",
+          role: "Teacher",
+          gradeHandled: payload.profile.gradeLabel?.trim() || payload.profile.grade?.trim() || "Not assigned",
+          subjectAssigned: "All Subjects",
         });
+
+        await loadCounts(userId);
       } catch (error) {
         if (!cancelled) {
           const message = error instanceof Error ? error.message : "Failed to load profile.";
           setProfileError(message);
           setTeacherProfile(null);
+          setIsLoadingCounts(false);
+          setCountsError((prev) => prev ?? "Unable to load handled student counts.");
         }
       } finally {
         if (!cancelled) {
@@ -261,201 +314,216 @@ export default function TeacherDashboard() {
       }
     }
 
-    loadTeacherProfile();
+    void loadTeacherProfile();
 
     return () => {
       cancelled = true;
     };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadHandledStudents() {
-      setIsLoadingCounts(true);
-      setIsLoadingTrends(true);
-      setCountsError(null);
-      setTrendsError(null);
-      try {
-        const storedProfile = getStoredUserProfile();
-        const userId = storedProfile?.userId;
-
-        if (!userId) {
-          throw new Error("Missing user information. Please log in again.");
-        }
-
-        const response = await fetch(
-          `/api/teacher/dashboard?userId=${encodeURIComponent(String(userId))}`,
-          { cache: "no-store" },
-        );
-
-        const payload: HandledCountsResponse | null = await response.json().catch(() => null);
-
-        if (cancelled) return;
-
-        if (!response.ok || !payload?.success || !payload.counts) {
-          const message = payload?.error ?? "Unable to load handled students.";
-          throw new Error(message);
-        }
-
-        setHandledCounts({
-          English: Number(payload.counts.English) || 0,
-          Filipino: Number(payload.counts.Filipino) || 0,
-          Math: Number(payload.counts.Math) || 0,
-        });
-        setTrendData(payload.trends ?? null);
-      } catch (error) {
-        if (!cancelled) {
-          const message = error instanceof Error ? error.message : "Failed to load handled students.";
-          setCountsError(message);
-          setHandledCounts({ ...DEFAULT_SUBJECT_COUNTS });
-          setTrendData(null);
-          setTrendsError(message);
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoadingCounts(false);
-          setIsLoadingTrends(false);
-        }
-      }
-    }
-
-    loadHandledStudents();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const getHandledValue = (subject: keyof SubjectCounts) => {
-    if (isLoadingCounts) {
-      return "...";
-    }
-    if (countsError) {
-      return "--";
-    }
-    return handledCounts[subject];
-  };
-
-  // Get today's date in simplified month format (same as Principal)
-  const today = new Date();
-  const dayShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const monthShort = [
-    'Jan.', 'Feb.', 'Mar.', 'Apr.', 'May.', 'Jun.',
-    'Jul.', 'Aug.', 'Sep.', 'Oct.', 'Nov.', 'Dec.'
-  ];
-  const dateToday = `${dayShort[today.getDay()]}, ${monthShort[today.getMonth()]} ${today.getDate()}, ${today.getFullYear()}`;
-  const [selectedSubject, setSelectedSubject] = useState('Math');
-  const fallbackMonths = ['September', 'October', 'November', 'December', 'January', 'February', 'March'];
+  const fallbackMonths = ["September", "October", "November", "December", "January", "February", "March"];
   const monthOptions = trendData?.months?.length ? trendData.months.map((item) => item.label) : fallbackMonths;
 
-  const fallbackLevelLabels = selectedSubject === 'Math'
-    ? ['Emerging - Not Proficient', 'Emerging - Low Proficient', 'Developing - Nearly Proficient', 'Transitioning - Proficient', 'At Grade Level - Highly Proficient']
-    : ['Non-Reader', 'Syllable Reader', 'Word Reader', 'Phrase Reader', 'Sentence Reader', 'Paragraph Reader'];
+  const filterMonthOptions = useMemo(
+    () =>
+      trendData?.months?.length
+        ? trendData.months.map((item) => ({ key: item.key, label: item.label }))
+        : fallbackMonths.map((label, index) => ({ key: `fallback-${index}`, label })),
+    [trendData?.months],
+  );
 
-  const subjectTrend = trendData?.subjects?.[selectedSubject as keyof SubjectCounts];
+  const selectedSubjectKey = useMemo<SubjectKey>(() => toSubjectKey(selectedSubject), [selectedSubject]);
+
+  const sectionOptions = useMemo(() => {
+    return Array.from(
+      new Set(
+        studentRows
+          .map((row) => (typeof row.section === "string" ? row.section.trim() : ""))
+          .filter((section) => section.length > 0),
+      ),
+    ).sort((a, b) => a.localeCompare(b));
+  }, [studentRows]);
+
+  const monthRangeIndices = useMemo(() => {
+    const resolveIndex = (key: string | null) => filterMonthOptions.findIndex((item) => item.key === key);
+    return {
+      from: resolveIndex(monthRangeFrom),
+      to: resolveIndex(monthRangeTo),
+    };
+  }, [filterMonthOptions, monthRangeFrom, monthRangeTo]);
+
+  const shouldIncludeByRange = useCallback(
+    (index: number) => {
+      const from = monthRangeIndices.from;
+      const to = monthRangeIndices.to;
+      if (from === -1 || to === -1) return true;
+      if (from <= to) return index >= from && index <= to;
+      return index >= from || index <= to;
+    },
+    [monthRangeIndices.from, monthRangeIndices.to],
+  );
+
+  const filteredMonthIndices = useMemo(() => {
+    return filterMonthOptions.map((_, index) => index).filter((index) => shouldIncludeByRange(index));
+  }, [filterMonthOptions, shouldIncludeByRange]);
+
+  const fallbackLevelLabels =
+    selectedSubject === "Math"
+      ? [
+          "Emerging - Not Proficient",
+          "Emerging - Low Proficient",
+          "Developing - Nearly Proficient",
+          "Transitioning - Proficient",
+          "At Grade Level - Highly Proficient",
+        ]
+      : ["Non-Reader", "Syllable Reader", "Word Reader", "Phrase Reader", "Sentence Reader", "Paragraph Reader"];
+
+  const subjectTrend = trendData?.subjects?.[selectedSubject as keyof SubjectCountsState];
   const resolvedLevelLabels = subjectTrend?.levelLabels?.length ? subjectTrend.levelLabels : fallbackLevelLabels;
-  const periodLabels = monthOptions;
   const periodValues = subjectTrend?.monthly;
-  const normalizedPeriodValues = periodLabels.map((_, index) => (periodValues?.[index] ?? 0));
+  const normalizedPeriodValues = monthOptions.map((_, index) => periodValues?.[index] ?? 0);
 
-  const monthKey = trendData?.months?.[trendData.months.length - 1]?.key ?? null;
+  const filteredPeriodLabels = filteredMonthIndices.map((index) => monthOptions[index]).filter(Boolean);
+  const filteredPeriodValues = filteredMonthIndices.map((index) => normalizedPeriodValues[index] ?? 0);
+
+  const monthKey = (() => {
+    if (!trendData?.months?.length) return null;
+    const lastIncludedIndex = filteredMonthIndices.length
+      ? filteredMonthIndices[filteredMonthIndices.length - 1]
+      : trendData.months.length - 1;
+    return trendData.months[lastIncludedIndex]?.key ?? null;
+  })();
+
   const distributionValues = monthKey ? subjectTrend?.levelDistributionByMonth?.[monthKey] : undefined;
   const normalizedDistributionValues = resolvedLevelLabels.map((_, index) => distributionValues?.[index] ?? 0);
 
   const monthlyProgressData = useMemo(
-    () => periodLabels.map((label, index) => ({ month: label.slice(0, 3), score: Math.max(0, Math.min(100, (normalizedPeriodValues[index] ?? 0) * 12)) })),
-    [periodLabels, normalizedPeriodValues],
+    () =>
+      filteredPeriodLabels.map((label, index) => ({
+        month: label.slice(0, 3),
+        score: Math.max(0, Math.min(100, (filteredPeriodValues[index] ?? 0) * 12)),
+      })),
+    [filteredPeriodLabels, filteredPeriodValues],
   );
 
-  const masteryLevelData = useMemo(() => {
-    const buckets = { "At-Risk": 0, Developing: 0, Proficient: 0, Advanced: 0 };
-    resolvedLevelLabels.forEach((label, index) => {
-      const value = normalizedDistributionValues[index] ?? 0;
-      const key = label.toLowerCase();
-      if (key.includes("non") || key.includes("emerging") || key.includes("low")) buckets["At-Risk"] += value;
-      else if (key.includes("syllable") || key.includes("word") || key.includes("develop")) buckets.Developing += value;
-      else if (key.includes("phrase") || key.includes("sentence") || key.includes("proficient")) buckets.Proficient += value;
-      else buckets.Advanced += value;
-    });
-    return [
-      { name: "At-Risk", value: buckets["At-Risk"], color: "#b86b5c" },
-      { name: "Developing", value: buckets.Developing, color: "#bc8b5b" },
-      { name: "Proficient", value: buckets.Proficient, color: "#2f7d57" },
-      { name: "Advanced", value: buckets.Advanced, color: "#6da98b" },
-    ];
-  }, [normalizedDistributionValues, resolvedLevelLabels]);
-
   const beforeAfterData = useMemo(() => {
-    const first = normalizedPeriodValues.find((value) => value > 0) ?? 0;
-    const last = [...normalizedPeriodValues].reverse().find((value) => value > 0) ?? first;
+    const first = filteredPeriodValues.find((value) => value > 0) ?? 0;
+    const last = [...filteredPeriodValues].reverse().find((value) => value > 0) ?? first;
     return [
       { group: "At-Risk", before: Math.max(20, first * 10), after: Math.max(28, last * 10 + 6) },
       { group: "Developing", before: Math.max(30, first * 11), after: Math.max(38, last * 11 + 6) },
       { group: "Proficient", before: Math.max(40, first * 12), after: Math.max(48, last * 12 + 6) },
     ];
-  }, [normalizedPeriodValues]);
+  }, [filteredPeriodValues]);
 
   useEffect(() => {
     let cancelled = false;
-    const loadAi = async () => {
+
+    const loadStudents = async () => {
+      if (!dashboardUserId) return;
       try {
-        setAiError(null);
-        const userId = getStoredUserProfile()?.userId;
-        if (!userId || !teacherProfile?.gradeHandled) return;
-        const studentResponse = await fetch(
-          `/api/teacher/students?userId=${encodeURIComponent(String(userId))}&subject=${encodeURIComponent(selectedSubject.toLowerCase())}`,
+        setStudentsLoadError(null);
+        const response = await fetch(
+          `/api/teacher/students?userId=${encodeURIComponent(String(dashboardUserId))}&subject=${encodeURIComponent(selectedSubject.toLowerCase())}`,
           { cache: "no-store" },
         );
-        const studentPayload = (await studentResponse.json().catch(() => null)) as { students?: Array<{ studentId?: string }> } | null;
-        const studentIds = (studentPayload?.students ?? []).map((item) => item.studentId).filter((id): id is string => Boolean(id));
-        if (!studentIds.length || cancelled) {
-          setAiWeakSkills([]);
-          return;
+
+        const payload = (await response.json().catch(() => null)) as {
+          success?: boolean;
+          students?: DashboardStudentRow[];
+          error?: string;
+        } | null;
+
+        if (cancelled) return;
+
+        if (!response.ok || !payload?.success) {
+          throw new Error(payload?.error ?? "Failed to load student list for dashboard filters.");
         }
 
-        const now = new Date();
-        const from = new Date(now);
-        from.setMonth(now.getMonth() - 6);
-
-        const aiResponse = await fetch("/api/master_teacher/coordinator/dashboard/ai-insights", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            subject: selectedSubject,
-            grade: teacherProfile.gradeHandled,
-            from: from.toISOString().slice(0, 10),
-            to: now.toISOString().slice(0, 10),
-            studentIds,
-          }),
-          cache: "no-store",
-        });
-        const aiPayload = (await aiResponse.json().catch(() => null)) as AiInsightsResponse | null;
-        if (!aiResponse.ok || !aiPayload?.success) {
-          throw new Error(aiPayload?.error ?? "Failed to load AI insights.");
-        }
-        if (!cancelled) {
-          setAiWeakSkills(aiPayload.data?.weakSkills ?? []);
-          setAiMeta(aiPayload.data?.metadata ?? null);
-        }
+        setStudentRows(Array.isArray(payload.students) ? payload.students : []);
       } catch (error) {
         if (!cancelled) {
-          setAiError(error instanceof Error ? error.message : "Failed to load AI insights.");
-          setAiWeakSkills([]);
+          setStudentsLoadError(
+            error instanceof Error
+              ? error.message
+              : "Failed to load student list for dashboard filters.",
+          );
+          setStudentRows([]);
         }
       }
     };
 
-    void loadAi();
+    void loadStudents();
+
     return () => {
       cancelled = true;
     };
-  }, [selectedSubject, teacherProfile?.gradeHandled]);
+  }, [dashboardUserId, selectedSubject]);
 
-  const aiSuggestedCompetencies = useMemo(
-    () => aiWeakSkills.map((entry) => ({ competency: entry.skill, priority: entry.gap })),
-    [aiWeakSkills],
+  useEffect(() => {
+    setSelectedSections((prev) => prev.filter((section) => sectionOptions.includes(section)));
+  }, [sectionOptions]);
+
+  const filteredStudentRows = useMemo(() => {
+    return studentRows.filter((row) => {
+      const sectionMatch =
+        selectedSections.length === 0 ||
+        (typeof row.section === "string" && selectedSections.includes(row.section));
+      return sectionMatch;
+    });
+  }, [studentRows, selectedSections]);
+
+  const phonemicLevelPieData = useMemo(() => {
+    const levelMap = new Map<string, number>();
+    filteredStudentRows.forEach((row) => {
+      const normalized = normalizePhonemicLevel(row[selectedSubjectKey], selectedSubjectKey);
+      if (!normalized) return;
+      levelMap.set(normalized, (levelMap.get(normalized) ?? 0) + 1);
+    });
+
+    return PHONEMIC_LEVELS[selectedSubjectKey]
+      .map((name, index) => ({
+        name,
+        value: levelMap.get(name) ?? 0,
+        color: chartMultiPalette[index % chartMultiPalette.length],
+      }))
+      .filter((item) => item.value > 0)
+      .map((item) => ({ ...item }));
+  }, [filteredStudentRows, selectedSubjectKey]);
+
+  const toggleSection = useCallback((section: string) => {
+    setSelectedSections((prev) => {
+      if (prev.includes(section)) {
+        return prev.filter((item) => item !== section);
+      }
+      return [...prev, section];
+    });
+  }, []);
+
+  const clearFilters = useCallback(() => {
+    setMonthRangeFrom(null);
+    setMonthRangeTo(null);
+    setMonthFromMenuOpen(false);
+    setMonthToMenuOpen(false);
+    setSubjectFilter("All Subjects");
+    setSelectedSubject("English");
+    setSelectedSections([]);
+  }, []);
+
+  const hasPhonemicLevelPieData = useMemo(
+    () => phonemicLevelPieData.some((item) => item.value > 0),
+    [phonemicLevelPieData],
   );
+
+  const gradeNumberLabel = useMemo(() => {
+    const raw = teacherProfile?.gradeHandled ?? "";
+    const normalized = raw.replace(/^grade\s*/i, "").trim();
+    return normalized.length > 0 ? `Grade ${normalized}` : "Grade";
+  }, [teacherProfile?.gradeHandled]);
+
+  const handlePrintDashboard = useCallback(() => {
+    window.print();
+  }, []);
 
   return (
     <div className="relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
@@ -465,18 +533,17 @@ export default function TeacherDashboard() {
       </div>
       <TeacherSidebar />
 
-      <div className="relative z-10 flex-1 pt-16 flex flex-col overflow-hidden">
+      <div className="relative z-10 flex flex-1 flex-col overflow-hidden pt-16">
         <TeacherHeader title="Dashboard" />
 
         <main className="flex-1 overflow-y-auto">
-          <div className="relative p-4 h-full sm:p-5 md:p-6">
+          <div className="relative h-full p-4 sm:p-5 md:p-6">
             <div className="relative h-full min-h-100 overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.10)] backdrop-blur-xl sm:p-5 md:p-6">
-              {/* Teacher Info Section */}
-              <div className="flex flex-col mb-3 md:flex-row md:items-center md:justify-between">
+              <div className="mb-3 flex flex-col md:flex-row md:items-center md:justify-between">
                 <SecondaryHeader title="Teacher Overview" />
               </div>
 
-              <div className="mb-6 min-h-30 min-w-full rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg sm:mb-7 sm:p-5 md:mb-8 md:p-6">
+              <div className="mb-6 min-w-full rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg sm:mb-7 sm:p-5 md:mb-8 md:p-6">
                 {isLoadingProfile ? (
                   <div className="flex h-full items-center justify-center">
                     <BodyText title="Loading profile..." />
@@ -486,24 +553,18 @@ export default function TeacherDashboard() {
                     <BodyText title={profileError} />
                   </div>
                 ) : teacherProfile ? (
-                  <div className="flex flex-col w-full">
-                    <div className="flex flex-col mb-2 md:flex-row md:items-start md:justify-between md:mb-0">
-                      <div className="mb-3 md:mb-0 md:w-1/3">
-                        <TertiaryHeader title="Full Name:" />
-                        <BodyText title={teacherProfile.fullName} />
-                      </div>
-                      <div className="mb-3 md:mb-0 md:w-1/3">
-                        <TertiaryHeader title="Position:" />
-                        <BodyText title={teacherProfile.role} />
-                      </div>
-                      <div className="mb-3 md:mb-0 md:w-1/3">
-                        <TertiaryHeader title="Grade Assigned:" />
-                        <BodyText title={teacherProfile.gradeHandled} />
-                      </div>
+                  <div className="grid grid-cols-1 gap-2 text-sm font-medium text-slate-700 sm:text-base md:grid-cols-4 md:gap-0">
+                    <div className="md:border-r md:border-slate-200 md:pr-3">
+                      <p className="font-semibold text-slate-900 md:text-center">{teacherProfile.fullName}</p>
                     </div>
-                    <div className="mt-3 md:mt-2">
-                      <TertiaryHeader title="Subject Assigned:" />
-                      <BodyText title={teacherProfile.subjectAssigned} />
+                    <div className="md:border-r md:border-slate-200 md:px-3">
+                      <p className="font-semibold text-slate-900 md:text-center">{teacherProfile.role}</p>
+                    </div>
+                    <div className="md:border-r md:border-slate-200 md:px-3">
+                      <p className="font-semibold text-slate-900 md:text-center">{gradeNumberLabel}</p>
+                    </div>
+                    <div className="md:pl-3">
+                      <p className="font-semibold text-slate-900 md:text-center">{teacherProfile.subjectAssigned}</p>
                     </div>
                   </div>
                 ) : (
@@ -515,166 +576,432 @@ export default function TeacherDashboard() {
 
               <hr className="mb-4 border-gray-200 sm:mb-5 md:mb-6" />
 
-              {/* Overview Cards Section */}
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
+              <div className="mb-5 flex items-start justify-between gap-3">
                 <SecondaryHeader title="Remedial Overview" />
+
+                <div className="flex shrink-0 items-center gap-2">
+                  <div className="relative">
+                    {isFilterModalOpen && (
+                      <button
+                        type="button"
+                        className="fixed inset-0 z-10 cursor-default"
+                        onClick={() => {
+                          setIsFilterModalOpen(false);
+                          setMonthFromMenuOpen(false);
+                          setMonthToMenuOpen(false);
+                        }}
+                        aria-label="Close filter panel"
+                      />
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsFilterModalOpen((prev) => !prev);
+                        if (isFilterModalOpen) {
+                          setMonthFromMenuOpen(false);
+                          setMonthToMenuOpen(false);
+                        }
+                      }}
+                      className="relative z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 shadow-sm transition hover:bg-gray-100"
+                      aria-label="Filter dashboard"
+                      title="Filter"
+                    >
+                      <Filter className="h-4.5 w-4.5" />
+                    </button>
+
+                    {isFilterModalOpen ? (
+                      <div className="absolute right-0 z-20 mt-2 w-[min(56rem,92vw)] rounded-2xl border border-gray-200 bg-white p-5 shadow-[0_24px_48px_rgba(15,23,42,0.22)]">
+                        <div className="mb-4 flex items-center justify-between gap-3">
+                          <p className="text-base font-semibold text-slate-900">Filter Dashboard</p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsFilterModalOpen(false);
+                              setMonthFromMenuOpen(false);
+                              setMonthToMenuOpen(false);
+                            }}
+                            className="rounded-full border border-emerald-100 bg-white px-2.5 py-1 text-xs font-semibold text-emerald-900"
+                          >
+                            Close
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-4">
+                          <div>
+                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                              Subject
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {(["All Subjects", ...REMEDIAL_SUBJECTS] as SubjectFilter[]).map((subject) => (
+                                <button
+                                  key={subject}
+                                  type="button"
+                                  onClick={() => {
+                                    setSubjectFilter(subject);
+                                    if (subject !== "All Subjects") {
+                                      setSelectedSubject(subject);
+                                    }
+                                  }}
+                                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                                    subjectFilter === subject
+                                      ? "border-emerald-700 bg-emerald-700 text-white"
+                                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  {subject}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div>
+                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                              Date Range
+                            </p>
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+                              <div className="relative">
+                                {monthFromMenuOpen && (
+                                  <button
+                                    type="button"
+                                    className="fixed inset-0 z-10 cursor-default"
+                                    onClick={() => setMonthFromMenuOpen(false)}
+                                    aria-label="Close from month menu"
+                                  />
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setMonthFromMenuOpen((prev) => !prev);
+                                    setMonthToMenuOpen(false);
+                                  }}
+                                  className="relative z-20 flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm"
+                                >
+                                  <span>
+                                    {monthRangeFrom
+                                      ? filterMonthOptions.find((item) => item.key === monthRangeFrom)?.label ??
+                                        "From month"
+                                      : "From month"}
+                                  </span>
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    className="h-4 w-4 text-slate-500"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
+                                    <polyline points="6 9 12 15 18 9" />
+                                  </svg>
+                                </button>
+                                {monthFromMenuOpen && (
+                                  <div className="absolute left-0 right-0 z-20 mt-2 max-h-64 overflow-y-auto rounded-xl border border-gray-200 bg-white p-2 shadow-lg">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setMonthRangeFrom(null);
+                                        setMonthFromMenuOpen(false);
+                                      }}
+                                      className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-semibold transition ${
+                                        monthRangeFrom === null
+                                          ? "bg-emerald-50 text-emerald-800"
+                                          : "text-slate-700 hover:bg-slate-100"
+                                      }`}
+                                    >
+                                      <span>Any month</span>
+                                      {monthRangeFrom === null && (
+                                        <span className="text-xs text-emerald-700">Active</span>
+                                      )}
+                                    </button>
+                                    {filterMonthOptions.map((option) => (
+                                      <button
+                                        key={`from-menu-${option.key}`}
+                                        type="button"
+                                        onClick={() => {
+                                          setMonthRangeFrom(option.key);
+                                          setMonthFromMenuOpen(false);
+                                        }}
+                                        className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-semibold transition ${
+                                          monthRangeFrom === option.key
+                                            ? "bg-emerald-50 text-emerald-800"
+                                            : "text-slate-700 hover:bg-slate-100"
+                                        }`}
+                                      >
+                                        <span>{option.label}</span>
+                                        {monthRangeFrom === option.key && (
+                                          <span className="text-xs text-emerald-700">Active</span>
+                                        )}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+
+                              <span className="justify-self-center text-sm font-semibold text-slate-500">to</span>
+
+                              <div className="relative">
+                                {monthToMenuOpen && (
+                                  <button
+                                    type="button"
+                                    className="fixed inset-0 z-10 cursor-default"
+                                    onClick={() => setMonthToMenuOpen(false)}
+                                    aria-label="Close to month menu"
+                                  />
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setMonthToMenuOpen((prev) => !prev);
+                                    setMonthFromMenuOpen(false);
+                                  }}
+                                  className="relative z-20 flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm"
+                                >
+                                  <span>
+                                    {monthRangeTo
+                                      ? filterMonthOptions.find((item) => item.key === monthRangeTo)?.label ??
+                                        "To month"
+                                      : "To month"}
+                                  </span>
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    className="h-4 w-4 text-slate-500"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
+                                    <polyline points="6 9 12 15 18 9" />
+                                  </svg>
+                                </button>
+                                {monthToMenuOpen && (
+                                  <div className="absolute left-0 right-0 z-20 mt-2 max-h-64 overflow-y-auto rounded-xl border border-gray-200 bg-white p-2 shadow-lg">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setMonthRangeTo(null);
+                                        setMonthToMenuOpen(false);
+                                      }}
+                                      className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-semibold transition ${
+                                        monthRangeTo === null
+                                          ? "bg-emerald-50 text-emerald-800"
+                                          : "text-slate-700 hover:bg-slate-100"
+                                      }`}
+                                    >
+                                      <span>Any month</span>
+                                      {monthRangeTo === null && (
+                                        <span className="text-xs text-emerald-700">Active</span>
+                                      )}
+                                    </button>
+                                    {filterMonthOptions.map((option) => (
+                                      <button
+                                        key={`to-menu-${option.key}`}
+                                        type="button"
+                                        onClick={() => {
+                                          setMonthRangeTo(option.key);
+                                          setMonthToMenuOpen(false);
+                                        }}
+                                        className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-semibold transition ${
+                                          monthRangeTo === option.key
+                                            ? "bg-emerald-50 text-emerald-800"
+                                            : "text-slate-700 hover:bg-slate-100"
+                                        }`}
+                                      >
+                                        <span>{option.label}</span>
+                                        {monthRangeTo === option.key && (
+                                          <span className="text-xs text-emerald-700">Active</span>
+                                        )}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div>
+                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                              Sections
+                            </p>
+                            <div className="flex max-h-32 flex-wrap gap-2 overflow-y-auto">
+                              {sectionOptions.map((section) => (
+                                <button
+                                  key={section}
+                                  type="button"
+                                  onClick={() => toggleSection(section)}
+                                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                                    selectedSections.includes(section)
+                                      ? "border-emerald-700 bg-emerald-700 text-white"
+                                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  {section}
+                                </button>
+                              ))}
+                              {sectionOptions.length === 0 ? (
+                                <span className="text-xs text-slate-500">No section options available.</span>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-5 flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            className="rounded-lg border border-emerald-100 bg-white/80 px-3 py-1.5 text-xs font-semibold text-emerald-900"
+                            onClick={clearFilters}
+                          >
+                            Clear All
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white"
+                            onClick={() => {
+                              setIsFilterModalOpen(false);
+                              setMonthFromMenuOpen(false);
+                              setMonthToMenuOpen(false);
+                            }}
+                          >
+                            Apply Filters
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handlePrintDashboard}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 shadow-sm transition hover:bg-gray-100"
+                    aria-label="Print dashboard"
+                    title="Print"
+                  >
+                    <Printer className="h-4.5 w-4.5" />
+                  </button>
+                </div>
               </div>
-              {countsError && (
-                <div className="mb-4 rounded-xl border border-red-100/80 bg-red-50/80 p-3 text-sm text-red-700">
+
+              <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-3">
+                <DashboardMetricCard
+                  value={isLoadingCounts ? "..." : handledCounts.English.toLocaleString()}
+                  label="English Handled Students"
+                  icon={<EnglishCardIcon />}
+                  onClick={() => handleNavigate("/Teacher/students/subject/english")}
+                />
+                <DashboardMetricCard
+                  value={isLoadingCounts ? "..." : handledCounts.Filipino.toLocaleString()}
+                  label="Filipino Handled Students"
+                  icon={<FilipinoCardIcon />}
+                  onClick={() => handleNavigate("/Teacher/students/subject/filipino")}
+                />
+                <DashboardMetricCard
+                  value={isLoadingCounts ? "..." : handledCounts.Math.toLocaleString()}
+                  label="Math Handled Students"
+                  icon={<MathCardIcon />}
+                  onClick={() => handleNavigate("/Teacher/students/subject/math")}
+                />
+              </div>
+
+              {countsError ? (
+                <div className="mb-3 text-sm text-red-600" role="alert">
                   {countsError}
                 </div>
-              )}
-              <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2 sm:gap-5 sm:mb-7 lg:grid-cols-4 lg:gap-6 lg:mb-8">
-                <OverviewCard
-                  value={getHandledValue("English")}
-                  label="English Handled Students"
-                  icon={
-                    <svg width="42" height="42" fill="none" viewBox="0 0 24 24">
-                      <ellipse cx="12" cy="8" rx="4" ry="4" stroke="#013300" strokeWidth="2" />
-                      <path d="M4 18v-2c0-2.66 5.33-4 8-4s8 1.34 8 4v2" stroke="#013300" strokeWidth="2" strokeLinecap="round" />
-                    </svg>
-                  }
-                  onClick={() => handleNavigate("/Teacher/students")}
-                />
-                <OverviewCard
-                  value={getHandledValue("Filipino")}
-                  label="Filipino Handled Students"
-                  icon={
-                    <svg width="42" height="42" fill="none" viewBox="0 0 24 24">
-                      <ellipse cx="12" cy="8" rx="4" ry="4" stroke="#013300" strokeWidth="2" />
-                      <path d="M4 18v-2c0-2.66 5.33-4 8-4s8 1.34 8 4v2" stroke="#013300" strokeWidth="2" strokeLinecap="round" />
-                    </svg>
-                  }
-                  onClick={() => handleNavigate("/Teacher/students")}
-                />
-                <OverviewCard
-                  value={getHandledValue("Math")}
-                  label="Math Handled Students"
-                  icon={
-                    <svg width="42" height="42" fill="none" viewBox="0 0 24 24">
-                      <ellipse cx="12" cy="8" rx="4" ry="4" stroke="#013300" strokeWidth="2" />
-                      <path d="M4 18v-2c0-2.66 5.33-4 8-4s8 1.34 8 4v2" stroke="#013300" strokeWidth="2" strokeLinecap="round" />
-                    </svg>
-                  }
-                  onClick={() => handleNavigate("/Teacher/students")}
-                />
-                <OverviewCard
-                  value={<span className="text-xl">{dateToday}</span>}
-                  label="Date Today"
-                  onClick={() => handleNavigate("/Teacher/calendar")}
-                />
-              </div>
-
-              <hr className="mb-4 border-gray-200 sm:mb-5 md:mb-6" />
-
-              <div className="mb-4 flex items-center justify-end">
-                <div className="w-40">
-                  <CustomDropdown
-                    value={selectedSubject}
-                    onChange={(e) => setSelectedSubject(e.target.value)}
-                    options={['Math', 'English', 'Filipino']}
-                  />
+              ) : null}
+              {studentsLoadError ? (
+                <div className="mb-6 text-sm text-red-600" role="alert">
+                  {studentsLoadError}
                 </div>
-              </div>
+              ) : null}
 
               <div className="space-y-8">
                 <div>
-                  <TertiaryHeader title="Class Progress Overview" />
-                  <div className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  <SecondaryHeader title="Class Progress Overview" />
+                  <div className="mt-3 grid grid-cols-1 gap-4">
                     <div className="rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg">
                       <p className="text-sm font-semibold text-slate-700">Monthly Student Progress</p>
                       <div className="mt-3 h-64">
                         <ResponsiveContainer width="100%" height="100%">
                           <AreaChart data={monthlyProgressData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#d1fae5" />
+                            <defs>
+                              <linearGradient id="progressFillTeacher" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor={dashboardSecondary} stopOpacity={0.7} />
+                                <stop offset="100%" stopColor={dashboardSecondary} stopOpacity={0.08} />
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="4 4" stroke="#d1fae5" />
                             <XAxis dataKey="month" />
                             <YAxis domain={[0, 100]} />
                             <ReTooltip />
-                            <Area type="monotone" dataKey="score" stroke="#1f5f46" fill="#2f7d5730" />
+                            <Area
+                              type="monotone"
+                              dataKey="score"
+                              stroke={dashboardPrimary}
+                              strokeWidth={3}
+                              fill="url(#progressFillTeacher)"
+                            />
                           </AreaChart>
                         </ResponsiveContainer>
                       </div>
                     </div>
-                    <div className="rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg">
-                      <p className="text-sm font-semibold text-slate-700">Mastery Level Distribution</p>
+                  </div>
+                </div>
+
+                <div>
+                  <SecondaryHeader title="Intervention Tracking" />
+                  <div className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-3">
+                    <div className="rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg xl:col-span-2">
+                      <p className="text-sm font-semibold text-slate-700">Student Improvement (Before vs After)</p>
                       <div className="mt-3 h-64">
                         <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={masteryLevelData}>
+                          <BarChart data={beforeAfterData}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#d1fae5" />
-                            <XAxis dataKey="name" />
-                            <YAxis allowDecimals={false} />
+                            <XAxis dataKey="group" />
+                            <YAxis domain={[0, 100]} />
                             <ReTooltip />
-                            <Bar dataKey="value" radius={[8, 8, 0, 0]}>
-                              {masteryLevelData.map((item) => (
-                                <Cell key={item.name} fill={item.color} />
-                              ))}
-                            </Bar>
+                            <ReLegend />
+                            <Bar dataKey="before" fill={dashboardWarn} radius={[8, 8, 0, 0]} />
+                            <Bar dataKey="after" fill={dashboardSecondary} radius={[8, 8, 0, 0]} />
                           </BarChart>
                         </ResponsiveContainer>
                       </div>
                     </div>
-                  </div>
-                </div>
 
-                <div>
-                  <TertiaryHeader title="Intervention Tracking" />
-                  <div className="mt-3 rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg">
-                    <p className="text-sm font-semibold text-slate-700">Student Improvement (Before vs After)</p>
-                    <div className="mt-3 h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={beforeAfterData}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#d1fae5" />
-                          <XAxis dataKey="group" />
-                          <YAxis domain={[0, 100]} />
-                          <ReTooltip />
-                          <ReLegend />
-                          <Bar dataKey="before" fill="#bc8b5b" />
-                          <Bar dataKey="after" fill="#2f7d57" />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <TertiaryHeader title="Classroom Analytics" />
-                  <div className="mt-3 rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg">
-                    <p className="text-sm font-semibold text-slate-700">Suggested Competency Focus (Based on AI Summary)</p>
-                    <div className="mt-3 h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={aiSuggestedCompetencies}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#d1fae5" />
-                          <XAxis dataKey="competency" />
-                          <YAxis domain={[0, 100]} />
-                          <ReTooltip />
-                          <Bar dataKey="priority" fill="#5f8fa8" />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <TertiaryHeader title="AI Teaching Assistant Insights" />
-                  <div className="mt-3 rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg">
-                    <p className="text-sm font-semibold text-slate-700">AI-Detected Weak Skills</p>
-                    {aiMeta ? <p className="mt-1 text-xs text-slate-500">Based on {aiMeta.sessions ?? 0} AI summaries and {aiMeta.materials ?? 0} remedial contents.</p> : null}
-                    {aiError ? <p className="mt-2 text-xs text-red-600">{aiError}</p> : null}
-                    <div className="mt-3 h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={aiWeakSkills} layout="vertical">
-                          <CartesianGrid strokeDasharray="3 3" stroke="#d1fae5" />
-                          <XAxis type="number" domain={[0, 100]} />
-                          <YAxis type="category" dataKey="skill" width={140} />
-                          <ReTooltip />
-                          <Bar dataKey="gap" fill="#2f7d57" />
-                        </BarChart>
-                      </ResponsiveContainer>
+                    <div className="rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg xl:col-span-1">
+                      <p className="text-sm font-semibold text-slate-700">
+                        Students per Phonemic Level ({selectedSubject})
+                      </p>
+                      <div className="mt-3 h-64">
+                        {hasPhonemicLevelPieData ? (
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                              <Pie
+                                data={phonemicLevelPieData}
+                                dataKey="value"
+                                nameKey="name"
+                                innerRadius={48}
+                                outerRadius={90}
+                                paddingAngle={2}
+                              >
+                                {phonemicLevelPieData.map((entry) => (
+                                  <Cell key={entry.name} fill={entry.color} />
+                                ))}
+                              </Pie>
+                              <ReLegend />
+                              <ReTooltip />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        ) : (
+                          <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/40 text-sm font-medium text-slate-500">
+                            No phonemic level data available.
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-
             </div>
           </div>
         </main>

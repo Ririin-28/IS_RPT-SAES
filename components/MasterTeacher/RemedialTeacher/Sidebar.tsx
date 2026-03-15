@@ -2,6 +2,7 @@
 
 import React, { useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { BookOpenCheck, CalendarDays, ClipboardCheck, FileText, FolderOpen, GraduationCap } from "lucide-react";
 import RPTLogoTitle from "../../Common/RPTLogoTitle";
 
 type NavChild = {
@@ -27,64 +28,32 @@ const DashboardIcon = React.memo(() => (
 DashboardIcon.displayName = "DashboardIcon";
 
 const CalendarIcon = React.memo(() => (
-  <svg width="24" height="24" fill="none" viewBox="0 0 24 24">
-    <rect x="3" y="5" width="18" height="16" rx="2" stroke="#013300" strokeWidth="2" />
-    <rect x="3" y="8" width="18" height="2" stroke="#013300" strokeWidth="2" />
-    <rect x="7" y="12" width="2" height="2" stroke="#013300" strokeWidth="2" />
-    <rect x="11" y="12" width="2" height="2" stroke="#013300" strokeWidth="2" />
-    <rect x="15" y="12" width="2" height="2" stroke="#013300" strokeWidth="2" />
-  </svg>
+  <CalendarDays className="h-6 w-6" />
 ));
 CalendarIcon.displayName = "CalendarIcon";
 
 const StudentsIcon = React.memo(() => (
-  <svg width="24" height="24" fill="none" viewBox="0 0 24 24">
-    <ellipse cx="12" cy="8" rx="4" ry="4" stroke="#013300" strokeWidth="2" />
-    <path d="M4 18v-2c0-2.66 5.33-4 8-4s8 1.34 8 4v2" stroke="#013300" strokeWidth="2" strokeLinecap="round" />
-  </svg>
+  <GraduationCap className="h-6 w-6" />
 ));
 StudentsIcon.displayName = "StudentsIcon";
 
 const MaterialsIcon = React.memo(() => (
-  <svg width="24" height="24" fill="none" viewBox="0 0 24 24">
-    <rect x="3" y="7" width="18" height="14" rx="2" stroke="#013300" strokeWidth="2" />
-    <rect x="7" y="3" width="10" height="4" rx="1" stroke="#013300" strokeWidth="2" />
-  </svg>
+  <FolderOpen className="h-6 w-6" />
 ));
 MaterialsIcon.displayName = "MaterialsIcon";
 
 const RemedialIcon = React.memo(() => (
-  <svg width="24" height="24" fill="none" viewBox="0 0 24 24">
-    <rect width="16" height="20" x="4" y="2" rx="2" stroke="#013300" strokeWidth="2" />
-    <path d="M2 6h4" stroke="#013300" strokeWidth="2" />
-    <path d="M2 10h4" stroke="#013300" strokeWidth="2" />
-    <path d="M2 14h4" stroke="#013300" strokeWidth="2" />
-    <path d="M2 18h4" stroke="#013300" strokeWidth="2" />
-    <path d="M9.5 8h5" stroke="#013300" strokeWidth="2" />
-    <path d="M9.5 12H16" stroke="#013300" strokeWidth="2" />
-    <path d="M9.5 16H14" stroke="#013300" strokeWidth="2" />
-  </svg>
+  <BookOpenCheck className="h-6 w-6" />
 ));
 RemedialIcon.displayName = "RemedialIcon";
 
 const AssessmentIcon = React.memo(() => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-    <rect x="4" y="3" width="16" height="18" rx="2" stroke="#013300" strokeWidth="2" />
-    <path d="M8 7h8" stroke="#013300" strokeWidth="2" strokeLinecap="round" />
-    <path d="M8 11h8" stroke="#013300" strokeWidth="2" strokeLinecap="round" />
-    <path d="M8 15h4" stroke="#013300" strokeWidth="2" strokeLinecap="round" />
-    <circle cx="16" cy="15" r="1.5" stroke="#013300" strokeWidth="1.5" />
-  </svg>
+  <ClipboardCheck className="h-6 w-6" />
 ));
 AssessmentIcon.displayName = "AssessmentIcon";
 
 const ReportIcon = React.memo(() => (
-  <svg width="24" height="24" fill="none" viewBox="0 0 24 24">
-    <rect width="16" height="20" x="4" y="2" rx="2" stroke="#013300" strokeWidth="2" />
-    <path d="M8 6h8" stroke="#013300" strokeWidth="2" />
-    <path d="M8 10h8" stroke="#013300" strokeWidth="2" />
-    <path d="M8 14h5" stroke="#013300" strokeWidth="2" />
-  </svg>
+  <FileText className="h-6 w-6" />
 ));
 ReportIcon.displayName = "ReportIcon";
 
