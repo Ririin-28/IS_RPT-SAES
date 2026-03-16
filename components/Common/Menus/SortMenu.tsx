@@ -29,8 +29,11 @@ export type SortMenuProps<T extends string = string> = {
   menuClassName?: string;
   menuWidthClass?: string;
   buttonAriaLabel?: string;
+  buttonTitle?: string;
   buttonLabel?: string;
   showSelectedLabel?: boolean;
+  iconButtonClassName?: string;
+  iconClassName?: string;
 };
 
 const SortMenu = <T extends string>({
@@ -48,8 +51,11 @@ const SortMenu = <T extends string>({
   menuClassName = "",
   menuWidthClass = "w-64",
   buttonAriaLabel = "Open sort menu",
+  buttonTitle,
   buttonLabel = "Sort",
   showSelectedLabel = false,
+  iconButtonClassName,
+  iconClassName = "h-4 w-4",
 }: SortMenuProps<T>) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -82,9 +88,13 @@ const SortMenu = <T extends string>({
         }}
         disabled={disabled}
         aria-label={buttonAriaLabel}
+        title={buttonTitle}
         className={
           iconOnly
-            ? `inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white/90 p-2 text-[#013300] shadow-sm backdrop-blur transition hover:-translate-y-px hover:border-gray-300 hover:shadow ${
+            ? `${
+                iconButtonClassName ??
+                "inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white/90 p-2 text-[#013300] shadow-sm backdrop-blur transition hover:-translate-y-px hover:border-gray-300 hover:shadow"
+              } ${
                 disabled ? "opacity-50 cursor-not-allowed" : ""
               }`
             : `inline-flex items-center gap-2 rounded-lg border-2 border-[#013300] bg-[#013300] ${
@@ -94,7 +104,7 @@ const SortMenu = <T extends string>({
               }`
         }
       >
-        <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+        <svg className={iconClassName} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" d="m21 16-4 4-4-4" />
           <path strokeLinecap="round" strokeLinejoin="round" d="M17 20V4" />
           <path strokeLinecap="round" strokeLinejoin="round" d="m3 8 4-4 4 4" />
@@ -106,7 +116,7 @@ const SortMenu = <T extends string>({
         <div
           className={`absolute ${align === "right" ? "right-0" : "left-0"} mt-2 ${menuWidthClass}
                       bg-white/95 border border-gray-200 rounded-lg shadow-[0_12px_30px_-12px_rgba(15,23,42,0.45)] backdrop-blur
-                      z-[999] ${menuClassName}`}
+                      z-999 ${menuClassName}`}
           role="menu"
           aria-label="Sort options"
         >

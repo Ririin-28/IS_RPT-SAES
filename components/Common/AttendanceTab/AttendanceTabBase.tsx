@@ -3,11 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import TableList from "@/components/Common/Tables/TableList";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
-import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
-import UtilityButton from "@/components/Common/Buttons/UtilityButton";
-import KebabMenu from "@/components/Common/Menus/KebabMenu";
+import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import { exportRowsToExcel } from "@/lib/utils/export-to-excel";
 import type { SubjectKey } from "@/modules/MasterTeacher/RemedialTeacher/report/types";
+import { Printer } from "lucide-react";
 
 const DEFAULT_SUPPORTED_MONTHS = new Set<number>();
 
@@ -37,6 +36,7 @@ type AttendanceTabBaseProps = {
   students: any[];
   searchTerm: string;
   attendanceApiBase?: string;
+  uiVariant?: "default" | "remedial";
 };
 
 const buildKey = (studentId: string | number, iso: string) => `${studentId}|${iso}`;
@@ -379,6 +379,7 @@ export default function AttendanceTabBase({
   students,
   searchTerm,
   attendanceApiBase = "/api/master_teacher/remedial/attendance",
+  uiVariant = "default",
 }: AttendanceTabBaseProps) {
   const [view, setView] = useState<"Day" | "Week" | "Month">("Week");
   const [isEditing, setIsEditing] = useState(false);
@@ -390,9 +391,11 @@ export default function AttendanceTabBase({
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
   const [supportedMonths, setSupportedMonths] = useState<Set<number>>(DEFAULT_SUPPORTED_MONTHS);
   const [supportedMonthsLabel, setSupportedMonthsLabel] = useState<string>(() => formatMonthList(DEFAULT_SUPPORTED_MONTHS));
   const [allowedWeekdays, setAllowedWeekdays] = useState<Set<string> | null>(null);
+  const isRemedialEnhanced = uiVariant === "remedial";
 
   useEffect(() => {
     if (!feedback || feedback.type !== "success") {
@@ -890,6 +893,26 @@ export default function AttendanceTabBase({
     return `${formatMonthAbbrev(month)} ${day}, ${year}`;
   }, [currentDate]);
 
+  const activeRangeLabel = useMemo(() => {
+    if (view === "Month") return currentMonthLabel;
+    if (view === "Week") return currentWeekLabel;
+    return currentDayLabel;
+  }, [currentDayLabel, currentMonthLabel, currentWeekLabel, view]);
+
+  const hasUnsavedChanges = useMemo(() => {
+    if (!isEditing) {
+      return false;
+    }
+
+    const allKeys = new Set<string>([...baselineMap.keys(), ...statusMap.keys()]);
+    for (const key of allKeys) {
+      if (baselineMap.get(key) !== statusMap.get(key)) {
+        return true;
+      }
+    }
+    return false;
+  }, [baselineMap, isEditing, statusMap]);
+
   const rows = useMemo(() => {
     return filteredStudents.map((student: any, index: number) => {
       const id = resolveStudentId(student, index + 1);
@@ -976,6 +999,111 @@ export default function AttendanceTabBase({
       setIsExporting(false);
     }
   }, [daysToDisplay, rows, setFeedback, subjectLabel, view]);
+
+  const handlePrintAttendance = useCallback(() => {
+    if (!rows.length) {
+      setFeedback({ type: "error", message: "No attendance records available to print." });
+      return;
+    }
+
+    setIsPrinting(true);
+    try {
+      const printWindow = window.open("", "_blank", "noopener,noreferrer,width=1280,height=860");
+      if (!printWindow) {
+        throw new Error("Unable to open print preview. Please allow pop-ups and try again.");
+      }
+
+      const escapeHtml = (value: string) =>
+        value
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+
+      const printableStatus = (value: unknown): string => {
+        if (value === "present") return "Present";
+        if (value === "absent") return "Absent";
+        return "--";
+      };
+
+      const headers = daysToDisplay
+        .map((day) => `<th>${escapeHtml(day.key)}</th>`)
+        .join("");
+
+      const bodyRows = rows
+        .map((row: any) => {
+          const cells = daysToDisplay
+            .map((day) => `<td>${escapeHtml(printableStatus(row[day.key]))}</td>`)
+            .join("");
+          return `<tr><td>${row.no}</td><td>${escapeHtml(String(row.name ?? ""))}</td>${cells}</tr>`;
+        })
+        .join("");
+
+      const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(subjectLabel)} Attendance Print</title>
+  <style>
+    @page { size: landscape; margin: 12mm; }
+    body { font-family: Arial, sans-serif; color: #111827; margin: 0; }
+    .print-wrap { padding: 8px 10px; }
+    .header { margin-bottom: 10px; }
+    .title { font-size: 20px; font-weight: 700; color: #013300; margin: 0 0 4px 0; }
+    .meta { font-size: 12px; color: #374151; display: flex; gap: 14px; flex-wrap: wrap; }
+    .legend { margin: 8px 0 10px; font-size: 12px; color: #374151; }
+    .legend span { margin-right: 12px; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th, td { border: 1px solid #d1d5db; padding: 6px 4px; font-size: 11px; text-align: center; }
+    th:nth-child(2), td:nth-child(2) { text-align: left; width: 220px; }
+    th:first-child, td:first-child { width: 48px; }
+    th { background: #f3f4f6; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="print-wrap">
+    <div class="header">
+      <h1 class="title">${escapeHtml(subjectLabel)} Attendance</h1>
+      <div class="meta">
+        <span><strong>View:</strong> ${escapeHtml(view)}</span>
+        <span><strong>Range:</strong> ${escapeHtml(activeRangeLabel)}</span>
+        <span><strong>Printed:</strong> ${escapeHtml(new Date().toLocaleString())}</span>
+      </div>
+      <div class="legend">
+        <span><strong>Present:</strong> Present</span>
+        <span><strong>Absent:</strong> Absent</span>
+        <span><strong>Unmarked:</strong> --</span>
+      </div>
+    </div>
+    <table>
+      <thead>
+        <tr><th>No#</th><th>Name</th>${headers}</tr>
+      </thead>
+      <tbody>
+        ${bodyRows}
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>`;
+
+      printWindow.document.open();
+      printWindow.document.write(html);
+      printWindow.document.close();
+      printWindow.focus();
+      window.setTimeout(() => {
+        printWindow.print();
+      }, 250);
+    } catch (error) {
+      setFeedback({
+        type: "error",
+        message: error instanceof Error ? error.message : "Failed to prepare attendance print.",
+      });
+    } finally {
+      setIsPrinting(false);
+    }
+  }, [activeRangeLabel, daysToDisplay, rows, setFeedback, subjectLabel, view]);
 
   const handleMarkAllPresentToday = useCallback(() => {
     if (!canMarkAllPresentToday || !todayDayInfo) {
@@ -1066,37 +1194,58 @@ export default function AttendanceTabBase({
   }, [daysToDisplay, renderAttendanceCell]);
 
   return (
-    <div>
-      {/* Desktop Layout */}
-      <div className="hidden md:flex justify-between items-center mb-2">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handlePreviousRange}
-            className="p-2 rounded-md bg-white border border-gray-300 hover:bg-gray-50 transition-colors shadow-sm"
-            type="button"
-          >
-            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <SecondaryHeader title={view === "Month" ? currentMonthLabel : view === "Week" ? currentWeekLabel : currentDayLabel} />
-          <button
-            onClick={handleNextRange}
-            className="p-2 rounded-md bg-white border border-gray-300 hover:bg-gray-50 transition-colors shadow-sm"
-            type="button"
-          >
-            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
+    <div className="w-full">
+      <div className="mb-3 space-y-2.5 rounded-xl border border-gray-200 bg-white/80 p-3 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <SecondaryHeader title={activeRangeLabel} />
+          <div className="ml-auto flex items-center justify-end gap-1.5 whitespace-nowrap overflow-x-auto">
+            <span className="pr-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-600">Legend</span>
+            <span className="inline-flex h-7 items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 text-[11px] text-gray-700">
+              <span className="inline-block h-2 w-2 rounded-full border border-gray-400 bg-gray-300" />
+              Unmarked
+            </span>
+            <span className="inline-flex h-7 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 text-[11px] text-emerald-800">
+              <span className="inline-block h-2 w-2 rounded-full bg-[#013300]" />
+              Present
+            </span>
+            <span className="inline-flex h-7 items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2 text-[11px] text-red-700">
+              <span className="inline-block h-2 w-2 rounded-full bg-red-600" />
+              Absent
+            </span>
+          </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="flex bg-gray-100 rounded-lg p-1">
+        <div className="flex flex-wrap items-start gap-2.5 border-t border-gray-100 pt-2.5">
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handlePreviousRange}
+              className="flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-600 shadow-xs transition-colors hover:bg-gray-50"
+              type="button"
+              aria-label="Previous range"
+              title="Previous range"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <button
+              onClick={handleNextRange}
+              className="flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-600 shadow-xs transition-colors hover:bg-gray-50"
+              type="button"
+              aria-label="Next range"
+              title="Next range"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
+
+          <div className="flex h-9 items-center rounded-lg bg-gray-100 p-1">
             <button
               type="button"
               onClick={() => handleViewChange("Day")}
-              className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
+              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-all ${
                 view === "Day" ? "bg-white text-[#013300] shadow-sm" : "text-gray-600 hover:text-gray-800"
               }`}
             >
@@ -1105,7 +1254,7 @@ export default function AttendanceTabBase({
             <button
               type="button"
               onClick={() => handleViewChange("Week")}
-              className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
+              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-all ${
                 view === "Week" ? "bg-white text-[#013300] shadow-sm" : "text-gray-600 hover:text-gray-800"
               }`}
             >
@@ -1114,7 +1263,7 @@ export default function AttendanceTabBase({
             <button
               type="button"
               onClick={() => handleViewChange("Month")}
-              className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
+              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-all ${
                 view === "Month" ? "bg-white text-[#013300] shadow-sm" : "text-gray-600 hover:text-gray-800"
               }`}
             >
@@ -1122,10 +1271,95 @@ export default function AttendanceTabBase({
             </button>
           </div>
 
-          {isEditing ? (
-            <div className="flex gap-2 flex-wrap justify-end">
-              <UtilityButton
-                small
+          <div className="ml-auto flex min-w-60 flex-col items-end gap-1.5">
+
+            {!isEditing ? (
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {isRemedialEnhanced ? (
+                  <button
+                    type="button"
+                    onClick={handlePrintAttendance}
+                    disabled={isPrinting || !hasRows}
+                    className={`inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 shadow-sm transition hover:bg-gray-100 ${
+                      isPrinting || !hasRows ? "cursor-not-allowed opacity-60" : ""
+                    }`}
+                    aria-label="Print attendance"
+                    title={isPrinting ? "Preparing..." : "Print Attendance"}
+                  >
+                    <Printer className="h-4.5 w-4.5" />
+                  </button>
+                ) : (
+                  <SecondaryButton
+                    small
+                    onClick={() => void handleExport()}
+                    disabled={isExporting || !hasRows}
+                    className="h-10 rounded-full border border-gray-200 bg-white px-4 font-semibold text-gray-700 shadow-sm hover:bg-gray-100"
+                  >
+                    <span className="flex items-center gap-1">
+                      {isExporting ? (
+                        <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3.5-3.5L12 1v4a8 8 0 100 16v-4l-3.5 3.5L12 23v-4a8 8 0 01-8-8z" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="m7 10 5 5 5-5" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 15V3" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 19h14" />
+                        </svg>
+                      )}
+                      Export
+                    </span>
+                  </SecondaryButton>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleEnterEditMode}
+                  disabled={!canEnterEditMode}
+                  className={`inline-flex h-10 items-center gap-2 rounded-full border-2 border-[#013300] bg-[#013300] px-4 text-sm font-semibold text-white shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 ${
+                    !canEnterEditMode ? "cursor-not-allowed opacity-60" : "hover:border-green-900 hover:bg-green-900"
+                  }`}
+                >
+                  <span className="flex items-center gap-1">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    Edit Attendance
+                  </span>
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        {isEditing ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-2.5">
+            <div className="inline-flex h-8 items-center rounded-full border border-amber-200 bg-amber-50 px-3 text-xs font-medium text-amber-800">
+              <span>Editing mode</span>
+            </div>
+
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleCancel}
+                disabled={isSaving}
+                className={`inline-flex h-10 items-center gap-1 rounded-full border border-red-600 px-4 text-sm font-semibold shadow-sm transition ${
+                  isSaving
+                    ? "cursor-not-allowed bg-red-400 text-white/80 opacity-70"
+                    : "bg-red-600 text-white hover:border-red-700 hover:bg-red-700"
+                }`}
+              >
+                <span className="flex items-center gap-1">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  Cancel
+                </span>
+              </button>
+
+              <button
+                type="button"
                 onClick={handleMarkAllPresentToday}
                 disabled={!canMarkAllPresentToday}
                 title={
@@ -1135,24 +1369,27 @@ export default function AttendanceTabBase({
                     ? `Mark every student as present for ${todayDayInfo.dayName} ${todayDayInfo.day}.`
                     : "Current day is not visible in this view."
                 }
+                className={`inline-flex h-10 items-center gap-2 rounded-full border border-emerald-700 bg-white px-4 text-sm font-semibold text-emerald-800 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 ${
+                  !canMarkAllPresentToday ? "cursor-not-allowed opacity-60" : "hover:bg-emerald-50"
+                }`}
               >
                 <span className="flex items-center gap-1">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 7h6" />
                   </svg>
-                  All Present (Today)
+                  Mark All as "Present"
                 </span>
-              </UtilityButton>
-              <UtilityButton small onClick={handleCancel} disabled={isSaving}>
-                <span className="flex items-center gap-1">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                  Cancel
-                </span>
-              </UtilityButton>
-              <PrimaryButton small onClick={handleSave} disabled={isSaving}>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={isSaving}
+                className={`inline-flex h-10 items-center gap-2 rounded-full border-2 border-[#013300] bg-[#013300] px-4 text-sm font-semibold text-white shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 ${
+                  isSaving ? "cursor-not-allowed opacity-60" : "hover:border-green-900 hover:bg-green-900"
+                }`}
+              >
                 <span className="flex items-center gap-1">
                   {isSaving ? (
                     <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
@@ -1166,300 +1403,10 @@ export default function AttendanceTabBase({
                   )}
                   Save
                 </span>
-              </PrimaryButton>
+              </button>
             </div>
-          ) : (
-            <KebabMenu
-              small
-              buttonAriaLabel="Attendance actions"
-              renderItems={(close) => (
-                <div className="py-1" role="none">
-                  <button
-                    type="button"
-                    className={`flex w-full items-center gap-2 px-4 py-2 text-sm text-left transition-colors ${
-                      canEnterEditMode ? "text-[#013300] hover:bg-gray-50" : "text-gray-400 cursor-not-allowed"
-                    }`}
-                    disabled={!canEnterEditMode}
-                    onClick={() => {
-                      handleEnterEditMode();
-                      close();
-                    }}
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                    </svg>
-                    Edit Mode
-                  </button>
-                  <button
-                    type="button"
-                    className={`flex w-full items-center gap-2 px-4 py-2 text-sm text-left transition-colors ${
-                      isExporting || !hasRows
-                        ? "text-gray-400 cursor-not-allowed"
-                        : "text-[#013300] hover:bg-gray-50"
-                    }`}
-                    disabled={isExporting || !hasRows}
-                    onClick={() => {
-                      close();
-                      void handleExport();
-                    }}
-                  >
-                    {isExporting ? (
-                      <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3.5-3.5L12 1v4a8 8 0 100 16v-4l-3.5 3.5L12 23v-4a8 8 0 01-8-8z" />
-                      </svg>
-                    ) : (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="m7 10 5 5 5-5" />
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 15V3" />
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 19h14" />
-                      </svg>
-                    )}
-                    Export to Excel
-                  </button>
-                  <div className="relative group">
-                    <button
-                      type="button"
-                      className="flex w-full items-center gap-2 px-4 py-2 text-sm text-left text-[#013300] hover:bg-gray-50 transition-colors"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                        <circle cx="12" cy="12" r="10" />
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 16v-4m0-4h.01" />
-                      </svg>
-                      Legend
-                    </button>
-                    <div className="absolute right-full top-0 mr-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg p-3 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-                      <div className="text-sm font-semibold text-gray-700 mb-2">Attendance Legend</div>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex items-center gap-2">
-                          <div className="w-3 h-3 rounded-full bg-gray-300 border border-gray-400" />
-                          <span className="text-gray-700">Unmarked</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-3 h-3 rounded-full bg-[#013300] border border-green-700" />
-                          <span className="text-gray-700">Present</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-3 h-3 rounded-full bg-red-600 border border-red-700" />
-                          <span className="text-gray-700">Absent</span>
-                        </div>
-                      </div>
-                      <div className="mt-3 pt-2 border-t border-gray-200 text-xs text-gray-500">
-                        Click cells to change status in Edit Mode
-                      </div>
-                      <div className="mt-2 pt-2 border-t border-gray-200 text-xs text-gray-500">
-                        Note: Future dates cannot be modified
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            />
-          )}
-        </div>
-      </div>
-
-      {/* Mobile Layout */}
-      <div className="md:hidden">
-        {/* Date navigation and title */}
-        <div className="flex items-center justify-center gap-3 mb-4">
-          <button
-            onClick={handlePreviousRange}
-            className="p-2 rounded-md bg-white border border-gray-300 hover:bg-gray-50 transition-colors shadow-sm"
-            type="button"
-          >
-            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <div className="text-center">
-            <SecondaryHeader 
-              title={view === "Month" ? currentMonthLabel : view === "Week" ? currentWeekLabel : currentDayLabel} 
-            />
           </div>
-          <button
-            onClick={handleNextRange}
-            className="p-2 rounded-md bg-white border border-gray-300 hover:bg-gray-50 transition-colors shadow-sm"
-            type="button"
-          >
-            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Toggle + actions row */}
-        <div className="mb-3 flex flex-col gap-2">
-          <div className="flex items-center gap-2">
-            <div className="flex flex-1 rounded-lg bg-gray-100 p-1">
-              <button
-                type="button"
-                onClick={() => handleViewChange("Day")}
-                className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-all text-center ${
-                  view === "Day" ? "bg-white text-[#013300] shadow-sm" : "text-gray-600 hover:text-gray-800"
-                }`}
-              >
-                Day
-              </button>
-              <button
-                type="button"
-                onClick={() => handleViewChange("Week")}
-                className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-all text-center ${
-                  view === "Week" ? "bg-white text-[#013300] shadow-sm" : "text-gray-600 hover:text-gray-800"
-                }`}
-              >
-                Week
-              </button>
-              <button
-                type="button"
-                onClick={() => handleViewChange("Month")}
-                className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-all text-center ${
-                  view === "Month" ? "bg-white text-[#013300] shadow-sm" : "text-gray-600 hover:text-gray-800"
-                }`}
-              >
-                Month
-              </button>
-            </div>
-
-            {!isEditing && (
-              <div className="flex-shrink-0">
-                <KebabMenu
-                  small
-                  buttonAriaLabel="Attendance actions"
-                  renderItems={(close) => (
-                    <div className="py-1" role="none">
-                      <button
-                        type="button"
-                        className={`flex w-full items-center gap-2 px-4 py-2 text-sm text-left transition-colors ${
-                          canEnterEditMode ? "text-[#013300] hover:bg-gray-50" : "text-gray-400 cursor-not-allowed"
-                        }`}
-                        disabled={!canEnterEditMode}
-                        onClick={() => {
-                          handleEnterEditMode();
-                          close();
-                        }}
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                        Edit Mode
-                      </button>
-                      <button
-                        type="button"
-                        className={`flex w-full items-center gap-2 px-4 py-2 text-sm text-left transition-colors ${
-                          isExporting || !hasRows
-                            ? "text-gray-400 cursor-not-allowed"
-                            : "text-[#013300] hover:bg-gray-50"
-                        }`}
-                        disabled={isExporting || !hasRows}
-                        onClick={() => {
-                          close();
-                          void handleExport();
-                        }}
-                      >
-                        {isExporting ? (
-                          <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3.5-3.5L12 1v4a8 8 0 100 16v-4l-3.5 3.5L12 23v-4a8 8 0 01-8-8z" />
-                          </svg>
-                        ) : (
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="m7 10 5 5 5-5" />
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 15V3" />
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 19h14" />
-                          </svg>
-                        )}
-                        Export to Excel
-                      </button>
-                      <div className="relative group">
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 px-4 py-2 text-sm text-left text-[#013300] hover:bg-gray-50 transition-colors"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                            <circle cx="12" cy="12" r="10" />
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 16v-4m0-4h.01" />
-                          </svg>
-                          Legend
-                        </button>
-                        <div className="absolute left-0 top-full mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg p-3 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-                          <div className="text-sm font-semibold text-gray-700 mb-2">Attendance Legend</div>
-                          <div className="space-y-2 text-sm">
-                            <div className="flex items-center gap-2">
-                              <div className="w-3 h-3 rounded-full bg-gray-300 border border-gray-400" />
-                              <span className="text-gray-700">Unmarked</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <div className="w-3 h-3 rounded-full bg-[#013300] border border-green-700" />
-                              <span className="text-gray-700">Present</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <div className="w-3 h-3 rounded-full bg-red-600 border border-red-700" />
-                              <span className="text-gray-700">Absent</span>
-                            </div>
-                          </div>
-                          <div className="mt-3 pt-2 border-t border-gray-200 text-xs text-gray-500">
-                            Click cells to change status in Edit Mode
-                          </div>
-                          <div className="mt-2 pt-2 border-t border-gray-200 text-xs text-gray-500">
-                            Note: Future dates cannot be modified
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                />
-              </div>
-            )}
-          </div>
-
-          {isEditing && (
-            <div className="flex flex-wrap gap-2 justify-end">
-              <UtilityButton
-                small
-                onClick={handleMarkAllPresentToday}
-                disabled={!canMarkAllPresentToday}
-                title={
-                  todayDayInfo?.isFuture
-                    ? "Cannot mark attendance for future dates"
-                    : todayDayInfo
-                    ? `Mark every student as present for ${todayDayInfo.dayName} ${todayDayInfo.day}.`
-                    : "Current day is not visible in this view."
-                }
-              >
-                <span className="flex items-center gap-1">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                  All Today
-                </span>
-              </UtilityButton>
-              <UtilityButton small onClick={handleCancel} disabled={isSaving}>
-                <span className="flex items-center gap-1">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                  Cancel
-                </span>
-              </UtilityButton>
-              <PrimaryButton small onClick={handleSave} disabled={isSaving}>
-                <span className="flex items-center gap-1">
-                  {isSaving ? (
-                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3.5-3.5L12 1v4a8 8 0 100 16v-4l-3.5 3.5L12 23v-4a8 8 0 01-8-8z" />
-                    </svg>
-                  ) : (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
-                  Save
-                </span>
-              </PrimaryButton>
-            </div>
-          )}
-        </div>
+        ) : null}
       </div>
 
       {!hasSupportedDays && (
@@ -1489,9 +1436,9 @@ export default function AttendanceTabBase({
       {loading ? (
         <div className="py-12 text-center text-sm text-gray-500">Loading attendance records...</div>
       ) : (
-        <div className="overflow-x-auto">
-          <div className="min-w-[640px] [&_th]:py-2">
-            <TableList columns={columns} data={rows} pageSize={10} />
+        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white/90">
+          <div className="min-w-245 [&_th]:sticky [&_th]:top-0 [&_th]:z-20 [&_th]:bg-green-50 [&_th]:py-2.5 [&_th]:text-xs [&_th]:font-semibold [&_td]:align-middle [&_tr:hover]:bg-emerald-50/40 [&_th:nth-child(2)]:sticky [&_th:nth-child(2)]:left-14 [&_th:nth-child(2)]:z-30 [&_th:nth-child(2)]:bg-green-50 [&_td:nth-child(2)]:sticky [&_td:nth-child(2)]:left-14 [&_td:nth-child(2)]:z-10 [&_td:nth-child(2)]:bg-white [&_td:nth-child(2)]:font-medium">
+            <TableList columns={columns} data={rows} pageSize={10} hidePagination bodyCellPaddingYClass="py-3" />
           </div>
         </div>
       )}

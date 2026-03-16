@@ -5,6 +5,7 @@ import ITAdminHeader from "@/components/IT_Admin/Header";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import { FaTimes } from "react-icons/fa";
+import AllAccountsTab from "./AllAccountsTab/AllAccountsTab";
 // Teacher Tab
 import TeacherArchiveTab from "./TeacherTab/TeacherTab";
 // Master Teacher Tab
@@ -21,6 +22,7 @@ const GRADE_OPTIONS = ["All Grades", "Grade 1", "Grade 2", "Grade 3", "Grade 4",
 const ACCOUNT_OPTIONS = ["IT Admin", "Principal", "Master Teachers", "Teachers"] as const;
 
 type AccountOption = (typeof ACCOUNT_OPTIONS)[number];
+type AccountsView = "All Users" | AccountOption;
 
 type ArchiveRoleKey = "it_admin" | "principal" | "master_teacher" | "teacher" | "student";
 
@@ -221,7 +223,7 @@ function normalizeArchiveRecord(record: any): ArchiveEntry {
 
 export default function ITAdminArchive() {
   const [activeTab, setActiveTab] = useState<string>("All Grades");
-  const [accountType, setAccountType] = useState<AccountOption>("IT Admin");
+  const [accountType, setAccountType] = useState<AccountsView>("All Users");
   const [accounts, setAccounts] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [archiveRecords, setArchiveRecords] = useState<ArchiveEntry[]>([]);
@@ -251,6 +253,11 @@ export default function ITAdminArchive() {
   const showGradeDropdown = useMemo(() => {
     return accountType === "Master Teachers" || accountType === "Teachers";
   }, [accountType]);
+
+  const allUsersAccounts = useMemo(
+    () => archiveRecords.filter((entry) => entry.roleKey !== null && entry.roleKey !== "student"),
+    [archiveRecords],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -300,7 +307,9 @@ export default function ITAdminArchive() {
   }, []);
 
   const handleAccountTypeChange = (next: string) => {
-    const selected = ACCOUNT_OPTIONS.find((option) => option === next) ?? ACCOUNT_OPTIONS[0];
+    const selected = (next === "All Users"
+      ? "All Users"
+      : ACCOUNT_OPTIONS.find((option) => option === next) ?? "All Users") as AccountsView;
     setAccountType(selected);
     if (!(selected === "Master Teachers" || selected === "Teachers")) {
       setActiveTab("All Grades");
@@ -313,10 +322,15 @@ export default function ITAdminArchive() {
   };
 
   useEffect(() => {
+    if (accountType === "All Users") {
+      setAccounts(allUsersAccounts);
+      return;
+    }
+
     const roleKey = ACCOUNT_TYPE_TO_ROLE[accountType];
     const filtered = archiveRecords.filter((entry) => entry.roleKey === roleKey);
     setAccounts(filtered);
-  }, [accountType, archiveRecords]);
+  }, [accountType, allUsersAccounts, archiveRecords]);
 
   return (
 	<div className="flex h-screen bg-white overflow-hidden">
@@ -333,7 +347,7 @@ export default function ITAdminArchive() {
 				<div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
                 <div className="flex items-center gap-0">
                   <HeaderDropdown
-                    options={[...ACCOUNT_OPTIONS]}
+                    options={["All Users", ...ACCOUNT_OPTIONS]}
                     value={accountType}
                     onChange={handleAccountTypeChange}
                   />
@@ -355,7 +369,7 @@ export default function ITAdminArchive() {
                   <div className="relative flex-1 sm:flex-initial">
                     <input
                       type="text"
-                      placeholder={`Search ${accountType.toLowerCase()}...`}
+                      placeholder={accountType === "All Users" ? "Search all users..." : `Search ${accountType.toLowerCase()}...`}
                       className="w-full border border-gray-300 rounded-lg px-4 py-2 pr-10 text-black"
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
@@ -380,6 +394,13 @@ export default function ITAdminArchive() {
                 <p className="text-sm text-red-600" role="alert">{error}</p>
               )}
               <div className="mt-4 sm:mt-6">
+                {accountType === "All Users" && (
+                  <AllAccountsTab
+                    accounts={accounts}
+                    searchTerm={searchTerm}
+                  />
+                )}
+
                 {accountType === "IT Admin" && (
                   <ITAdminArchiveTab
                     itAdmins={accounts}

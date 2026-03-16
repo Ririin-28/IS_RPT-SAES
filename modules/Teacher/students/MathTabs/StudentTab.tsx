@@ -392,16 +392,55 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
       return;
     }
 
-    const exportData = sortedStudents.map((student, index) => ({
-      "No#": index + 1,
-      "Student ID": student.studentId ?? "",
-      "Full Name": formatStudentDisplayName(student),
-      Grade: student.grade ?? "",
-      Section: student.section ?? "",
-      Guardian: student.guardian ?? "",
-      "Guardian Contact": student.guardianContact ?? "",
-      Address: student.address ?? "",
-    }));
+    const exportData = sortedStudents.map((student, index) => {
+      const row: Record<string, string | number> = {
+        "No#": index + 1,
+        "Student ID": student.studentId ?? "",
+        "Full Name": formatStudentDisplayName(student),
+        Grade: student.grade ?? "",
+        Section: student.section ?? "",
+        Guardian: student.guardian ?? "",
+        "Guardian Contact": student.guardianContact ?? "",
+        Address: student.address ?? "",
+      };
+
+      const detailColumns: Array<[string, string]> = [
+        ["LRN", String(student?.lrn ?? "").trim()],
+        ["First Name", String(student?.firstName ?? student?.first_name ?? student?.firstname ?? "").trim()],
+        ["Middle Name", String(student?.middleName ?? student?.middle_name ?? student?.middlename ?? "").trim()],
+        ["Last Name", String(student?.lastName ?? student?.last_name ?? student?.lastname ?? student?.surname ?? "").trim()],
+        ["Suffix", String(student?.suffix ?? student?.suffix_name ?? student?.suf ?? "").trim()],
+        [
+          "Parent/Guardian First Name",
+          String(student?.parentFirstName ?? student?.parent_first_name ?? student?.guardianFirstName ?? student?.guardian_first_name ?? "").trim(),
+        ],
+        [
+          "Parent/Guardian Middle Name",
+          String(student?.parentMiddleName ?? student?.parent_middle_name ?? student?.guardianMiddleName ?? student?.guardian_middle_name ?? "").trim(),
+        ],
+        [
+          "Parent/Guardian Last Name",
+          String(student?.parentLastName ?? student?.parent_last_name ?? student?.guardianLastName ?? student?.guardian_last_name ?? "").trim(),
+        ],
+        [
+          "Parent/Guardian Suffix",
+          String(student?.parentSuffix ?? student?.parent_suffix ?? student?.guardianSuffix ?? student?.guardian_suffix ?? student?.guardian_suf ?? "").trim(),
+        ],
+        ["Relationship to Student", String(student?.relationship ?? "").trim()],
+        ["Guardian Email", String(student?.guardianEmail ?? "").trim()],
+        ["English Phonemic", String(student?.englishPhonemic ?? student?.english ?? "").trim()],
+        ["Filipino Phonemic", String(student?.filipinoPhonemic ?? student?.filipino ?? "").trim()],
+        ["Math Proficiency", String(student?.mathProficiency ?? student?.math ?? "").trim()],
+      ];
+
+      detailColumns.forEach(([column, value]) => {
+        if (!(column in row)) {
+          row[column] = value;
+        }
+      });
+
+      return row;
+    });
 
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
@@ -411,6 +450,21 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
     const filename = `Teacher_Math_Students_${timestamp}.xlsx`;
     XLSX.writeFile(workbook, filename);
   };
+
+  const handleExportClick = () => {
+    if (sortedStudents.length === 0) {
+      setStatusToast({
+        title: "Nothing to Export",
+        message: "No students are available to export.",
+        tone: "info",
+      });
+      return;
+    }
+    handleExport();
+  };
+
+  const utilityCircleButtonClass =
+    "inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 shadow-sm transition hover:bg-gray-100 active:bg-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2";
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
@@ -673,6 +727,15 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
         </p>
         
         <div className="flex flex-col sm:flex-row sm:items-center gap-3 ">
+          <button
+            type="button"
+            onClick={handleExportClick}
+            className={utilityCircleButtonClass}
+            aria-label="Export to Excel"
+            title="Export to Excel"
+          >
+            <ExportIcon />
+          </button>
           <SortMenu
             small
             iconOnly
@@ -682,7 +745,10 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
             onChange={setSortBy}
             onClearAll={handleClearAll}
             clearAllDisabled={!hasActiveSortOrFilter}
-            buttonAriaLabel="Open sort options"
+            buttonAriaLabel="Sort"
+            buttonTitle="Sort"
+            iconButtonClassName={utilityCircleButtonClass}
+            iconClassName="h-4.5 w-4.5"
           />
         </div>
       </div>
@@ -779,9 +845,14 @@ export default function StudentTab({ students, setStudents, searchTerm }: Studen
         }))}
         actions={(row: any) => (
           <div className="flex gap-2">
-            <UtilityButton small onClick={() => handleViewDetails(row)} title="View student details">
+            <button
+              type="button"
+              onClick={() => handleViewDetails(row)}
+              title="View student details"
+              className="inline-flex h-10 items-center rounded-lg border border-emerald-700 bg-white px-4 text-sm font-semibold text-emerald-800 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 hover:bg-emerald-50"
+            >
               View
-            </UtilityButton>
+            </button>
             <UtilityButton
               small
               type="button"

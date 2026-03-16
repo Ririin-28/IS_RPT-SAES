@@ -1,7 +1,6 @@
 ﻿"use client";
 
-import { useCallback, type ReactElement } from "react";
-import KebabMenu from "@/components/Common/Menus/KebabMenu";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export type AccountType = "Principal" | "IT Admin" | "Master Teachers" | "Teachers";
 
@@ -22,59 +21,49 @@ export type AccountActionKey =
 type ActionConfig = {
   label: string;
   action: AccountActionKey;
-  icon: ReactElement;
 };
 
-const AddIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14" />
-    <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14" />
-  </svg>
-);
-
-const UploadIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v12" />
-    <path strokeLinecap="round" strokeLinejoin="round" d="m17 8-5-5-5 5" />
-    <path strokeLinecap="round" strokeLinejoin="round" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-  </svg>
-);
-
 const SelectIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+  <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
     <rect x="3" y="3" width="18" height="18" rx="2" />
     <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4" />
   </svg>
 );
 
 const ExportIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+  <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
     <path strokeLinecap="round" strokeLinejoin="round" d="m7 10 5 5 5-5" />
     <path strokeLinecap="round" strokeLinejoin="round" d="M12 15V3" />
     <path strokeLinecap="round" strokeLinejoin="round" d="M5 19h14" />
   </svg>
 );
 
+const ChevronDownIcon = () => (
+  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+    <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.168l3.71-3.938a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z" clipRule="evenodd" />
+  </svg>
+);
+
 const ACCOUNT_ACTIONS: Record<AccountType, ActionConfig[]> = {
   Principal: [
-    { label: "Add Principal", action: "principal:add", icon: <AddIcon /> },
-    { label: "Upload file", action: "principal:upload", icon: <UploadIcon /> },
-    { label: "Select", action: "principal:select", icon: <SelectIcon /> },
+    { label: "Add Principal", action: "principal:add" },
+    { label: "Upload file", action: "principal:upload" },
+    { label: "Select", action: "principal:select" },
   ],
   "IT Admin": [
-    { label: "Add IT Admin", action: "it_admin:add", icon: <AddIcon /> },
-    { label: "Upload file", action: "it_admin:upload", icon: <UploadIcon /> },
-    { label: "Select", action: "it_admin:select", icon: <SelectIcon /> },
+    { label: "Add IT Admin", action: "it_admin:add" },
+    { label: "Upload file", action: "it_admin:upload" },
+    { label: "Select", action: "it_admin:select" },
   ],
   "Master Teachers": [
-    { label: "Add MasterTeacher", action: "master-teacher:add", icon: <AddIcon /> },
-    { label: "Upload file", action: "master-teacher:upload", icon: <UploadIcon /> },
-    { label: "Select", action: "master-teacher:select", icon: <SelectIcon /> },
+    { label: "Add MasterTeacher", action: "master-teacher:add" },
+    { label: "Upload file", action: "master-teacher:upload" },
+    { label: "Select", action: "master-teacher:select" },
   ],
   Teachers: [
-    { label: "Add Teacher", action: "teacher:add", icon: <AddIcon /> },
-    { label: "Upload file", action: "teacher:upload", icon: <UploadIcon /> },
-    { label: "Select", action: "teacher:select", icon: <SelectIcon /> },
+    { label: "Add Teacher", action: "teacher:add" },
+    { label: "Upload file", action: "teacher:upload" },
+    { label: "Select", action: "teacher:select" },
   ],
 };
 
@@ -97,158 +86,169 @@ interface AccountActionsMenuProps {
 export default function AccountActionsMenu({
   accountType,
   onAction,
-  buttonAriaLabel = "Open menu",
+  buttonAriaLabel = "Open add account menu",
   className = "",
   exportConfig,
   downloadTemplateConfig,
 }: AccountActionsMenuProps) {
-  const handleAction = useCallback(
-    (action: AccountActionKey, close: () => void) => {
-      const result = onAction?.(action);
-      if (result !== false) {
-        close();
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
+  const addMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const actions = ACCOUNT_ACTIONS[accountType];
+  const selectAction = actions.find((item) => item.action.includes(":select"));
+  const addAction = actions.find((item) => item.action.includes(":add"));
+  const uploadAction = actions.find((item) => item.action.includes(":upload"));
+
+  const handleMenuClose = useCallback(() => {
+    setIsAddMenuOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (!isAddMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null;
+      if (addMenuRef.current && target && !addMenuRef.current.contains(target)) {
+        setIsAddMenuOpen(false);
       }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsAddMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isAddMenuOpen]);
+
+  const handleAction = useCallback(
+    (action: AccountActionKey) => {
+      const result = onAction?.(action);
+      return result !== false;
     },
     [onAction],
   );
 
-  return (
-    <KebabMenu
-      small
-      align="right"
-      className={className}
-      buttonAriaLabel={buttonAriaLabel}
-      renderItems={(close) => {
-        const actions = ACCOUNT_ACTIONS[accountType];
-        const uploadIndex = actions.findIndex(a => a.action.includes('upload'));
-        const addIndex = actions.findIndex(a => a.action.includes('add'));
-        
-        let beforeExport: ActionConfig[] = [];
-        let afterExport: ActionConfig[] = [];
-        
-        if (uploadIndex >= 0) {
-          beforeExport = actions.slice(0, uploadIndex + 1);
-          afterExport = actions.slice(uploadIndex + 1);
-        } else if (addIndex >= 0) {
-          beforeExport = actions.slice(0, addIndex + 1);
-          afterExport = actions.slice(addIndex + 1);
-        } else {
-          afterExport = actions;
-        }
+  const handleExportClick = useCallback(() => {
+    if (exportConfig?.disabled) {
+      return;
+    }
+    exportConfig?.onExport();
+  }, [exportConfig]);
 
-        return (
-          <div className="py-1">
-            {beforeExport.map(({ label, action, icon }) => (
+  const utilityButtonClass =
+    "inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 shadow-sm transition hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2";
+
+  return (
+    <>
+      <div className={`flex items-center gap-2 ${className}`}>
+        {selectAction ? (
+          <button
+            type="button"
+            onClick={() => {
+              void handleAction(selectAction.action);
+            }}
+            className={utilityButtonClass}
+            aria-label="Select"
+            title="Select"
+          >
+            <SelectIcon />
+          </button>
+        ) : null}
+
+        <button
+          type="button"
+          onClick={handleExportClick}
+          className={`${utilityButtonClass} ${exportConfig?.disabled ? "cursor-not-allowed opacity-60" : ""}`}
+          aria-label="Export to Excel"
+          title="Export to Excel"
+          disabled={exportConfig?.disabled}
+        >
+          <ExportIcon />
+        </button>
+
+        <div className="relative" ref={addMenuRef}>
+          <button
+            type="button"
+            onClick={() => setIsAddMenuOpen((prev) => !prev)}
+            className="inline-flex h-10 items-center gap-2 rounded-full border-2 border-[#013300] bg-[#013300] px-4 text-sm font-semibold text-white shadow-sm transition hover:border-green-900 hover:bg-green-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
+            aria-haspopup="menu"
+            aria-expanded={isAddMenuOpen}
+            aria-label={buttonAriaLabel}
+            title="Add Account"
+          >
+            <span>Add Account</span>
+            <ChevronDownIcon />
+          </button>
+
+          {isAddMenuOpen ? (
+            <div
+              role="menu"
+              aria-label="Add Account options"
+              className="absolute right-0 z-30 mt-2 w-48 rounded-xl border border-gray-200 bg-white p-1 shadow-[0_16px_32px_rgba(15,23,42,0.16)]"
+            >
               <button
-                key={action}
-                onClick={() => handleAction(action, close)}
-                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[#013300] hover:bg-gray-50"
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  if (addAction && handleAction(addAction.action)) {
+                    handleMenuClose();
+                  }
+                }}
+                className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
               >
-                {icon}
-                {label}
+                Add Individual
               </button>
-            ))}
-            {exportConfig && (uploadIndex >= 0 || addIndex >= 0) && (
-              <>
+
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  if (uploadAction && handleAction(uploadAction.action)) {
+                    handleMenuClose();
+                  }
+                }}
+                className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+              >
+                Upload List
+              </button>
+
+              {downloadTemplateConfig ? (
                 <button
                   type="button"
+                  role="menuitem"
                   onClick={() => {
-                    if (exportConfig.disabled) {
+                    if (downloadTemplateConfig.disabled) {
                       return;
                     }
-                    exportConfig.onExport();
-                    close();
+                    downloadTemplateConfig.onDownload();
+                    handleMenuClose();
                   }}
-                  className={`flex w-full items-center gap-2 px-4 py-2 text-left text-sm ${
-                    exportConfig.disabled
-                      ? "text-gray-300 cursor-not-allowed"
-                      : "text-[#013300] hover:bg-gray-50"
+                  className={`block w-full rounded-lg px-3 py-2 text-left text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${
+                    downloadTemplateConfig.disabled
+                      ? "cursor-not-allowed text-slate-300"
+                      : "text-slate-700 hover:bg-slate-100"
                   }`}
-                  aria-disabled={exportConfig.disabled}
+                  aria-disabled={downloadTemplateConfig.disabled}
                 >
-                  <ExportIcon />
-                  {exportConfig.label ?? "Export to Excel"}
+                  Download Template
                 </button>
-                {downloadTemplateConfig && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (downloadTemplateConfig.disabled) {
-                        return;
-                      }
-                      downloadTemplateConfig.onDownload();
-                      close();
-                    }}
-                    className={`flex w-full items-center gap-2 px-4 py-2 text-left text-sm ${
-                      downloadTemplateConfig.disabled
-                        ? "text-gray-300 cursor-not-allowed"
-                        : "text-[#013300] hover:bg-gray-50"
-                    }`}
-                    aria-disabled={downloadTemplateConfig.disabled}
-                  >
-                    <ExportIcon />
-                    Download Template
-                  </button>
-                )}
-              </>
-            )}
-            {afterExport.map(({ label, action, icon }) => (
-              <button
-                key={action}
-                onClick={() => handleAction(action, close)}
-                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[#013300] hover:bg-gray-50"
-              >
-                {icon}
-                {label}
-              </button>
-            ))}
-            {exportConfig && uploadIndex < 0 && addIndex < 0 && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (exportConfig.disabled) {
-                      return;
-                    }
-                    exportConfig.onExport();
-                    close();
-                  }}
-                  className={`flex w-full items-center gap-2 px-4 py-2 text-left text-sm ${
-                    exportConfig.disabled
-                      ? "text-gray-300 cursor-not-allowed"
-                      : "text-[#013300] hover:bg-gray-50"
-                  }`}
-                  aria-disabled={exportConfig.disabled}
-                >
-                  <ExportIcon />
-                  {exportConfig.label ?? "Export to Excel"}
-                </button>
-                {downloadTemplateConfig && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (downloadTemplateConfig.disabled) {
-                        return;
-                      }
-                      downloadTemplateConfig.onDownload();
-                      close();
-                    }}
-                    className={`flex w-full items-center gap-2 px-4 py-2 text-left text-sm ${
-                      downloadTemplateConfig.disabled
-                        ? "text-gray-300 cursor-not-allowed"
-                        : "text-[#013300] hover:bg-gray-50"
-                    }`}
-                    aria-disabled={downloadTemplateConfig.disabled}
-                  >
-                    <ExportIcon />
-                    Download Template
-                  </button>
-                )}
-              </>
-            )}
-          </div>
-        );
-      }}
-    />
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </>
   );
 }

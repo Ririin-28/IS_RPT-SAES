@@ -4,8 +4,6 @@ import Header from "@/components/MasterTeacher/Header";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useForm } from "react-hook-form";
-// Button Components
-import KebabMenu from "@/components/Common/Menus/KebabMenu";
 import ToastActivity from "@/components/ToastActivity";
 // Modal Components
 import AddScheduleModal from "./Modals/AddScheduleModal";
@@ -563,6 +561,7 @@ const isWeekendDate = (date: Date): boolean => {
 
 export default function MasterTeacherCalendar() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const addActivityMenuRef = useRef<HTMLDivElement | null>(null);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState("month");
   const [showAddModal, setShowAddModal] = useState(false);
@@ -609,6 +608,7 @@ export default function MasterTeacherCalendar() {
   const [importActionToast, setImportActionToast] = useState<string | null>(null);
   const [pendingImportIds, setPendingImportIds] = useState<number[]>([]);
   const [activityToast, setActivityToast] = useState<{ message: string; tone: "success" | "info" | "error" } | null>(null);
+  const [isAddActivityMenuOpen, setIsAddActivityMenuOpen] = useState(false);
 
   const scheduleRange = useMemo(() => {
     if (!remedialWindow?.startDate || !remedialWindow?.endDate) {
@@ -681,6 +681,20 @@ export default function MasterTeacherCalendar() {
 
     return () => window.clearTimeout(timer);
   }, [activityToast]);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (!addActivityMenuRef.current) {
+        return;
+      }
+      if (!addActivityMenuRef.current.contains(event.target as Node)) {
+        setIsAddActivityMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, []);
 
   const handleDeclineImportedActivities = useCallback(() => {
     if (!pendingImportIds.length) {
@@ -2563,55 +2577,68 @@ export default function MasterTeacherCalendar() {
                         Week
                       </button>
                     </div>
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:space-x-2">
-                      <KebabMenu
-                        small
-                        align="right"
-                        menuWidthClass="w-56"
-                        renderItems={(close) => (
-                          <div className="py-1">
-                            <button
-                              type="button"
-                              disabled={importButtonDisabled}
-                              onClick={() => {
-                                handleImportButtonClick();
-                                close();
-                              }}
-                              title={!hasConfiguredRemedialWindow ? "Principal has not set a remedial period yet." : !canPlanActivities ? scheduleBlockingReason ?? "Scheduling is currently disabled." : undefined}
-                              className={`w-full px-4 py-2 text-left text-sm text-[#013300] flex items-center gap-2 ${
-                                importButtonDisabled ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50"
-                              }`}
-                            >
-                              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v12" />
-                                <path strokeLinecap="round" strokeLinejoin="round" d="m17 8-5-5-5 5" />
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                              </svg>
-                              {importing ? "Importing..." : "Import Schedule"}
-                            </button>
-                            <button
-                              type="button"
-                              disabled={templateButtonDisabled}
-                              onClick={() => {
-                                handleDownloadTemplate();
-                                close();
-                              }}
-                              title={!hasConfiguredRemedialWindow ? "Principal has not set a remedial period yet." : undefined}
-                              className={`w-full px-4 py-2 text-left text-sm text-[#013300] flex items-center gap-2 ${
-                                templateButtonDisabled ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50"
-                              }`}
-                            >
-                              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M14 2v5a1 1 0 0 0 1 1h5" />
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 12v6" />
-                                <path strokeLinecap="round" strokeLinejoin="round" d="m15 15-3-3-3 3" />
-                              </svg>
-                              {templateDownloading ? "Exporting..." : "Export Template"}
-                            </button>
-                          </div>
-                        )}
-                      />
+                    <div className="relative" ref={addActivityMenuRef}>
+                      <button
+                        type="button"
+                        onClick={() => setIsAddActivityMenuOpen((prev) => !prev)}
+                        className={`inline-flex h-10 items-center gap-2 rounded-full border-2 border-[#013300] bg-[#013300] px-4 text-sm font-semibold text-white shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 ${
+                          importButtonDisabled && templateButtonDisabled ? "cursor-not-allowed opacity-60" : "hover:border-green-900 hover:bg-green-900"
+                        }`}
+                        aria-haspopup="menu"
+                        aria-expanded={isAddActivityMenuOpen}
+                        aria-label="Add Activity"
+                        title="Add Activity"
+                        disabled={importButtonDisabled && templateButtonDisabled}
+                      >
+                        <span>Add Activity</span>
+                        <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                          <path
+                            fillRule="evenodd"
+                            d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.168l3.71-3.938a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                      </button>
+
+                      {isAddActivityMenuOpen ? (
+                        <div
+                          role="menu"
+                          aria-label="Add activity options"
+                          className="absolute right-0 z-30 mt-2 w-56 rounded-xl border border-gray-200 bg-white p-1 shadow-[0_16px_32px_rgba(15,23,42,0.16)]"
+                        >
+                          <button
+                            type="button"
+                            role="menuitem"
+                            disabled={importButtonDisabled}
+                            onClick={() => {
+                              handleImportButtonClick();
+                              setIsAddActivityMenuOpen(false);
+                            }}
+                            title={!hasConfiguredRemedialWindow ? "Principal has not set a remedial period yet." : !canPlanActivities ? scheduleBlockingReason ?? "Scheduling is currently disabled." : undefined}
+                            className={`block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 transition ${
+                              importButtonDisabled ? "cursor-not-allowed opacity-50" : "hover:bg-slate-100"
+                            }`}
+                          >
+                            {importing ? "Uploading..." : "Upload Schedule"}
+                          </button>
+
+                          <button
+                            type="button"
+                            role="menuitem"
+                            disabled={templateButtonDisabled}
+                            onClick={() => {
+                              handleDownloadTemplate();
+                              setIsAddActivityMenuOpen(false);
+                            }}
+                            title={!hasConfiguredRemedialWindow ? "Principal has not set a remedial period yet." : undefined}
+                            className={`block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 transition ${
+                              templateButtonDisabled ? "cursor-not-allowed opacity-50" : "hover:bg-slate-100"
+                            }`}
+                          >
+                            {templateDownloading ? "Downloading..." : "Download Template"}
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 </div>

@@ -4,6 +4,7 @@ import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
+import ExportUtilityButton from "@/components/Common/Buttons/ExportUtilityButton";
 import KebabMenu from "@/components/Common/Menus/KebabMenu";
 import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
 import DeleteConfirmationModal from "@/components/Common/Modals/DeleteConfirmationModal";
@@ -438,93 +439,69 @@ export default function MasterTeacherTab({
                 )}
               </>
             ) : (
-              <KebabMenu
-                small
-                align="right"
-                renderItems={(close) => (
-                  <div className="py-1">
-                    <button
-                      onClick={() => {
-                        enterAction("restore");
-                        close();
-                      }}
-                      className="w-full px-4 py-2 text-left text-sm text-[#013300] hover:bg-gray-50 flex items-center gap-2"
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="15"
-                        height="15"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="lucide lucide-archive-restore-icon lucide-archive-restore"
+              <>
+                <KebabMenu
+                  small
+                  align="right"
+                  renderItems={(close) => (
+                    <div className="py-1">
+                      <button
+                        onClick={() => {
+                          enterAction("restore");
+                          close();
+                        }}
+                        className="w-full px-4 py-2 text-left text-sm text-[#013300] hover:bg-gray-50 flex items-center gap-2"
                       >
-                        <rect width="20" height="5" x="2" y="3" rx="1" />
-                        <path d="M4 8v11a2 2 0 0 0 2 2h2" />
-                        <path d="M20 8v11a2 2 0 0 1-2 2h-2" />
-                        <path d="m9 15 3-3 3 3" />
-                        <path d="M12 12v9" />
-                      </svg>
-                      Restore
-                    </button>
-                    <button
-                      onClick={() => {
-                        enterAction("delete");
-                        close();
-                      }}
-                      className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-gray-50 flex items-center gap-2"
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="15"
-                        height="15"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="lucide lucide-trash-icon lucide-trash"
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="15"
+                          height="15"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="lucide lucide-archive-restore-icon lucide-archive-restore"
+                        >
+                          <rect width="20" height="5" x="2" y="3" rx="1" />
+                          <path d="M4 8v11a2 2 0 0 0 2 2h2" />
+                          <path d="M20 8v11a2 2 0 0 1-2 2h-2" />
+                          <path d="m9 15 3-3 3 3" />
+                          <path d="M12 12v9" />
+                        </svg>
+                        Restore
+                      </button>
+                      <button
+                        onClick={() => {
+                          enterAction("delete");
+                          close();
+                        }}
+                        className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-gray-50 flex items-center gap-2"
                       >
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-                        <path d="M3 6h18" />
-                        <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                      </svg>
-                      Delete
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!filteredTeachers.length) {
-                          return;
-                        }
-                        handleExport();
-                        close();
-                      }}
-                      className={`mt-1 flex w-full items-center gap-2 px-4 py-2 text-left text-sm ${
-                        filteredTeachers.length === 0 ? "text-gray-300 cursor-not-allowed" : "text-[#013300] hover:bg-gray-50"
-                      }`}
-                      aria-disabled={filteredTeachers.length === 0}
-                    >
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        viewBox="0 0 24 24"
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" d="m7 10 5 5 5-5" />
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 15V3" />
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 19h14" />
-                      </svg>
-                      Export to Excel
-                    </button>
-                  </div>
-                )}
-              />
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="15"
+                          height="15"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="lucide lucide-trash-icon lucide-trash"
+                        >
+                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                          <path d="M3 6h18" />
+                          <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        </svg>
+                        Delete
+                      </button>
+                    </div>
+                  )}
+                />
+                <ExportUtilityButton onExport={handleExport} disabled={filteredTeachers.length === 0} />
+              </>
             )}
         </div>
       </div>

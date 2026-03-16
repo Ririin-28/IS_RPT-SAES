@@ -47,7 +47,7 @@ const HeaderDropdown = ({ options, value, onChange, className = "", openOnHover 
 
   return (
     <div
-      className={`relative ${className}`}
+      className={`relative mr-1 ${className}`}
       ref={dropdownRef}
       suppressHydrationWarning
       onMouseEnter={handleMouseEnter}

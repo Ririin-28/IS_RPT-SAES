@@ -361,6 +361,7 @@ export default function ITAdminLogs() {
                     }))}
                     pageSize={10}
                     showFullScreenToggle
+                    bodyCellPaddingYClass="py-3"
                   />
                   
                   {filteredLogs.length === 0 && (

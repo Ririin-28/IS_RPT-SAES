@@ -5,7 +5,7 @@ import ITAdminSidebar from "@/components/IT_Admin/Sidebar";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import TableList from "@/components/Common/Tables/TableList";
-import UtilityButton from "@/components/Common/Buttons/UtilityButton";
+import ExportUtilityButton from "@/components/Common/Buttons/ExportUtilityButton";
 import ToastActivity from "@/components/ToastActivity";
 import { exportLogRows } from "./utils/export-columns";
 
@@ -329,7 +329,7 @@ export default function ITAdminLogs() {
     <div className="flex h-screen bg-white overflow-hidden">
       <ITAdminSidebar />
       <div className="flex-1 flex flex-col min-h-screen">
-        <ITAdminHeader title="Account Login Logs" />
+        <ITAdminHeader title="Account Logs" />
         <main className="flex-1 overflow-y-auto pt-16">
           <div className="p-4 h-full sm:p-5 md:p-6">
             <div className="bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[400px] overflow-y-auto p-4 sm:p-5 md:p-6">
@@ -348,9 +348,7 @@ export default function ITAdminLogs() {
                   </div>
                   <p className="text-gray-600 text-md font-medium">Total: {totalCount}</p>
                 </div>
-                <UtilityButton small onClick={handleExport} disabled={filteredLogs.length === 0}>
-                  Export to Excel
-                </UtilityButton>
+                <ExportUtilityButton onExport={handleExport} disabled={filteredLogs.length === 0} />
               </div>
 
               {/* Loading State */}
@@ -386,6 +384,7 @@ export default function ITAdminLogs() {
                       no: idx + 1,
                     }))}
                     pageSize={10}
+                    bodyCellPaddingYClass="py-3"
                   />
                   
                   {filteredLogs.length === 0 && (

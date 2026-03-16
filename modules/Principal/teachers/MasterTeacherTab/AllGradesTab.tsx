@@ -1,9 +1,11 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import TableList from "@/components/Common/Tables/TableList";
 import TeacherDetailModal from "../Modals/TeacherDetailModal";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
+import ExportExcelUtilityButton from "@/components/Common/Buttons/ExportExcelUtilityButton";
 import SortMenu, { type SortMenuItem } from "@/components/Common/Menus/SortMenu";
 import { formatTeacherFullName } from "../utils/formatTeacherName";
+import { exportPrincipalMasterTeacherRows } from "../utils/export-teachers";
 
 const sections = ["All Sections", "A", "B", "C"];
 
@@ -143,6 +145,8 @@ export default function MasterTeacherAllGradesTab({ teachers, setTeachers, searc
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedTeacher, setSelectedTeacher] = useState<any>(null);
   const [sortBy, setSortBy] = useState<TeacherSortKey>(DEFAULT_TEACHER_SORT);
+  const utilityButtonClass =
+    "inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 shadow-sm transition hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 active:scale-[0.98]";
 
   const gradeFilteredTeachers = teachers.filter((teacher: any) => matchesGradeFilter(teacher, gradeFilter));
 
@@ -170,21 +174,36 @@ export default function MasterTeacherAllGradesTab({ teachers, setTeachers, searc
     setShowDetailModal(true);
   };
 
+  const handleExport = useCallback(() => {
+    void exportPrincipalMasterTeacherRows(
+      sortedTeachers.map((teacher: any) => ({
+        ...teacher,
+        name: formatTeacherFullName(teacher),
+      })),
+    );
+  }, [sortedTeachers]);
+
   return (
     <div>
       <div className="flex flex-row justify-between items-center mb-4">
         <p className="text-gray-600 text-md font-medium">
           Total: {sortedTeachers.length}
         </p>
-        <SortMenu
-          small
-          iconOnly
-          align="right"
-          value={sortBy}
-          items={TEACHER_SORT_ITEMS}
-          onChange={setSortBy}
-          buttonAriaLabel="Open teacher sort options"
-        />
+        <div className="flex items-center gap-2">
+          <ExportExcelUtilityButton onExport={handleExport} disabled={sortedTeachers.length === 0} />
+          <SortMenu
+            small
+            iconOnly
+            align="right"
+            value={sortBy}
+            items={TEACHER_SORT_ITEMS}
+            onChange={setSortBy}
+            buttonAriaLabel="Sort"
+            buttonTitle="Sort"
+            iconButtonClassName={utilityButtonClass}
+            iconClassName="h-4.5 w-4.5"
+          />
+        </div>
       </div>
       
       <TeacherDetailModal

@@ -409,13 +409,13 @@ export default function MasterTeacherStudents({ subjectSlug }: MasterTeacherStud
       <Sidebar />
 
       {/*---------------------------------Main Content---------------------------------*/}
-      <div className="relative z-10 flex-1 pt-16 flex flex-col overflow-hidden">
+      <div className="relative z-10 flex flex-1 flex-col overflow-hidden pt-16">
         <Header title={`Student List`} />
-        <main className="flex-1">
+        <main className="flex-1 overflow-hidden">
           <div
             className="
             /* Mobile */
-            p-4 h-full
+            h-full p-4
             
             /* Tablet */
             sm:p-5
@@ -426,7 +426,7 @@ export default function MasterTeacherStudents({ subjectSlug }: MasterTeacherStud
           >
             {/*---------------------------------Main Container---------------------------------*/}
             <div className="relative z-10 h-full min-h-100 overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_20px_45px_-28px_rgba(15,23,42,0.45)] backdrop-blur-xl sm:p-5 md:p-6">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
+              <div className="flex flex-col items-start justify-between sm:flex-row sm:items-center">
                 <div className="flex flex-row items-center gap-2">
                   <SecondaryHeader title={headerTitle} />
                   <HeaderDropdown
@@ -436,25 +436,27 @@ export default function MasterTeacherStudents({ subjectSlug }: MasterTeacherStud
                     className="pl-0"
                   />
                 </div>
-                <div className="flex gap-3 w-full sm:w-auto mt-4 sm:mt-0">
-                  <div className="relative flex-1 sm:flex-initial">
-                    <input
-                      type="text"
-                      placeholder="Search students..."
-                      className="w-full border border-gray-300 rounded-lg px-4 py-2 pr-10 text-black"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                    />
-                    {searchTerm && (
-                      <button
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                        onClick={() => setSearchTerm("")}
-                      >
-                        <FaTimes />
-                      </button>
-                    )}
+                {activeTab !== "Attendance List" && (
+                  <div className="mt-4 flex w-full gap-3 sm:mt-0 sm:w-auto">
+                    <div className="relative flex-1 sm:flex-initial">
+                      <input
+                        type="text"
+                        placeholder="Search students..."
+                        className="w-full rounded-lg border border-gray-300 px-4 py-2 pr-10 text-black"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                      />
+                      {searchTerm && (
+                        <button
+                          className="absolute right-3 top-1/2 -translate-y-1/2 transform text-gray-400 hover:text-gray-600"
+                          onClick={() => setSearchTerm("")}
+                        >
+                          <FaTimes />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
               
               {/*---------------------------------Tab Content---------------------------------*/}

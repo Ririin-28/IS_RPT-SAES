@@ -30,7 +30,7 @@ type AccountFetchConfig = {
 
 const ACCOUNT_FETCH_CONFIG: Record<AccountListType, AccountFetchConfig> = {
   "IT Admin": {
-    endpoint: "/api/it_admin/accounts/it_admin",
+    endpoint: "/api/it_admin/accounts?role=it_admin",
     roleLabel: "IT Admin",
     identifierLabel: "Admin ID",
     identifierKey: "adminId",
@@ -288,19 +288,43 @@ export default function ITAdminAccounts() {
                 signal: controller.signal,
               });
               if (!response.ok) {
-                throw new Error(`${config.roleLabel} request failed with status ${response.status}`);
+                return {
+                  ok: false as const,
+                  roleLabel: config.roleLabel,
+                  status: response.status,
+                  records: [] as any[],
+                };
               }
 
               const payload = await response.json();
               const normalizedRecords = (payload.records ?? []).map((record: any) => annotateAccountRecord(record, config));
-              return normalizedRecords;
+              return {
+                ok: true as const,
+                roleLabel: config.roleLabel,
+                status: response.status,
+                records: normalizedRecords,
+              };
             }),
           );
 
           if (!isActive) return;
 
-          const sortedRecords = sortAccounts(responses.flat());
+          const successful = responses.filter((result) => result.ok);
+          const failed = responses.filter((result) => !result.ok);
+
+          const sortedRecords = sortAccounts(successful.flatMap((result) => result.records));
           setAccounts(sortedRecords);
+
+          if (failed.length > 0) {
+            const failedLabels = failed.map((item) => `${item.roleLabel} (${item.status})`).join(", ");
+            setError(`Some account groups could not be loaded: ${failedLabels}.`);
+            setFeedbackToast({
+              title: "Partial Data Loaded",
+              message: `Some account groups returned authorization errors: ${failedLabels}`,
+              tone: "error",
+            });
+          }
+
           return;
         }
 

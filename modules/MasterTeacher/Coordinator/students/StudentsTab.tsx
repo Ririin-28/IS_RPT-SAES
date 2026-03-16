@@ -10,8 +10,6 @@ import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 import DangerButton from "@/components/Common/Buttons/DangerButton";
 import TableList from "@/components/Common/Tables/TableList";
-import KebabMenu from "@/components/Common/Menus/KebabMenu";
-import SortMenu, { type SortMenuItem } from "@/components/Common/Menus/SortMenu";
 import UserAvatar from "@/components/Common/UserAvatar";
 import ToastActivity from "@/components/ToastActivity";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
@@ -278,28 +276,24 @@ const transformApiRecord = (record: any): CoordinatorStudent => {
   };
 };
 
-const ImportStudentsIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 15V3" />
-    <path strokeLinecap="round" strokeLinejoin="round" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+const SelectIcon = () => (
+  <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4" />
+  </svg>
+);
+
+const ExportIcon = () => (
+  <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
     <path strokeLinecap="round" strokeLinejoin="round" d="m7 10 5 5 5-5" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 15V3" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M5 19h14" />
   </svg>
 );
 
-const ExportStudentListIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v12" />
-    <path strokeLinecap="round" strokeLinejoin="round" d="m17 8-5-5-5 5" />
-    <path strokeLinecap="round" strokeLinejoin="round" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-  </svg>
-);
-
-const ExportTemplateIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
-    <path strokeLinecap="round" strokeLinejoin="round" d="M14 2v5a1 1 0 0 0 1 1h5" />
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 12v6" />
-    <path strokeLinecap="round" strokeLinejoin="round" d="m15 15-3-3-3 3" />
+const ChevronDownIcon = () => (
+  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+    <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.168l3.71-3.938a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z" clipRule="evenodd" />
   </svg>
 );
 
@@ -310,17 +304,6 @@ type StudentSortKey =
   | "lrn_desc"
   | "phonemic_low_high"
   | "phonemic_high_low";
-
-const STUDENT_SORT_ITEMS: SortMenuItem<StudentSortKey>[] = [
-  { value: "name_asc", label: "Name (A-Z)" },
-  { value: "name_desc", label: "Name (Z-A)" },
-  { type: "separator", id: "name-lrn" },
-  { value: "lrn_asc", label: "LRN (Asc)" },
-  { value: "lrn_desc", label: "LRN (Desc)" },
-  { type: "separator", id: "lrn-phonemic" },
-  { value: "phonemic_low_high", label: "Phonemic Level (Low->High)" },
-  { value: "phonemic_high_low", label: "Phonemic Level (High->Low)" },
-];
 
 const DEFAULT_STUDENT_SORT: StudentSortKey = "name_asc";
 
@@ -357,7 +340,8 @@ export default function StudentTab({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedStudents, setSelectedStudents] = useState<Set<string>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
-  const [sortBy, setSortBy] = useState<StudentSortKey>(DEFAULT_STUDENT_SORT);
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
+  const [sortBy] = useState<StudentSortKey>(DEFAULT_STUDENT_SORT);
   const [duplicateLrn, setDuplicateLrn] = useState<string | null>(null);
   const [duplicateStudent, setDuplicateStudent] = useState<CoordinatorStudent | null>(null);
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
@@ -371,6 +355,7 @@ export default function StudentTab({
     tone: "success" | "info" | "error";
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const addMenuRef = useRef<HTMLDivElement | null>(null);
   const lrnRevealTimersRef = useRef<Record<string, number>>({});
 
   const userProfile = useMemo(() => getStoredUserProfile(), []);
@@ -400,6 +385,35 @@ export default function StudentTab({
       window.clearTimeout(timerId);
     };
   }, [statusToast]);
+
+  useEffect(() => {
+    if (!isAddMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null;
+      if (addMenuRef.current && target && !addMenuRef.current.contains(target)) {
+        setIsAddMenuOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsAddMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isAddMenuOpen]);
 
   const handleRevealLrn = useCallback((rowId: string) => {
     if (!rowId) return;
@@ -949,6 +963,13 @@ export default function StudentTab({
     });
   };
 
+  const handleExportClick = () => {
+    if (actionsDisabled) {
+      return;
+    }
+    handleExport();
+  };
+
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
       setSelectedStudents(new Set(filteredStudents.map(s => s.id)));
@@ -1243,10 +1264,8 @@ export default function StudentTab({
   };
 
   const actionsDisabled = saving || loading;
-  const hasActiveSortOrFilter = sortBy !== DEFAULT_STUDENT_SORT;
-  const handleClearAll = () => {
-    setSortBy(DEFAULT_STUDENT_SORT);
-  };
+  const utilityButtonClass =
+    "inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 shadow-sm transition hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2";
 
   return (
     <div>
@@ -1275,77 +1294,94 @@ export default function StudentTab({
             </>
           ) : (
             <>
-              <SortMenu
-                small
-                align="right"
-                value={sortBy}
-                items={STUDENT_SORT_ITEMS}
-                onChange={setSortBy}
-                onClearAll={handleClearAll}
-                clearAllDisabled={!hasActiveSortOrFilter}
-                disabled={loading}
-                iconOnly
-                buttonLabel="Sort"
-                buttonAriaLabel="Open sort options"
-              />
-              <KebabMenu
-                small
-                align="right"
-                renderItems={(close) => (
-                  <div className="py-1">
+              <button
+                type="button"
+                onClick={handleEnterSelectMode}
+                className={`${utilityButtonClass} ${actionsDisabled ? "cursor-not-allowed opacity-60" : ""}`}
+                aria-label="Select"
+                title="Select"
+                disabled={actionsDisabled}
+              >
+                <SelectIcon />
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExportClick}
+                className={`${utilityButtonClass} ${actionsDisabled ? "cursor-not-allowed opacity-60" : ""}`}
+                aria-label="Export to Excel"
+                title="Export to Excel"
+                disabled={actionsDisabled}
+              >
+                <ExportIcon />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (actionsDisabled || assignStudentsDisabled || !onAssignStudents) return;
+                  onAssignStudents();
+                }}
+                disabled={actionsDisabled || assignStudentsDisabled || !onAssignStudents}
+                className={`inline-flex h-10 items-center rounded-full border border-emerald-700 bg-white px-4 text-sm font-semibold text-emerald-800 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 ${
+                  actionsDisabled || assignStudentsDisabled || !onAssignStudents
+                    ? "cursor-not-allowed opacity-60"
+                    : "hover:bg-emerald-50"
+                }`}
+              >
+                Assign Students
+              </button>
+
+              <div className="relative" ref={addMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsAddMenuOpen((prev) => !prev)}
+                  className={`inline-flex h-10 items-center gap-2 rounded-full border-2 border-[#013300] bg-[#013300] px-4 text-sm font-semibold text-white shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 ${
+                    actionsDisabled ? "cursor-not-allowed opacity-60" : "hover:border-green-900 hover:bg-green-900"
+                  }`}
+                  aria-haspopup="menu"
+                  aria-expanded={isAddMenuOpen}
+                  aria-label="Add Student"
+                  title="Add Student"
+                  disabled={actionsDisabled}
+                >
+                  <span>Add Student</span>
+                  <ChevronDownIcon />
+                </button>
+
+                {isAddMenuOpen ? (
+                  <div
+                    role="menu"
+                    aria-label="Add options"
+                    className="absolute right-0 z-30 mt-2 w-48 rounded-xl border border-gray-200 bg-white p-1 shadow-[0_16px_32px_rgba(15,23,42,0.16)]"
+                  >
                     <button
-                      disabled={actionsDisabled}
+                      type="button"
+                      role="menuitem"
                       onClick={() => {
                         if (actionsDisabled) return;
                         setShowModal(true);
-                        close();
+                        setIsAddMenuOpen(false);
                       }}
-                      className={`w-full px-4 py-2 text-left text-sm text-[#013300] flex items-center gap-2 ${actionsDisabled ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50"}`}
+                      className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                      </svg>
-                      Add Students
+                      Add Individual
                     </button>
                     <button
-                      disabled={actionsDisabled}
+                      type="button"
+                      role="menuitem"
                       onClick={() => {
                         if (actionsDisabled) return;
                         fileInputRef.current?.click();
-                        close();
+                        setIsAddMenuOpen(false);
                       }}
-                      className={`w-full px-4 py-2 text-left text-sm text-[#013300] flex items-center gap-2 ${actionsDisabled ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50"}`}
+                      className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
                     >
-                      <ImportStudentsIcon />
-                      Import Students
-                    </button>
-                    <div className="my-1 border-t border-gray-200" />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!filteredStudents.length) {
-                          setStatusToast({
-                            title: "Nothing to Export",
-                            message: "No students available to export.",
-                            tone: "info",
-                          });
-                          return;
-                        }
-                        handleExport();
-                        close();
-                      }}
-                      className={`flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[#013300] ${
-                        filteredStudents.length === 0 || actionsDisabled
-                          ? "opacity-40 cursor-not-allowed"
-                          : "hover:bg-gray-50"
-                      }`}
-                      aria-disabled={filteredStudents.length === 0 || actionsDisabled}
-                    >
-                      <ExportStudentListIcon />
-                      Export Student List
+                      Upload List
                     </button>
                     <button
                       type="button"
+                      role="menuitem"
                       onClick={() => {
                         try {
                           const link = document.createElement("a");
@@ -1364,53 +1400,15 @@ export default function StudentTab({
                             tone: "error",
                           });
                         }
-                        close();
+                        setIsAddMenuOpen(false);
                       }}
-                      className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[#013300] hover:bg-gray-50"
+                      className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
                     >
-                      <ExportTemplateIcon />
-                      Export Template
-                    </button>
-                    <div className="my-1 border-t border-gray-200" />
-                    <button
-                      disabled={actionsDisabled || assignStudentsDisabled || !onAssignStudents}
-                      onClick={() => {
-                        if (actionsDisabled || assignStudentsDisabled || !onAssignStudents) return;
-                        onAssignStudents();
-                        close();
-                      }}
-                      className={`w-full px-4 py-2 text-left text-sm text-[#013300] flex items-center gap-2 ${
-                        actionsDisabled || assignStudentsDisabled || !onAssignStudents
-                          ? "opacity-50 cursor-not-allowed"
-                          : "hover:bg-gray-50"
-                      }`}
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                        <circle cx="9" cy="7" r="4" />
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M22 21v-2a4 4 0 0 0-3-3.87" />
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M16 3.13a4 4 0 0 1 0 7.75" />
-                      </svg>
-                      Assign Students
-                    </button>
-                    <button
-                      disabled={actionsDisabled}
-                      onClick={() => {
-                        if (actionsDisabled) return;
-                        handleEnterSelectMode();
-                        close();
-                      }}
-                      className={`mt-1 w-full px-4 py-2 text-left text-sm text-[#013300] flex items-center gap-2 ${actionsDisabled ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50"}`}
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                        <rect x="3" y="3" width="18" height="18" rx="2" />
-                        <path d="M9 12l2 2 4-4" />
-                      </svg>
-                      Select
+                      Download Template
                     </button>
                   </div>
-                )}
-              />
+                ) : null}
+              </div>
             </>
           )}
           <input
@@ -1529,9 +1527,14 @@ export default function StudentTab({
         ]}
         data={tableRows}
         actions={(row: any) => (
-          <UtilityButton small onClick={() => handleViewDetails(row)} title="View student details">
+          <button
+            type="button"
+            onClick={() => handleViewDetails(row)}
+            title="View student details"
+            className="inline-flex h-10 items-center rounded-lg border border-emerald-700 bg-white px-4 text-sm font-semibold text-emerald-800 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 hover:bg-emerald-50"
+          >
             View
-          </UtilityButton>
+          </button>
         )}
         selectable={selectMode}
         selectedItems={selectedStudents}

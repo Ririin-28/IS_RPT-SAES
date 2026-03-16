@@ -1,8 +1,10 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import StudentDetailModal from "../Modals/StudentDetailModal";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
+import ExportExcelUtilityButton from "@/components/Common/Buttons/ExportExcelUtilityButton";
 import TableList from "@/components/Common/Tables/TableList";
 import SortMenu, { type SortMenuItem } from "@/components/Common/Menus/SortMenu";
+import { exportPrincipalStudents } from "../utils/export-students";
 
 const sections = ["All Sections", "A", "B", "C"];
 
@@ -254,9 +256,16 @@ export default function AllGradesTab({ students, searchTerm, gradeFilter = "All 
   }, [filteredStudents, phonemicOrder, sortBy]);
 
   const hasActiveSort = sortBy !== DEFAULT_STUDENT_SORT;
+  const utilityButtonClass =
+    "inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 shadow-sm transition hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 active:scale-[0.98]";
+
   const handleClearAll = () => {
     setSortBy(DEFAULT_STUDENT_SORT);
   };
+
+  const handleExport = useCallback(() => {
+    void exportPrincipalStudents(sortedStudents);
+  }, [sortedStudents]);
 
   const handleViewDetails = (student: any) => {
     setSelectedStudent(student);
@@ -293,17 +302,23 @@ export default function AllGradesTab({ students, searchTerm, gradeFilter = "All 
         <p className="text-gray-700 text-md font-medium">
           Total: {sortedStudents.length}
         </p>
-        <SortMenu
-          small
-          iconOnly
-          align="right"
-          value={sortBy}
-          items={STUDENT_SORT_ITEMS}
-          onChange={setSortBy}
-          onClearAll={handleClearAll}
-          clearAllDisabled={!hasActiveSort}
-          buttonAriaLabel="Open sort options"
-        />
+        <div className="flex items-center gap-2">
+          <ExportExcelUtilityButton onExport={handleExport} disabled={sortedStudents.length === 0} />
+          <SortMenu
+            small
+            iconOnly
+            align="right"
+            value={sortBy}
+            items={STUDENT_SORT_ITEMS}
+            onChange={setSortBy}
+            onClearAll={handleClearAll}
+            clearAllDisabled={!hasActiveSort}
+            buttonAriaLabel="Sort"
+            buttonTitle="Sort"
+            iconButtonClassName={utilityButtonClass}
+            iconClassName="h-4.5 w-4.5"
+          />
+        </div>
       </div>
 
       <StudentDetailModal

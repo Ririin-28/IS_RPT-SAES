@@ -31,6 +31,7 @@ interface TableListProps {
   nonSelectableIds?: Set<any>;
   actionHeaderLabel?: string;
   pagination?: TablePaginationConfig;
+  bodyCellPaddingYClass?: "py-2" | "py-3" | "py-4";
 }
 
 export default function TableList({
@@ -47,6 +48,7 @@ export default function TableList({
   nonSelectableIds,
   actionHeaderLabel,
   pagination,
+  bodyCellPaddingYClass = "py-2",
 }: TableListProps) {
   const [page, setPage] = useState(1);
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -63,7 +65,7 @@ export default function TableList({
       ? data
       : data.slice((activePage - 1) * effectivePageSize, activePage * effectivePageSize);
   const disabledSelectionIds = nonSelectableIds ?? new Set();
-  const showStandaloneFullScreenColumn = showFullScreenToggle && !actions;
+  const showStandaloneFullScreenColumn = false;
   const headerSelectableRows = selectable
     ? data.reduce((count, row) => count + (disabledSelectionIds.has(row.id) ? 0 : 1), 0)
     : 0;
@@ -233,7 +235,7 @@ export default function TableList({
                 <tr>
                   <td
                     colSpan={columns.length + (actions ? 1 : 0) + (selectable ? 1 : 0) + (showStandaloneFullScreenColumn ? 1 : 0)}
-                    className="px-4 py-2 text-center text-gray-400"
+                    className={`px-4 ${bodyCellPaddingYClass} text-center text-gray-400`}
                   >
                     No data available
                   </td>
@@ -245,7 +247,7 @@ export default function TableList({
                     className="border-b border-gray-200 hover:bg-green-50 transition-colors duration-150"
                   >
                     {selectable && (
-                      <td className="px-4 py-2 w-14">
+                      <td className={`px-4 ${bodyCellPaddingYClass} w-14`}>
                         <input
                           type="checkbox"
                           checked={selectedItems.has(row.id)}
@@ -263,15 +265,15 @@ export default function TableList({
                       </td>
                     )}
                     {columns.map((col) => (
-                      <td key={col.key} className="px-4 py-2">
+                      <td key={col.key} className={`px-4 ${bodyCellPaddingYClass}`}>
                         {col.render ? col.render(row) : row[col.key]}
                       </td>
                     ))}
                     {showStandaloneFullScreenColumn && (
-                      <td className="px-4 py-2 w-14" />
+                      <td className={`px-4 ${bodyCellPaddingYClass} w-14`} />
                     )}
                     {actions && (
-                      <td className="px-4 py-2 text-center">
+                      <td className={`px-4 ${bodyCellPaddingYClass} text-center`}>
                         <div className="flex gap-2 justify-center">{actions(row)}</div>
                       </td>
                     )}

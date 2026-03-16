@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 
 export type CalendarActivity = {
   id: string;
@@ -371,20 +370,26 @@ export default function ScheduledActivitiesList({ activities, subject, loading, 
                       </div>
 
                       {(onEdit || onPlay) && (
-                        <div className="ml-4 shrink-0 flex gap-2">
+                        <div className="ml-4 shrink-0 flex items-center gap-2">
                           {onEdit && (
-                            <div className="relative inline-block">
-                              <UtilityButton small onClick={() => onEdit(activity)} className="py-2! px-4!">
-                                Edit
-                              </UtilityButton>
-                            </div>
+                            <button
+                              type="button"
+                              onClick={() => onEdit(activity)}
+                              className="inline-flex h-10 items-center rounded-lg border border-emerald-700 bg-white px-4 text-sm font-semibold text-emerald-800 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 hover:bg-emerald-50"
+                            >
+                              Edit
+                            </button>
                           )}
                           {onPlay && (
-                            <UtilityButton
-                              small
+                            <button
+                              type="button"
                               onClick={() => onPlay(activity)}
-                              className="py-2! px-4! min-w-17.5"
                               disabled={validatingActivityId === String(activity.id)}
+                              className={`inline-flex h-10 min-w-17.5 items-center justify-center rounded-lg border-2 border-[#013300] bg-[#013300] px-4 text-sm font-semibold text-white shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 ${
+                                validatingActivityId === String(activity.id)
+                                  ? "cursor-not-allowed opacity-70"
+                                  : "hover:border-green-900 hover:bg-green-900"
+                              }`}
                             >
                               {validatingActivityId === String(activity.id) ? (
                                 <span className="inline-flex items-center gap-2">
@@ -396,7 +401,7 @@ export default function ScheduledActivitiesList({ activities, subject, loading, 
                               ) : (
                                 "Play"
                               )}
-                            </UtilityButton>
+                            </button>
                           )}
                         </div>
                       )}

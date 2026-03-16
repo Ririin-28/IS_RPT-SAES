@@ -1,9 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
 import TableList from "@/components/Common/Tables/TableList";
 import UtilityButton from "@/components/Common/Buttons/UtilityButton";
+import ExportExcelUtilityButton from "@/components/Common/Buttons/ExportExcelUtilityButton";
 import SortMenu, { type SortMenuItem } from "@/components/Common/Menus/SortMenu";
 import TeacherDetailModal from "./Modals/TeacherDetailModal";
 import { formatTeacherFullName } from "./utils/formatTeacherName";
+import { exportPrincipalAllTeachingStaffRows } from "./utils/export-teachers";
 
 type StaffSortKey = "name_asc" | "name_desc";
 
@@ -81,6 +83,8 @@ export default function AllTeachingStaffTab({
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedTeacher, setSelectedTeacher] = useState<any>(null);
   const [sortBy, setSortBy] = useState<StaffSortKey>(DEFAULT_SORT);
+  const utilityButtonClass =
+    "inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 shadow-sm transition hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 active:scale-[0.98]";
 
   const mergedStaff = useMemo(
     () => [
@@ -124,19 +128,34 @@ export default function AllTeachingStaffTab({
     setShowDetailModal(true);
   };
 
+  const handleExport = useCallback(() => {
+    void exportPrincipalAllTeachingStaffRows(
+      sortedTeachers.map((teacher: any) => ({
+        ...teacher,
+        name: formatTeacherFullName(teacher),
+      })),
+    );
+  }, [sortedTeachers]);
+
   return (
     <div>
       <div className="mb-4 flex flex-row items-center justify-between">
         <p className="text-gray-600 text-md font-medium">Total: {sortedTeachers.length}</p>
-        <SortMenu
-          small
-          iconOnly
-          align="right"
-          value={sortBy}
-          items={SORT_ITEMS}
-          onChange={setSortBy}
-          buttonAriaLabel="Open teaching staff sort options"
-        />
+        <div className="flex items-center gap-2">
+          <ExportExcelUtilityButton onExport={handleExport} disabled={sortedTeachers.length === 0} />
+          <SortMenu
+            small
+            iconOnly
+            align="right"
+            value={sortBy}
+            items={SORT_ITEMS}
+            onChange={setSortBy}
+            buttonAriaLabel="Sort"
+            buttonTitle="Sort"
+            iconButtonClassName={utilityButtonClass}
+            iconClassName="h-4.5 w-4.5"
+          />
+        </div>
       </div>
 
       <TeacherDetailModal show={showDetailModal} onClose={() => setShowDetailModal(false)} teacher={selectedTeacher} />
