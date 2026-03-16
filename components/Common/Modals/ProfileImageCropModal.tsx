@@ -308,6 +308,8 @@ export default function ProfileImageCropModal({
             style={{ touchAction: "none" }}
           >
             {sourceUrl ? (
+              // A real HTMLImageElement is required for canvas cropping and size measurement.
+              // eslint-disable-next-line @next/next/no-img-element
               <img
                 ref={imageRef}
                 src={sourceUrl}
@@ -360,6 +362,8 @@ export default function ProfileImageCropModal({
             <div className="mt-4 flex justify-center">
               <div className="relative h-28 w-28 overflow-hidden rounded-full border-4 border-white bg-[#eef5f0] shadow-lg">
                 {sourceUrl ? (
+                  // This mirrors the live crop image and uses the same blob URL/canvas flow.
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={sourceUrl}
                     alt="Cropped profile preview"

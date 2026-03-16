@@ -2,7 +2,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 const REDIRECTABLE_STANDALONE_PATHS = new Set(["/", "/auth/login", "/auth/adminlogin"]);
 
@@ -10,9 +10,12 @@ const PWAGuard = ({ children }: { children: React.ReactNode }) => {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const isPWA =
-    typeof window !== "undefined" && (window.matchMedia("(display-mode: standalone)").matches || (window.navigator as any).standalone);
+  const [isPWA, setIsPWA] = useState(false);
   const shouldRedirectToPwaHome = isPWA && REDIRECTABLE_STANDALONE_PATHS.has(pathname);
+
+  useEffect(() => {
+    setIsPWA(window.matchMedia("(display-mode: standalone)").matches || Boolean((window.navigator as any).standalone));
+  }, []);
 
   useEffect(() => {
     if (shouldRedirectToPwaHome) {

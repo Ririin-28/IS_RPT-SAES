@@ -1,5 +1,6 @@
-﻿import { ReactNode } from "react";
+import { ReactNode } from "react";
 import { redirect } from "next/navigation";
+import HydrationBoundary from "@/components/Common/HydrationBoundary";
 import ITAdminSessionGuard from "@/components/IT_Admin/ITAdminSessionGuard";
 import { getAdminSessionFromCookies } from "@/lib/server/admin-session";
 
@@ -18,6 +19,8 @@ export default async function ITAdminLayout({ children }: { children: ReactNode 
   }
 
   return (
-    <ITAdminSessionGuard>{children}</ITAdminSessionGuard>
+    <ITAdminSessionGuard>
+      <HydrationBoundary>{children}</HydrationBoundary>
+    </ITAdminSessionGuard>
   );
 }

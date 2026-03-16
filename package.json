@@ -4,7 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
+    "clean:next": "node scripts/prepare-next-build.cjs",
+    "prebuild": "npm run clean:next",
     "build": "next build",
+    "build:ci": "node scripts/prepare-next-build.cjs --ci && next build",
     "start": "next start",
     "test": "jest --runInBand",
     "test:watch": "jest --watch",

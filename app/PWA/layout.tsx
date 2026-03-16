@@ -1,5 +1,6 @@
 // app/PWA/layout.tsx
 import type { Metadata } from 'next';
+import HydrationBoundary from "@/components/Common/HydrationBoundary";
 import NetworkStatusToast from "@/components/Common/NetworkStatusToast";
 import PWAVersionControl from "@/components/PWA/PWAVersionControl";
 import { pwaVersionLabel } from "@/lib/pwa-version";
@@ -20,7 +21,7 @@ export default function PWALayout({
     <div className="min-h-dvh w-full overflow-x-hidden overflow-y-auto bg-white">
       <NetworkStatusToast />
       <PWAVersionControl versionLabel={pwaVersionLabel} />
-      {children}
+      <HydrationBoundary>{children}</HydrationBoundary>
     </div>
   );
 }

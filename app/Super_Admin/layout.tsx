@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import { redirect } from "next/navigation";
+import HydrationBoundary from "@/components/Common/HydrationBoundary";
 import SuperAdminSessionGuard from "@/components/Super_Admin/SuperAdminSessionGuard";
 import { getAdminSessionFromCookies } from "@/lib/server/admin-session";
 
@@ -18,6 +19,8 @@ export default async function SuperAdminLayout({ children }: { children: ReactNo
   }
 
   return (
-    <SuperAdminSessionGuard>{children}</SuperAdminSessionGuard>
+    <SuperAdminSessionGuard>
+      <HydrationBoundary>{children}</HydrationBoundary>
+    </SuperAdminSessionGuard>
   );
 }

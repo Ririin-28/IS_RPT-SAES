@@ -41,10 +41,10 @@ function DashboardMetricCard({
   const content = (
     <div className="flex items-center justify-between gap-3">
       <div>
-        <p className="text-3xl font-semibold text-slate-900">{value}</p>
+        <p className="text-2xl font-semibold text-slate-900">{value}</p>
         <p className="text-sm font-medium text-slate-600">{label}</p>
       </div>
-      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-700 bg-emerald-100 text-emerald-700">
+      <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-emerald-700 bg-emerald-100 text-emerald-700">
         {icon}
       </span>
     </div>
@@ -62,23 +62,20 @@ function DashboardMetricCard({
 }
 
 const EnglishCardIcon = () => (
-  <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-emerald-100 text-[13px] font-bold leading-none text-emerald-700">
+  <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-emerald-100 text-[15px] font-bold leading-none text-emerald-700">
     E
   </span>
 );
 
 const FilipinoCardIcon = () => (
-  <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-emerald-100 text-[13px] font-bold leading-none text-emerald-700">
+  <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-emerald-100 text-[15px] font-bold leading-none text-emerald-700">
     F
   </span>
 );
 
 const MathCardIcon = () => (
-  <span className="grid h-6 w-6 grid-cols-2 grid-rows-2 place-items-center rounded-md bg-emerald-100 text-[10px] font-bold leading-none text-emerald-700">
-    <span>+</span>
-    <span>−</span>
-    <span>×</span>
-    <span>÷</span>
+  <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-emerald-100 text-[15px] font-bold leading-none text-emerald-700">
+    M
   </span>
 );
 
@@ -189,7 +186,7 @@ export default function TeacherDashboard() {
     (path: string) => {
       router.push(path);
     },
-    [router],
+    [router]
   );
 
   const [teacherProfile, setTeacherProfile] = useState<TeacherProfile | null>(null);
@@ -224,7 +221,7 @@ export default function TeacherDashboard() {
         day: "numeric",
         year: "numeric",
       }),
-    [],
+    []
   );
 
   useEffect(() => {
@@ -254,8 +251,7 @@ export default function TeacherDashboard() {
         setTrendData(payload.trends ?? null);
       } catch (error) {
         if (!cancelled) {
-          const message =
-            error instanceof Error ? error.message : "Failed to load handled student counts.";
+          const message = error instanceof Error ? error.message : "Failed to load handled student counts.";
           setCountsError(message);
           setHandledCounts({ English: 0, Filipino: 0, Math: 0 });
           setTrendData(null);
@@ -292,7 +288,7 @@ export default function TeacherDashboard() {
         }
 
         const nameParts = [payload.profile.firstName, payload.profile.middleName, payload.profile.lastName].filter(
-          (part): part is string => typeof part === "string" && part.trim().length > 0,
+          (part): part is string => typeof part === "string" && part.trim().length > 0
         );
 
         const teacherName = nameParts.length > 0 ? nameParts.join(" ") : "Teacher";
@@ -338,18 +334,14 @@ export default function TeacherDashboard() {
       trendData?.months?.length
         ? trendData.months.map((item) => ({ key: item.key, label: item.label }))
         : fallbackMonths.map((label, index) => ({ key: `fallback-${index}`, label })),
-    [trendData?.months],
+    [trendData?.months]
   );
 
   const selectedSubjectKey = useMemo<SubjectKey>(() => toSubjectKey(selectedSubject), [selectedSubject]);
 
   const sectionOptions = useMemo(() => {
     return Array.from(
-      new Set(
-        studentRows
-          .map((row) => (typeof row.section === "string" ? row.section.trim() : ""))
-          .filter((section) => section.length > 0),
-      ),
+      new Set(studentRows.map((row) => (typeof row.section === "string" ? row.section.trim() : "")).filter((section) => section.length > 0))
     ).sort((a, b) => a.localeCompare(b));
   }, [studentRows]);
 
@@ -369,7 +361,7 @@ export default function TeacherDashboard() {
       if (from <= to) return index >= from && index <= to;
       return index >= from || index <= to;
     },
-    [monthRangeIndices.from, monthRangeIndices.to],
+    [monthRangeIndices.from, monthRangeIndices.to]
   );
 
   const filteredMonthIndices = useMemo(() => {
@@ -412,7 +404,7 @@ export default function TeacherDashboard() {
         month: label.slice(0, 3),
         score: Math.max(0, Math.min(100, (filteredPeriodValues[index] ?? 0) * 12)),
       })),
-    [filteredPeriodLabels, filteredPeriodValues],
+    [filteredPeriodLabels, filteredPeriodValues]
   );
 
   const beforeAfterData = useMemo(() => {
@@ -434,7 +426,7 @@ export default function TeacherDashboard() {
         setStudentsLoadError(null);
         const response = await fetch(
           `/api/teacher/students?userId=${encodeURIComponent(String(dashboardUserId))}&subject=${encodeURIComponent(selectedSubject.toLowerCase())}`,
-          { cache: "no-store" },
+          { cache: "no-store" }
         );
 
         const payload = (await response.json().catch(() => null)) as {
@@ -452,11 +444,7 @@ export default function TeacherDashboard() {
         setStudentRows(Array.isArray(payload.students) ? payload.students : []);
       } catch (error) {
         if (!cancelled) {
-          setStudentsLoadError(
-            error instanceof Error
-              ? error.message
-              : "Failed to load student list for dashboard filters.",
-          );
+          setStudentsLoadError(error instanceof Error ? error.message : "Failed to load student list for dashboard filters.");
           setStudentRows([]);
         }
       }
@@ -475,9 +463,7 @@ export default function TeacherDashboard() {
 
   const filteredStudentRows = useMemo(() => {
     return studentRows.filter((row) => {
-      const sectionMatch =
-        selectedSections.length === 0 ||
-        (typeof row.section === "string" && selectedSections.includes(row.section));
+      const sectionMatch = selectedSections.length === 0 || (typeof row.section === "string" && selectedSections.includes(row.section));
       return sectionMatch;
     });
   }, [studentRows, selectedSections]);
@@ -519,10 +505,7 @@ export default function TeacherDashboard() {
     setSelectedSections([]);
   }, []);
 
-  const hasPhonemicLevelPieData = useMemo(
-    () => phonemicLevelPieData.some((item) => item.value > 0),
-    [phonemicLevelPieData],
-  );
+  const hasPhonemicLevelPieData = useMemo(() => phonemicLevelPieData.some((item) => item.value > 0), [phonemicLevelPieData]);
 
   const gradeNumberLabel = useMemo(() => {
     const raw = teacherProfile?.gradeHandled ?? "";
@@ -637,9 +620,7 @@ export default function TeacherDashboard() {
 
                         <div className="grid grid-cols-1 gap-4">
                           <div>
-                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                              Subject
-                            </p>
+                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Subject</p>
                             <div className="flex flex-wrap gap-2">
                               {(["All Subjects", ...REMEDIAL_SUBJECTS] as SubjectFilter[]).map((subject) => (
                                 <button
@@ -664,9 +645,7 @@ export default function TeacherDashboard() {
                           </div>
 
                           <div>
-                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                              Date Range
-                            </p>
+                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Date Range</p>
                             <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
                               <div className="relative">
                                 {monthFromMenuOpen && (
@@ -687,8 +666,7 @@ export default function TeacherDashboard() {
                                 >
                                   <span>
                                     {monthRangeFrom
-                                      ? filterMonthOptions.find((item) => item.key === monthRangeFrom)?.label ??
-                                        "From month"
+                                      ? (filterMonthOptions.find((item) => item.key === monthRangeFrom)?.label ?? "From month")
                                       : "From month"}
                                   </span>
                                   <svg
@@ -713,15 +691,11 @@ export default function TeacherDashboard() {
                                         setMonthFromMenuOpen(false);
                                       }}
                                       className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-semibold transition ${
-                                        monthRangeFrom === null
-                                          ? "bg-emerald-50 text-emerald-800"
-                                          : "text-slate-700 hover:bg-slate-100"
+                                        monthRangeFrom === null ? "bg-emerald-50 text-emerald-800" : "text-slate-700 hover:bg-slate-100"
                                       }`}
                                     >
                                       <span>Any month</span>
-                                      {monthRangeFrom === null && (
-                                        <span className="text-xs text-emerald-700">Active</span>
-                                      )}
+                                      {monthRangeFrom === null && <span className="text-xs text-emerald-700">Active</span>}
                                     </button>
                                     {filterMonthOptions.map((option) => (
                                       <button
@@ -738,9 +712,7 @@ export default function TeacherDashboard() {
                                         }`}
                                       >
                                         <span>{option.label}</span>
-                                        {monthRangeFrom === option.key && (
-                                          <span className="text-xs text-emerald-700">Active</span>
-                                        )}
+                                        {monthRangeFrom === option.key && <span className="text-xs text-emerald-700">Active</span>}
                                       </button>
                                     ))}
                                   </div>
@@ -768,8 +740,7 @@ export default function TeacherDashboard() {
                                 >
                                   <span>
                                     {monthRangeTo
-                                      ? filterMonthOptions.find((item) => item.key === monthRangeTo)?.label ??
-                                        "To month"
+                                      ? (filterMonthOptions.find((item) => item.key === monthRangeTo)?.label ?? "To month")
                                       : "To month"}
                                   </span>
                                   <svg
@@ -794,15 +765,11 @@ export default function TeacherDashboard() {
                                         setMonthToMenuOpen(false);
                                       }}
                                       className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-semibold transition ${
-                                        monthRangeTo === null
-                                          ? "bg-emerald-50 text-emerald-800"
-                                          : "text-slate-700 hover:bg-slate-100"
+                                        monthRangeTo === null ? "bg-emerald-50 text-emerald-800" : "text-slate-700 hover:bg-slate-100"
                                       }`}
                                     >
                                       <span>Any month</span>
-                                      {monthRangeTo === null && (
-                                        <span className="text-xs text-emerald-700">Active</span>
-                                      )}
+                                      {monthRangeTo === null && <span className="text-xs text-emerald-700">Active</span>}
                                     </button>
                                     {filterMonthOptions.map((option) => (
                                       <button
@@ -819,9 +786,7 @@ export default function TeacherDashboard() {
                                         }`}
                                       >
                                         <span>{option.label}</span>
-                                        {monthRangeTo === option.key && (
-                                          <span className="text-xs text-emerald-700">Active</span>
-                                        )}
+                                        {monthRangeTo === option.key && <span className="text-xs text-emerald-700">Active</span>}
                                       </button>
                                     ))}
                                   </div>
@@ -831,9 +796,7 @@ export default function TeacherDashboard() {
                           </div>
 
                           <div>
-                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                              Sections
-                            </p>
+                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Sections</p>
                             <div className="flex max-h-32 flex-wrap gap-2 overflow-y-auto">
                               {sectionOptions.map((section) => (
                                 <button
@@ -895,27 +858,23 @@ export default function TeacherDashboard() {
               <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <DashboardMetricCard
                   value={isLoadingCounts ? "..." : handledCounts.English.toLocaleString()}
-                  label="English Handled Students"
+                  label="English Students"
                   icon={<EnglishCardIcon />}
                   onClick={() => handleNavigate("/Teacher/students/subject/english")}
                 />
                 <DashboardMetricCard
                   value={isLoadingCounts ? "..." : handledCounts.Filipino.toLocaleString()}
-                  label="Filipino Handled Students"
+                  label="Filipino Students"
                   icon={<FilipinoCardIcon />}
                   onClick={() => handleNavigate("/Teacher/students/subject/filipino")}
                 />
                 <DashboardMetricCard
                   value={isLoadingCounts ? "..." : handledCounts.Math.toLocaleString()}
-                  label="Math Handled Students"
+                  label="Math Students"
                   icon={<MathCardIcon />}
                   onClick={() => handleNavigate("/Teacher/students/subject/math")}
                 />
-                <DashboardMetricCard
-                  value={todayDateLabel}
-                  label="Date Today"
-                  icon={<CalendarDays className="h-4.5 w-4.5" />}
-                />
+                <DashboardMetricCard value={todayDateLabel} label="Date Today" icon={<CalendarDays className="h-5.5 w-5.5" />} />
               </div>
 
               {countsError ? (
@@ -983,9 +942,7 @@ export default function TeacherDashboard() {
                     </div>
 
                     <div className="rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg xl:col-span-1">
-                      <p className="text-sm font-semibold text-slate-700">
-                        Students per Phonemic Level ({selectedSubject})
-                      </p>
+                      <p className="text-sm font-semibold text-slate-700">Students per Phonemic Level ({selectedSubject})</p>
                       <div className="mt-3 h-64">
                         {hasPhonemicLevelPieData ? (
                           <ResponsiveContainer width="100%" height="100%">
