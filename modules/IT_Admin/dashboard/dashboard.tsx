@@ -886,7 +886,13 @@ export default function ITAdminDashboard() {
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={chartLoginsByRole}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                          <XAxis dataKey="role" tick={{ fill: palette.text, fontSize: 11 }} />
+                          <XAxis
+                            dataKey="role"
+                            tick={{ fill: palette.text, fontSize: 11 }}
+                            interval={0}
+                            tickMargin={8}
+                            height={32}
+                          />
                           <YAxis tick={{ fill: palette.text, fontSize: 11 }} />
                           <Tooltip />
                           <Bar dataKey="count" radius={[10, 10, 0, 0]}>

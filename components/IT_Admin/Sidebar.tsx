@@ -83,20 +83,61 @@ const SettingsIcon = React.memo(() => (
   </svg>
 ));
 
+const EmergencyIcon = React.memo(() => (
+  <svg width="24" height="24" fill="none" viewBox="0 0 24 24">
+    <path d="M12 3l7 3v5c0 4.2-2.3 8-7 10-4.7-2-7-5.8-7-10V6l7-3z" stroke="#013300" strokeWidth="2" />
+    <path d="M9.5 12.5l1.8 1.8 3.2-3.6" stroke="#013300" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+));
+
 // Navigation items with submenus
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", path: "/IT_Admin/dashboard", icon: <DashboardIcon /> },
   { label: "Accounts", path: "/IT_Admin/accounts", icon: <AccountsIcon /> },
   { label: "Logs", path: "/IT_Admin/logs", icon: <LogsIcon /> },
   { label: "Archive", path: "/IT_Admin/archive", icon: <ArchiveIcon /> },
+  {
+    label: "Emergency Access",
+    path: "/IT_Admin/emergency-access",
+    icon: <EmergencyIcon />,
+    children: [
+      { label: "Emergency Access", path: "/IT_Admin/emergency-access" },
+      { label: "Emergency Calendars", path: "/IT_Admin/emergency-access/calendars" },
+      { label: "Emergency Requests", path: "/IT_Admin/emergency-access/requests" },
+    ],
+  },
   { label: "Settings", path: "/IT_Admin/settings", icon: <SettingsIcon /> },
 ];
 
 export default function ITAdminSidebar() {
   const [open, setOpen] = React.useState(false);
   const [openSubmenu, setOpenSubmenu] = React.useState<string | null>(null);
+  const [isDesktop, setIsDesktop] = React.useState(false);
   const router = useRouter();
   const pathname = usePathname() ?? "";
+
+  React.useEffect(() => {
+    const updateViewport = () => setIsDesktop(window.innerWidth >= 768);
+    updateViewport();
+    window.addEventListener("resize", updateViewport);
+    return () => window.removeEventListener("resize", updateViewport);
+  }, []);
+
+  React.useEffect(() => {
+    if (isDesktop) setOpenSubmenu(null);
+  }, [isDesktop]);
+
+  const handleMouseEnter = useCallback((label: string) => {
+    if (isDesktop) setOpenSubmenu(label);
+  }, [isDesktop]);
+
+  const handleMouseLeave = useCallback(() => {
+    if (isDesktop) setOpenSubmenu(null);
+  }, [isDesktop]);
+
+  const handleSubmenuToggle = useCallback((label: string) => {
+    setOpenSubmenu((prev) => (prev === label ? null : label));
+  }, []);
 
   // Memoized toggle function
   const toggleSidebar = useCallback(() => {
@@ -120,8 +161,21 @@ export default function ITAdminSidebar() {
 
   // Check if path is active
   const isActivePath = useCallback(
-    (path: string) => Boolean(pathname?.toLowerCase().startsWith(path.toLowerCase())),
+    (path: string) => pathname === path,
     [pathname]
+  );
+
+  const isParentActive = useCallback(
+    (item: NavItem) => {
+      if (item.path) {
+        return isActivePath(item.path);
+      }
+      if (item.children) {
+        return item.children.some((child) => isActivePath(child.path));
+      }
+      return false;
+    },
+    [isActivePath]
   );
 
   return (
@@ -187,15 +241,18 @@ export default function ITAdminSidebar() {
         <nav className="flex flex-col gap-3">
           {NAV_ITEMS.map((item) => {
             const hasChildren = Boolean(item.children && item.children.length > 0);
-            const childActive = hasChildren
-              ? item.children!.some((child) => isActivePath(child.path))
-              : false;
-            const active = item.path ? isActivePath(item.path) || childActive : childActive;
-            const expanded = hasChildren && (openSubmenu === item.label || childActive);
+            const active = isParentActive(item);
+            const isSubmenuOpen = openSubmenu === item.label;
+            const submenuHeight = item.children ? item.children.length * 48 + 16 : 0;
 
             if (hasChildren) {
               return (
-                <div key={item.label} className="group relative">
+                <div
+                  key={item.label}
+                  className="group relative"
+                  onMouseEnter={() => handleMouseEnter(item.label)}
+                  onMouseLeave={handleMouseLeave}
+                >
                   <button
                     type="button"
                     className={`
@@ -203,8 +260,8 @@ export default function ITAdminSidebar() {
                       ${active ? "bg-[#013300] text-white shadow" : "text-[#013300]"}
                       hover:ring-2 hover:ring-[#013300] hover:scale-[1.02] hover:shadow
                     `}
-                    onClick={() => setOpenSubmenu((prev) => (prev === item.label ? null : item.label))}
-                    aria-expanded={expanded}
+                    onClick={() => handleSubmenuToggle(item.label)}
+                    aria-expanded={isSubmenuOpen}
                     aria-haspopup="true"
                   >
                     <span
@@ -216,7 +273,7 @@ export default function ITAdminSidebar() {
                     </span>
                     <span className="tracking-wide flex-1 text-left">{item.label}</span>
                     <svg
-                      className={`w-4 h-4 transition-transform duration-300 ${expanded ? "rotate-180" : "rotate-0"}`}
+                      className={`w-4 h-4 transition-transform duration-300 ${isSubmenuOpen ? "rotate-180" : "rotate-0"}`}
                       fill="none"
                       stroke="currentColor"
                       strokeWidth="2"
@@ -229,9 +286,13 @@ export default function ITAdminSidebar() {
                   <div
                     className={`
                       overflow-hidden transition-all duration-300 ease-in-out
-                      ${expanded ? "max-h-60 opacity-100" : "max-h-0 opacity-0"}
+                      ${isSubmenuOpen ? "max-h-60 opacity-100" : "max-h-0 opacity-0"}
                       md:group-hover:max-h-60 md:group-hover:opacity-100
                     `}
+                    style={{
+                      maxHeight: isSubmenuOpen ? submenuHeight : 0,
+                      opacity: isSubmenuOpen ? 1 : 0,
+                    }}
                   >
                     <div className="flex flex-col mt-1 gap-2 rounded-lg bg-green-50 p-2">
                       {item.children!.map((child) => {
