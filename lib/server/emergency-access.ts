@@ -17,7 +17,6 @@ export type EmergencyAccessRow = RowDataPacket & {
   deactivated_by_user_id: number | null;
 };
 
-const EMERGENCY_SCOPE = "Calendars,Requests";
 const TARGET_ROLE = "Principal";
 
 let schemaReady = false;

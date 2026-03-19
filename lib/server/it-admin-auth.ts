@@ -7,7 +7,6 @@ import {
   validateAdminSession,
 } from "@/lib/server/admin-session";
 import {
-  type ItAdminPermission,
   type ItAdminPermissionRequest,
   IT_ADMIN_PERMISSION_SET,
   normalizeRequestedItAdminPermission,

@@ -195,28 +195,6 @@ const hasInProgressSession = async (studentId: string, scheduleId: string): Prom
   return !payload?.session?.completedAt;
 };
 
-const isSessionCompleted = async (args: {
-  studentId: string;
-  scheduleId: string;
-  subjectId: number;
-  phonemicId: number | null;
-}): Promise<boolean | null> => {
-  const response = await fetch("/api/remedial/session/status", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      approvedScheduleId: args.scheduleId,
-      subjectId: args.subjectId,
-      phonemicId: args.phonemicId,
-      studentIds: [args.studentId],
-    }),
-  });
-
-  const payload = (await response.json().catch(() => null)) as SessionStatusResponse | null;
-  if (!response.ok || !payload?.success) return null;
-  return Boolean(payload?.statusByStudent?.[args.studentId]?.completed);
-};
-
 const isScheduleCompletedForProgress = async (args: {
   studentId: string;
   scheduleId: string;

@@ -69,7 +69,7 @@ export default function TableList({
       ? data
       : data.slice((activePage - 1) * effectivePageSize, activePage * effectivePageSize);
   const disabledSelectionIds = nonSelectableIds ?? new Set();
-  const showStandaloneFullScreenColumn = false;
+  const showStandaloneFullScreenColumn = Boolean(showFullScreenToggle) && false;
   const headerSelectableRows = selectable
     ? data.reduce((count, row) => count + (disabledSelectionIds.has(row.id) ? 0 : 1), 0)
     : 0;

@@ -15,8 +15,6 @@ export type SessionMetrics = {
   sessionTexts?: string[];
 };
 
-type ReadingQualityBand = "Poor" | "Fair" | "Average" | "Good" | "Excellent";
-type ReadingLevel = "Non-Reader" | "Syllable" | "Word" | "Phrase" | "Sentence" | "Paragraph";
 type ReadingIssue = "silent_letters" | "long_words" | "vowel_a" | "general_decoding";
 
 const toFiniteNumber = (value: number | null | undefined): number | null => {
@@ -85,27 +83,6 @@ const joinWords = (words: string[]): string => {
   return `${words[0]}, ${words[1]}, and ${words[2]}`;
 };
 
-const getQualityBand = (overallAverage: number): ReadingQualityBand => {
-  if (overallAverage >= 90) return "Excellent";
-  if (overallAverage >= 80) return "Good";
-  if (overallAverage >= 70) return "Average";
-  if (overallAverage >= 60) return "Fair";
-  return "Poor";
-};
-
-const inferReadingLevel = (
-  accuracy: number,
-  readingSpeedWpm: number,
-  qualityBand: ReadingQualityBand,
-): ReadingLevel => {
-  if (qualityBand === "Poor" || accuracy < 55 || readingSpeedWpm < 30) return "Non-Reader";
-  if (qualityBand === "Fair" || accuracy < 65 || readingSpeedWpm < 45) return "Syllable";
-  if (accuracy < 75 || readingSpeedWpm < 60) return "Word";
-  if (accuracy < 82 || readingSpeedWpm < 80) return "Phrase";
-  if (accuracy < 90 || readingSpeedWpm < 100) return "Sentence";
-  return "Paragraph";
-};
-
 const SILENT_LETTER_PATTERN = /^(kn|wr|gn|ps|pt|pn|rh)|mb$|bt$|mn$|lk$|stle$/i;
 
 const inferReadingIssue = (
@@ -146,17 +123,6 @@ const pickFallbackWords = (
     3,
   );
   return textWords.length ? textWords : ["practice words"];
-};
-
-const pickOpener = (overallAverage: number, accuracy: number, readingSpeedWpm: number): string => {
-  const openers = [
-    "Nice progress today",
-    "Good effort today",
-    "You improved today",
-    "Great focus today",
-  ];
-  const score = Math.max(0, Math.round(overallAverage + accuracy + readingSpeedWpm));
-  return openers[score % openers.length];
 };
 
 const generateReadingInsight = async (metrics: SessionMetrics, studentName?: string): Promise<string> => {

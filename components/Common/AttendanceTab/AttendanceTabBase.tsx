@@ -899,20 +899,6 @@ export default function AttendanceTabBase({
     return currentDayLabel;
   }, [currentDayLabel, currentMonthLabel, currentWeekLabel, view]);
 
-  const hasUnsavedChanges = useMemo(() => {
-    if (!isEditing) {
-      return false;
-    }
-
-    const allKeys = new Set<string>([...baselineMap.keys(), ...statusMap.keys()]);
-    for (const key of allKeys) {
-      if (baselineMap.get(key) !== statusMap.get(key)) {
-        return true;
-      }
-    }
-    return false;
-  }, [baselineMap, isEditing, statusMap]);
-
   const rows = useMemo(() => {
     return filteredStudents.map((student: any, index: number) => {
       const id = resolveStudentId(student, index + 1);
@@ -1378,7 +1364,7 @@ export default function AttendanceTabBase({
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 7h6" />
                   </svg>
-                  Mark All as "Present"
+                  Mark All as &quot;Present&quot;
                 </span>
               </button>
 

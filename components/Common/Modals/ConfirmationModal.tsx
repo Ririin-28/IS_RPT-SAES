@@ -12,6 +12,7 @@ interface ConfirmationModalProps {
   title: string;
   message: string;
   fileName?: string;
+  confirmText?: string;
 }
 
 export default function ConfirmationModal({
@@ -21,6 +22,7 @@ export default function ConfirmationModal({
   title,
   message,
   fileName,
+  confirmText = "Confirm",
 }: ConfirmationModalProps) {
   const [mounted, setMounted] = useState(false);
 
@@ -112,7 +114,7 @@ export default function ConfirmationModal({
             onClick={onConfirm}
             className="w-full rounded-xl border border-[#013300] bg-[#013300] px-5 py-3 text-sm font-semibold shadow-none hover:border-green-900 hover:bg-green-900"
           >
-            Confirm
+            {confirmText}
           </PrimaryButton>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import type { Connection, PoolConnection } from "mysql2/promise";
+import type { Connection, PoolConnection, RowDataPacket } from "mysql2/promise";
 
 type DbConnection = Connection | PoolConnection;
 
@@ -53,7 +53,9 @@ async function ensureSecurityAuditSchema(db: DbConnection): Promise<void> {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
-  const [columnRows] = await db.query<Array<{ Field: string }>>("SHOW COLUMNS FROM security_audit_logs");
+  const [columnRows] = await db.query<Array<RowDataPacket & { Field: string }>>(
+    "SHOW COLUMNS FROM security_audit_logs",
+  );
   const existing = new Set(columnRows.map((row) => String(row.Field)));
 
   if (!existing.has("emergency_access_id")) {
