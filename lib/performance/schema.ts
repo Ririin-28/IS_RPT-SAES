@@ -106,6 +106,27 @@ export async function ensurePerformanceSchema(): Promise<void> {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
       );
 
+      await query(
+        `CREATE TABLE IF NOT EXISTS student_monthly_progress_override (
+          override_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+          student_id VARCHAR(64) NOT NULL,
+          subject_id BIGINT UNSIGNED NOT NULL,
+          school_year VARCHAR(32) NOT NULL,
+          month_no TINYINT UNSIGNED NOT NULL,
+          phonemic_id BIGINT UNSIGNED NULL,
+          level_name_snapshot VARCHAR(255) NULL,
+          edited_by_user_id BIGINT UNSIGNED NULL,
+          edited_by_role VARCHAR(64) NULL,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (override_id),
+          UNIQUE KEY uq_student_subject_school_year_month (student_id, subject_id, school_year, month_no),
+          INDEX idx_monthly_override_student (student_id),
+          INDEX idx_monthly_override_subject (subject_id),
+          INDEX idx_monthly_override_school_year (school_year)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      );
+
       await ensureTableColumn("student_remedial_session", "overall_average", "DECIMAL(6,2) NULL");
       await ensureTableColumn("student_remedial_session", "ai_remarks", "TEXT NULL");
       await ensureTableColumn("student_remedial_session", "completed_at", "DATETIME NULL");
@@ -124,6 +145,12 @@ export async function ensurePerformanceSchema(): Promise<void> {
       await ensureTableColumn("student_remedial_flashcard_performance", "created_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
 
       await ensureTableColumn("student_phonemic_history", "achieved_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
+      await ensureTableColumn("student_monthly_progress_override", "phonemic_id", "BIGINT UNSIGNED NULL");
+      await ensureTableColumn("student_monthly_progress_override", "level_name_snapshot", "VARCHAR(255) NULL");
+      await ensureTableColumn("student_monthly_progress_override", "edited_by_user_id", "BIGINT UNSIGNED NULL");
+      await ensureTableColumn("student_monthly_progress_override", "edited_by_role", "VARCHAR(64) NULL");
+      await ensureTableColumn("student_monthly_progress_override", "created_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
+      await ensureTableColumn("student_monthly_progress_override", "updated_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
     })();
   }
 

@@ -28,6 +28,10 @@ export type RemedialReportComponentProps = {
   onCellChange: (index: number, field: RemedialReportField, value: string) => void;
   monthColumns: RemedialMonthColumn[];
   quarterGroups: RemedialQuarterGroup[];
+  showRowNumbers?: boolean;
+  lockedFields?: string[];
+  levelOptions?: string[];
+  isOptionDisabled?: (row: RemedialReportRow, field: RemedialReportField, option: string) => boolean;
 };
 
 export type RemedialStudentRecord = {

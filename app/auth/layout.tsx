@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import HydrationBoundary from "@/components/Common/HydrationBoundary";
 
 export const metadata: Metadata = {
   robots: {
@@ -13,5 +12,5 @@ export default function AuthLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <HydrationBoundary>{children}</HydrationBoundary>;
+  return children;
 }

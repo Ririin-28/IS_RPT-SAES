@@ -31,7 +31,9 @@ interface TableListProps {
   nonSelectableIds?: Set<any>;
   actionHeaderLabel?: string;
   pagination?: TablePaginationConfig;
+  headerCellPaddingYClass?: "py-2" | "py-3" | "py-4";
   bodyCellPaddingYClass?: "py-2" | "py-3" | "py-4";
+  tableTextSizeClass?: "text-sm" | "text-base";
 }
 
 export default function TableList({
@@ -48,7 +50,9 @@ export default function TableList({
   nonSelectableIds,
   actionHeaderLabel,
   pagination,
+  headerCellPaddingYClass = "py-2",
   bodyCellPaddingYClass = "py-2",
+  tableTextSizeClass = "text-sm",
 }: TableListProps) {
   const [page, setPage] = useState(1);
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -187,11 +191,11 @@ export default function TableList({
         isFullScreen ? '' : 'mb-2' // Add margin bottom only in non-fullscreen
       }`}>
         <div className={`h-full w-full overflow-auto rounded-lg ${bodyMaxHeightClass}`}>
-          <table className="min-w-full text-sm" role="table">
+          <table className={`min-w-full ${tableTextSizeClass}`} role="table">
             <thead className="text-[#013300] bg-green-50 border-b border-gray-200 sticky top-0 z-10">
               <tr>
                 {selectable && (
-                  <th className="px-4 py-0 text-left w-14">
+                  <th className={`px-4 ${headerCellPaddingYClass} text-left w-14`}>
                     <input
                       type="checkbox"
                       checked={allSelectableSelected}
@@ -204,7 +208,7 @@ export default function TableList({
                   </th>
                 )}
                 {columns.map((col) => (
-                  <th key={col.key} className="px-4 py-2 text-left">
+                  <th key={col.key} className={`px-4 ${headerCellPaddingYClass} text-left`}>
                     {typeof col.title === 'string' ? (
                       <TertiaryHeader title={col.title} className="mb-0" />
                     ) : (
@@ -213,7 +217,7 @@ export default function TableList({
                   </th>
                 ))}
                 {showStandaloneFullScreenColumn && (
-                  <th className="px-4 py-2 text-center w-14">
+                  <th className={`px-4 ${headerCellPaddingYClass} text-center w-14`}>
                     <div className="flex items-center justify-center">
                       {renderFullScreenToggle(
                         'p-1 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors'
@@ -222,7 +226,7 @@ export default function TableList({
                   </th>
                 )}
                 {actions && (
-                  <th className="px-4 py-2 text-center">
+                  <th className={`px-4 ${headerCellPaddingYClass} text-center`}>
                     <div className="flex items-center justify-center gap-4">
                       <TertiaryHeader title={actionHeaderLabel || "Actions"} className="mb-0" />
                     </div>

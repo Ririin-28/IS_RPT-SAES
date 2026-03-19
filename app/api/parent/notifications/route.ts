@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { query, tableExists } from "@/lib/db";
+import { getParentSessionFromCookies } from "@/lib/server/parent-session";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,14 @@ type NotificationRow = RowDataPacket & {
   status: "unread" | "read";
   created_at: Date | string;
   updated_at: Date | string;
+};
+
+type ParentIdRow = RowDataPacket & {
+  parent_id: string | number;
+};
+
+type ParentStudentRow = RowDataPacket & {
+  student_id: string | number;
 };
 
 const ISO_DATE_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -121,6 +130,31 @@ const hashStringToInt = (input: string): number => {
     hash = (hash * 31 + input.charCodeAt(index)) | 0;
   }
   return Math.abs(hash);
+};
+
+const resolveParentStudentIds = async (userId: number): Promise<string[]> => {
+  const [parentRows] = await query<ParentIdRow[]>(
+    `SELECT parent_id FROM parent WHERE user_id = ? LIMIT 1`,
+    [userId],
+  );
+
+  if (!parentRows.length) {
+    return [];
+  }
+
+  const parentId = String(parentRows[0].parent_id ?? "").trim();
+  if (!parentId) {
+    return [];
+  }
+
+  const [rows] = await query<ParentStudentRow[]>(
+    `SELECT student_id FROM parent_student WHERE parent_id = ? ORDER BY parent_student_id ASC`,
+    [parentId],
+  );
+
+  return rows
+    .map((row) => String(row.student_id ?? "").trim())
+    .filter((value) => value.length > 0);
 };
 
 type NormalizedNotification = {
@@ -389,4 +423,59 @@ export async function GET(request: NextRequest) {
   });
 
   return NextResponse.json({ success: true, notifications: combined });
+}
+
+type PatchPayload = {
+  id?: number | string | null;
+  markAll?: boolean | null;
+};
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const session = await getParentSessionFromCookies();
+    if (!session) {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
+
+    await ensureNotificationsTable();
+
+    const studentIds = await resolveParentStudentIds(session.userId);
+    if (!studentIds.length) {
+      return NextResponse.json({ success: true, affectedRows: 0 });
+    }
+
+    const placeholders = studentIds.map(() => "?").join(",");
+    const payload = (await request.json().catch(() => null)) as PatchPayload | null;
+    const noteId = Number(payload?.id ?? NaN);
+
+    if (Number.isFinite(noteId) && noteId > 0) {
+      await query(
+        `UPDATE parent_notifications
+         SET status = 'read'
+         WHERE id = ?
+           AND status = 'unread'
+           AND student_id IN (${placeholders})`,
+        [noteId, ...studentIds],
+      );
+
+      return NextResponse.json({ success: true, mode: "single" });
+    }
+
+    if (payload?.markAll === false) {
+      return NextResponse.json({ success: false, error: "Nothing to update." }, { status: 400 });
+    }
+
+    await query(
+      `UPDATE parent_notifications
+       SET status = 'read'
+       WHERE status = 'unread'
+         AND student_id IN (${placeholders})`,
+      [...studentIds],
+    );
+
+    return NextResponse.json({ success: true, mode: "all" });
+  } catch (error) {
+    console.error("Failed to update parent notifications", error);
+    return NextResponse.json({ success: false, error: "Unable to update notifications." }, { status: 500 });
+  }
 }

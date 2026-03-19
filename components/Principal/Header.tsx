@@ -5,6 +5,7 @@ import ProfileDropdown from "../Common/ProfileDropdown";
 import { performClientLogout } from "@/lib/utils/logout";
 import UserAvatar from "../Common/UserAvatar";
 import { useStoredUserProfile } from "@/lib/hooks/useStoredUserProfile";
+import { useNotifications } from "@/lib/hooks/useNotifications";
 
 interface PrincipalHeaderProps {
   title?: string;
@@ -15,15 +16,21 @@ export default function PrincipalHeader({ title }: PrincipalHeaderProps) {
   const storedProfile = useStoredUserProfile();
   const [showDropdown, setShowDropdown] = React.useState(false);
   const [showNotifications, setShowNotifications] = React.useState(false);
-  const [notifications, setNotifications] = React.useState<Array<{
-    id: number;
-    message: string;
-    status: "unread" | "read";
-    createdAt: string;
-  }>>([]);
-  const [notificationsLoading, setNotificationsLoading] = React.useState(false);
-  const [notificationsError, setNotificationsError] = React.useState<string | null>(null);
   const profileBtnRef = React.useRef<HTMLButtonElement>(null);
+    const {
+      notifications,
+      loading: notificationsLoading,
+      error: notificationsError,
+      unreadCount,
+      loadNotifications,
+      markNotificationRead,
+      markAllRead,
+    } = useNotifications({
+      endpoint: "/api/principal/notifications",
+      enabled: true,
+      pollIntervalMs: 60000,
+    });
+
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const notificationBtnRef = React.useRef<HTMLButtonElement>(null);
   const notificationDropdownRef = React.useRef<HTMLDivElement>(null);
@@ -31,6 +38,10 @@ export default function PrincipalHeader({ title }: PrincipalHeaderProps) {
   // Hide dropdowns when clicking outside
   React.useEffect(() => {
     function handleClick(e: MouseEvent) {
+      const target = e.target;
+      if (target instanceof Element && target.closest("[data-logout-modal-card='true']")) {
+        return;
+      }
       if (!profileBtnRef.current?.contains(e.target as Node) && !dropdownRef.current?.contains(e.target as Node)) {
         setShowDropdown(false);
       }
@@ -48,78 +59,11 @@ export default function PrincipalHeader({ title }: PrincipalHeaderProps) {
     if (!showNotifications) {
       return;
     }
+    void loadNotifications();
+  }, [loadNotifications, showNotifications]);
 
-    const controller = new AbortController();
-    let isCancelled = false;
-
-    const loadNotifications = async () => {
-      setNotificationsLoading(true);
-      setNotificationsError(null);
-      try {
-        const response = await fetch("/api/principal/notifications", {
-          method: "GET",
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        const payload = (await response.json().catch(() => null)) as {
-          success?: boolean;
-          notifications?: Array<{
-            id?: number | string;
-            message?: string | null;
-            status?: "unread" | "read" | null;
-            createdAt?: string | null;
-            created_at?: string | null;
-          }>;
-          error?: string | null;
-        } | null;
-
-        if (!response.ok || !payload?.success) {
-          throw new Error(payload?.error ?? "Failed to load notifications.");
-        }
-
-        if (isCancelled) {
-          return;
-        }
-
-        setNotifications(
-          Array.isArray(payload.notifications)
-            ? payload.notifications.map((note) => ({
-                id: Number(note.id ?? 0),
-                message: note.message ?? "",
-                status: note.status === "read" ? "read" : "unread",
-                createdAt: note.createdAt ?? note.created_at ?? new Date().toISOString(),
-              }))
-            : [],
-        );
-
-        await fetch("/api/principal/notifications", { method: "PATCH", cache: "no-store" });
-        if (!isCancelled) {
-          setNotifications((prev) => prev.map((note) => ({ ...note, status: "read" })));
-        }
-      } catch (error) {
-        if (isCancelled || (error instanceof DOMException && error.name === "AbortError")) {
-          return;
-        }
-        setNotificationsError(error instanceof Error ? error.message : "Failed to load notifications.");
-        setNotifications([]);
-      } finally {
-        if (!isCancelled) {
-          setNotificationsLoading(false);
-        }
-      }
-    };
-
-    loadNotifications();
-
-    return () => {
-      isCancelled = true;
-      controller.abort();
-    };
-  }, [showNotifications]);
-
-  const unreadCount = notifications.filter((note) => note.status === "unread").length;
-
-  const handleNotificationClick = () => {
+  const handleNotificationClick = async (notificationId: number) => {
+    await markNotificationRead(notificationId);
     setShowNotifications(false);
     router.push("/Principal/requests");
   };
@@ -165,7 +109,7 @@ export default function PrincipalHeader({ title }: PrincipalHeaderProps) {
                   <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" />
                 </svg>
                 {unreadCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold text-white">
+                  <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold text-white">
                     {unreadCount}
                   </span>
                 )}
@@ -184,12 +128,24 @@ export default function PrincipalHeader({ title }: PrincipalHeaderProps) {
                 >
                   <div className="sticky top-0 bg-white px-4 py-3 border-b border-gray-100 flex justify-between items-center">
                     <h3 className="font-semibold text-gray-800">Notifications</h3>
-                    <button 
-                      className="text-sm text-green-600 hover:text-green-800"
-                      onClick={() => setShowNotifications(false)}
-                    >
-                      Close
-                    </button>
+                    <div className="flex items-center gap-3">
+                      {notifications.length > 0 && unreadCount > 0 && (
+                        <button
+                          className="text-sm text-green-600 hover:text-green-800"
+                          onClick={() => {
+                            void markAllRead();
+                          }}
+                        >
+                          Mark all as read
+                        </button>
+                      )}
+                      <button
+                        className="text-sm text-green-600 hover:text-green-800"
+                        onClick={() => setShowNotifications(false)}
+                      >
+                        Close
+                      </button>
+                    </div>
                   </div>
                   
                   {notificationsLoading && (
@@ -228,8 +184,12 @@ export default function PrincipalHeader({ title }: PrincipalHeaderProps) {
                         <button
                           type="button"
                           key={note.id}
-                          className="w-full px-4 py-3 text-left hover:bg-gray-50"
-                          onClick={handleNotificationClick}
+                          className={`w-full px-4 py-3 text-left hover:bg-gray-50 ${
+                            note.status === "unread" ? "bg-green-50/70" : "bg-white"
+                          }`}
+                          onClick={() => {
+                            void handleNotificationClick(note.id);
+                          }}
                         >
                           <p className="text-sm text-gray-700">{note.message}</p>
                           <p className="mt-1 text-xs text-gray-400">

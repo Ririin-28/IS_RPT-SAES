@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
-import { getTableColumns, query, tableExists } from "@/lib/db";
+import { getTableColumns, query } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -117,16 +117,21 @@ function formatPrincipalStudentFullName(input: {
 }
 
 async function resolveStudentTable(): Promise<{ name: string; columns: Set<string> } | null> {
-  for (const candidate of STUDENT_TABLE_CANDIDATES) {
-    if (!(await tableExists(candidate))) {
+  const candidates = await Promise.all(
+    STUDENT_TABLE_CANDIDATES.map(async (candidate) => ({
+      name: candidate,
+      columns: await getTableColumns(candidate),
+    })),
+  );
+
+  for (const candidate of candidates) {
+    if (!candidate.columns.size) {
       continue;
     }
-    const columns = await getTableColumns(candidate);
-    const hasIdentifier = STUDENT_ID_COLUMNS.some((column) => columns.has(column));
-    if (!hasIdentifier) {
-      continue;
+    const hasIdentifier = STUDENT_ID_COLUMNS.some((column) => candidate.columns.has(column));
+    if (hasIdentifier) {
+      return candidate;
     }
-    return { name: candidate, columns };
   }
   return null;
 }
@@ -148,15 +153,6 @@ export async function GET() {
       );
     }
 
-    const usersTableExists = await tableExists("users");
-    const userColumns = usersTableExists ? await getTableColumns("users") : new Set<string>();
-    const canJoinStudentUsers = usersTableExists && studentTable.columns.has("user_id");
-    const parentStudentExists = await tableExists(PARENT_STUDENT_TABLE);
-    const parentTableExists = await tableExists(PARENT_TABLE);
-    const parentStudentColumns = parentStudentExists ? await getTableColumns(PARENT_STUDENT_TABLE) : new Set<string>();
-    const parentColumns = parentTableExists ? await getTableColumns(PARENT_TABLE) : new Set<string>();
-    const canJoinParent = parentStudentExists && parentTableExists && usersTableExists;
-
     const studentIdColumn = pickFirstColumn(studentTable.columns, STUDENT_ID_COLUMNS) ?? "student_id";
     const sectionColumn = pickFirstColumn(studentTable.columns, SECTION_COLUMNS) ?? "section";
     const subjectColumn = pickFirstColumn(studentTable.columns, SUBJECT_COLUMNS);
@@ -166,25 +162,50 @@ export async function GET() {
       : studentTable.columns.has("grade")
         ? "grade"
         : null;
-    const gradeTableExists = gradeIdColumn ? await tableExists("grade") : false;
-    const canJoinAssessmentLevels = (await tableExists("student_subject_assessment"))
-      && (await tableExists("phonemic_level"))
-      && (await tableExists("subject"));
+
+    const [
+      userColumns,
+      parentStudentColumns,
+      parentColumns,
+      gradeColumns,
+      assessmentColumns,
+      phonemicColumns,
+      subjectTableColumns,
+    ] = await Promise.all([
+      getTableColumns("users"),
+      getTableColumns(PARENT_STUDENT_TABLE),
+      getTableColumns(PARENT_TABLE),
+      gradeIdColumn ? getTableColumns("grade") : Promise.resolve(new Set<string>()),
+      getTableColumns("student_subject_assessment"),
+      getTableColumns("phonemic_level"),
+      getTableColumns("subject"),
+    ]);
+
+    const usersTableExists = userColumns.size > 0;
+    const parentStudentExists = parentStudentColumns.size > 0;
+    const parentTableExists = parentColumns.size > 0;
+    const gradeTableExists = gradeColumns.size > 0;
+    const canJoinStudentUsers = usersTableExists && studentTable.columns.has("user_id");
+    const canJoinParent = parentStudentExists && parentTableExists && usersTableExists;
+    const canJoinAssessmentLevels =
+      assessmentColumns.size > 0 && phonemicColumns.size > 0 && subjectTableColumns.size > 0;
 
     let englishSubjectId: number | null = null;
     let filipinoSubjectId: number | null = null;
     let mathSubjectId: number | null = null;
 
     if (canJoinAssessmentLevels) {
-      const [[englishRow]] = await query<RowDataPacket[]>(
-        "SELECT subject_id FROM subject WHERE LOWER(TRIM(subject_name)) = 'english' LIMIT 1",
-      );
-      const [[filipinoRow]] = await query<RowDataPacket[]>(
-        "SELECT subject_id FROM subject WHERE LOWER(TRIM(subject_name)) = 'filipino' LIMIT 1",
-      );
-      const [[mathRow]] = await query<RowDataPacket[]>(
-        "SELECT subject_id FROM subject WHERE LOWER(TRIM(subject_name)) IN ('math', 'mathematics') LIMIT 1",
-      );
+      const [[[englishRow]], [[filipinoRow]], [[mathRow]]] = await Promise.all([
+        query<RowDataPacket[]>(
+          "SELECT subject_id FROM subject WHERE LOWER(TRIM(subject_name)) = 'english' LIMIT 1",
+        ),
+        query<RowDataPacket[]>(
+          "SELECT subject_id FROM subject WHERE LOWER(TRIM(subject_name)) = 'filipino' LIMIT 1",
+        ),
+        query<RowDataPacket[]>(
+          "SELECT subject_id FROM subject WHERE LOWER(TRIM(subject_name)) IN ('math', 'mathematics') LIMIT 1",
+        ),
+      ]);
 
       englishSubjectId = typeof englishRow?.subject_id === "number" ? englishRow.subject_id : null;
       filipinoSubjectId = typeof filipinoRow?.subject_id === "number" ? filipinoRow.subject_id : null;

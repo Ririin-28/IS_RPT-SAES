@@ -5,6 +5,42 @@ type RouterLike = {
   push?: (href: string) => void;
 };
 
+function hideProtectedUiDuringLogout() {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  const existingMask = document.getElementById("__logout-transition-mask__");
+  if (existingMask) {
+    return;
+  }
+
+  const mask = document.createElement("div");
+  mask.id = "__logout-transition-mask__";
+  mask.className = "fixed inset-0 z-[2147483647] flex items-center justify-center bg-[#f6faf8]";
+  Object.assign(mask.style, {
+    pointerEvents: "auto",
+  });
+
+  const content = document.createElement("div");
+  content.className = "flex flex-col items-center gap-2 text-center";
+
+  const spinner = document.createElement("div");
+  spinner.className = "h-8 w-8 animate-spin rounded-full border-4 border-[#013300]/20 border-t-[#013300]";
+
+  const title = document.createElement("div");
+  title.textContent = "Logging out...";
+  title.className = "text-sm font-medium text-gray-500";
+
+  content.appendChild(spinner);
+  content.appendChild(title);
+  mask.appendChild(content);
+
+  document.documentElement.style.background = "#f6faf8";
+  document.body.style.background = "#f6faf8";
+  document.body.appendChild(mask);
+}
+
 /**
  * Clears user session artifacts and routes back to the login screen.
  */
@@ -45,5 +81,13 @@ export function performClientLogout(router: RouterLike) {
   } catch (error) {
     console.warn("Unable to persist logout marker", error);
   }
+
+  hideProtectedUiDuringLogout();
+
+  if (typeof window !== "undefined") {
+    window.location.replace(logoutTarget);
+    return;
+  }
+
   router.replace(logoutTarget);
 }

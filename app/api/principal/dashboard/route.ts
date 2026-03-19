@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
-import { getTableColumns, query, tableExists } from "@/lib/db";
+import { getTableColumns, query } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -145,10 +145,17 @@ const buildRecentMonthKeys = (count = 12): Array<{ key: string; label: string }>
 };
 
 async function resolveTable(candidates: readonly string[]): Promise<ResolvedTable | null> {
-  for (const candidate of candidates) {
-    if (!(await tableExists(candidate))) continue;
-    const columns = await getTableColumns(candidate);
-    return { name: candidate, columns };
+  const tables = await Promise.all(
+    candidates.map(async (candidate) => ({
+      name: candidate,
+      columns: await getTableColumns(candidate),
+    })),
+  );
+
+  for (const candidate of tables) {
+    if (candidate.columns.size > 0) {
+      return candidate;
+    }
   }
   return null;
 }
@@ -269,27 +276,25 @@ async function fetchPerformanceAnalytics(): Promise<AnalyticsPayload> {
     averageStudentsPerSubject: SUBJECT_NAMES.map((subject) => ({ subject, students: 0, percentage: 0 })),
   };
 
-  const [performanceExists, activitiesExists, studentExists, gradeExists, subjectExists, sessionExists] = await Promise.all([
-    tableExists("performance_records"),
-    tableExists("activities"),
-    tableExists("student"),
-    tableExists("grade"),
-    tableExists("subject"),
-    tableExists("student_remedial_session"),
+  const [prColumns, activityColumns, studentColumns, gradeColumns, subjectColumns, sessionColumns] = await Promise.all([
+    getTableColumns("performance_records"),
+    getTableColumns("activities"),
+    getTableColumns("student"),
+    getTableColumns("grade"),
+    getTableColumns("subject"),
+    getTableColumns("student_remedial_session"),
   ]);
+
+  const performanceExists = prColumns.size > 0;
+  const activitiesExists = activityColumns.size > 0;
+  const studentExists = studentColumns.size > 0;
+  const gradeExists = gradeColumns.size > 0;
+  const subjectExists = subjectColumns.size > 0;
+  const sessionExists = sessionColumns.size > 0;
 
   if (!performanceExists || !activitiesExists) {
     return empty;
   }
-
-  const [prColumns, activityColumns, studentColumns, gradeColumns, subjectColumns, sessionColumns] = await Promise.all([
-    getTableColumns("performance_records"),
-    getTableColumns("activities"),
-    studentExists ? getTableColumns("student") : Promise.resolve(new Set<string>()),
-    gradeExists ? getTableColumns("grade") : Promise.resolve(new Set<string>()),
-    subjectExists ? getTableColumns("subject") : Promise.resolve(new Set<string>()),
-    sessionExists ? getTableColumns("student_remedial_session") : Promise.resolve(new Set<string>()),
-  ]);
 
   const prScoreCol = pickColumn(prColumns, ["score"]);
   const prCompletedCol = pickColumn(prColumns, ["completed_at", "updated_at", "created_at"]);

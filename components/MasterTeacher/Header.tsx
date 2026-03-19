@@ -217,6 +217,10 @@ export default function MasterTeacherHeader({ title }: HeaderProps) {
   // Hide dropdowns when clicking outside
   React.useEffect(() => {
     function handleClick(e: MouseEvent) {
+      const target = e.target;
+      if (target instanceof Element && target.closest("[data-logout-modal-card='true']")) {
+        return;
+      }
       if (!profileBtnRef.current?.contains(e.target as Node) && !dropdownRef.current?.contains(e.target as Node)) {
         setShowDropdown(false);
       }

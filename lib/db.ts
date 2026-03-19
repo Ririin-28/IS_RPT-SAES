@@ -1,8 +1,17 @@
 import mysql from "mysql2/promise";
 
 let pool: mysql.Pool | null = null;
+const tableExistsCache = new Map<string, { expiresAt: number; promise: Promise<boolean> }>();
+const tableColumnsCache = new Map<string, { expiresAt: number; promise: Promise<string[]> }>();
+const connectionTimeoutCacheKey = "__rptSaesMaxExecutionTime";
 
 const useSsl = (process.env.DB_SSL ?? "").trim().toLowerCase() === "true";
+const logQueryTimings = ["1", "true", "yes", "on"].includes(
+  (process.env.DB_QUERY_TIMING_LOG ?? "").trim().toLowerCase(),
+);
+const metadataCacheTtlMs = process.env.DB_METADATA_CACHE_TTL_MS
+  ? Number(process.env.DB_METADATA_CACHE_TTL_MS)
+  : 5 * 60 * 1000;
 const sslRejectUnauthorized = (process.env.DB_SSL_REJECT_UNAUTHORIZED ?? "true")
   .trim()
   .toLowerCase() !== "false";
@@ -53,6 +62,88 @@ export function getPool(): mysql.Pool {
 
 export type QueryParams = Array<string | number | null | undefined | Buffer | Date>;
 
+function normalizeCacheKey(tableName: string): string {
+  return tableName.trim().toLowerCase();
+}
+
+function getCacheExpiry(): number {
+  const ttlMs = Number.isFinite(metadataCacheTtlMs) ? metadataCacheTtlMs : 5 * 60 * 1000;
+  return Date.now() + Math.max(1000, ttlMs);
+}
+
+function invalidateMetadataCaches(tableName?: string): void {
+  if (!tableName) {
+    tableExistsCache.clear();
+    tableColumnsCache.clear();
+    return;
+  }
+
+  const key = normalizeCacheKey(tableName);
+  tableExistsCache.delete(key);
+  tableColumnsCache.delete(key);
+}
+
+function extractMutatedTableNames(sql: string): string[] {
+  const normalized = sql.replace(/\s+/g, " ").trim();
+  const renameMatch = normalized.match(
+    /^RENAME TABLE\s+`?([A-Za-z0-9_]+)`?\s+TO\s+`?([A-Za-z0-9_]+)`?/i,
+  );
+  if (renameMatch) {
+    return [renameMatch[1], renameMatch[2]];
+  }
+
+  const singleTableMatch = normalized.match(
+    /^(ALTER|DROP)\s+TABLE(?:\s+IF\s+EXISTS)?\s+`?([A-Za-z0-9_]+)`?/i,
+  );
+  if (singleTableMatch) {
+    return [singleTableMatch[2]];
+  }
+
+  return [];
+}
+
+async function applyConnectionTimeout(
+  connection: mysql.PoolConnection,
+  timeout: number,
+): Promise<void> {
+  if (timeout <= 0) {
+    return;
+  }
+
+  const trackedConnection = connection as mysql.PoolConnection & {
+    [connectionTimeoutCacheKey]?: number;
+  };
+
+  if (trackedConnection[connectionTimeoutCacheKey] === timeout) {
+    return;
+  }
+
+  await connection.query(`SET SESSION max_execution_time = ${timeout}`);
+  trackedConnection[connectionTimeoutCacheKey] = timeout;
+}
+
+function summarizeSql(sql: string): string {
+  return sql.replace(/\s+/g, " ").trim().slice(0, 180);
+}
+
+function emitQueryTimingLog(
+  phase: "ok" | "error",
+  durationMs: number,
+  sql: string,
+  params: QueryParams,
+  errorCode?: string,
+): void {
+  if (!logQueryTimings) {
+    return;
+  }
+
+  const prefix = phase === "error" ? "[db-timing:error]" : "[db-timing]";
+  const suffix = errorCode ? ` code=${errorCode}` : "";
+  console.log(
+    `${prefix} ${durationMs.toFixed(2)}ms params=${params.length}${suffix} sql="${summarizeSql(sql)}"`,
+  );
+}
+
 /**
  * Executes a query with retry logic for connection errors
  */
@@ -76,13 +167,26 @@ export async function query<T extends mysql.RowDataPacket[] | mysql.ResultSetHea
       const connection = await db.getConnection();
       
       try {
-        // Set query timeout if specified
-        if (timeout > 0) {
-          await connection.query(`SET SESSION max_execution_time = ${timeout}`);
+        await applyConnectionTimeout(connection, timeout);
+
+        const startedAt = process.hrtime.bigint();
+        try {
+          const result = await connection.query<T>(sql, params);
+          emitQueryTimingLog("ok", Number(process.hrtime.bigint() - startedAt) / 1_000_000, sql, params);
+          for (const tableName of extractMutatedTableNames(sql)) {
+            invalidateMetadataCaches(tableName);
+          }
+          return result;
+        } catch (error: any) {
+          emitQueryTimingLog(
+            "error",
+            Number(process.hrtime.bigint() - startedAt) / 1_000_000,
+            sql,
+            params,
+            error?.code,
+          );
+          throw error;
         }
-        
-        const result = await connection.query<T>(sql, params);
-        return result;
       } finally {
         connection.release();
       }
@@ -181,30 +285,68 @@ export async function checkConnection(): Promise<boolean> {
 }
 
 export async function tableExists(tableName: string): Promise<boolean> {
-  const [rows] = await query<mysql.RowDataPacket[]>(
-    `SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ? LIMIT 1`,
-    [tableName],
-    { timeout: 10000 } // 10 second timeout for metadata query
-  );
-  return rows.length > 0;
+  const cacheKey = normalizeCacheKey(tableName);
+  const cached = tableExistsCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.promise;
+  }
+
+  tableExistsCache.delete(cacheKey);
+
+  const promise = (async () => {
+    const [rows] = await query<mysql.RowDataPacket[]>(
+      `SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ? LIMIT 1`,
+      [tableName],
+      { timeout: 10000 }
+    );
+    const exists = rows.length > 0;
+    if (!exists) {
+      tableExistsCache.delete(cacheKey);
+    }
+    return exists;
+  })().catch((error) => {
+    tableExistsCache.delete(cacheKey);
+    throw error;
+  });
+
+  tableExistsCache.set(cacheKey, { expiresAt: getCacheExpiry(), promise });
+  return promise;
 }
 
 export async function getTableColumns(tableName: string): Promise<Set<string>> {
-  try {
-    const [rows] = await query<mysql.RowDataPacket[]>(
-      `SHOW COLUMNS FROM \`${tableName}\``,
-      [],
-      { timeout: 10000 }
-    );
-    return new Set(rows.map((row) => row.Field as string));
-  } catch (error) {
-    // Gracefully handle missing tables so callers can skip optional sources.
-    const code = (error as { code?: string } | null)?.code;
-    if (code === "ER_NO_SUCH_TABLE" || code === "ER_BAD_TABLE_ERROR") {
-      return new Set<string>();
-    }
-    throw error;
+  const cacheKey = normalizeCacheKey(tableName);
+  const cached = tableColumnsCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return new Set(await cached.promise);
   }
+
+  tableColumnsCache.delete(cacheKey);
+
+  const promise = (async () => {
+    try {
+      const [rows] = await query<mysql.RowDataPacket[]>(
+        `SHOW COLUMNS FROM \`${tableName}\``,
+        [],
+        { timeout: 10000 }
+      );
+      const columns = rows.map((row) => row.Field as string);
+      if (columns.length === 0) {
+        tableColumnsCache.delete(cacheKey);
+      }
+      return columns;
+    } catch (error) {
+      const code = (error as { code?: string } | null)?.code;
+      if (code === "ER_NO_SUCH_TABLE" || code === "ER_BAD_TABLE_ERROR") {
+        tableColumnsCache.delete(cacheKey);
+        return [];
+      }
+      tableColumnsCache.delete(cacheKey);
+      throw error;
+    }
+  })();
+
+  tableColumnsCache.set(cacheKey, { expiresAt: getCacheExpiry(), promise });
+  return new Set(await promise);
 }
 
 export async function runWithConnection<T>(
@@ -260,4 +402,5 @@ export async function closePool(): Promise<void> {
     await pool.end();
     pool = null;
   }
+  invalidateMetadataCaches();
 }

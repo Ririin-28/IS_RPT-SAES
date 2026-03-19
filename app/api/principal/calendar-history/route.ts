@@ -183,8 +183,10 @@ export async function GET() {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const approvedRows = await loadHistoryTable(APPROVED_REMEDIAL_TABLE, "Approved");
-    const rejectedRows = await loadHistoryTable(REJECTED_REMEDIAL_TABLE, "Rejected");
+    const [approvedRows, rejectedRows] = await Promise.all([
+      loadHistoryTable(APPROVED_REMEDIAL_TABLE, "Approved"),
+      loadHistoryTable(REJECTED_REMEDIAL_TABLE, "Rejected"),
+    ]);
 
     const grouped = new Map<string, HistoryRow[]>();
     for (const row of [...approvedRows, ...rejectedRows]) {

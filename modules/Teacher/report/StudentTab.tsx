@@ -103,10 +103,6 @@ export default function StudentTab({ subject }: StudentTabProps) {
     [fallbackGrade, subjectLabel],
   );
 
-  const handlePrint = useCallback(() => {
-    window.print();
-  }, []);
-
   useEffect(() => {
     if (userId === null) {
       setRows([]);
@@ -167,7 +163,7 @@ export default function StudentTab({ subject }: StudentTabProps) {
     (row: StudentRow) => (
       <Link
         href={`/Teacher/report/${normalizeSubject(subject)}/students/${encodeURIComponent(row.studentId)}`}
-        className="inline-flex items-center gap-2 rounded-md bg-[#013300] px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-green-900"
+        className="inline-flex h-10 items-center rounded-lg border border-emerald-700 bg-white px-4 text-sm font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
         aria-label={`View ${row.fullName}`}
       >
         View
@@ -203,10 +199,11 @@ export default function StudentTab({ subject }: StudentTabProps) {
                   <p className="text-sm text-gray-600">Individual Student Progress Overview</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <div className="inline-flex items-center rounded-full border border-green-700 bg-green-50 p-1">
+                  <div className="flex bg-gray-100 rounded-md p-1">
                     <Link
                       href={`/Teacher/report/${normalizeSubject(subject)}`}
-                      className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-semibold text-green-800 transition hover:bg-white/80"
+                      aria-label="Grade report view"
+                      className="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs text-gray-600 transition hover:text-gray-800 sm:text-sm"
                     >
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -225,7 +222,10 @@ export default function StudentTab({ subject }: StudentTabProps) {
                         <path d="M4 18h16" />
                       </svg>
                     </Link>
-                    <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-2 text-sm font-semibold text-green-800 shadow-sm">
+                    <span
+                      aria-current="page"
+                      className="inline-flex items-center justify-center rounded-md bg-white px-3 py-1.5 text-xs text-gray-800 shadow-sm sm:text-sm"
+                    >
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
                         width="18"
@@ -244,28 +244,6 @@ export default function StudentTab({ subject }: StudentTabProps) {
                       </svg>
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handlePrint}
-                    className="inline-flex items-center gap-2 rounded-md bg-[#013300] px-3 py-2 text-sm font-semibold text-white transition hover:bg-green-900"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="20"
-                      height="20"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-                      <path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6" />
-                      <rect x="6" y="14" width="12" height="8" rx="1" />
-                    </svg>
-                    <span>Print Table</span>
-                  </button>
                 </div>
               </div>
 

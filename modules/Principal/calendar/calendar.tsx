@@ -1573,7 +1573,7 @@ export default function PrincipalCalendar() {
               <div className="flex flex-col gap-4 xl:flex-row xl:items-stretch">
                 <div className="min-w-0 flex-1">
                   {/* Calendar View */}
-                  <div className="printable-calendar-grid rounded-2xl border border-gray-100 bg-white/90 shadow-sm print-avoid-break">
+                  <div className="printable-calendar-grid overflow-hidden rounded-lg border bg-white/90 print-avoid-break">
                     <div className="px-4 py-3 border-b border-gray-100 bg-white">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>

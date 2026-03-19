@@ -191,6 +191,10 @@ export default function ParentProfile() {
     }
 
     const handleClick = (event: MouseEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest("[data-logout-modal-card='true']")) {
+        return;
+      }
       if (
         !profileButtonRef.current?.contains(event.target as Node) &&
         !dropdownRef.current?.contains(event.target as Node)
