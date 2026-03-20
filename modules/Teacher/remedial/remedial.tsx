@@ -9,6 +9,7 @@ import ScheduledActivitiesList, { type CalendarActivity } from "./ScheduledActiv
 import ToastActivity from "@/components/ToastActivity";
 import { buildFlashcardContentKey } from "@/lib/utils/flashcards-storage";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
+import { buildRemedialRosterKey, writeStoredRemedialRoster } from "@/lib/utils/remedial-roster-storage";
 import { buildFutureScheduleMessage, getScheduleDateKey, isScheduleInFuture } from "@/lib/remedial-schedule";
 
 // Tabs
@@ -46,6 +47,10 @@ export default function TeacherRemedial() {
 
   const [subject, setSubject] = useState(initialSubject);
   const [activeTab, setActiveTab] = useState(initialTab);
+  const rosterStorageKey = useMemo(
+    () => buildRemedialRosterKey("teacher", subject, userId),
+    [subject, userId],
+  );
   
   // Calendar State
   const [scheduleLoading, setScheduleLoading] = useState(false);
@@ -170,6 +175,38 @@ export default function TeacherRemedial() {
     return () => { cancelled = true; };
   }, []);
 
+  useEffect(() => {
+    if (!rosterStorageKey || userId === null || !["English", "Filipino", "Math"].includes(subject)) {
+      return;
+    }
+
+    let cancelled = false;
+    const warmRoster = async () => {
+      try {
+        const params = new URLSearchParams({
+          userId: String(userId),
+          subject: subject.toLowerCase(),
+        });
+        const response = await fetch(`/api/teacher/remedial/students?${params.toString()}`, {
+          method: "GET",
+          cache: "no-store",
+        });
+        const payload = await response.json().catch(() => null);
+
+        if (!cancelled && response.ok && payload?.success && Array.isArray(payload.students)) {
+          writeStoredRemedialRoster(rosterStorageKey, payload.students);
+        }
+      } catch {
+        // Flashcards route will fall back to its own roster fetch if warm-up fails.
+      }
+    };
+
+    void warmRoster();
+    return () => {
+      cancelled = true;
+    };
+  }, [rosterStorageKey, subject, userId]);
+
   const resolveActivePhonemicId = useMemo(() => {
     const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
     const activeKey = normalize(activeTab);
@@ -202,6 +239,27 @@ export default function TeacherRemedial() {
     setValidatingActivityId(String(activity.id));
 
     try {
+      const rosterWarmup = rosterStorageKey && userId !== null && ["English", "Filipino", "Math"].includes(subject)
+        ? (async () => {
+            try {
+              const params = new URLSearchParams({
+                userId: String(userId),
+                subject: subject.toLowerCase(),
+              });
+              const response = await fetch(`/api/teacher/remedial/students?${params.toString()}`, {
+                method: "GET",
+                cache: "no-store",
+              });
+              const payload = await response.json().catch(() => null);
+              if (response.ok && payload?.success && Array.isArray(payload.students)) {
+                writeStoredRemedialRoster(rosterStorageKey, payload.students);
+              }
+            } catch {
+              // Ignore; the destination route can still fetch as a fallback.
+            }
+          })()
+        : Promise.resolve();
+
       const response = await fetch(
         `/api/remedial-material-content?requestId=${encodeURIComponent(String(activity.id))}&phonemicId=${encodeURIComponent(String(phonemicId))}`,
         { cache: "no-store" }
@@ -250,6 +308,7 @@ export default function TeacherRemedial() {
           else if (subject === "Math") flashcardsPath = "MathFlashcards";
 
           const playPath = `/Teacher/remedial/${flashcardsPath}?subject=${encodeURIComponent(subject)}&activity=${encodeURIComponent(activity.id)}${subjectIdParam}${gradeIdParam}${materialIdParam}${phonemicParam}${phonemicNameParam}${scheduleDateParam}`;
+          await rosterWarmup;
           router.push(playPath);
       } else {
         setStatusToast({

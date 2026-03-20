@@ -7,6 +7,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { FaEye, FaEyeSlash } from "react-icons/fa";
 import { FiChevronLeft } from "react-icons/fi";
 import { clearStoredUserProfile, storeUserProfile } from "@/lib/utils/user-profile";
+import { storeParentPortalEntry } from "@/lib/utils/parent-portal-entry";
 
 const DEFAULT_ERROR_MESSAGE = "Unable to sign in with those parent credentials.";
 
@@ -35,7 +36,20 @@ export default function ParentLogin({ onBack }: ParentLoginProps) {
   useEffect(() => {
     let active = true;
 
+    storeParentPortalEntry("pwa");
+
     const verifyParentSession = async () => {
+      try {
+        if (window.sessionStorage.getItem("wasLoggedOut") === "true") {
+          if (active) {
+            setIsCheckingSession(false);
+          }
+          return;
+        }
+      } catch {
+        // Ignore storage access issues and continue with session probe.
+      }
+
       try {
         const response = await fetch("/api/parent/session", {
           method: "GET",
@@ -120,11 +134,17 @@ export default function ParentLogin({ onBack }: ParentLoginProps) {
         } catch (storageError) {
           console.warn("Unable to persist logout marker", storageError);
         }
-        window.location.replace(redirectPath);
+        router.replace(redirectPath);
         return;
       }
 
       clearStoredUserProfile();
+      try {
+        window.sessionStorage.setItem("wasLoggedOut", "false");
+      } catch (storageError) {
+        console.warn("Unable to persist logout marker", storageError);
+      }
+      storeParentPortalEntry("pwa");
       const params = new URLSearchParams({
         email: email.trim(),
         role: data?.role || "parent",

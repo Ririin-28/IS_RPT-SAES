@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { FiLogOut } from "react-icons/fi";
+import DangerButton from "@/components/Common/Buttons/DangerButton";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
-import ProfileDropdown from "@/components/Common/ProfileDropdown";
+import LogoutConfirmationModal from "@/components/Common/Modals/LogoutConfirmationModal";
 import UserAvatar from "@/components/Common/UserAvatar";
-import { performClientLogout } from "@/lib/utils/logout";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
-import ParentProfileModal from "./ParentProfileModal";
+import { performClientLogout } from "@/lib/utils/logout";
 
 type ParentProfileData = {
   firstName: string | null;
@@ -20,9 +21,13 @@ type ParentProfileData = {
 
 type ParentDashboardChild = {
   studentId: string;
+  lrn?: string | null;
   firstName: string;
   middleName: string | null;
   lastName: string;
+  grade?: string | null;
+  section?: string | null;
+  teacherName?: string | null;
 };
 
 type ParentDashboardResponse = {
@@ -30,29 +35,42 @@ type ParentDashboardResponse = {
   child?: ParentDashboardChild | null;
 };
 
-type ChildOption = {
-  id: string;
-  label: string;
-};
+function formatChildLabel(first?: string | null, middle?: string | null, last?: string | null) {
+  const safeFirst = typeof first === "string" ? first.trim() : "";
+  const safeLast = typeof last === "string" ? last.trim() : "";
+  const middleInitial = typeof middle === "string" && middle.trim().length > 0 ? `${middle.trim()[0].toUpperCase()}.` : "";
+  const combined = [safeFirst, middleInitial, safeLast].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+  return combined.length > 0 ? combined : "Student";
+}
+
+function FieldCard({ label, value, spanFull = false }: { label: string; value: string; spanFull?: boolean }) {
+  return (
+    <div className={`space-y-2 ${spanFull ? "sm:col-span-2" : ""}`}>
+      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500">{label}</p>
+      <div className="border-b border-[#E3EBE4] px-0 py-3 text-sm text-gray-900 lg:rounded-[18px] lg:border lg:border-white lg:bg-white lg:px-4 lg:shadow-sm">
+        {value || "--"}
+      </div>
+    </div>
+  );
+}
 
 export default function ParentProfile() {
   const router = useRouter();
   const [parent, setParent] = useState<ParentProfileData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isProfileLoading, setIsProfileLoading] = useState(true);
+  const [isChildrenLoading, setIsChildrenLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showProfileModal, setShowProfileModal] = useState(false);
-  const [childOptions, setChildOptions] = useState<ChildOption[]>([]);
+  const [linkedChildren, setLinkedChildren] = useState<ParentDashboardChild[]>([]);
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
-  const [showProfileDropdown, setShowProfileDropdown] = useState(false);
-  const profileButtonRef = useRef<HTMLButtonElement | null>(null);
-  const dropdownRef = useRef<HTMLDivElement | null>(null);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   useEffect(() => {
     const profile = getStoredUserProfile();
     const userId = Number(profile?.userId);
 
     if (!Number.isFinite(userId)) {
-      setIsLoading(false);
+      setIsProfileLoading(false);
+      setIsChildrenLoading(false);
       setError("Unable to determine the signed-in parent. Please sign in again.");
       return;
     }
@@ -60,7 +78,7 @@ export default function ParentProfile() {
     const controller = new AbortController();
 
     const loadProfile = async () => {
-      setIsLoading(true);
+      setIsProfileLoading(true);
       setError(null);
       try {
         const query = new URLSearchParams({ userId: String(userId) });
@@ -104,7 +122,7 @@ export default function ParentProfile() {
         setParent(null);
       } finally {
         if (!controller.signal.aborted) {
-          setIsLoading(false);
+          setIsProfileLoading(false);
         }
       }
     };
@@ -121,20 +139,14 @@ export default function ParentProfile() {
     const userId = Number(profile?.userId);
 
     if (!Number.isFinite(userId)) {
+      setIsChildrenLoading(false);
       return;
     }
 
     const controller = new AbortController();
 
-    const formatChildLabel = (first?: string | null, middle?: string | null, last?: string | null) => {
-      const safeFirst = typeof first === "string" ? first.trim() : "";
-      const safeLast = typeof last === "string" ? last.trim() : "";
-      const middleInitial = typeof middle === "string" && middle.trim().length > 0 ? `${middle.trim()[0].toUpperCase()}.` : "";
-      const combined = [safeFirst, middleInitial, safeLast].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
-      return combined.length > 0 ? combined : "Student";
-    };
-
     const loadChildren = async () => {
+      setIsChildrenLoading(true);
       try {
         const query = new URLSearchParams({ userId: String(userId) });
         const response = await fetch(`/api/parent/dashboard?${query.toString()}`, {
@@ -154,27 +166,25 @@ export default function ParentProfile() {
         }
 
         const data = payload as ParentDashboardResponse;
-        const derivedOptions: ChildOption[] = (data.children ?? []).map((child) => ({
-          id: String(child.studentId),
-          label: formatChildLabel(child.firstName, child.middleName, child.lastName),
-        }));
-
-        if (derivedOptions.length === 0 && data.child) {
-          derivedOptions.push({
-            id: String(data.child.studentId),
-            label: formatChildLabel(data.child.firstName, data.child.middleName, data.child.lastName),
-          });
-        }
+        const availableChildren: ParentDashboardChild[] = data.children && data.children.length > 0
+          ? data.children
+          : data.child
+            ? [data.child]
+            : [];
 
         const activeChildId = data.child ? String(data.child.studentId) : null;
 
-        setChildOptions(derivedOptions);
-        setSelectedChildId((previous) => previous ?? activeChildId ?? derivedOptions[0]?.id ?? null);
+        setLinkedChildren(availableChildren);
+        setSelectedChildId((previous) => previous ?? activeChildId ?? availableChildren[0]?.studentId ?? null);
       } catch (err) {
         if (controller.signal.aborted) {
           return;
         }
-        console.warn("Unable to load child list for profile dropdown", err);
+        console.warn("Unable to load child list for profile page", err);
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsChildrenLoading(false);
+        }
       }
     };
 
@@ -185,101 +195,36 @@ export default function ParentProfile() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!showProfileDropdown) {
-      return;
-    }
-
-    const handleClick = (event: MouseEvent) => {
-      const target = event.target;
-      if (target instanceof Element && target.closest("[data-logout-modal-card='true']")) {
-        return;
-      }
-      if (
-        !profileButtonRef.current?.contains(event.target as Node) &&
-        !dropdownRef.current?.contains(event.target as Node)
-      ) {
-        setShowProfileDropdown(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClick);
-    return () => {
-      document.removeEventListener("mousedown", handleClick);
-    };
-  }, [showProfileDropdown]);
-
   const fullName =
     [parent?.firstName, parent?.middleName, parent?.lastName]
       .filter((part) => typeof part === "string" && part.trim().length > 0)
       .join(" ") || "Parent";
-
-  const handleBackToDashboard = () => {
-    router.push("/Parent/dashboard");
-  };
-
-  const handleOpenProfileModal = () => {
-    setShowProfileModal(true);
-  };
+  const activeChild =
+    linkedChildren.find((child) => child.studentId === selectedChildId) ??
+    linkedChildren[0] ??
+    null;
+  const isPageLoading = isProfileLoading || isChildrenLoading;
+  const activeChildName =
+    activeChild
+      ? [activeChild.firstName, activeChild.middleName, activeChild.lastName]
+          .filter((part) => typeof part === "string" && part.trim().length > 0)
+          .join(" ")
+      : "--";
 
   return (
-    <div className="relative min-h-dvh overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-24 right-0 h-72 w-72 rounded-full bg-emerald-100/25 blur-3xl" />
-        <div className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-emerald-200/30 blur-3xl" />
-      </div>
-      <div className="relative z-10 bg-[#F4FBF4] px-4 py-6 sm:px-6">
-        <div className="mx-auto max-w-5xl">
-          <div className="flex items-center justify-between rounded-[26px] bg-[#ECF9ED] px-6 py-4 shadow-[0_12px_32px_rgba(12,59,31,0.08)]">
-            <h1 className="text-2xl font-semibold text-[#0C3B1F]">My Profile</h1>
-            <div className="relative flex items-center">
-              <button
-                ref={profileButtonRef}
-                type="button"
-                aria-label="Profile"
-                onClick={() => setShowProfileDropdown((value) => !value)}
-                className="w-10 h-10 flex items-center justify-center rounded-full border border-[#013300] hover:border-[#013300] hover:border-2 hover:scale-[1.08] hover:shadow transition"
-              >
-                <div className="h-full w-full overflow-hidden rounded-full">
-                  <UserAvatar
-                    firstName={parent?.firstName}
-                    lastName={parent?.lastName}
-                    alt="Parent profile"
-                    imageClassName="h-full w-full object-cover"
-                    fallbackClassName="h-full w-full"
-                    size={32}
-                  />
-                </div>
-              </button>
-              {showProfileDropdown && (
-                <div ref={dropdownRef}>
-                  <ProfileDropdown
-                    onProfile={() => {
-                      setShowProfileDropdown(false);
-                      router.push("/Parent/profile");
-                    }}
-                    onLogout={() => {
-                      setShowProfileDropdown(false);
-                      performClientLogout(router);
-                    }}
-                    childOptions={childOptions}
-                    selectedChildId={selectedChildId}
-                    onChildSelect={(childId) => {
-                      setSelectedChildId(childId);
-                      setShowProfileDropdown(false);
-                    }}
-                  />
-                </div>
-              )}
+    <div className="relative h-dvh overflow-hidden bg-white lg:h-auto lg:min-h-screen lg:overflow-visible">
+      <div className="relative z-10 mx-auto h-[calc(100dvh-4.75rem)] max-w-5xl px-3 pb-2 pt-3 sm:px-4 sm:pb-3 sm:pt-4 lg:h-auto lg:max-w-6xl lg:px-6 lg:pb-6">
+        <div className="h-full overflow-y-auto rounded-[24px] border border-[#DCE6DD] bg-white p-4 shadow-sm lg:h-auto lg:border-0 lg:p-0 lg:shadow-none">
+          {isPageLoading ? (
+            <div className="flex h-full min-h-full items-center justify-center px-6 py-10 text-center">
+              <div className="max-w-sm">
+                <div className="mx-auto h-10 w-10 rounded-full border-4 border-[#D7E9DB] border-t-[#0C6932] animate-spin" />
+                <p className="mt-4 text-base font-semibold leading-8 text-[#0C3B1F]">Loading profile</p>
+                <p className="mt-1 text-sm leading-6 text-[#58705D]">
+                  Please wait while the profile details are being loaded.
+                </p>
+              </div>
             </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="relative z-10 mx-auto max-w-4xl px-4 py-8 sm:px-6">
-        <div className="rounded-3xl border border-[#E2E8DD] bg-white p-6 shadow-[0_30px_80px_rgba(12,59,31,0.08)] sm:p-8">
-          {isLoading ? (
-            <div className="py-14 text-center text-gray-600">Loading profile...</div>
           ) : error ? (
             <div className="py-14 text-center">
               <p className="mb-4 text-base font-medium text-red-600">{error}</p>
@@ -287,109 +232,101 @@ export default function ParentProfile() {
             </div>
           ) : (
             <>
-              <div className="flex flex-col items-center gap-3 text-center">
-                <div className="relative">
-                  <div className="flex h-24 w-24 items-center justify-center rounded-full border-4 border-white bg-[#E4F7E4] shadow-lg overflow-hidden">
-                    <UserAvatar
-                      firstName={parent?.firstName}
-                      lastName={parent?.lastName}
-                      alt="Parent profile"
-                      imageClassName="h-full w-full object-cover"
-                      fallbackClassName="h-full w-full"
-                      size={96}
-                    />
+              <div className="border-b border-[#E3EBE4] pb-5 lg:rounded-[24px] lg:border lg:border-[#DDE7DE] lg:bg-[#F9FCF9] lg:p-8 lg:shadow-sm">
+                <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                    <div className="relative mx-auto sm:mx-0">
+                      <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-[#E4F7E4] shadow-sm lg:h-24 lg:w-24">
+                        <UserAvatar
+                          firstName={parent?.firstName}
+                          lastName={parent?.lastName}
+                          alt="Parent profile"
+                          imageClassName="h-full w-full object-cover"
+                          fallbackClassName="h-full w-full"
+                          size={96}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="text-center sm:text-left">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#6A816F] lg:text-[11px] lg:tracking-[0.28em]">Account Overview</p>
+                      <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[#0C3B1F] lg:mt-2 lg:text-3xl">{fullName}</h1>
+                    </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleOpenProfileModal}
-                    className="absolute -bottom-1 -right-1 flex h-9 w-9 items-center justify-center rounded-full border border-white bg-[#0C3B1F] text-white shadow-lg transition hover:bg-[#125428]"
-                  >
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                    </svg>
-                  </button>
+
                 </div>
-                <div className="rounded-full border border-[#E5EAE0] bg-white/80 px-5 py-1 shadow-sm">
-                  <span className="text-sm font-medium text-gray-700">Parent</span>
+              </div>
+
+              <div className="mt-4 grid gap-4 lg:mt-6 lg:gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+                <div className="space-y-6">
+                  <section className="border-b border-[#E3EBE4] pb-5 lg:rounded-[24px] lg:border lg:border-[#E2E8DD] lg:bg-[#F9FBF8] lg:p-5 lg:shadow-sm">
+                    <h2 className="text-lg font-semibold tracking-tight text-gray-900">Parents&apos; Information</h2>
+                    <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <FieldCard label="Full Name" value={fullName} spanFull />
+                      <FieldCard label="Phone Number" value={parent?.contactNumber || "--"} />
+                      <FieldCard label="Email" value={parent?.email || "--"} />
+                      <FieldCard label="Home Address" value={parent?.address || "--"} spanFull />
+                    </div>
+                  </section>
                 </div>
-                <div className="text-2xl font-semibold text-gray-900">{fullName}</div>
+
+                <div className="space-y-6">
+                  <section className="border-b border-[#E3EBE4] pb-5 lg:rounded-[24px] lg:border lg:border-[#E2E8DD] lg:bg-[#F9FBF8] lg:p-5 lg:shadow-sm">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                      <div>
+                        <h2 className="text-lg font-semibold tracking-tight text-gray-900">Child&apos;s Information</h2>
+                      </div>
+                      {linkedChildren.length > 1 ? (
+                        <div className="sm:max-w-[240px]">
+                          <label
+                            htmlFor="profile-student-switcher"
+                            className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500"
+                          >
+                            Viewing Student
+                          </label>
+                          <select
+                            id="profile-student-switcher"
+                            value={selectedChildId ?? activeChild?.studentId ?? ""}
+                            onChange={(event) => setSelectedChildId(event.target.value)}
+                            className="mt-2 w-full rounded-[18px] border border-[#DCE6DD] bg-white px-4 py-3 text-sm font-medium text-[#102A18] outline-none transition focus:border-[#BCD2C1]"
+                          >
+                            {linkedChildren.map((child) => (
+                              <option key={child.studentId} value={child.studentId}>
+                                {formatChildLabel(child.firstName, child.middleName, child.lastName)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <FieldCard label="Full Name" value={activeChildName || "--"} spanFull />
+                      <FieldCard label="LRN" value={activeChild?.lrn || "--"} />
+                      <FieldCard label="Teacher's Name" value={activeChild?.teacherName || "--"} />
+                      <FieldCard label="Grade" value={activeChild?.grade || "--"} />
+                      <FieldCard label="Section" value={activeChild?.section || "--"} />
+                    </div>
+                  </section>
+                </div>
               </div>
 
-              <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-end">
-                <button
-                  type="button"
-                  onClick={handleBackToDashboard}
-                  className="inline-flex items-center gap-2 self-center rounded-full border border-[#0C3B1F] px-6 py-2 text-sm font-semibold text-[#0C3B1F] transition hover:bg-[#0C3B1F] hover:text-white"
-                >
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                  Back to Dashboard
-                </button>
+              <div className="mt-6 border-b border-[#E3EBE4] pb-5 lg:rounded-[24px] lg:border lg:border-[#E2E8DD] lg:bg-[#F9FBF8] lg:p-5 lg:shadow-sm">
+                <DangerButton type="button" className="flex w-full items-center justify-center gap-2" onClick={() => setShowLogoutConfirm(true)}>
+                  <FiLogOut className="text-base" />
+                  <span>Logout</span>
+                </DangerButton>
               </div>
 
-              <div className="mt-8 space-y-8">
-                <section className="rounded-2xl border border-[#ECF1E8] bg-[#F9FBF8] p-5 shadow-[inset_0_1px_0_rgba(12,59,31,0.05)]">
-                  <h2 className="text-lg font-semibold text-gray-900">Personal Details</h2>
-                  <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-                    <div className="space-y-2">
-                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500">First Name</p>
-                      <div className="rounded-2xl border border-white bg-white px-4 py-3 text-sm text-gray-900 shadow-[0_6px_16px_rgba(12,59,31,0.05)]">
-                        {parent?.firstName || "—"}
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500">Middle Name</p>
-                      <div className="rounded-2xl border border-white bg-white px-4 py-3 text-sm text-gray-900 shadow-[0_6px_16px_rgba(12,59,31,0.05)]">
-                        {parent?.middleName || "—"}
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500">Last Name</p>
-                      <div className="rounded-2xl border border-white bg-white px-4 py-3 text-sm text-gray-900 shadow-[0_6px_16px_rgba(12,59,31,0.05)]">
-                        {parent?.lastName || "—"}
-                      </div>
-                    </div>
-                  </div>
-                </section>
-
-                <section className="rounded-2xl border border-[#ECF1E8] bg-[#F9FBF8] p-5 shadow-[inset_0_1px_0_rgba(12,59,31,0.05)]">
-                  <h2 className="text-lg font-semibold text-gray-900">Contact Details</h2>
-                  <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500">Email</p>
-                      <div className="rounded-2xl border border-white bg-white px-4 py-3 text-sm text-gray-900 shadow-[0_6px_16px_rgba(12,59,31,0.05)]">
-                        {parent?.email || "—"}
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500">Contact Number</p>
-                      <div className="rounded-2xl border border-white bg-white px-4 py-3 text-sm text-gray-900 shadow-[0_6px_16px_rgba(12,59,31,0.05)]">
-                        {parent?.contactNumber || "—"}
-                      </div>
-                    </div>
-                  </div>
-                </section>
-
-                <section className="rounded-2xl border border-[#ECF1E8] bg-[#F9FBF8] p-5 shadow-[inset_0_1px_0_rgba(12,59,31,0.05)]">
-                  <h2 className="text-lg font-semibold text-gray-900">Address</h2>
-                  <div className="mt-4 space-y-2">
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500">Home Address</p>
-                    <div className="rounded-2xl border border-white bg-white px-4 py-3 text-sm text-gray-900 shadow-[0_6px_16px_rgba(12,59,31,0.05)]">
-                      {parent?.address || "—"}
-                    </div>
-                  </div>
-                </section>
-              </div>
-
-              <div className="flex justify-end pt-4">
-                <PrimaryButton onClick={handleOpenProfileModal}>Edit Profile</PrimaryButton>
-              </div>
+              <LogoutConfirmationModal
+                isOpen={showLogoutConfirm}
+                onClose={() => setShowLogoutConfirm(false)}
+                onConfirm={() => performClientLogout(router)}
+              />
             </>
           )}
         </div>
       </div>
-      <ParentProfileModal show={showProfileModal} onClose={() => setShowProfileModal(false)} parent={parent} />
     </div>
   );
 }

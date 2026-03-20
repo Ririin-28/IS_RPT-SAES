@@ -2,6 +2,8 @@ import { ReactNode } from "react";
 import Script from "next/script";
 import { redirect } from "next/navigation";
 import HydrationBoundary from "@/components/Common/HydrationBoundary";
+import ParentBottomNav from "@/components/Parent/BottomNav";
+import FloatingNotificationBell from "@/components/Parent/FloatingNotificationBell";
 import ParentSessionGuard from "@/components/Parent/ParentSessionGuard";
 import { getParentSessionFromCookies } from "@/lib/server/parent-session";
 
@@ -57,7 +59,11 @@ export default async function ParentLayout({ children }: { children: ReactNode }
         }}
       />
       <ParentSessionGuard>
-        <HydrationBoundary>{children}</HydrationBoundary>
+        <HydrationBoundary>
+          {children}
+          <FloatingNotificationBell />
+          <ParentBottomNav />
+        </HydrationBoundary>
       </ParentSessionGuard>
     </>
   );

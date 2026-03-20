@@ -1,4 +1,5 @@
 import { clearStoredUserProfile, getStoredUserProfile } from "./user-profile";
+import { getStoredParentPortalEntry } from "./parent-portal-entry";
 
 type RouterLike = {
   replace: (href: string) => void;
@@ -41,6 +42,34 @@ function hideProtectedUiDuringLogout() {
   document.body.appendChild(mask);
 }
 
+async function notifyBackendLogout(userId: string) {
+  if (typeof fetch !== "function") {
+    return;
+  }
+
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timeoutId = controller
+    ? window.setTimeout(() => controller.abort(), 2500)
+    : null;
+
+  try {
+    await fetch("/api/auth/logout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ userId }),
+      cache: "no-store",
+      signal: controller?.signal,
+    });
+  } catch (error) {
+    console.warn("Failed to notify backend about logout", error);
+  } finally {
+    if (timeoutId != null) {
+      window.clearTimeout(timeoutId);
+    }
+  }
+}
+
 /**
  * Clears user session artifacts and routes back to the login screen.
  */
@@ -48,32 +77,12 @@ export function performClientLogout(router: RouterLike) {
   const storedProfile = getStoredUserProfile();
   const userId = storedProfile?.userId ?? null;
   const normalizedRole = typeof storedProfile?.role === "string" ? storedProfile.role.trim().toLowerCase().replace(/[\s/\-]+/g, "_") : "";
+  const parentPortalEntry = normalizedRole === "parent" ? getStoredParentPortalEntry() : null;
   const logoutTarget = normalizedRole === "admin" || normalizedRole === "it_admin" || normalizedRole === "itadmin" || normalizedRole === "super_admin"
     ? "/auth/adminlogin?logout=true"
-    : "/auth/login?logout=true";
-
-  if (userId != null) {
-    try {
-      const payload = JSON.stringify({ userId });
-
-      if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
-        const blob = new Blob([payload], { type: "application/json" });
-        navigator.sendBeacon("/api/auth/logout", blob);
-      } else if (typeof fetch === "function") {
-        fetch("/api/auth/logout", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: payload,
-          keepalive: true,
-        }).catch((error) => {
-          console.warn("Failed to notify backend about logout", error);
-        });
-      }
-    } catch (error) {
-      console.warn("Unable to propagate logout event", error);
-    }
-  }
+    : normalizedRole === "parent" && parentPortalEntry === "pwa"
+      ? "/PWA?portal=parent&logout=true"
+      : "/auth/login?logout=true";
 
   clearStoredUserProfile();
   try {
@@ -84,10 +93,19 @@ export function performClientLogout(router: RouterLike) {
 
   hideProtectedUiDuringLogout();
 
-  if (typeof window !== "undefined") {
-    window.location.replace(logoutTarget);
+  const finalizeRedirect = () => {
+    if (typeof window !== "undefined") {
+      window.location.replace(logoutTarget);
+      return;
+    }
+
+    router.replace(logoutTarget);
+  };
+
+  if (userId == null) {
+    finalizeRedirect();
     return;
   }
 
-  router.replace(logoutTarget);
+  void notifyBackendLogout(String(userId)).finally(finalizeRedirect);
 }

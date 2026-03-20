@@ -1,11 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
-import { query, tableExists } from "@/lib/db";
+import { getTableColumns, query, tableExists } from "@/lib/db";
 import { getParentSessionFromCookies } from "@/lib/server/parent-session";
+import { formatScheduleDateLabel, getSchoolTodayDateKey, getScheduleDateKey } from "@/lib/remedial-schedule";
 
 export const dynamic = "force-dynamic";
 
 const ensuredTable = { value: false };
+const APPROVED_REMEDIAL_TABLE = "approved_remedial_schedule" as const;
+const ATTENDANCE_SESSION_TABLE = "attendance_session" as const;
+const ATTENDANCE_RECORD_TABLE = "attendance_record" as const;
+const STUDENT_REMEDIAL_SESSION_TABLE = "student_remedial_session" as const;
+const STUDENT_REMEDIAL_FLASHCARD_PERFORMANCE_TABLE = "student_remedial_flashcard_performance" as const;
+const STUDENT_SUBJECT_ASSESSMENT_TABLE = "student_subject_assessment" as const;
+const SUBJECT_TABLE_CANDIDATES = ["subject", "subjects"] as const;
+const APPROVED_DATE_COLUMN_CANDIDATES = ["schedule_date", "activity_date", "date"] as const;
+const APPROVED_SUBJECT_COLUMN_CANDIDATES = ["subject_id", "subject"] as const;
+const APPROVED_GRADE_COLUMN_CANDIDATES = ["grade_id", "grade", "grade_level"] as const;
 
 const ensureNotificationsTable = async () => {
   if (ensuredTable.value) {
@@ -51,17 +62,38 @@ type ParentStudentRow = RowDataPacket & {
   student_id: string | number;
 };
 
+type StudentGradeRow = RowDataPacket & {
+  student_id: string | number;
+  grade_id: number | null;
+};
+
+type ExplicitAttendanceRow = RowDataPacket & {
+  student_id: string | number;
+  date: Date | string | null;
+  subject_id: number | null;
+  status: string | null;
+};
+
+type CompletedAttendanceRow = RowDataPacket & {
+  student_id: string | number;
+  date: Date | string | null;
+  subject_id: number | null;
+};
+
+type ApprovedScheduleRow = RowDataPacket & {
+  activity_date: Date | string | null;
+  subject_id: number | null;
+  grade_id: number | null;
+};
+
+type AssessmentSubjectRow = RowDataPacket & {
+  student_id: string | number;
+  subject_id: number | null;
+};
+
 const ISO_DATE_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/;
 
-const toIsoDate = (value: Date | string): string => {
-  if (value instanceof Date) {
-    return value.toISOString().slice(0, 10);
-  }
-  if (typeof value === "string" && ISO_DATE_REGEX.test(value)) {
-    return value.slice(0, 10);
-  }
-  return new Date(value).toISOString().slice(0, 10);
-};
+const toIsoDate = (value: Date | string): string => getScheduleDateKey(value) ?? new Date(value).toISOString().slice(0, 10);
 
 const toIsoDateTime = (value: Date | string): string => {
   if (value instanceof Date) {
@@ -105,6 +137,77 @@ const parseDateValue = (value: Date | string | null | undefined): Date | null =>
 
   return null;
 };
+
+const safeGetColumns = async (table: string): Promise<Set<string>> => {
+  try {
+    return await getTableColumns(table);
+  } catch {
+    return new Set<string>();
+  }
+};
+
+const pickColumn = (columns: Set<string>, candidates: readonly string[]): string | null => {
+  for (const candidate of candidates) {
+    if (columns.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  const lookup = new Map<string, string>();
+  for (const column of columns) {
+    lookup.set(column.toLowerCase(), column);
+  }
+
+  for (const candidate of candidates) {
+    const resolved = lookup.get(candidate.toLowerCase());
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  for (const candidate of candidates) {
+    const needle = candidate.toLowerCase();
+    for (const column of columns) {
+      if (column.toLowerCase().includes(needle)) {
+        return column;
+      }
+    }
+  }
+
+  return null;
+};
+
+const normalizeDate = (value: Date | string | null | undefined): string | null => getScheduleDateKey(value);
+
+const normalizeSubjectName = (value: string | null | undefined): string | null => {
+  const text = toNullableString(value);
+  if (!text) {
+    return null;
+  }
+
+  const normalized = text.toLowerCase();
+  if (normalized === "math" || normalized === "mathematics") {
+    return "Math";
+  }
+  if (normalized === "english") {
+    return "English";
+  }
+  if (normalized === "filipino") {
+    return "Filipino";
+  }
+
+  return text;
+};
+
+const formatAbsentDate = (iso: string): string => {
+  return formatScheduleDateLabel(iso) ?? iso;
+};
+
+const buildParentAbsentMessage = (iso: string): string =>
+  `Dear Parent, your child was marked absent on ${formatAbsentDate(iso)}.`;
+
+const buildNotificationKey = (studentId: string, subjectName: string, date: string) =>
+  `${studentId}:${normalizeSubjectName(subjectName) ?? subjectName}:${date}`;
 
 const normalizeRequestStatus = (value: string | null | undefined): string | null => {
   const raw = toNullableString(value);
@@ -155,6 +258,274 @@ const resolveParentStudentIds = async (userId: number): Promise<string[]> => {
   return rows
     .map((row) => String(row.student_id ?? "").trim())
     .filter((value) => value.length > 0);
+};
+
+const fetchSubjectMap = async (): Promise<Map<number, string>> => {
+  for (const table of SUBJECT_TABLE_CANDIDATES) {
+    try {
+      const columns = await getTableColumns(table);
+      const idColumn = columns.has("subject_id") ? "subject_id" : columns.has("id") ? "id" : null;
+      const nameColumn = columns.has("subject_name") ? "subject_name" : columns.has("name") ? "name" : null;
+      if (!idColumn || !nameColumn) {
+        continue;
+      }
+
+      const [rows] = await query<RowDataPacket[]>(
+        `SELECT ${idColumn} AS subject_id, ${nameColumn} AS subject_name FROM ${table}`,
+      );
+
+      const map = new Map<number, string>();
+      for (const row of rows) {
+        const id = Number(row.subject_id);
+        const name = normalizeSubjectName(toNullableString(row.subject_name));
+        if (Number.isFinite(id) && name) {
+          map.set(id, name);
+        }
+      }
+
+      return map;
+    } catch {
+      continue;
+    }
+  }
+
+  return new Map<number, string>();
+};
+
+const loadAssessedSubjectIdsByStudent = async (studentIds: string[]): Promise<Map<string, Set<number>>> => {
+  const uniqueStudentIds = Array.from(new Set(studentIds.map((value) => value.trim()).filter(Boolean)));
+  const assessmentColumns = await safeGetColumns(STUDENT_SUBJECT_ASSESSMENT_TABLE);
+  if (
+    uniqueStudentIds.length === 0 ||
+    !assessmentColumns.has("student_id") ||
+    !assessmentColumns.has("subject_id")
+  ) {
+    return new Map<string, Set<number>>();
+  }
+
+  const placeholders = uniqueStudentIds.map(() => "?").join(",");
+  const [rows] = await query<AssessmentSubjectRow[]>(
+    `SELECT student_id, subject_id
+     FROM ${STUDENT_SUBJECT_ASSESSMENT_TABLE}
+     WHERE student_id IN (${placeholders})`,
+    uniqueStudentIds,
+  );
+
+  const assessedSubjectIdsByStudent = new Map<string, Set<number>>();
+  for (const row of rows ?? []) {
+    const studentId = String(row.student_id ?? "").trim();
+    const subjectId = Number(row.subject_id);
+    if (!studentId || !Number.isFinite(subjectId)) {
+      continue;
+    }
+
+    if (!assessedSubjectIdsByStudent.has(studentId)) {
+      assessedSubjectIdsByStudent.set(studentId, new Set<number>());
+    }
+
+    assessedSubjectIdsByStudent.get(studentId)!.add(subjectId);
+  }
+
+  return assessedSubjectIdsByStudent;
+};
+
+const syncScheduledAbsenceNotifications = async (studentIds: string[]): Promise<Set<string>> => {
+  const uniqueStudentIds = Array.from(new Set(studentIds.map((value) => value.trim()).filter(Boolean)));
+  const validAbsenceKeys = new Set<string>();
+  if (uniqueStudentIds.length === 0) {
+    return validAbsenceKeys;
+  }
+
+  const approvedColumns = await safeGetColumns(APPROVED_REMEDIAL_TABLE);
+  const sessionColumns = await safeGetColumns(STUDENT_REMEDIAL_SESSION_TABLE);
+  const performanceColumns = await safeGetColumns(STUDENT_REMEDIAL_FLASHCARD_PERFORMANCE_TABLE);
+
+  const subjectColumn = pickColumn(approvedColumns, APPROVED_SUBJECT_COLUMN_CANDIDATES);
+  const gradeColumn = pickColumn(approvedColumns, APPROVED_GRADE_COLUMN_CANDIDATES);
+  const dateColumn = pickColumn(approvedColumns, APPROVED_DATE_COLUMN_CANDIDATES);
+
+  if (!subjectColumn || !gradeColumn || !dateColumn) {
+    return validAbsenceKeys;
+  }
+
+  const assessedSubjectIdsByStudent = await loadAssessedSubjectIdsByStudent(uniqueStudentIds);
+  if (!assessedSubjectIdsByStudent.size) {
+    return validAbsenceKeys;
+  }
+
+  const studentPlaceholders = uniqueStudentIds.map(() => "?").join(",");
+  const [studentRows] = await query<StudentGradeRow[]>(
+    `SELECT student_id, grade_id
+     FROM student
+     WHERE student_id IN (${studentPlaceholders})`,
+    uniqueStudentIds,
+  );
+
+  if (!studentRows.length) {
+    return validAbsenceKeys;
+  }
+
+  const studentGradeMap = new Map<string, number>();
+  for (const row of studentRows) {
+    const studentId = String(row.student_id ?? "").trim();
+    const gradeId = Number(row.grade_id);
+    if (studentId && Number.isFinite(gradeId)) {
+      studentGradeMap.set(studentId, gradeId);
+    }
+  }
+
+  if (!studentGradeMap.size) {
+    return validAbsenceKeys;
+  }
+
+  const gradeIds = Array.from(new Set(studentGradeMap.values()));
+  const gradePlaceholders = gradeIds.map(() => "?").join(",");
+  const whereParts = [`${gradeColumn} IN (${gradePlaceholders})`, `${dateColumn} IS NOT NULL`];
+  if (approvedColumns.has("is_archived")) {
+    whereParts.push("COALESCE(is_archived, 0) = 0");
+  }
+
+  const schoolTodayKey = getSchoolTodayDateKey();
+  const [scheduledRows] = await query<ApprovedScheduleRow[]>(
+    `SELECT DISTINCT DATE(${dateColumn}) AS activity_date,
+            ${subjectColumn} AS subject_id,
+            ${gradeColumn} AS grade_id
+     FROM ${APPROVED_REMEDIAL_TABLE}
+     WHERE ${whereParts.join(" AND ")}
+       AND DATE(${dateColumn}) < ?
+     ORDER BY activity_date ASC`,
+    [...gradeIds, schoolTodayKey],
+  );
+
+  if (!scheduledRows.length) {
+    return validAbsenceKeys;
+  }
+
+  const subjectMap = await fetchSubjectMap();
+
+  const [explicitAttendanceRows] = await query<ExplicitAttendanceRow[]>(
+    `SELECT ar.student_id,
+            sess.session_date AS date,
+            sess.subject_id AS subject_id,
+            ar.status AS status
+     FROM ${ATTENDANCE_RECORD_TABLE} ar
+     JOIN ${ATTENDANCE_SESSION_TABLE} sess ON sess.session_id = ar.session_id
+     WHERE ar.student_id IN (${studentPlaceholders})`,
+    uniqueStudentIds,
+  );
+
+  const presentKeys = new Set<string>();
+  for (const row of explicitAttendanceRows) {
+    const studentId = String(row.student_id ?? "").trim();
+    const subjectId = Number(row.subject_id);
+    const date = normalizeDate(row.date);
+    const status = String(row.status ?? "").trim().toLowerCase();
+    if (!studentId || !Number.isFinite(subjectId) || !date) {
+      continue;
+    }
+    const subjectName = normalizeSubjectName(subjectMap.get(subjectId) ?? `Subject ${subjectId}`) ?? `Subject ${subjectId}`;
+    const assessedSubjectIds = assessedSubjectIdsByStudent.get(studentId);
+
+    if (status === "absent") {
+      if (assessedSubjectIds?.has(subjectId)) {
+        validAbsenceKeys.add(buildNotificationKey(studentId, subjectName, date));
+      }
+      continue;
+    }
+
+    if (status !== "") {
+      presentKeys.add(`${studentId}:${subjectId}:${date}`);
+    }
+  }
+
+  if (
+    sessionColumns.has("student_id") &&
+    sessionColumns.has("session_id") &&
+    sessionColumns.has("subject_id") &&
+    sessionColumns.has("completed_at") &&
+    performanceColumns.has("session_id")
+  ) {
+    const approvedIdColumn = approvedColumns.has("request_id")
+      ? "request_id"
+      : approvedColumns.has("activity_id")
+        ? "activity_id"
+        : approvedColumns.has("id")
+          ? "id"
+          : null;
+    const hasApprovedJoin = Boolean(approvedIdColumn && sessionColumns.has("approved_schedule_id"));
+    const dateSelect = hasApprovedJoin ? `COALESCE(a.${dateColumn}, s.completed_at)` : "s.completed_at";
+
+    const [completedRows] = await query<CompletedAttendanceRow[]>(
+      `SELECT DISTINCT
+              s.student_id AS student_id,
+              ${dateSelect} AS date,
+              s.subject_id AS subject_id
+       FROM ${STUDENT_REMEDIAL_SESSION_TABLE} s
+       ${hasApprovedJoin ? `LEFT JOIN ${APPROVED_REMEDIAL_TABLE} a ON a.${approvedIdColumn} = s.approved_schedule_id` : ""}
+       WHERE s.student_id IN (${studentPlaceholders})
+         AND s.completed_at IS NOT NULL
+         AND EXISTS (
+           SELECT 1
+           FROM ${STUDENT_REMEDIAL_FLASHCARD_PERFORMANCE_TABLE} p
+           WHERE p.session_id = s.session_id
+           LIMIT 1
+         )`,
+      uniqueStudentIds,
+    );
+
+    for (const row of completedRows) {
+      const studentId = String(row.student_id ?? "").trim();
+      const subjectId = Number(row.subject_id);
+      const date = normalizeDate(row.date);
+      if (!studentId || !Number.isFinite(subjectId) || !date) {
+        continue;
+      }
+      presentKeys.add(`${studentId}:${subjectId}:${date}`);
+    }
+  }
+
+  const insertValues: Array<string | number> = [];
+
+  for (const row of scheduledRows) {
+    const subjectId = Number(row.subject_id);
+    const gradeId = Number(row.grade_id);
+    const date = normalizeDate(row.activity_date);
+    if (!Number.isFinite(subjectId) || !Number.isFinite(gradeId) || !date) {
+      continue;
+    }
+
+    for (const [studentId, studentGradeId] of studentGradeMap.entries()) {
+      if (studentGradeId !== gradeId) {
+        continue;
+      }
+
+      const assessedSubjectIds = assessedSubjectIdsByStudent.get(studentId);
+      if (!assessedSubjectIds?.has(subjectId)) {
+        continue;
+      }
+
+      if (presentKeys.has(`${studentId}:${subjectId}:${date}`)) {
+        continue;
+      }
+
+      const subjectLabel = normalizeSubjectName(subjectMap.get(subjectId) ?? `Subject ${subjectId}`) ?? `Subject ${subjectId}`;
+      validAbsenceKeys.add(buildNotificationKey(studentId, subjectLabel, date));
+      insertValues.push(studentId, subjectLabel, date, buildParentAbsentMessage(date));
+    }
+  }
+
+  if (!insertValues.length) {
+    return validAbsenceKeys;
+  }
+
+  const rowPlaceholders = Array.from({ length: insertValues.length / 4 }, () => "(?, ?, ?, ?, 'unread')").join(", ");
+  await query(
+    `INSERT IGNORE INTO parent_notifications (student_id, subject, date, message, status)
+     VALUES ${rowPlaceholders}`,
+    insertValues,
+  );
+
+  return validAbsenceKeys;
 };
 
 type NormalizedNotification = {
@@ -341,6 +712,11 @@ const buildApprovedActivityNotifications = async (): Promise<NormalizedNotificat
 };
 
 export async function GET(request: NextRequest) {
+  const session = await getParentSessionFromCookies();
+  if (!session) {
+    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  }
+
   await ensureNotificationsTable();
 
   const url = new URL(request.url);
@@ -349,15 +725,34 @@ export async function GET(request: NextRequest) {
   const fromParam = url.searchParams.get("from");
   const toParam = url.searchParams.get("to");
 
-  const studentIds: string[] = [];
+  const requestedStudentIds: string[] = [];
   if (studentIdsParam) {
     for (const part of studentIdsParam.split(",")) {
       const trimmed = part.trim();
       if (trimmed) {
-        studentIds.push(trimmed);
+        requestedStudentIds.push(trimmed);
       }
     }
   }
+
+  const allowedStudentIds = await resolveParentStudentIds(session.userId);
+  if (!allowedStudentIds.length) {
+    return NextResponse.json({ success: true, notifications: [], unreadCount: 0 });
+  }
+
+  const allowedLookup = new Set(allowedStudentIds);
+  const studentIds = Array.from(
+    new Set(
+      (requestedStudentIds.length ? requestedStudentIds : allowedStudentIds)
+        .filter((studentId) => allowedLookup.has(studentId)),
+    ),
+  );
+
+  if (!studentIds.length) {
+    return NextResponse.json({ success: true, notifications: [], unreadCount: 0 });
+  }
+
+  const validAbsenceKeys = await syncScheduledAbsenceNotifications(studentIds);
 
   const validStatuses = new Set(["unread", "read"] as const);
   const statusFilter = statusParam && validStatuses.has(statusParam as "unread" | "read") ? statusParam : null;
@@ -366,11 +761,9 @@ export async function GET(request: NextRequest) {
   let sql = `SELECT id, student_id, subject, date, message, status, created_at, updated_at FROM parent_notifications`;
 
   const conditions: string[] = [];
-  if (studentIds.length) {
-    const placeholders = studentIds.map(() => "?").join(",");
-    conditions.push(`student_id IN (${placeholders})`);
-    params.push(...studentIds);
-  }
+  const placeholders = studentIds.map(() => "?").join(",");
+  conditions.push(`student_id IN (${placeholders})`);
+  params.push(...studentIds);
 
   if (statusFilter) {
     conditions.push(`status = ?`);
@@ -395,22 +788,34 @@ export async function GET(request: NextRequest) {
 
   const [rows] = await query<NotificationRow[]>(sql, params);
 
-  const baseNotifications: NormalizedNotification[] = rows.map((row) => {
-    const createdAt = toIsoDateTime(row.created_at);
-    const createdAtIso = createdAt ?? new Date().toISOString();
-    const primaryDate = toIsoDate(row.date);
-    const fallbackDate = primaryDate ?? createdAtIso.slice(0, 10);
+  const baseNotifications: NormalizedNotification[] = rows
+    .map((row) => {
+      const createdAt = toIsoDateTime(row.created_at);
+      const createdAtIso = createdAt ?? new Date().toISOString();
+      const primaryDate = toIsoDate(row.date);
+      const fallbackDate = primaryDate ?? createdAtIso.slice(0, 10);
 
-    return {
-      id: Number(row.id),
-      studentId: String(row.student_id ?? "").trim(),
-      subject: row.subject,
-      date: fallbackDate,
-      message: row.message,
-      status: row.status,
-      createdAt: createdAtIso,
-    } satisfies NormalizedNotification;
-  });
+      return {
+        id: Number(row.id),
+        studentId: String(row.student_id ?? "").trim(),
+        subject: row.subject,
+        date: fallbackDate,
+        message: row.message,
+        status: row.status,
+        createdAt: createdAtIso,
+      } satisfies NormalizedNotification;
+    })
+    .filter((notification) => {
+      const isAbsenceNotification = notification.message
+        .toLowerCase()
+        .startsWith("dear parent, your child was marked absent on");
+
+      if (!isAbsenceNotification) {
+        return true;
+      }
+
+      return validAbsenceKeys.has(buildNotificationKey(notification.studentId, notification.subject, notification.date));
+    });
 
   const derivedNotifications = await buildApprovedActivityNotifications();
 
@@ -422,7 +827,12 @@ export async function GET(request: NextRequest) {
     return bTime - aTime;
   });
 
-  return NextResponse.json({ success: true, notifications: combined });
+  const unreadCount = baseNotifications.reduce(
+    (count, notification) => count + (notification.status === "unread" ? 1 : 0),
+    0,
+  );
+
+  return NextResponse.json({ success: true, notifications: combined, unreadCount });
 }
 
 type PatchPayload = {

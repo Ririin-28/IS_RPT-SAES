@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { getTableColumns, query } from "@/lib/db";
 import { getRemedialSessionTimeline, getStudentAssessmentRecords } from "@/lib/performance";
+import { getSchoolTodayDateKey, getScheduleDateKey } from "@/lib/remedial-schedule";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,7 @@ type ChildRow = RowDataPacket & {
   first_name: string | null;
   middle_name: string | null;
   last_name: string | null;
+  lrn: string | null;
 };
 
 type StudentRow = {
@@ -48,6 +50,7 @@ type StudentRow = {
   first_name: string | null;
   middle_name: string | null;
   last_name: string | null;
+  lrn: string | null;
 };
 
 type AttendanceRowDb = RowDataPacket & {
@@ -94,6 +97,15 @@ type ScheduleEntry = {
   timeRange: string | null;
 };
 
+type ScheduledActivityCounts = {
+  totalCount: number | null;
+  pastCount: number | null;
+};
+
+type ScheduledActivityDateInfo = ScheduledActivityCounts & {
+  dates: string[];
+};
+
 const SUBJECT_TABLE_CANDIDATES = ["subject", "subjects"] as const;
 
 const TEACHER_IDENTIFIER_COLUMNS = ["teacher_id", "id", "employee_id", "faculty_id", "user_code"] as const;
@@ -129,6 +141,8 @@ const SESSION_TEACHER_COMMENT_COLUMNS = [
 ] as const;
 const APPROVED_ID_COLUMN_CANDIDATES = ["request_id", "activity_id", "id"] as const;
 const APPROVED_DATE_COLUMN_CANDIDATES = ["schedule_date", "activity_date", "date"] as const;
+const APPROVED_SUBJECT_COLUMN_CANDIDATES = ["subject_id", "subject"] as const;
+const APPROVED_GRADE_COLUMN_CANDIDATES = ["grade_id", "grade", "grade_level"] as const;
 
 type SubjectProgressPayload = {
   currentLevel: string;
@@ -137,6 +151,16 @@ type SubjectProgressPayload = {
   teacherComments: string;
   aiRecommendation: string;
   teacher: string;
+};
+
+type ParentDashboardView = "home" | "progress" | "attendance";
+
+const normalizeDashboardView = (value: string | null): ParentDashboardView => {
+  if (value === "home" || value === "progress" || value === "attendance") {
+    return value;
+  }
+
+  return "home";
 };
 
 const safeGetColumns = async (table: string): Promise<Set<string>> => {
@@ -234,26 +258,14 @@ function buildTimeRange(startTime: string | null, endTime: string | null): strin
 }
 
 function normalizeDate(value: string | Date | null): string | null {
-  if (!value) return null;
-  if (value instanceof Date) {
-    const year = value.getFullYear();
-    const month = String(value.getMonth() + 1).padStart(2, "0");
-    const day = String(value.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  }
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    return trimmed;
-  }
-  const candidate = new Date(trimmed);
-  if (!Number.isNaN(candidate.getTime())) {
-    return candidate.toISOString().slice(0, 10);
-  }
-  return trimmed.slice(0, 10);
+  return getScheduleDateKey(value);
 }
 
-function mapAttendance(rows: AttendanceRow[]): AttendanceSummary {
+function mapAttendance(
+  rows: AttendanceRow[],
+  scheduledActivitiesCount?: number,
+  pastScheduledActivitiesCount?: number,
+): AttendanceSummary {
   const records: AttendanceRecord[] = [];
 
   for (const row of rows) {
@@ -268,10 +280,24 @@ function mapAttendance(rows: AttendanceRow[]): AttendanceSummary {
     });
   }
 
-  const totalSessions = records.length;
-  const presentSessions = records.filter((record) => record.present).length;
-  const absentSessions = totalSessions - presentSessions;
-  const attendanceRate = totalSessions > 0 ? Math.round((presentSessions / totalSessions) * 100) : null;
+  const recordedPresentSessions = records.filter((record) => record.present).length;
+  const schoolTodayKey = getSchoolTodayDateKey();
+  const recordedPastPresentSessions = records.filter((record) => record.present && record.date < schoolTodayKey).length;
+  const useScheduledActivities =
+    Number.isFinite(scheduledActivitiesCount) && (scheduledActivitiesCount ?? 0) > 0;
+  const hasPastScheduledActivitiesCount = Number.isFinite(pastScheduledActivitiesCount) && (pastScheduledActivitiesCount ?? 0) >= 0;
+  const totalSessions = useScheduledActivities ? Number(scheduledActivitiesCount) : records.length;
+  const presentSessions = Math.min(recordedPresentSessions, totalSessions);
+  const absentSessions = hasPastScheduledActivitiesCount
+    ? Math.max(0, Number(pastScheduledActivitiesCount) - recordedPastPresentSessions)
+    : totalSessions - presentSessions;
+  const attendanceRate = hasPastScheduledActivitiesCount
+    ? Number(pastScheduledActivitiesCount) > 0
+      ? Math.round((Math.min(recordedPastPresentSessions, Number(pastScheduledActivitiesCount)) / Number(pastScheduledActivitiesCount)) * 100)
+      : null
+    : totalSessions > 0
+      ? Math.round((presentSessions / totalSessions) * 100)
+      : null;
 
   return {
     records,
@@ -332,7 +358,19 @@ function dedupeAttendanceByDate(rows: AttendanceRow[]): AttendanceRow[] {
   return records;
 }
 
-function buildSchedule(rows: WeeklyScheduleRow[], subjectMap: Map<number, string>): ScheduleEntry[] {
+function filterAttendanceRowsBySubject(rows: AttendanceRow[], subjectName: string | null): AttendanceRow[] {
+  if (!subjectName) {
+    return rows;
+  }
+
+  return rows.filter((row) => normalizeSubjectName(row.subject) === subjectName);
+}
+
+function buildSchedule(
+  rows: WeeklyScheduleRow[],
+  subjectMap: Map<number, string>,
+  subjectName?: string | null,
+): ScheduleEntry[] {
   const entries: ScheduleEntry[] = [];
 
   for (const row of rows) {
@@ -345,6 +383,7 @@ function buildSchedule(rows: WeeklyScheduleRow[], subjectMap: Map<number, string
       ? `Subject ${subjectId}`
       : "";
     if (!subject) continue;
+    if (subjectName && normalizeSubjectName(subject) !== subjectName) continue;
     const timeRange = buildTimeRange(row.start_time ?? null, row.end_time ?? null);
     entries.push({ day, subject, timeRange });
   }
@@ -480,11 +519,116 @@ async function fetchTeacherNames(
   return resolved;
 }
 
+async function countApprovedScheduledActivitiesForSubject(
+  subjectId: number,
+  gradeId: number | null,
+): Promise<ScheduledActivityDateInfo> {
+  if (!Number.isFinite(subjectId)) {
+    return {
+      totalCount: null,
+      pastCount: null,
+      dates: [],
+    };
+  }
+
+  const approvedColumns = await safeGetColumns(APPROVED_REMEDIAL_TABLE);
+  if (!approvedColumns.size) {
+    return {
+      totalCount: null,
+      pastCount: null,
+      dates: [],
+    };
+  }
+
+  const subjectColumn = pickColumn(approvedColumns, APPROVED_SUBJECT_COLUMN_CANDIDATES);
+  const gradeColumn = pickColumn(approvedColumns, APPROVED_GRADE_COLUMN_CANDIDATES);
+  const dateColumn = pickColumn(approvedColumns, APPROVED_DATE_COLUMN_CANDIDATES);
+
+  if (!subjectColumn || !dateColumn) {
+    return {
+      totalCount: null,
+      pastCount: null,
+      dates: [],
+    };
+  }
+
+  const whereParts: string[] = [`${subjectColumn} = ?`];
+  const params: Array<string | number> = [subjectId];
+
+  if (gradeColumn && Number.isFinite(gradeId)) {
+    whereParts.push(`${gradeColumn} = ?`);
+    params.push(Number(gradeId));
+  }
+
+  if (approvedColumns.has("is_archived")) {
+    whereParts.push("COALESCE(is_archived, 0) = 0");
+  }
+
+  const schoolTodayKey = getSchoolTodayDateKey();
+  const [rows] = await query<RowDataPacket[]>(
+    `SELECT DISTINCT DATE(${dateColumn}) AS activity_date
+     FROM ${APPROVED_REMEDIAL_TABLE}
+     WHERE ${whereParts.join(" AND ")}
+       AND ${dateColumn} IS NOT NULL
+     ORDER BY activity_date ASC`,
+    params,
+  );
+
+  const dates = Array.from(
+    new Set(
+      (rows ?? [])
+        .map((row) => normalizeDate(row.activity_date as string | Date | null))
+        .filter((value): value is string => Boolean(value)),
+    ),
+  );
+  const pastTotal = dates.filter((date) => date < schoolTodayKey).length;
+
+  return {
+    totalCount: dates.length,
+    pastCount: Number.isFinite(pastTotal) ? pastTotal : null,
+    dates,
+  };
+}
+
+function mergeScheduledAbsencesIntoAttendanceRows(
+  rows: AttendanceRow[],
+  scheduledDates: string[],
+  subjectName: string | null,
+): AttendanceRow[] {
+  if (!subjectName || scheduledDates.length === 0) {
+    return rows;
+  }
+
+  const recordedDates = new Set<string>();
+  for (const row of rows) {
+    const date = normalizeDate(row.date);
+    if (date) {
+      recordedDates.add(date);
+    }
+  }
+
+  const merged = [...rows];
+  for (const date of scheduledDates) {
+    if (recordedDates.has(date)) {
+      continue;
+    }
+
+    merged.push({
+      date,
+      subject: subjectName,
+      status: "absent",
+    });
+  }
+
+  return dedupeAttendanceByDate(merged);
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const userIdParam = url.searchParams.get("userId");
   const selectedStudentIdParam = url.searchParams.get("studentId");
   const selectedSubjectParam = url.searchParams.get("subject");
+  const requestedView = normalizeDashboardView(url.searchParams.get("view"));
 
   if (!userIdParam) {
     return NextResponse.json({ error: "Missing userId query parameter" }, { status: 400 });
@@ -509,7 +653,7 @@ export async function GET(request: Request) {
 
     const [childRows] = await query<ChildRow[]>(
       `SELECT ps.student_id, ps.relationship, s.grade_id, s.section,
-              s.first_name, s.middle_name, s.last_name
+              s.first_name, s.middle_name, s.last_name, s.lrn
        FROM parent_student ps
        JOIN student s ON s.student_id = ps.student_id
        WHERE ps.parent_id = ?
@@ -537,10 +681,14 @@ export async function GET(request: Request) {
       first_name: selectedChild.first_name,
       middle_name: selectedChild.middle_name,
       last_name: selectedChild.last_name,
+      lrn: selectedChild.lrn,
     };
 
     const subjectMap = await fetchSubjectMap();
-    const phonemicLevels = await fetchPhonemicLevels();
+    const shouldIncludeProgressData = requestedView !== "attendance";
+    const phonemicLevels = shouldIncludeProgressData
+      ? await fetchPhonemicLevels()
+      : new Map<number, { label: string; order: number }>();
 
     const [[explicitAttendanceRows], inferredAttendanceRows] = await Promise.all([
       query<AttendanceRowDb[]>(
@@ -600,8 +748,13 @@ export async function GET(request: Request) {
       })(),
     ]);
 
-    const attendance = mapAttendance(
-      dedupeAttendanceByDate(
+    const requestedSubjectName = normalizeSubjectName(selectedSubjectParam);
+    const supportedRequestedSubjectName =
+      requestedSubjectName && TIMELINE_SUBJECTS.has(requestedSubjectName) ? requestedSubjectName : null;
+    const subjectFilterName = requestedView === "home" ? null : supportedRequestedSubjectName;
+
+    const attendanceRows = dedupeAttendanceByDate(
+      filterAttendanceRowsBySubject(
         [
           ...explicitAttendanceRows.map((row) => ({
             date: row.date,
@@ -618,6 +771,7 @@ export async function GET(request: Request) {
               : null,
           })),
         ] as AttendanceRow[],
+        subjectFilterName,
       ),
     );
 
@@ -626,26 +780,70 @@ export async function GET(request: Request) {
        FROM weekly_subject_schedule`,
     );
 
-    const schedule = buildSchedule(scheduleRows, subjectMap);
+    const schedule = buildSchedule(scheduleRows, subjectMap, subjectFilterName);
 
-    const assessmentColumns = await safeGetColumns(STUDENT_SUBJECT_ASSESSMENT_TABLE);
-    const historyColumns = await safeGetColumns(STUDENT_PHONEMIC_HISTORY_TABLE);
-    const sessionColumns = await safeGetColumns(STUDENT_REMEDIAL_SESSION_TABLE);
-    const performanceColumns = await safeGetColumns(STUDENT_REMEDIAL_FLASHCARD_PERFORMANCE_TABLE);
-    const performanceRecordColumns = await safeGetColumns(PERFORMANCE_RECORDS_TABLE);
-    const remarksColumns = await safeGetColumns(REMARKS_TABLE);
+    let scheduledActivityDates: ScheduledActivityDateInfo = {
+      totalCount: null,
+      pastCount: null,
+      dates: [],
+    };
+    if (subjectFilterName) {
+      const subjectIdForAttendance = Array.from(subjectMap.entries()).find(
+        ([, name]) => normalizeSubjectName(name) === subjectFilterName,
+      )?.[0];
+
+      if (Number.isFinite(subjectIdForAttendance)) {
+        scheduledActivityDates = await countApprovedScheduledActivitiesForSubject(
+          Number(subjectIdForAttendance),
+          student.grade_id,
+        );
+      }
+    }
+
+    const attendanceRowsWithScheduledAbsences =
+      subjectFilterName && scheduledActivityDates.dates.length > 0
+        ? mergeScheduledAbsencesIntoAttendanceRows(
+            attendanceRows,
+            scheduledActivityDates.dates.filter((date) => date < getSchoolTodayDateKey()),
+            subjectFilterName,
+          )
+        : attendanceRows;
+
+    const attendance = mapAttendance(
+      attendanceRowsWithScheduledAbsences,
+      scheduledActivityDates.totalCount && scheduledActivityDates.totalCount > 0
+        ? scheduledActivityDates.totalCount
+        : schedule.length,
+      scheduledActivityDates.pastCount ?? undefined,
+    );
+
     const assignmentColumns = await safeGetColumns(STUDENT_TEACHER_ASSIGNMENT_TABLE);
-    const teacherColumns = await safeGetColumns(TEACHER_TABLE);
-    const userColumns = await safeGetColumns(USERS_TABLE);
+    const assessmentColumns = await safeGetColumns(STUDENT_SUBJECT_ASSESSMENT_TABLE);
+    const historyColumns = shouldIncludeProgressData
+      ? await safeGetColumns(STUDENT_PHONEMIC_HISTORY_TABLE)
+      : new Set<string>();
+    const sessionColumns = shouldIncludeProgressData
+      ? await safeGetColumns(STUDENT_REMEDIAL_SESSION_TABLE)
+      : new Set<string>();
+    const performanceColumns = shouldIncludeProgressData
+      ? await safeGetColumns(STUDENT_REMEDIAL_FLASHCARD_PERFORMANCE_TABLE)
+      : new Set<string>();
+    const performanceRecordColumns = shouldIncludeProgressData
+      ? await safeGetColumns(PERFORMANCE_RECORDS_TABLE)
+      : new Set<string>();
+    const remarksColumns = shouldIncludeProgressData ? await safeGetColumns(REMARKS_TABLE) : new Set<string>();
+    const teacherColumns = shouldIncludeProgressData ? await safeGetColumns(TEACHER_TABLE) : new Set<string>();
+    const userColumns = shouldIncludeProgressData ? await safeGetColumns(USERS_TABLE) : new Set<string>();
 
     const subjectIds = new Set<number>();
+    const assessedSubjectIds = new Set<number>();
 
     const assessmentRows: RowDataPacket[] = [];
-    if (assessmentColumns.has("student_id") && assessmentColumns.has("subject_id") && assessmentColumns.has("phonemic_id")) {
+    if (assessmentColumns.has("student_id") && assessmentColumns.has("subject_id")) {
       const assessedAtColumn = assessmentColumns.has("assessed_at") ? "assessed_at" : null;
       const selectParts = [
         "subject_id",
-        "phonemic_id",
+        assessmentColumns.has("phonemic_id") ? "phonemic_id" : "NULL AS phonemic_id",
         assessedAtColumn ? `${assessedAtColumn} AS assessed_at` : "NULL AS assessed_at",
       ];
       const [rows] = await query<RowDataPacket[]>(
@@ -656,7 +854,10 @@ export async function GET(request: Request) {
       );
       rows.forEach((row) => {
         const subjectId = Number(row.subject_id);
-        if (Number.isFinite(subjectId)) subjectIds.add(subjectId);
+        if (Number.isFinite(subjectId)) {
+          subjectIds.add(subjectId);
+          assessedSubjectIds.add(subjectId);
+        }
         assessmentRows.push(row);
       });
     }
@@ -744,7 +945,8 @@ export async function GET(request: Request) {
     }
 
     const assignmentRows: RowDataPacket[] = [];
-    if (assignmentColumns.has("student_id") && assignmentColumns.has("subject_id") && assignmentColumns.has("teacher_id")) {
+    if (assignmentColumns.has("student_id") && assignmentColumns.has("subject_id")) {
+      const teacherIdColumn = assignmentColumns.has("teacher_id") ? "teacher_id" : null;
       const isActiveColumn = assignmentColumns.has("is_active") ? "is_active" : null;
       const assignedDateColumn = assignmentColumns.has("assigned_date")
         ? "assigned_date"
@@ -755,7 +957,7 @@ export async function GET(request: Request) {
             : null;
       const selectParts = [
         "subject_id",
-        "teacher_id",
+        teacherIdColumn ? `${teacherIdColumn} AS teacher_id` : "NULL AS teacher_id",
         assignedDateColumn ? `${assignedDateColumn} AS assigned_date` : "NULL AS assigned_date",
       ];
       const [rows] = await query<RowDataPacket[]>(
@@ -768,7 +970,9 @@ export async function GET(request: Request) {
       );
       rows.forEach((row) => {
         const subjectId = Number(row.subject_id);
-        if (Number.isFinite(subjectId)) subjectIds.add(subjectId);
+        if (Number.isFinite(subjectId)) {
+          subjectIds.add(subjectId);
+        }
         assignmentRows.push(row);
       });
     }
@@ -786,11 +990,128 @@ export async function GET(request: Request) {
       }
     }
 
-    const teacherNames = await fetchTeacherNames(
-      Array.from(new Set(Array.from(assignmentBySubject.values()))),
-      teacherColumns,
-      userColumns,
-    );
+    const teacherNames = shouldIncludeProgressData
+      ? await fetchTeacherNames(
+          Array.from(new Set(Array.from(assignmentBySubject.values()))),
+          teacherColumns,
+          userColumns,
+        )
+      : new Map<string, string>();
+
+    const selectedSubjectId = supportedRequestedSubjectName
+      ? Array.from(subjectMap.entries()).find(([, name]) => normalizeSubjectName(name) === supportedRequestedSubjectName)?.[0] ?? null
+      : null;
+    const canValidateSelectedSubjectRemedial =
+      assessmentColumns.has("student_id") && assessmentColumns.has("subject_id");
+    const isTakingSelectedSubjectRemedial =
+      !supportedRequestedSubjectName || !canValidateSelectedSubjectRemedial
+        ? true
+        : Number.isFinite(selectedSubjectId)
+          ? assessedSubjectIds.has(Number(selectedSubjectId))
+          : false;
+    const selectedSubjectRemedialMessage =
+      supportedRequestedSubjectName && !isTakingSelectedSubjectRemedial
+        ? `This student is not taking remedial in ${supportedRequestedSubjectName}.`
+        : null;
+
+    const fallbackSubjectName = normalizeSubjectName(subjects[0] ?? null);
+    const responseSelectedSubject =
+      supportedRequestedSubjectName
+        ? supportedRequestedSubjectName
+        : fallbackSubjectName && TIMELINE_SUBJECTS.has(fallbackSubjectName)
+          ? fallbackSubjectName
+          : null;
+
+    if (!shouldIncludeProgressData) {
+      return NextResponse.json({
+        parent: {
+          parentId: parent.parent_id,
+          relationship: selectedChild.relationship,
+        },
+        children: childRows.map((child) => ({
+          studentId: String(child.student_id),
+          lrn: sanitizeText(child.lrn),
+          userId: 0,
+          firstName: child.first_name ?? "",
+          middleName: child.middle_name,
+          lastName: child.last_name ?? "",
+          grade: child.grade_id != null ? `Grade ${child.grade_id}` : null,
+          section: child.section,
+          teacherName: null,
+          relationship: child.relationship,
+          subjects: [],
+        })),
+        child: {
+          studentId: String(student.student_id),
+          lrn: sanitizeText(student.lrn),
+          firstName: student.first_name ?? "",
+          middleName: student.middle_name,
+          lastName: student.last_name ?? "",
+          grade: student.grade_id != null ? `Grade ${student.grade_id}` : null,
+          section: student.section,
+          teacherName: null,
+          relationship: selectedChild.relationship,
+          subjects,
+          currentLevel: {},
+          progressDetails: {},
+        },
+        attendance,
+        schedule,
+        subjectValidation: {
+          subject: supportedRequestedSubjectName,
+          isTakingRemedial: isTakingSelectedSubjectRemedial,
+          message: selectedSubjectRemedialMessage,
+        },
+        selectedSubject: responseSelectedSubject,
+        sessions: [],
+        assessments: [],
+      });
+    }
+
+    const childTeacherByStudent = new Map<string, string>();
+    if (assignmentColumns.has("student_id") && assignmentColumns.has("teacher_id") && childRows.length > 0) {
+      const isActiveColumn = assignmentColumns.has("is_active") ? "is_active" : null;
+      const assignedDateColumn = assignmentColumns.has("assigned_date")
+        ? "assigned_date"
+        : assignmentColumns.has("created_at")
+          ? "created_at"
+          : assignmentColumns.has("updated_at")
+            ? "updated_at"
+            : null;
+
+      const childIds = Array.from(new Set(childRows.map((child) => String(child.student_id))));
+      if (childIds.length > 0) {
+        const placeholders = childIds.map(() => "?").join(", ");
+        const [childAssignmentRows] = await query<RowDataPacket[]>(
+          `SELECT student_id, teacher_id,
+                  ${assignedDateColumn ? `${assignedDateColumn} AS assigned_date` : "NULL AS assigned_date"}
+           FROM ${STUDENT_TEACHER_ASSIGNMENT_TABLE}
+           WHERE student_id IN (${placeholders})
+           ${isActiveColumn ? `AND ${isActiveColumn} = 1` : ""}
+           ORDER BY student_id ASC, ${assignedDateColumn ?? "student_id"} DESC`,
+          childIds,
+        );
+
+        const teacherIds = Array.from(
+          new Set(
+            childAssignmentRows
+              .map((row) => sanitizeText(row.teacher_id))
+              .filter((value): value is string => Boolean(value)),
+          ),
+        );
+
+        const teacherNamesById = await fetchTeacherNames(teacherIds, teacherColumns, userColumns);
+
+        for (const row of childAssignmentRows) {
+          const studentId = sanitizeText(row.student_id);
+          const teacherId = sanitizeText(row.teacher_id);
+          if (!studentId || !teacherId || childTeacherByStudent.has(studentId)) {
+            continue;
+          }
+          childTeacherByStudent.set(studentId, teacherNamesById.get(teacherId) ?? `Teacher ${teacherId}`);
+        }
+      }
+    }
 
     const historyBySubject = new Map<number, Array<{ phonemicId: number; achievedAt: Date | null }>>();
     for (const row of historyRows) {
@@ -897,21 +1218,20 @@ export async function GET(request: Request) {
       currentLevelBySubject[subjectName] = currentLabel;
     }
 
-    const requestedSubjectName = normalizeSubjectName(selectedSubjectParam);
-    const fallbackSubjectName = normalizeSubjectName(subjects[0] ?? null);
-    const timelineSubjectName =
-      requestedSubjectName && TIMELINE_SUBJECTS.has(requestedSubjectName)
-        ? requestedSubjectName
-        : fallbackSubjectName && TIMELINE_SUBJECTS.has(fallbackSubjectName)
-          ? fallbackSubjectName
-          : null;
+    const timelineSubjectName = requestedView === "home" ? null : responseSelectedSubject;
 
-    const [sessions, assessments] = timelineSubjectName
-      ? await Promise.all([
-          getRemedialSessionTimeline(String(student.student_id), { subjectName: timelineSubjectName }),
-          getStudentAssessmentRecords(String(student.student_id), { subjectName: timelineSubjectName }),
-        ])
-      : [[], []];
+    const [sessions, assessments] =
+      requestedView === "home"
+        ? await Promise.all([
+            getRemedialSessionTimeline(String(student.student_id)),
+            getStudentAssessmentRecords(String(student.student_id)),
+          ])
+        : timelineSubjectName
+          ? await Promise.all([
+              getRemedialSessionTimeline(String(student.student_id), { subjectName: timelineSubjectName }),
+              getStudentAssessmentRecords(String(student.student_id), { subjectName: timelineSubjectName }),
+            ])
+          : [[], []];
 
     return NextResponse.json({
       parent: {
@@ -920,22 +1240,26 @@ export async function GET(request: Request) {
       },
       children: childRows.map((child) => ({
         studentId: String(child.student_id),
+        lrn: sanitizeText(child.lrn),
         userId: 0,
         firstName: child.first_name ?? "",
         middleName: child.middle_name,
         lastName: child.last_name ?? "",
         grade: child.grade_id != null ? `Grade ${child.grade_id}` : null,
         section: child.section,
+        teacherName: childTeacherByStudent.get(String(child.student_id)) ?? null,
         relationship: child.relationship,
         subjects: [],
       })),
       child: {
         studentId: String(student.student_id),
+        lrn: sanitizeText(student.lrn),
         firstName: student.first_name ?? "",
         middleName: student.middle_name,
         lastName: student.last_name ?? "",
         grade: student.grade_id != null ? `Grade ${student.grade_id}` : null,
         section: student.section,
+        teacherName: childTeacherByStudent.get(String(student.student_id)) ?? null,
         relationship: selectedChild.relationship,
         subjects,
         currentLevel: currentLevelBySubject,
@@ -943,7 +1267,12 @@ export async function GET(request: Request) {
       },
       attendance,
       schedule,
-      selectedSubject: timelineSubjectName,
+      subjectValidation: {
+        subject: supportedRequestedSubjectName,
+        isTakingRemedial: isTakingSelectedSubjectRemedial,
+        message: selectedSubjectRemedialMessage,
+      },
+      selectedSubject: responseSelectedSubject,
       sessions,
       assessments,
     });

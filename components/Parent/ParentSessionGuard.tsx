@@ -2,6 +2,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import { clearStoredUserProfile, storeUserProfile } from "@/lib/utils/user-profile";
+import { getStoredParentPortalEntry } from "@/lib/utils/parent-portal-entry";
 
 type ParentSessionGuardProps = {
   children: ReactNode;
@@ -11,16 +12,19 @@ type AppRouterInstance = ReturnType<typeof useRouter>;
 
 function redirectParentToLogin(router: AppRouterInstance) {
   clearStoredUserProfile();
+  const logoutTarget = getStoredParentPortalEntry() === "pwa"
+    ? "/PWA?portal=parent&logout=true"
+    : "/auth/login?logout=true";
   if (typeof window !== "undefined") {
     try {
       sessionStorage.setItem("wasLoggedOut", "true");
     } catch (storageError) {
       console.warn("Unable to persist logout marker", storageError);
     }
-    window.history.replaceState(null, "", "/auth/login?logout=true");
-    window.location.replace("/auth/login?logout=true");
+    window.history.replaceState(null, "", logoutTarget);
+    window.location.replace(logoutTarget);
   } else {
-    router.replace("/auth/login?logout=true");
+    router.replace(logoutTarget);
   }
 }
 

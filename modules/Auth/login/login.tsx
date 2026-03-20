@@ -5,6 +5,7 @@ import { FaEye, FaEyeSlash, FaInfoCircle } from "react-icons/fa";
 import RPTLogoTitle from "@/components/Common/RPTLogoTitle";
 import { clearOAuthState } from "@/lib/utils/clear-oauth-state";
 import { clearStoredUserProfile, getStoredUserProfile, storeUserProfile } from "@/lib/utils/user-profile";
+import { storeParentPortalEntry } from "@/lib/utils/parent-portal-entry";
 
 const DEFAULT_LOGIN_ERROR_MESSAGE = "Email and password do not match our records. Please try again.";
 const OTP_VERIFICATION_CONTEXT_KEY = "otpVerificationContext";
@@ -22,12 +23,14 @@ type LoginProps = {
   infoMessage?: string;
   requireUserId?: boolean; // backward compatibility
   requireItAdminId?: boolean;
+  disallowRole?: string | null;
 };
 
 export default function Login({
   infoMessage = "For San Agustin Elementary School authorized accounts only.",
   requireUserId = false,
   requireItAdminId = false,
+  disallowRole = null,
 }: LoginProps = {}) {
   const adminIdRequired = Boolean(requireItAdminId || requireUserId);
   const [showErrorModal, setShowErrorModal] = useState(false);
@@ -48,6 +51,7 @@ export default function Login({
   const canSubmit = adminIdRequired
     ? Boolean(trimmedPassword && sanitizedItAdminId)
     : Boolean(trimmedEmail && trimmedPassword);
+  const normalizedDisallowedRole = useMemo(() => normalizeRole(disallowRole), [disallowRole]);
 
   const resolveWelcomePath = useCallback((role: string | null | undefined): string => {
     const normalized = normalizeRole(role);
@@ -88,6 +92,7 @@ export default function Login({
           email: adminIdRequired ? undefined : email,
           password,
           itAdminId: adminIdRequired ? sanitizedItAdminId : undefined,
+          disallowRole: normalizedDisallowedRole || undefined,
         }),
       })
         .then(async res => {
@@ -151,6 +156,11 @@ export default function Login({
           const normalizedRole = normalizeRole(storedProfile.role);
           const isAdminRole = ["super_admin", "superadmin", "admin", "it_admin", "itadmin"].includes(normalizedRole);
 
+          if (normalizedRole && normalizedRole === normalizedDisallowedRole) {
+            window.location.replace("/PWA?portal=parent");
+            return;
+          }
+
           if (!isAdminRole) {
             router.push(resolveWelcomePath(storedProfile.role));
             return;
@@ -177,7 +187,7 @@ export default function Login({
     };
 
     void checkSession();
-  }, [resolveWelcomePath, router]);
+  }, [normalizedDisallowedRole, resolveWelcomePath, router]);
 
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -215,6 +225,7 @@ export default function Login({
           itAdminId: adminIdRequired ? sanitizedItAdminId : undefined,
           deviceToken,
           deviceName,
+          disallowRole: normalizedDisallowedRole || undefined,
         }),
       });
       const data = await res.json();
@@ -233,10 +244,25 @@ export default function Login({
           }, 1500);
           return;
         }
+        if (data.errorCode === "ROLE_BLOCKED_ON_THIS_LOGIN") {
+          setIsLoading(false);
+          setErrorMessage(data.error || "Parent accounts can only sign in through the RPT Portal PWA.");
+          setShowErrorModal(true);
+          if (data.redirectPath) {
+            if (redirectTimerRef.current) {
+              clearTimeout(redirectTimerRef.current);
+            }
+            redirectTimerRef.current = setTimeout(() => {
+              window.location.replace(String(data.redirectPath));
+            }, 1500);
+          }
+          return;
+        }
         setErrorMessage(data.error || DEFAULT_LOGIN_ERROR_MESSAGE);
         setShowErrorModal(true);
       } else {
         const resolvedRedirectPath = data.redirectPath || resolveWelcomePath(data.role);
+        const normalizedRole = normalizeRole(data.role);
 
         if (data.skipOtp) {
           storeUserProfile({
@@ -253,10 +279,12 @@ export default function Login({
           } catch (storageError) {
             console.warn("Unable to persist logout marker", storageError);
           }
+          if (normalizedRole === "parent") {
+            storeParentPortalEntry("web");
+          }
           // Device is trusted, redirect to welcome page
           const welcomePath = resolvedRedirectPath;
           console.log("[LOGIN] redirecting to:", welcomePath);
-          const normalizedRole = normalizeRole(data.role);
           if (["parent", "super_admin", "superadmin", "admin", "it_admin", "itadmin"].includes(normalizedRole)) {
             window.location.replace(welcomePath);
             return;
@@ -264,6 +292,9 @@ export default function Login({
           router.push(welcomePath);
         } else {
           clearStoredUserProfile();
+          if (normalizedRole === "parent") {
+            storeParentPortalEntry("web");
+          }
           // Device not trusted, redirect to verification page using session data instead of query params.
           const verificationContext = {
             email: String(data.email || email || ""),

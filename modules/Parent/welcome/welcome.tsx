@@ -1,27 +1,100 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getStoredDisplayName } from "@/lib/utils/user-profile";
+import {
+  formatFullNameWithMiddleInitial,
+  getStoredUserProfile,
+  storeUserProfile,
+} from "@/lib/utils/user-profile";
 
-const PARENT_FALLBACK_NAME = "Juan Dela Cruz";
+const PARENT_FALLBACK_NAME = "Parent";
 
-export default function ParentWelcome() {
+type ParentWelcomeProps = {
+  initialDisplayName?: string;
+};
+
+export default function ParentWelcome({ initialDisplayName = PARENT_FALLBACK_NAME }: ParentWelcomeProps) {
   const router = useRouter();
-  const [displayName, setDisplayName] = useState(PARENT_FALLBACK_NAME);
+  const [displayName, setDisplayName] = useState(initialDisplayName);
 
   useEffect(() => {
-    router.push("/Parent/dashboard");
+    router.replace("/Parent/home");
   }, [router]);
 
   useEffect(() => {
-    setDisplayName(getStoredDisplayName(PARENT_FALLBACK_NAME));
-  }, []);
+    let active = true;
+
+    const hydrateDisplayName = async () => {
+      if (initialDisplayName && initialDisplayName !== PARENT_FALLBACK_NAME) {
+        if (active) {
+          setDisplayName(initialDisplayName);
+        }
+        return;
+      }
+
+      const storedProfile = getStoredUserProfile();
+      const storedDisplayName = formatFullNameWithMiddleInitial(storedProfile);
+      if (storedDisplayName) {
+        if (active) {
+          setDisplayName(storedDisplayName);
+        }
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/parent/session", {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        });
+
+        const payload = (await response.json().catch(() => null)) as {
+          success?: boolean;
+          user?: {
+            userId?: number | null;
+            email?: string | null;
+            firstName?: string | null;
+            middleName?: string | null;
+            lastName?: string | null;
+          };
+        } | null;
+
+        if (!active || !response.ok || !payload?.success || !payload.user) {
+          return;
+        }
+
+        const nextProfile = {
+          userId: payload.user.userId ?? null,
+          email: payload.user.email ?? null,
+          firstName: payload.user.firstName ?? null,
+          middleName: payload.user.middleName ?? null,
+          lastName: payload.user.lastName ?? null,
+          role: "parent",
+        } as const;
+
+        storeUserProfile(nextProfile);
+
+        const resolvedDisplayName = formatFullNameWithMiddleInitial(nextProfile);
+        if (resolvedDisplayName) {
+          setDisplayName(resolvedDisplayName);
+        }
+      } catch {
+        // Keep the generic fallback when session hydration fails.
+      }
+    };
+
+    void hydrateDisplayName();
+
+    return () => {
+      active = false;
+    };
+  }, [initialDisplayName]);
 
   return (
     <div className="relative min-h-dvh flex items-center justify-center overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-24 right-0 h-72 w-72 rounded-full bg-emerald-100/25 blur-3xl" />
-        <div className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-emerald-200/30 blur-3xl" />
+        <div className="absolute -top-24 right-0 h-72 w-72 rounded-full bg-emerald-100/40" />
+        <div className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-emerald-200/40" />
       </div>
 
       {/* Content */}
@@ -33,7 +106,7 @@ export default function ParentWelcome() {
         </h2>
     <h1 className="text-2xl md:text-6xl font-bold text-green-900 text-center mb-8">{displayName}</h1>
   <div className="text-xl md:text-2xl text-green-800 font-semibold text-center flex items-center justify-center">
-    Redirecting to dashboard
+    Redirecting to home
     <span className="ml-2 flex gap-1">
       <span className="inline-block animate-dot1">.</span>
       <span className="inline-block animate-dot2">.</span>
