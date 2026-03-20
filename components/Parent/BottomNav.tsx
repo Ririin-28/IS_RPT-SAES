@@ -22,7 +22,7 @@ export default function ParentBottomNav() {
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#DCE6DD] bg-white lg:hidden">
       <div className="mx-auto grid max-w-xl grid-cols-4 px-2 py-2">
         {tabs.map((tab) => {
-          const isActive = tab.match.includes(pathname as (typeof tab.match)[number]);
+          const isActive = tab.match.some((matchPath) => matchPath === pathname);
           return (
             <Link
               key={tab.href}
