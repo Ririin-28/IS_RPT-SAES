@@ -180,6 +180,8 @@ export type StudentAssessmentRecord = {
   submitted_at?: string | Date | null;
 };
 
+const PERFORMANCE_DEBUG = (process.env.DEBUG_INDIVIDUAL_PROGRESS ?? "").trim().toLowerCase() === "true";
+
 const APPROVED_REMEDIAL_TABLE = "approved_remedial_schedule";
 const PHONEMIC_LEVEL_TABLE = "phonemic_level";
 const APPROVED_ID_COLUMN_CANDIDATES = ["request_id", "activity_id", "id"] as const;
@@ -244,25 +246,46 @@ export async function getRemedialSessionTimeline(
   const subjectName = options?.subjectName?.trim() ?? "";
   const subjectId = subjectName ? await resolveSubjectIdByName(subjectName) : null;
 
+  const sessionColumns = await getTableColumns("student_remedial_session");
+  if (!sessionColumns.size) {
+    if (PERFORMANCE_DEBUG) {
+      console.warn("[individual-progress] missing table: student_remedial_session", {
+        studentId,
+        subjectName,
+        subjectId,
+      });
+    }
+    return [];
+  }
+
   let canLoadTeacherNotes = false;
+  let remarksJoinColumn: "performance_record_id" | "record_id" | null = null;
+  let remarksOrderColumn: "remark_id" | "id" | null = null;
   try {
     const performanceColumns = await getTableColumns("performance_records");
     const remarksColumns = await getTableColumns("remarks");
+    remarksJoinColumn = remarksColumns.has("performance_record_id")
+      ? "performance_record_id"
+      : remarksColumns.has("record_id")
+        ? "record_id"
+        : null;
+    remarksOrderColumn = remarksColumns.has("remark_id") ? "remark_id" : remarksColumns.has("id") ? "id" : null;
     canLoadTeacherNotes =
       performanceColumns.has("record_id") &&
       performanceColumns.has("student_id") &&
       performanceColumns.has("metadata") &&
-      remarksColumns.has("performance_record_id") &&
+      Boolean(remarksJoinColumn) &&
       remarksColumns.has("teacher_notes");
   } catch {
     canLoadTeacherNotes = false;
   }
 
+  const remarksOrderBy = remarksOrderColumn ? `, r.${remarksOrderColumn} DESC` : "";
   const teacherNotesSelect = canLoadTeacherNotes
     ? `(
       SELECT r.teacher_notes
       FROM performance_records pr
-      INNER JOIN remarks r ON r.performance_record_id = pr.record_id
+      INNER JOIN remarks r ON r.${remarksJoinColumn} = pr.record_id
       WHERE pr.student_id = s.student_id
         AND (
           JSON_UNQUOTE(JSON_EXTRACT(pr.metadata, '$.sessionId')) = CAST(s.session_id AS CHAR)
@@ -271,12 +294,13 @@ export async function getRemedialSessionTimeline(
             AND JSON_UNQUOTE(JSON_EXTRACT(pr.metadata, '$.approvedScheduleId')) = CAST(s.approved_schedule_id AS CHAR)
           )
         )
-      ORDER BY pr.record_id DESC, r.remark_id DESC
+      ORDER BY pr.record_id DESC${remarksOrderBy}
       LIMIT 1
     )`
     : "NULL";
 
-  let sessionSql = `
+  const buildSessionSql = (withSubjectFilter: boolean) => {
+    let sessionSql = `
     SELECT
       s.session_id,
       s.student_id,
@@ -293,15 +317,41 @@ export async function getRemedialSessionTimeline(
     FROM student_remedial_session s
     WHERE s.student_id = ?
   `;
+    if (withSubjectFilter && subjectId) {
+      sessionSql += ` AND s.subject_id = ?`;
+    }
+    sessionSql += ` ORDER BY COALESCE(s.completed_at, s.created_at) DESC`;
+    return sessionSql;
+  };
 
-  const params: Array<string | number | null> = [studentId];
+  const primaryParams: Array<string | number | null> = [studentId];
   if (subjectId) {
-    sessionSql += ` AND s.subject_id = ?`;
-    params.push(subjectId);
+    primaryParams.push(subjectId);
   }
-  sessionSql += ` ORDER BY COALESCE(s.completed_at, s.created_at) DESC`;
 
-  const [sessionRows] = await query<RowDataPacket[]>(sessionSql, params);
+  const [primarySessionRows] = await query<RowDataPacket[]>(buildSessionSql(Boolean(subjectId)), primaryParams);
+
+  let sessionRows = primarySessionRows;
+  let fallbackNoSubjectFilter = false;
+  if (!sessionRows.length && subjectId) {
+    const [fallbackRows] = await query<RowDataPacket[]>(buildSessionSql(false), [studentId]);
+    if (fallbackRows.length) {
+      sessionRows = fallbackRows;
+      fallbackNoSubjectFilter = true;
+    }
+  }
+
+  if (PERFORMANCE_DEBUG) {
+    console.info("[individual-progress] session query summary", {
+      studentId,
+      subjectName,
+      subjectId,
+      strictSubjectMatchedRows: primarySessionRows.length,
+      fallbackNoSubjectFilter,
+      sessionRows: sessionRows.length,
+    });
+  }
+
   const sessions = (sessionRows ?? []).map(
     (row): RemedialSessionTimelineItem => ({
       session_id: row.session_id ?? null,
@@ -403,6 +453,13 @@ export async function getRemedialSessionTimeline(
   const sessionIds = sessions.map((item) => Number(item.session_id)).filter((value) => Number.isFinite(value));
 
   if (!sessionIds.length) {
+    if (PERFORMANCE_DEBUG) {
+      console.info("[individual-progress] no session ids after mapping", {
+        studentId,
+        subjectName,
+        subjectId,
+      });
+    }
     return sessions;
   }
 
@@ -441,6 +498,16 @@ export async function getRemedialSessionTimeline(
      ORDER BY session_id DESC, flashcard_index ASC, created_at ASC`,
     sessionIds
   );
+
+  if (PERFORMANCE_DEBUG) {
+    console.info("[individual-progress] slide query summary", {
+      studentId,
+      subjectName,
+      subjectId,
+      sessionIds: sessionIds.length,
+      slideRows: (slideRows ?? []).length,
+    });
+  }
 
   const slidesBySession = new Map<number, RemedialSessionSlide[]>();
   for (const row of slideRows ?? []) {

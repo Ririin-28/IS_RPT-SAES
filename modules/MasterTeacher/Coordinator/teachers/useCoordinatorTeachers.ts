@@ -15,6 +15,7 @@ export type CoordinatorTeacher = {
   grade: string | null;
   sections: string | null;
   subjects: string | null;
+  role?: "Teacher" | "Master Teacher";
 };
 
 type ProfileResult = {
@@ -63,7 +64,7 @@ function sanitizeLabel(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function transformTeacherRecord(record: any, index: number): CoordinatorTeacher {
+function transformTeacherRecord(record: any, index: number, role?: "Teacher" | "Master Teacher"): CoordinatorTeacher {
   const userId = toNumericId(record?.userId ?? record?.user_id);
   const teacherIdRaw = record?.teacherId ?? record?.teacher_id ?? userId ?? null;
   const teacherId = teacherIdRaw != null ? String(teacherIdRaw) : `T-${index + 1}`;
@@ -85,6 +86,7 @@ function transformTeacherRecord(record: any, index: number): CoordinatorTeacher 
     grade: sanitizeLabel(record?.grade),
     sections: sanitizeLabel(record?.sections) ?? sanitizeLabel(record?.section),
     subjects: sanitizeLabel(record?.subjects),
+    role: role ?? record?.role,
   };
 }
 
@@ -188,8 +190,7 @@ export function useCoordinatorTeachers(): UseCoordinatorTeachersResult {
 
   const fetchTeachers = useCallback(async (gradeKeyOverride?: string | null) => {
     try {
-      // Coordinator should not call the super-admin-only endpoint (it returns "Not authenticated").
-      // Use the principal-facing teachers API which returns the same teacher records shape we need.
+      // Fetch all teachers and master teachers from the principal endpoint
       const response = await fetch("/api/principal/teachers", {
         cache: "no-store",
       });
@@ -198,22 +199,33 @@ export function useCoordinatorTeachers(): UseCoordinatorTeachersResult {
         throw new Error(payload?.error ?? `Failed to fetch teachers (${response.status}).`);
       }
 
-      // Support multiple API shapes:
-      // - Super-admin endpoint: { records: [...] }
-      // - Principal endpoint: { teachers: [...] }
-      const records: any[] = Array.isArray(payload?.records)
-        ? payload.records
-        : Array.isArray(payload?.teachers)
-        ? payload.teachers
-        : [];
+      // Get teachers and master teachers from response
+      const teacherRecords: any[] = Array.isArray(payload?.teachers) ? payload.teachers : [];
+      const masterTeacherRecords: any[] = Array.isArray(payload?.masterTeachers) ? payload.masterTeachers : [];
+
+      // Combine all records
+      const allRecords = [
+        ...teacherRecords.map((record: any) => ({ ...record, role: "Teacher" })),
+        ...masterTeacherRecords.map((record: any) => ({ ...record, role: "Master Teacher" })),
+      ];
 
       const effectiveGradeKey = gradeKeyOverride ?? gradeKey;
 
+      // Filter by grade if available
       const filtered = effectiveGradeKey
-        ? records.filter((record) => normalizeGradeKey(record?.grade) === effectiveGradeKey)
-        : records;
+        ? allRecords.filter((record) => {
+            // For teachers, check grade
+            if (record.role === "Teacher") {
+              return normalizeGradeKey(record?.grade) === effectiveGradeKey;
+            }
+            // For master teachers, check both coordinator and remedial grades
+            const coordinatorGrade = normalizeGradeKey(record?.gradeLabel);
+            const remedialGrades = record?.remedialGradeLevels ? String(record.remedialGradeLevels).split(",").map((g: string) => normalizeGradeKey(g.trim())) : [];
+            return coordinatorGrade === effectiveGradeKey || remedialGrades.includes(effectiveGradeKey);
+          })
+        : allRecords;
 
-      setTeachers(filtered.map((record, index) => transformTeacherRecord(record, index)));
+      setTeachers(filtered.map((record, index) => transformTeacherRecord(record, index, record.role)));
       setError(null);
     } catch (err) {
       console.error("Failed to fetch coordinator teachers", err);

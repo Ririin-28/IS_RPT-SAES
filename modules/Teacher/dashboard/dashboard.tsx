@@ -5,8 +5,6 @@ import { useRouter } from "next/navigation";
 import { CalendarDays, Filter, Printer } from "lucide-react";
 import {
   ResponsiveContainer,
-  AreaChart,
-  Area,
   BarChart,
   Bar,
   PieChart,
@@ -214,6 +212,8 @@ export default function TeacherDashboard() {
 
   const [selectedSections, setSelectedSections] = useState<string[]>([]);
   const [studentRows, setStudentRows] = useState<DashboardStudentRow[]>([]);
+  const [isPreparingPrint, setIsPreparingPrint] = useState(false);
+  const [isPrintReady, setIsPrintReady] = useState(false);
   const todayDateLabel = useMemo(
     () =>
       new Date().toLocaleDateString("en-US", {
@@ -398,24 +398,41 @@ export default function TeacherDashboard() {
   const distributionValues = monthKey ? subjectTrend?.levelDistributionByMonth?.[monthKey] : undefined;
   const normalizedDistributionValues = resolvedLevelLabels.map((_, index) => distributionValues?.[index] ?? 0);
 
-  const monthlyProgressData = useMemo(
-    () =>
-      filteredPeriodLabels.map((label, index) => ({
-        month: label.slice(0, 3),
-        score: Math.max(0, Math.min(100, (filteredPeriodValues[index] ?? 0) * 12)),
-      })),
-    [filteredPeriodLabels, filteredPeriodValues]
+  const levelKeyByIndex = useMemo(
+    () => resolvedLevelLabels.map((_, index) => `level_${index}`),
+    [resolvedLevelLabels]
   );
 
-  const beforeAfterData = useMemo(() => {
-    const first = filteredPeriodValues.find((value) => value > 0) ?? 0;
-    const last = [...filteredPeriodValues].reverse().find((value) => value > 0) ?? first;
-    return [
-      { group: "At-Risk", before: Math.max(20, first * 10), after: Math.max(28, last * 10 + 6) },
-      { group: "Developing", before: Math.max(30, first * 11), after: Math.max(38, last * 11 + 6) },
-      { group: "Proficient", before: Math.max(40, first * 12), after: Math.max(48, last * 12 + 6) },
-    ];
-  }, [filteredPeriodValues]);
+  const monthlyLevelProgressData = useMemo(
+    () =>
+      filteredMonthIndices.map((index) => {
+        const monthLabel = periodLabels[index] ?? "";
+        const monthKey = trendData?.months?.[index]?.key;
+        const values = monthKey ? subjectTrend?.levelDistributionByMonth?.[monthKey] : undefined;
+        const row: Record<string, number | string> = { month: monthLabel.slice(0, 3) };
+        levelKeyByIndex.forEach((key, levelIndex) => {
+          row[key] = values?.[levelIndex] ?? 0;
+        });
+        return row;
+      }),
+    [filteredMonthIndices, levelKeyByIndex, periodLabels, subjectTrend?.levelDistributionByMonth, trendData?.months]
+  );
+
+  const interventionLevelData = useMemo(() => {
+    const firstIndex = filteredMonthIndices.length ? filteredMonthIndices[0] : 0;
+    const lastIndex = filteredMonthIndices.length ? filteredMonthIndices[filteredMonthIndices.length - 1] : firstIndex;
+    const firstKey = trendData?.months?.[firstIndex]?.key;
+    const lastKey = trendData?.months?.[lastIndex]?.key;
+    const firstValues = firstKey ? subjectTrend?.levelDistributionByMonth?.[firstKey] : undefined;
+    const lastValues = lastKey ? subjectTrend?.levelDistributionByMonth?.[lastKey] : undefined;
+
+    return resolvedLevelLabels.map((level, index) => ({
+      level,
+      before: firstValues?.[index] ?? 0,
+      after: lastValues?.[index] ?? 0,
+      color: chartMultiPalette[index % chartMultiPalette.length],
+    }));
+  }, [filteredMonthIndices, resolvedLevelLabels, subjectTrend?.levelDistributionByMonth, trendData?.months]);
 
   useEffect(() => {
     let cancelled = false;
@@ -514,19 +531,69 @@ export default function TeacherDashboard() {
   }, [teacherProfile?.gradeHandled]);
 
   const handlePrintDashboard = useCallback(() => {
-    window.print();
+    setIsPreparingPrint(true);
+    setIsPrintReady(false);
+  }, []);
+
+  useEffect(() => {
+    if (!isPreparingPrint) return;
+
+    let timeoutId: number | null = null;
+    let raf1 = 0;
+    let raf2 = 0;
+
+    raf1 = window.requestAnimationFrame(() => {
+      raf2 = window.requestAnimationFrame(() => {
+        setIsPrintReady(true);
+        timeoutId = window.setTimeout(() => {
+          window.print();
+        }, 120);
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(raf1);
+      window.cancelAnimationFrame(raf2);
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [isPreparingPrint]);
+
+  useEffect(() => {
+    const handleAfterPrint = () => {
+      setIsPreparingPrint(false);
+      setIsPrintReady(false);
+    };
+
+    const handleBeforePrint = () => {
+      setIsPrintReady(true);
+    };
+
+    window.addEventListener("afterprint", handleAfterPrint);
+    window.addEventListener("beforeprint", handleBeforePrint);
+
+    return () => {
+      window.removeEventListener("afterprint", handleAfterPrint);
+      window.removeEventListener("beforeprint", handleBeforePrint);
+    };
   }, []);
 
   return (
-    <div className="relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
+    <div className="dashboard-page">
+      <div className="dashboard-live relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -top-24 right-0 h-72 w-72 rounded-full bg-emerald-100/25 blur-3xl" />
         <div className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-emerald-200/30 blur-3xl" />
       </div>
-      <TeacherSidebar />
+      <div className="no-print">
+        <TeacherSidebar />
+      </div>
 
       <div className="relative z-10 flex flex-1 flex-col overflow-hidden pt-16">
-        <TeacherHeader title="Dashboard" />
+        <div className="no-print">
+          <TeacherHeader title="Dashboard" />
+        </div>
 
         <main className="flex-1 overflow-y-auto">
           <div className="relative h-full p-4 sm:p-5 md:p-6">
@@ -893,28 +960,26 @@ export default function TeacherDashboard() {
                   <SecondaryHeader title="Class Progress Overview" />
                   <div className="mt-3 grid grid-cols-1 gap-4">
                     <div className="rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg">
-                      <p className="text-sm font-semibold text-slate-700">Monthly Student Progress</p>
+                      <p className="text-sm font-semibold text-slate-700">Monthly Student Progress by Level</p>
                       <div className="mt-3 h-64">
                         <ResponsiveContainer width="100%" height="100%">
-                          <AreaChart data={monthlyProgressData}>
-                            <defs>
-                              <linearGradient id="progressFillTeacher" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor={dashboardSecondary} stopOpacity={0.7} />
-                                <stop offset="100%" stopColor={dashboardSecondary} stopOpacity={0.08} />
-                              </linearGradient>
-                            </defs>
+                          <BarChart data={monthlyLevelProgressData}>
                             <CartesianGrid strokeDasharray="4 4" stroke="#d1fae5" />
                             <XAxis dataKey="month" />
-                            <YAxis domain={[0, 100]} />
+                            <YAxis allowDecimals={false} />
                             <ReTooltip />
-                            <Area
-                              type="monotone"
-                              dataKey="score"
-                              stroke={dashboardPrimary}
-                              strokeWidth={3}
-                              fill="url(#progressFillTeacher)"
-                            />
-                          </AreaChart>
+                            <ReLegend />
+                            {levelKeyByIndex.map((key, index) => (
+                              <Bar
+                                key={key}
+                                dataKey={key}
+                                name={resolvedLevelLabels[index]}
+                                stackId="levels"
+                                fill={chartMultiPalette[index % chartMultiPalette.length]}
+                                radius={index === levelKeyByIndex.length - 1 ? [8, 8, 0, 0] : [0, 0, 0, 0]}
+                              />
+                            ))}
+                          </BarChart>
                         </ResponsiveContainer>
                       </div>
                     </div>
@@ -925,13 +990,13 @@ export default function TeacherDashboard() {
                   <SecondaryHeader title="Intervention Tracking" />
                   <div className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-3">
                     <div className="rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg xl:col-span-2">
-                      <p className="text-sm font-semibold text-slate-700">Student Improvement (Before vs After)</p>
+                      <p className="text-sm font-semibold text-slate-700">Level Distribution Shift (Start vs End)</p>
                       <div className="mt-3 h-64">
                         <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={beforeAfterData}>
+                          <BarChart data={interventionLevelData}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#d1fae5" />
-                            <XAxis dataKey="group" />
-                            <YAxis domain={[0, 100]} />
+                            <XAxis dataKey="level" />
+                            <YAxis allowDecimals={false} />
                             <ReTooltip />
                             <ReLegend />
                             <Bar dataKey="before" fill={dashboardWarn} radius={[8, 8, 0, 0]} />
@@ -977,6 +1042,271 @@ export default function TeacherDashboard() {
           </div>
         </main>
       </div>
+
+      <div className="print-report-root" aria-hidden={!isPreparingPrint && !isPrintReady}>
+        <div className="print-report-header">
+          <div>
+            <h1>Teacher Dashboard Report</h1>
+            <p className="print-report-subtitle">Remedial intervention overview for assigned grade and subjects</p>
+          </div>
+          <p className="print-report-date">Generated: {todayDateLabel}</p>
+        </div>
+
+        <div className="print-report-kpis">
+          <article className="print-report-card">
+            <h3>English Students</h3>
+            <p className="print-metric-value">{Number(handledCounts.English) || 0}</p>
+          </article>
+          <article className="print-report-card">
+            <h3>Filipino Students</h3>
+            <p className="print-metric-value">{Number(handledCounts.Filipino) || 0}</p>
+          </article>
+          <article className="print-report-card">
+            <h3>Math Students</h3>
+            <p className="print-metric-value">{Number(handledCounts.Math) || 0}</p>
+          </article>
+          <article className="print-report-card">
+            <h3>Selected Scope</h3>
+            <p className="print-metric-value">{`${selectedSubject} / ${gradeNumberLabel}`}</p>
+          </article>
+        </div>
+
+        <section className="print-section-block">
+          <h2>Teacher Profile</h2>
+          <div className="print-report-card print-profile-grid">
+            <div>
+              <span className="print-label">Name</span>
+              <p>{teacherProfile?.fullName ?? "N/A"}</p>
+            </div>
+            <div>
+              <span className="print-label">Role</span>
+              <p>{teacherProfile?.role ?? "N/A"}</p>
+            </div>
+            <div>
+              <span className="print-label">Grade</span>
+              <p>{gradeNumberLabel}</p>
+            </div>
+            <div>
+              <span className="print-label">Subjects</span>
+              <p>{teacherProfile?.subjectAssigned ?? "N/A"}</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="print-section-block">
+          <h2>Class Progress Overview</h2>
+          <div className="print-chart-frame">
+            {monthlyLevelProgressData.length > 0 ? (
+              <BarChart width={980} height={240} data={monthlyLevelProgressData} margin={{ top: 6, right: 16, left: 0, bottom: 6 }}>
+                <CartesianGrid strokeDasharray="4 4" stroke="#d1fae5" />
+                <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                <ReLegend wrapperStyle={{ fontSize: 10 }} iconSize={8} />
+                {levelKeyByIndex.map((key, index) => (
+                  <Bar
+                    key={`print-monthly-${key}`}
+                    dataKey={key}
+                    name={resolvedLevelLabels[index]}
+                    stackId="levels"
+                    fill={chartMultiPalette[index % chartMultiPalette.length]}
+                    isAnimationActive={false}
+                  />
+                ))}
+              </BarChart>
+            ) : (
+              <p className="print-empty-state">No monthly progress data available for the selected scope.</p>
+            )}
+          </div>
+        </section>
+
+        <section className="print-section-block">
+          <div className="print-two-col">
+            <article className="print-report-card print-report-chart-card">
+              <h3>Level Distribution Shift (Start vs End)</h3>
+              {interventionLevelData.length > 0 ? (
+                <BarChart width={420} height={210} data={interventionLevelData} margin={{ top: 6, right: 10, left: 0, bottom: 18 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#d1fae5" />
+                  <XAxis dataKey="level" tick={{ fontSize: 10 }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                  <ReLegend wrapperStyle={{ fontSize: 10 }} iconSize={8} />
+                  <Bar dataKey="before" fill={dashboardWarn} isAnimationActive={false} />
+                  <Bar dataKey="after" fill={dashboardSecondary} isAnimationActive={false} />
+                </BarChart>
+              ) : (
+                <p className="print-empty-state">No intervention shift data available.</p>
+              )}
+            </article>
+
+            <article className="print-report-card print-report-chart-card">
+              <h3>Students per Phonemic Level ({selectedSubject})</h3>
+              {hasPhonemicLevelPieData ? (
+                <PieChart width={420} height={210}>
+                  <Pie
+                    data={phonemicLevelPieData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx={210}
+                    cy={100}
+                    innerRadius={42}
+                    outerRadius={76}
+                    paddingAngle={2}
+                    isAnimationActive={false}
+                  >
+                    {phonemicLevelPieData.map((entry) => (
+                      <Cell key={`print-phonemic-${entry.name}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <ReLegend verticalAlign="bottom" height={30} wrapperStyle={{ fontSize: 10, paddingTop: 4 }} iconSize={8} />
+                </PieChart>
+              ) : (
+                <p className="print-empty-state">No phonemic level data available.</p>
+              )}
+            </article>
+          </div>
+        </section>
+      </div>
+
+      <style jsx global>{`
+        @media print {
+          @page {
+            size: landscape;
+            margin: 6mm;
+          }
+
+          .dashboard-live,
+          .no-print {
+            display: none !important;
+          }
+
+          .dashboard-page {
+            height: auto !important;
+            overflow: visible !important;
+            background: #ffffff !important;
+          }
+
+          .print-report-root {
+            display: block !important;
+            width: 100% !important;
+            overflow: visible !important;
+            background: #ffffff !important;
+            color: #0f172a !important;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif !important;
+          }
+
+          .print-report-header,
+          .print-report-kpis,
+          .print-section-block,
+          .print-report-card,
+          .print-chart-frame,
+          .print-two-col {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+
+          .print-report-header {
+            display: flex !important;
+            justify-content: space-between !important;
+            align-items: baseline !important;
+            margin-bottom: 8px !important;
+          }
+
+          .print-report-header h1 {
+            margin: 0 !important;
+            font-size: 20px !important;
+          }
+
+          .print-report-subtitle,
+          .print-report-date {
+            margin: 0 !important;
+            font-size: 11px !important;
+            color: #64748b !important;
+          }
+
+          .print-report-kpis {
+            display: grid !important;
+            grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+            gap: 8px !important;
+            margin-bottom: 10px !important;
+          }
+
+          .print-section-block {
+            margin-bottom: 10px !important;
+          }
+
+          .print-section-block h2 {
+            margin: 0 0 6px 0 !important;
+            font-size: 13px !important;
+          }
+
+          .print-report-card {
+            border: 1px solid #d7e1e8 !important;
+            border-radius: 6px !important;
+            padding: 8px !important;
+            background: #ffffff !important;
+          }
+
+          .print-report-card h3 {
+            margin: 0 0 2px 0 !important;
+            font-size: 10px !important;
+            color: #64748b !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.04em !important;
+          }
+
+          .print-metric-value {
+            margin: 0 !important;
+            font-size: 18px !important;
+            font-weight: 700 !important;
+          }
+
+          .print-profile-grid {
+            display: grid !important;
+            grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+            gap: 8px !important;
+          }
+
+          .print-label {
+            display: block !important;
+            margin-bottom: 2px !important;
+            font-size: 10px !important;
+            color: #64748b !important;
+          }
+
+          .print-chart-frame {
+            border: 1px solid #d7e1e8 !important;
+            border-radius: 6px !important;
+            padding: 6px !important;
+            background: #ffffff !important;
+          }
+
+          .print-two-col {
+            display: grid !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 8px !important;
+          }
+
+          .print-report-chart-card {
+            height: 238px !important;
+          }
+
+          .print-empty-state {
+            margin: 0 !important;
+            color: #64748b !important;
+            font-size: 12px !important;
+          }
+
+          * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+        }
+
+        @media screen {
+          .print-report-root {
+            display: none;
+          }
+        }
+      `}</style>
     </div>
   );
 }

@@ -82,6 +82,7 @@ export default function TeacherTab({ teachers, searchTerm }: TeacherTabProps) {
       "No#": idx + 1,
       "Teacher ID": teacher.teacherId ?? "",
       "Full Name": teacher.name ?? "",
+      "Role": teacher.role ?? "Teacher",
       Email: teacher.email ?? "",
       "Contact Number": teacher.contactNumber ?? "",
     }));
@@ -152,6 +153,7 @@ export default function TeacherTab({ teachers, searchTerm }: TeacherTabProps) {
         columns={[
           { key: "no", title: "No#" },
           { key: "name", title: "Full Name" },
+          { key: "role", title: "Role" },
           { key: "email", title: "Email" },
           { key: "contactNumber", title: "Contact Number" },
         ]}

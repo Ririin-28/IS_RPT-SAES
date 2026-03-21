@@ -16,8 +16,6 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
-  AreaChart,
-  Area,
   PieChart,
   Pie,
   Cell,
@@ -107,6 +105,35 @@ type SubjectKey = "english" | "filipino" | "math";
 type CoordinatorStudentResponse = {
   success: boolean;
   data?: StudentRecordDto[];
+  error?: string;
+};
+
+type CoordinatorHandledScope = {
+  gradeId: number;
+  gradeLabel: string;
+  subjectId: number;
+  subjectName: string;
+};
+
+type CoordinatorAnalyticsResponse = {
+  success: boolean;
+  data?: {
+    handledScopes: CoordinatorHandledScope[];
+    sections: string[];
+    overview: {
+      students: number;
+      teachers: number;
+      pendingMaterials: number;
+    };
+    levelLabels: string[];
+    monthSeries: Array<{ key: string; label: string }>;
+    monthlyLevelCounts: Record<string, number[]>;
+    levelShift: {
+      before: number[];
+      after: number[];
+    };
+    phonemicDistribution: number[];
+  };
   error?: string;
 };
 
@@ -292,12 +319,17 @@ export default function MasterTeacherDashboard() {
   const [gradeCounts, setGradeCounts] = useState<{ students: number; teachers: number } | null>(null);
   const [isLoadingGradeCounts, setIsLoadingGradeCounts] = useState(false);
   const [gradeCountsError, setGradeCountsError] = useState<string | null>(null);
+  const [analyticsData, setAnalyticsData] = useState<CoordinatorAnalyticsResponse["data"] | null>(null);
+  const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
   const [selectedSubject, setSelectedSubject] = useState<CoordinatorSubject>("Math");
   const [selectedSection, setSelectedSection] = useState<string>("All Sections");
   const [selectedGrade, setSelectedGrade] = useState<string>("Grade Assigned");
   const [selectedRange, setSelectedRange] = useState<DateRangeFilter>("6m");
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
+  const [isPreparingPrint, setIsPreparingPrint] = useState(false);
+  const [isPrintReady, setIsPrintReady] = useState(false);
   const todayDateLabel = useMemo(
     () =>
       new Date().toLocaleDateString("en-US", {
@@ -575,206 +607,140 @@ export default function MasterTeacherDashboard() {
     }
   }, [coordinatorProfile?.gradeHandled, coordinatorProfile?.subjectAssigned]);
 
-  const dateBounds = useMemo(() => {
-    const end = new Date();
-    const start = new Date(end);
-    if (selectedRange === "3m") {
-      start.setMonth(end.getMonth() - 3);
-    } else if (selectedRange === "6m") {
-      start.setMonth(end.getMonth() - 6);
-    } else {
-      start.setMonth(end.getMonth() - 12);
-    }
-    const toDate = (value: Date) => value.toISOString().slice(0, 10);
-    return {
-      from: toDate(start),
-      to: toDate(end),
+  useEffect(() => {
+    const controller = new AbortController();
+
+    const loadAnalytics = async () => {
+      if (userId === null) {
+        setAnalyticsData(null);
+        setAnalyticsError("Missing user information. Please log in again.");
+        return;
+      }
+
+      setIsLoadingAnalytics(true);
+      setAnalyticsError(null);
+
+      try {
+        const params = new URLSearchParams({
+          userId: String(userId),
+          subject: selectedSubject,
+          range: selectedRange,
+          section: selectedSection,
+        });
+
+        const response = await fetch(`/api/master_teacher/coordinator/dashboard/analytics?${params.toString()}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+
+        const payload = (await response.json().catch(() => null)) as CoordinatorAnalyticsResponse | null;
+
+        if (!response.ok || !payload?.success || !payload.data) {
+          throw new Error(payload?.error ?? "Failed to load coordinator analytics.");
+        }
+
+        setAnalyticsData(payload.data);
+        setGradeCounts({
+          students: Number(payload.data.overview.students) || 0,
+          teachers: Number(payload.data.overview.teachers) || 0,
+        });
+        setPendingApprovalsCount(Number(payload.data.overview.pendingMaterials) || 0);
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        const message = error instanceof Error ? error.message : "Failed to load coordinator analytics.";
+        setAnalyticsError(message);
+        setAnalyticsData(null);
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoadingAnalytics(false);
+        }
+      }
     };
-  }, [selectedRange]);
+
+    loadAnalytics();
+
+    return () => controller.abort();
+  }, [userId, selectedRange, selectedSection, selectedSubject, refreshTick]);
 
   const sectionOptions = useMemo(() => {
-    const values = Array.from(new Set(students.map((student) => sanitize(student.section)).filter((value) => value.length > 0))).sort(
-      (a, b) => a.localeCompare(b)
+    const values = Array.from(new Set((analyticsData?.sections ?? []).filter((value) => value.length > 0))).sort((a, b) =>
+      a.localeCompare(b)
     );
     return ["All Sections", ...values];
-  }, [students]);
+  }, [analyticsData?.sections]);
 
-  const filteredStudents = useMemo(() => {
-    const from = parseIsoDate(dateBounds.from);
-    const to = parseIsoDate(dateBounds.to);
-
-    return students.filter((student) => {
-      const matchesSection = selectedSection === "All Sections" || sanitize(student.section) === selectedSection;
-      const matchesGrade = !selectedGrade || selectedGrade === "Grade Assigned" || sanitize(student.gradeLevel) === selectedGrade;
-      const updatedDate = parseIsoDate(student.updatedAt);
-      const matchesDate = (!from || (updatedDate && updatedDate >= from)) && (!to || (updatedDate && updatedDate <= to));
-      return matchesSection && matchesGrade && matchesDate;
-    });
-  }, [dateBounds.from, dateBounds.to, selectedGrade, selectedSection, students]);
-
-  const metrics = useMemo(() => {
-    const base = filteredStudents;
-    const count = base.length;
-    const subjectScores = base.map((student, index) => {
-      const rawScore =
-        selectedSubject === "English"
-          ? scoreFromLevel(student.englishPhonemic)
-          : selectedSubject === "Filipino"
-            ? scoreFromLevel(student.filipinoPhonemic)
-            : scoreFromLevel(student.mathProficiency);
-      return clamp(rawScore + (index % 6) - 2, 20, 98);
-    });
-    const avgScore = subjectScores.length > 0 ? subjectScores.reduce((sum, score) => sum + score, 0) / subjectScores.length : 0;
-
-    const now = new Date();
-    const monthlyProgress = Array.from({ length: 6 }, (_, index) => {
-      const pointDate = new Date(now.getFullYear(), now.getMonth() - (5 - index), 1);
-      const trend = clamp(45 + index * 6 + avgScore * 0.35 - (index % 2) * 3, 30, 98);
-      return { month: monthLabel(pointDate), score: Number(trend.toFixed(1)) };
+  const handledSubjectOptions = useMemo<CoordinatorSubject[]>(() => {
+    const found = new Set<CoordinatorSubject>();
+    (analyticsData?.handledScopes ?? []).forEach((scope) => {
+      const normalized = normalizeMaterialSubject(scope.subjectName);
+      if (normalized === "English" || normalized === "Filipino" || normalized === "Math") {
+        found.add(normalized);
+      }
     });
 
-    const mastery = { atRisk: 0, developing: 0, proficient: 0, advanced: 0 };
-    subjectScores.forEach((score) => {
-      if (score < 45) mastery.atRisk += 1;
-      else if (score < 65) mastery.developing += 1;
-      else if (score < 85) mastery.proficient += 1;
-      else mastery.advanced += 1;
-    });
-    const masteryDistribution = [
-      { name: "At-Risk", value: mastery.atRisk, color: dashboardDanger },
-      { name: "Developing", value: mastery.developing, color: dashboardWarn },
-      { name: "Proficient", value: mastery.proficient, color: dashboardSecondary },
-      { name: "Advanced", value: mastery.advanced, color: dashboardAccent },
-    ];
+    if (!found.size) {
+      found.add(selectedSubject);
+    }
 
-    const sections = Array.from(new Set(base.map((student) => sanitize(student.section)).filter(Boolean)));
-    const sectionList = sections.length ? sections : ["Section A", "Section B"];
-    const competencies = ["Phonics", "Vocabulary", "Comprehension", "Numeracy", "Reasoning"];
+    return Array.from(found);
+  }, [analyticsData?.handledScopes, selectedSubject]);
 
-    const skillGapHeatmap: HeatmapPoint[] = [];
-    sectionList.forEach((section, row) => {
-      competencies.forEach((competency, col) => {
-        const value = clamp(Math.round(35 + (avgScore % 24) + row * 7 - col * 6 + ((row + col) % 3) * 5), 10, 95);
-        skillGapHeatmap.push({ x: competency, y: section, value });
-      });
-    });
-
-    const atRiskTrend = Array.from({ length: 8 }, (_, index) => {
-      const pointDate = new Date(now);
-      pointDate.setDate(now.getDate() - (7 - index) * 7);
-      const projected = Math.max(0, Math.round((count * 0.28 - index * 0.35 + ((index + 1) % 2) * 0.6) * 10) / 10);
-      return { week: `W${index + 1}`, date: dateLabel(pointDate), count: projected };
-    });
-
-    const interventionEffectiveness = [
-      { name: "Small Group", effect: clamp(Math.round(avgScore * 0.92), 40, 95) },
-      { name: "1:1 Coaching", effect: clamp(Math.round(avgScore * 0.97), 42, 97) },
-      { name: "Peer Support", effect: clamp(Math.round(avgScore * 0.88), 35, 93) },
-      { name: "Parent Follow-Up", effect: clamp(Math.round(avgScore * 0.83), 30, 90) },
-    ];
-
-    const beforeAfter = [
-      {
-        group: "At-Risk",
-        before: clamp(Math.round(44 + avgScore * 0.18), 30, 68),
-        after: clamp(Math.round(57 + avgScore * 0.22), 45, 82),
-      },
-      {
-        group: "Developing",
-        before: clamp(Math.round(56 + avgScore * 0.17), 40, 74),
-        after: clamp(Math.round(67 + avgScore * 0.2), 55, 88),
-      },
-      {
-        group: "Proficient",
-        before: clamp(Math.round(69 + avgScore * 0.13), 58, 86),
-        after: clamp(Math.round(78 + avgScore * 0.16), 66, 95),
-      },
-    ];
-
-    const masteryTime = Array.from({ length: 7 }, (_, index) => ({
-      step: `Week ${index + 1}`,
-      days: clamp(Number((26 - index * 2.4 - avgScore * 0.04).toFixed(1)), 7, 28),
-    }));
-
-    const remediationCompletion = [
-      { name: "Completed", value: clamp(Math.round(avgScore), 30, 96), color: dashboardSecondary },
-      {
-        name: "Remaining",
-        value: clamp(100 - Math.round(avgScore), 4, 70),
-        color: "#d1fae5",
-      },
-    ];
-
-    const attendancePerformance = base.map((student, index) => {
-      const attendance = clamp(76 + ((index * 3) % 24), 70, 99);
-      const performance = clamp(Math.round((subjectScores[index] ?? avgScore) * 0.86 + attendance * 0.22 - 10), 35, 99);
-      return {
-        student: student.fullName.split(" ")[0] ?? `S${index + 1}`,
-        attendance,
-        performance,
-      };
-    });
-
-    const weeklyEngagement = Array.from({ length: 10 }, (_, index) => ({
-      week: `W${index + 1}`,
-      value: clamp(Math.round(56 + index * 3 + (avgScore - 60) * 0.35 - (index % 3) * 2), 40, 97),
-    }));
-
-    const assignmentCompletion = Array.from({ length: 6 }, (_, index) => ({
-      period: `P${index + 1}`,
-      rate: clamp(Math.round(59 + index * 5 + (avgScore - 60) * 0.3 - (index % 2) * 3), 42, 98),
-    }));
-
-    const difficultCompetencyHeatmap: HeatmapPoint[] = [];
-    ["Word Analysis", "Computation", "Inference", "Problem Solving", "Fluency"].forEach((comp, row) => {
-      sectionList.forEach((section, col) => {
-        const diff = clamp(Math.round(65 - avgScore * 0.4 + row * 8 - col * 2 + ((row + col) % 2) * 6), 8, 92);
-        difficultCompetencyHeatmap.push({ x: section, y: comp, value: diff });
-      });
-    });
-
-    const aiWeakSkills = [
-      { skill: "Phonemic Awareness", gap: clamp(Math.round(72 - avgScore * 0.45), 12, 88) },
-      { skill: "Reading Fluency", gap: clamp(Math.round(68 - avgScore * 0.4), 10, 86) },
-      { skill: "Math Fact Recall", gap: clamp(Math.round(70 - avgScore * 0.42), 14, 89) },
-      { skill: "Comprehension", gap: clamp(Math.round(66 - avgScore * 0.39), 12, 85) },
-      { skill: "Vocabulary", gap: clamp(Math.round(62 - avgScore * 0.36), 10, 82) },
-    ];
-
-    const aiInterventionPrediction = [
-      { name: "Small Group", predicted: clamp(Math.round(avgScore + 8), 45, 99) },
-      { name: "1:1 Coaching", predicted: clamp(Math.round(avgScore + 12), 50, 99) },
-      { name: "Adaptive Tasks", predicted: clamp(Math.round(avgScore + 10), 46, 99) },
-      { name: "Parent Briefing", predicted: clamp(Math.round(avgScore + 6), 42, 98) },
-    ];
-
-    const progressForecast = Array.from({ length: 12 }, (_, index) => {
-      const isForecast = index >= 8;
-      const score = clamp(Number((avgScore * 0.72 + 32 + index * (isForecast ? 2.4 : 1.6)).toFixed(1)), 35, 98);
-      return { point: `W${index + 1}`, actual: isForecast ? null : score, forecast: isForecast ? score : null };
-    });
-
-    return {
-      monthlyProgress,
-      masteryDistribution,
-      skillGapHeatmap,
-      atRiskTrend,
-      interventionEffectiveness,
-      beforeAfter,
-      masteryTime,
-      remediationCompletion,
-      attendancePerformance,
-      weeklyEngagement,
-      assignmentCompletion,
-      difficultCompetencyHeatmap,
-      aiWeakSkills,
-      aiInterventionPrediction,
-      progressForecast,
-    };
-  }, [filteredStudents, selectedSubject]);
+  useEffect(() => {
+    if (!handledSubjectOptions.length) return;
+    if (!handledSubjectOptions.includes(selectedSubject)) {
+      setSelectedSubject(handledSubjectOptions[0]);
+    }
+  }, [handledSubjectOptions, selectedSubject]);
 
   const handlePrint = useCallback(() => {
-    window.print();
+    setIsPreparingPrint(true);
+    setIsPrintReady(false);
+  }, []);
+
+  useEffect(() => {
+    if (!isPreparingPrint) return;
+
+    let timeoutId: number | null = null;
+    let raf1 = 0;
+    let raf2 = 0;
+
+    raf1 = window.requestAnimationFrame(() => {
+      raf2 = window.requestAnimationFrame(() => {
+        setIsPrintReady(true);
+        timeoutId = window.setTimeout(() => {
+          window.print();
+        }, 120);
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(raf1);
+      window.cancelAnimationFrame(raf2);
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [isPreparingPrint]);
+
+  useEffect(() => {
+    const handleAfterPrint = () => {
+      setIsPreparingPrint(false);
+      setIsPrintReady(false);
+    };
+
+    const handleBeforePrint = () => {
+      setIsPrintReady(true);
+    };
+
+    window.addEventListener("afterprint", handleAfterPrint);
+    window.addEventListener("beforeprint", handleBeforePrint);
+
+    return () => {
+      window.removeEventListener("afterprint", handleAfterPrint);
+      window.removeEventListener("beforeprint", handleBeforePrint);
+    };
   }, []);
 
   const clearFilters = useCallback(() => {
@@ -802,33 +768,57 @@ export default function MasterTeacherDashboard() {
     return `${subject} Coordinator`;
   }, [coordinatorProfile?.subjectAssigned]);
   const selectedSubjectKey = useMemo<SubjectKey>(() => toSubjectKey(selectedSubject), [selectedSubject]);
-  const phonemicLevelPieData = useMemo(() => {
-    const levelMap = new Map<string, number>();
-    filteredStudents.forEach((student) => {
-      const rawLevel =
-        selectedSubject === "English"
-          ? student.englishPhonemic
-          : selectedSubject === "Filipino"
-            ? student.filipinoPhonemic
-            : student.mathProficiency;
-      const normalized = normalizePhonemicLevel(rawLevel, selectedSubjectKey);
-      if (!normalized) return;
-      levelMap.set(normalized, (levelMap.get(normalized) ?? 0) + 1);
-    });
+  const resolvedLevelLabels = useMemo(() => {
+    const labels = analyticsData?.levelLabels ?? [];
+    if (labels.length > 0) {
+      return labels;
+    }
+    return PHONEMIC_LEVELS[selectedSubjectKey];
+  }, [analyticsData?.levelLabels, selectedSubjectKey]);
 
-    return PHONEMIC_LEVELS[selectedSubjectKey]
+  const levelKeyByIndex = useMemo(() => resolvedLevelLabels.map((_, index) => `level_${index}`), [resolvedLevelLabels]);
+
+  const monthlyLevelProgressData = useMemo(() => {
+    const monthSeries = analyticsData?.monthSeries ?? [];
+    const countsByMonth = analyticsData?.monthlyLevelCounts ?? {};
+
+    return monthSeries.map((month) => {
+      const values = countsByMonth[month.key] ?? [];
+      const row: Record<string, string | number> = { month: month.label.slice(0, 3) };
+      levelKeyByIndex.forEach((key, index) => {
+        row[key] = Number(values[index] ?? 0) || 0;
+      });
+      return row;
+    });
+  }, [analyticsData?.monthSeries, analyticsData?.monthlyLevelCounts, levelKeyByIndex]);
+
+  const interventionLevelData = useMemo(() => {
+    const before = analyticsData?.levelShift.before ?? [];
+    const after = analyticsData?.levelShift.after ?? [];
+
+    return resolvedLevelLabels.map((level, index) => ({
+      level,
+      before: Number(before[index] ?? 0) || 0,
+      after: Number(after[index] ?? 0) || 0,
+      color: chartMultiPalette[index % chartMultiPalette.length],
+    }));
+  }, [analyticsData?.levelShift.after, analyticsData?.levelShift.before, resolvedLevelLabels]);
+
+  const phonemicLevelPieData = useMemo(() => {
+    const distribution = analyticsData?.phonemicDistribution ?? [];
+    return resolvedLevelLabels
       .map((name, index) => ({
         name,
-        value: levelMap.get(name) ?? 0,
+        value: Number(distribution[index] ?? 0) || 0,
         color: chartMultiPalette[index % chartMultiPalette.length],
       }))
-      .filter((item) => item.value > 0)
-      .map((item) => ({ ...item }));
-  }, [filteredStudents, selectedSubject, selectedSubjectKey]);
+      .filter((item) => item.value > 0);
+  }, [analyticsData?.phonemicDistribution, resolvedLevelLabels]);
   const hasPhonemicLevelPieData = useMemo(() => phonemicLevelPieData.some((item) => item.value > 0), [phonemicLevelPieData]);
 
   return (
-    <div className="print-page relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
+    <div className="dashboard-page">
+      <div className="dashboard-live print-page relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -top-24 right-0 h-72 w-72 rounded-full bg-emerald-100/25 blur-3xl" />
         <div className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-emerald-200/30 blur-3xl" />
@@ -913,6 +903,10 @@ export default function MasterTeacherDashboard() {
                 <DashboardMetricCard value={todayDateLabel} label="Date Today" icon={<CalendarDays className="h-5.5 w-5.5" />} />
               </div>
 
+              {analyticsError ? (
+                <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{analyticsError}</div>
+              ) : null}
+
               <hr className="border-gray-200 mb-4 sm:mb-5 md:mb-6" />
 
               {/* Charts Section */}
@@ -981,7 +975,14 @@ export default function MasterTeacherDashboard() {
                               <div>
                                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Subject</p>
                                 <div className="flex flex-wrap gap-2">
-                                  <FilterChip active label={selectedSubject} onClick={() => {}} />
+                                  {handledSubjectOptions.map((subjectOption) => (
+                                    <FilterChip
+                                      key={subjectOption}
+                                      label={subjectOption}
+                                      active={selectedSubject === subjectOption}
+                                      onClick={() => setSelectedSubject(subjectOption)}
+                                    />
+                                  ))}
                                 </div>
                               </div>
                               <div>
@@ -1028,23 +1029,37 @@ export default function MasterTeacherDashboard() {
                     <SecondaryHeader title="Class Progress Overview" />
                     <div className="mt-3 grid grid-cols-1 gap-4">
                       <div className="rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg">
-                        <p className="text-sm font-semibold text-slate-700">Monthly Student Progress</p>
+                        <p className="text-sm font-semibold text-slate-700">Monthly Student Progress by Level</p>
                         <div className="mt-3 h-64">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={metrics.monthlyProgress}>
-                              <defs>
-                                <linearGradient id="progressFill" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="0%" stopColor={dashboardSecondary} stopOpacity={0.7} />
-                                  <stop offset="100%" stopColor={dashboardSecondary} stopOpacity={0.08} />
-                                </linearGradient>
-                              </defs>
-                              <CartesianGrid strokeDasharray="4 4" stroke="#d1fae5" />
-                              <XAxis dataKey="month" />
-                              <YAxis domain={[0, 100]} />
-                              <ReTooltip />
-                              <Area type="monotone" dataKey="score" stroke={dashboardPrimary} strokeWidth={3} fill="url(#progressFill)" />
-                            </AreaChart>
-                          </ResponsiveContainer>
+                          {isLoadingAnalytics ? (
+                            <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/40 text-sm font-medium text-slate-500">
+                              Loading monthly progress...
+                            </div>
+                          ) : monthlyLevelProgressData.length === 0 ? (
+                            <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/40 text-sm font-medium text-slate-500">
+                              No monthly progress data available for the selected grade and subject.
+                            </div>
+                          ) : (
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={monthlyLevelProgressData}>
+                                <CartesianGrid strokeDasharray="4 4" stroke="#d1fae5" />
+                                <XAxis dataKey="month" />
+                                <YAxis allowDecimals={false} />
+                                <ReTooltip />
+                                <ReLegend />
+                                {levelKeyByIndex.map((key, index) => (
+                                  <Bar
+                                    key={key}
+                                    dataKey={key}
+                                    name={resolvedLevelLabels[index]}
+                                    stackId="levels"
+                                    fill={chartMultiPalette[index % chartMultiPalette.length]}
+                                    radius={index === levelKeyByIndex.length - 1 ? [8, 8, 0, 0] : [0, 0, 0, 0]}
+                                  />
+                                ))}
+                              </BarChart>
+                            </ResponsiveContainer>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1054,19 +1069,29 @@ export default function MasterTeacherDashboard() {
                     <SecondaryHeader title="Intervention Tracking" />
                     <div className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-3">
                       <div className="rounded-2xl border border-white/75 bg-white/55 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.07)] backdrop-blur-lg xl:col-span-2">
-                        <p className="text-sm font-semibold text-slate-700">Student Improvement (Before vs After)</p>
+                        <p className="text-sm font-semibold text-slate-700">Level Distribution Shift (Start vs End)</p>
                         <div className="mt-3 h-64">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={metrics.beforeAfter}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#d1fae5" />
-                              <XAxis dataKey="group" />
-                              <YAxis domain={[0, 100]} />
-                              <ReTooltip />
-                              <ReLegend />
-                              <Bar dataKey="before" fill={dashboardWarn} radius={[8, 8, 0, 0]} />
-                              <Bar dataKey="after" fill={dashboardSecondary} radius={[8, 8, 0, 0]} />
-                            </BarChart>
-                          </ResponsiveContainer>
+                          {isLoadingAnalytics ? (
+                            <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/40 text-sm font-medium text-slate-500">
+                              Loading intervention data...
+                            </div>
+                          ) : interventionLevelData.length === 0 ? (
+                            <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/40 text-sm font-medium text-slate-500">
+                              No intervention shift data available.
+                            </div>
+                          ) : (
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={interventionLevelData}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#d1fae5" />
+                                <XAxis dataKey="level" />
+                                <YAxis allowDecimals={false} />
+                                <ReTooltip />
+                                <ReLegend />
+                                <Bar dataKey="before" fill={dashboardWarn} radius={[8, 8, 0, 0]} />
+                                <Bar dataKey="after" fill={dashboardSecondary} radius={[8, 8, 0, 0]} />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          )}
                         </div>
                       </div>
 
@@ -1107,18 +1132,271 @@ export default function MasterTeacherDashboard() {
           </div>
         </main>
       </div>
+
+      </div>
+
+      <div className="print-report-root" aria-hidden={!isPreparingPrint && !isPrintReady}>
+        <div className="print-report-header">
+          <div>
+            <h1>Coordinator Dashboard Report</h1>
+            <p className="print-report-subtitle">Scoped to handled grade level and subject assignments</p>
+          </div>
+          <p className="print-report-date">Generated: {todayDateLabel}</p>
+        </div>
+
+        <div className="print-report-kpis">
+          <article className="print-report-card">
+            <h3>Total Students</h3>
+            <p className="print-metric-value">{Number(totalStudentsValue) || 0}</p>
+          </article>
+          <article className="print-report-card">
+            <h3>Total Teachers</h3>
+            <p className="print-metric-value">{Number(teacherCardValue) || 0}</p>
+          </article>
+          <article className="print-report-card">
+            <h3>Pending Materials</h3>
+            <p className="print-metric-value">{Number(pendingReviewsValue) || 0}</p>
+          </article>
+          <article className="print-report-card">
+            <h3>Subject / Grade</h3>
+            <p className="print-metric-value">{`${selectedSubject} / ${gradeNumberLabel}`}</p>
+          </article>
+        </div>
+
+        <section className="print-section-block">
+          <h2>Teacher Profile</h2>
+          <div className="print-report-card print-profile-grid">
+            <div>
+              <span className="print-label">Name</span>
+              <p>{coordinatorProfile?.fullName ?? "N/A"}</p>
+            </div>
+            <div>
+              <span className="print-label">Role</span>
+              <p>{coordinatorProfile?.role ?? "N/A"}</p>
+            </div>
+            <div>
+              <span className="print-label">Grade</span>
+              <p>{gradeNumberLabel}</p>
+            </div>
+            <div>
+              <span className="print-label">Coordinator</span>
+              <p>{coordinatorLabel}</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="print-section-block">
+          <h2>Class Progress Overview</h2>
+          <div className="print-chart-frame">
+            {monthlyLevelProgressData.length > 0 ? (
+              <BarChart width={980} height={240} data={monthlyLevelProgressData} margin={{ top: 6, right: 16, left: 0, bottom: 6 }}>
+                <CartesianGrid strokeDasharray="4 4" stroke="#d1fae5" />
+                <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                <ReLegend wrapperStyle={{ fontSize: 10 }} iconSize={8} />
+                {levelKeyByIndex.map((key, index) => (
+                  <Bar
+                    key={`print-monthly-${key}`}
+                    dataKey={key}
+                    name={resolvedLevelLabels[index]}
+                    stackId="levels"
+                    fill={chartMultiPalette[index % chartMultiPalette.length]}
+                    isAnimationActive={false}
+                  />
+                ))}
+              </BarChart>
+            ) : (
+              <p className="print-empty-state">No monthly progress data available for the selected scope.</p>
+            )}
+          </div>
+        </section>
+
+        <section className="print-section-block">
+          <div className="print-two-col">
+            <article className="print-report-card print-report-chart-card">
+              <h3>Level Distribution Shift (Start vs End)</h3>
+              {interventionLevelData.length > 0 ? (
+                <BarChart width={420} height={210} data={interventionLevelData} margin={{ top: 6, right: 10, left: 0, bottom: 18 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#d1fae5" />
+                  <XAxis dataKey="level" tick={{ fontSize: 10 }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                  <ReLegend wrapperStyle={{ fontSize: 10 }} iconSize={8} />
+                  <Bar dataKey="before" fill={dashboardWarn} isAnimationActive={false} />
+                  <Bar dataKey="after" fill={dashboardSecondary} isAnimationActive={false} />
+                </BarChart>
+              ) : (
+                <p className="print-empty-state">No intervention shift data available.</p>
+              )}
+            </article>
+
+            <article className="print-report-card print-report-chart-card">
+              <h3>Students per Phonemic Level ({selectedSubject})</h3>
+              {hasPhonemicLevelPieData ? (
+                <PieChart width={420} height={210}>
+                  <Pie
+                    data={phonemicLevelPieData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx={210}
+                    cy={100}
+                    innerRadius={42}
+                    outerRadius={76}
+                    paddingAngle={2}
+                    isAnimationActive={false}
+                  >
+                    {phonemicLevelPieData.map((entry) => (
+                      <Cell key={`print-phonemic-${entry.name}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <ReLegend verticalAlign="bottom" height={30} wrapperStyle={{ fontSize: 10, paddingTop: 4 }} iconSize={8} />
+                </PieChart>
+              ) : (
+                <p className="print-empty-state">No phonemic level data available.</p>
+              )}
+            </article>
+          </div>
+        </section>
+      </div>
+
       <style jsx global>{`
         @media print {
+          @page {
+            size: landscape;
+            margin: 6mm;
+          }
+
+          .dashboard-live,
           .no-print {
             display: none !important;
           }
-          .print-page {
+
+          .print-page,
+          .dashboard-page {
             height: auto !important;
             overflow: visible !important;
+            background: #ffffff !important;
           }
+
+          .print-report-root {
+            display: block !important;
+            width: 100% !important;
+            overflow: visible !important;
+            background: #ffffff !important;
+            color: #0f172a !important;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif !important;
+          }
+
+          .print-report-header,
+          .print-report-kpis,
+          .print-section-block,
+          .print-report-card,
+          .print-chart-frame,
+          .print-two-col {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+
+          .print-report-header {
+            display: flex !important;
+            justify-content: space-between !important;
+            align-items: baseline !important;
+            margin-bottom: 8px !important;
+          }
+
+          .print-report-header h1 {
+            margin: 0 !important;
+            font-size: 20px !important;
+          }
+
+          .print-report-subtitle,
+          .print-report-date {
+            margin: 0 !important;
+            font-size: 11px !important;
+            color: #64748b !important;
+          }
+
+          .print-report-kpis {
+            display: grid !important;
+            grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+            gap: 8px !important;
+            margin-bottom: 10px !important;
+          }
+
+          .print-section-block {
+            margin-bottom: 10px !important;
+          }
+
+          .print-section-block h2 {
+            margin: 0 0 6px 0 !important;
+            font-size: 13px !important;
+          }
+
+          .print-report-card {
+            border: 1px solid #d7e1e8 !important;
+            border-radius: 6px !important;
+            padding: 8px !important;
+            background: #ffffff !important;
+          }
+
+          .print-report-card h3 {
+            margin: 0 0 2px 0 !important;
+            font-size: 10px !important;
+            color: #64748b !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.04em !important;
+          }
+
+          .print-metric-value {
+            margin: 0 !important;
+            font-size: 18px !important;
+            font-weight: 700 !important;
+          }
+
+          .print-profile-grid {
+            display: grid !important;
+            grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+            gap: 8px !important;
+          }
+
+          .print-label {
+            display: block !important;
+            margin-bottom: 2px !important;
+            font-size: 10px !important;
+            color: #64748b !important;
+          }
+
+          .print-chart-frame {
+            border: 1px solid #d7e1e8 !important;
+            border-radius: 6px !important;
+            padding: 6px !important;
+            background: #ffffff !important;
+          }
+
+          .print-two-col {
+            display: grid !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 8px !important;
+          }
+
+          .print-report-chart-card {
+            height: 238px !important;
+          }
+
+          .print-empty-state {
+            margin: 0 !important;
+            color: #64748b !important;
+            font-size: 12px !important;
+          }
+
           * {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
+          }
+        }
+
+        @media screen {
+          .print-report-root {
+            display: none;
           }
         }
       `}</style>

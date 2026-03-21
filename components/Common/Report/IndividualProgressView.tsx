@@ -229,8 +229,11 @@ export default function IndividualProgressView({
   const studentName = useMemo(() => formatStudentName(student), [student]);
   const studentLrn = (student?.lrn ?? "").trim();
 
+  const safeSessions = useMemo(() => (Array.isArray(sessions) ? sessions : []), [sessions]);
+  const safeAssessments = useMemo(() => (Array.isArray(assessments) ? assessments : []), [assessments]);
+
   const timelineEntries = useMemo<TimelineEntry[]>(() => {
-    const sessionEntries: TimelineEntry[] = (sessions ?? []).map((session, index) => {
+    const sessionEntries: TimelineEntry[] = safeSessions.map((session, index) => {
       const completed = session.schedule_date ?? session.completed_at ?? session.created_at;
       return {
         key: buildSessionKey(session, index),
@@ -241,7 +244,7 @@ export default function IndividualProgressView({
       };
     });
 
-    const assessmentEntries: TimelineEntry[] = (assessments ?? []).map((assessment, index) => ({
+    const assessmentEntries: TimelineEntry[] = safeAssessments.map((assessment, index) => ({
       key: buildAssessmentKey(assessment, index),
       kind: "assessment",
       timestamp: toTimestamp(assessment.submitted_at),
@@ -249,7 +252,7 @@ export default function IndividualProgressView({
     }));
 
     return [...assessmentEntries, ...sessionEntries].sort((left, right) => right.timestamp - left.timestamp);
-  }, [assessments, sessions]);
+  }, [safeAssessments, safeSessions]);
 
   const firstSessionKey = useMemo(() => timelineEntries.find((entry) => entry.kind === "session")?.key ?? null, [timelineEntries]);
 
@@ -267,8 +270,18 @@ export default function IndividualProgressView({
     });
   }, [firstSessionKey, timelineEntries]);
 
-  const assessmentCount = assessments.length;
-  const sessionCount = sessions.length;
+  const assessmentCount = safeAssessments.length;
+  const sessionCount = safeSessions.length;
+  const hasTimelineData = timelineEntries.length > 0;
+
+  const timelineDescription =
+    assessmentCount > 0 && sessionCount > 0
+      ? "Assessment records and remedial sessions arranged by date."
+      : sessionCount > 0
+        ? "Remedial sessions arranged by date."
+        : assessmentCount > 0
+          ? "Assessment records arranged by date."
+          : "No assessment records or remedial sessions found.";
 
   return (
     <div className="relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
@@ -315,15 +328,15 @@ export default function IndividualProgressView({
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
-                {timelineEntries.length === 0 ? (
-                  <p className="text-sm text-slate-500">No performance records found.</p>
+                {!hasTimelineData ? (
+                  <p className="text-sm text-slate-500">No assessment records or remedial sessions found.</p>
                 ) : (
                   <div className="space-y-5">
                     <div className="rounded-xl border border-slate-200 bg-white px-4 py-4">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                         <div>
                           <p className="text-sm font-semibold text-[#013300]">Progress Timeline</p>
-                          <p className="text-sm text-slate-500">Assessment records and remedial sessions arranged by date.</p>
+                          <p className="text-sm text-slate-500">{timelineDescription}</p>
                         </div>
 
                         <div className="flex flex-wrap gap-2 text-xs">

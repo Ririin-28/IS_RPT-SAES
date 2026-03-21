@@ -48,6 +48,21 @@ const TRACKED_MONTHS = [
 
 const SUBJECT_NAMES = ["English", "Filipino", "Math"] as const;
 type SubjectName = (typeof SUBJECT_NAMES)[number];
+type StaffRoleName = "Teacher" | "Master Teacher";
+
+const STAFF_ID_CANDIDATES = ["teacher_id", "master_teacher_id", "staff_id", "user_id", "account_id", "id"] as const;
+const STAFF_SUBJECT_CANDIDATES = [
+  "subject",
+  "subjects_handled",
+  "subject_name",
+  "specialization",
+  "major",
+  "coordinator_subject",
+  "coordinatorSubject",
+] as const;
+
+const FIXED_TREND_START_UTC = Date.UTC(2025, 8, 1, 0, 0, 0, 0);
+const FIXED_TREND_END_UTC = Date.UTC(2026, 2, 31, 23, 59, 59, 999);
 
 type ResolvedTable = {
   name: string;
@@ -65,14 +80,27 @@ type MonthStat = {
 
 type AnalyticsPayload = {
   remedialAverageHeatmap: Array<{ grade: string; subject: SubjectName; averageScore: number }>;
-  performanceTrend: Array<{
-    period: string;
-    allSubjects: number;
-    english: number;
-    filipino: number;
-    math: number;
-  }>;
+  performanceTrend: {
+    monthly: Array<{
+      period: string;
+      allSubjects: number;
+      english: number;
+      filipino: number;
+      math: number;
+    }>;
+    weekly: Array<{
+      period: string;
+      allSubjects: number;
+      english: number;
+      filipino: number;
+      math: number;
+    }>;
+  };
   averageStudentsPerSubject: Array<{ subject: SubjectName; students: number; percentage: number }>;
+  staffRoleDistribution: {
+    overall: Array<{ role: StaffRoleName; count: number }>;
+    bySubject: Record<SubjectName, Array<{ role: StaffRoleName; count: number }>>;
+  };
 };
 
 const pickColumn = (columns: Set<string>, candidates: readonly string[]): string | null => {
@@ -129,20 +157,156 @@ const normalizeGrade = (value: unknown): string | null => {
   return `Grade ${match[1]}`;
 };
 
-const monthKey = (date: Date): string => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+const monthKey = (date: Date): string => `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 
-const buildRecentMonthKeys = (count = 12): Array<{ key: string; label: string }> => {
-  const now = new Date();
+const buildFixedMonthKeys = (): Array<{ key: string; label: string }> => {
   const keys: Array<{ key: string; label: string }> = [];
-  for (let offset = count - 1; offset >= 0; offset -= 1) {
-    const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+  for (let month = 8; month <= 11; month += 1) {
+    const date = new Date(Date.UTC(2025, month, 1));
     keys.push({
       key: monthKey(date),
-      label: date.toLocaleDateString("en-US", { month: "short", year: "numeric" }),
+      label: date.toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" }),
+    });
+  }
+  for (let month = 0; month <= 2; month += 1) {
+    const date = new Date(Date.UTC(2026, month, 1));
+    keys.push({
+      key: monthKey(date),
+      label: date.toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" }),
     });
   }
   return keys;
 };
+
+const buildFixedWeekKeys = (): Array<{ key: string; label: string }> => {
+  const keys: Array<{ key: string; label: string }> = [];
+  for (let cursor = FIXED_TREND_START_UTC; cursor <= FIXED_TREND_END_UTC; cursor += 7 * 24 * 60 * 60 * 1000) {
+    const startDate = new Date(cursor);
+    const endDate = new Date(Math.min(cursor + (6 * 24 * 60 * 60 * 1000), FIXED_TREND_END_UTC));
+    const startLabel = startDate.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+    const endLabel = endDate.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+    keys.push({
+      key: startDate.toISOString().slice(0, 10),
+      label: `${startLabel} - ${endLabel}`,
+    });
+  }
+  return keys;
+};
+
+const makeTrendBucket = (): Record<SubjectName | "All", { sum: number; count: number }> => ({
+  All: { sum: 0, count: 0 },
+  English: { sum: 0, count: 0 },
+  Filipino: { sum: 0, count: 0 },
+  Math: { sum: 0, count: 0 },
+});
+
+const createEmptyStaffRoleDistribution = (): AnalyticsPayload["staffRoleDistribution"] => ({
+  overall: [
+    { role: "Teacher", count: 0 },
+    { role: "Master Teacher", count: 0 },
+  ],
+  bySubject: {
+    English: [
+      { role: "Teacher", count: 0 },
+      { role: "Master Teacher", count: 0 },
+    ],
+    Filipino: [
+      { role: "Teacher", count: 0 },
+      { role: "Master Teacher", count: 0 },
+    ],
+    Math: [
+      { role: "Teacher", count: 0 },
+      { role: "Master Teacher", count: 0 },
+    ],
+  },
+});
+
+const normalizeSubjectList = (value: unknown): SubjectName[] => {
+  const text = String(value ?? "").trim().toLowerCase();
+  if (!text) return [];
+  const normalized = new Set<SubjectName>();
+  if (text.includes("english")) normalized.add("English");
+  if (text.includes("filipino")) normalized.add("Filipino");
+  if (text.includes("math")) normalized.add("Math");
+  return Array.from(normalized);
+};
+
+async function collectRoleSetsBySubject(tableInfo: ResolvedTable | null): Promise<{ overall: Set<string>; bySubject: Record<SubjectName, Set<string>> }> {
+  const bySubject: Record<SubjectName, Set<string>> = {
+    English: new Set<string>(),
+    Filipino: new Set<string>(),
+    Math: new Set<string>(),
+  };
+
+  if (!tableInfo) {
+    return { overall: new Set<string>(), bySubject };
+  }
+
+  const idColumn = pickColumn(tableInfo.columns, STAFF_ID_CANDIDATES);
+  const subjectColumns = STAFF_SUBJECT_CANDIDATES.filter((candidate) => tableInfo.columns.has(candidate));
+  const selectColumns = [idColumn ? `\`${idColumn}\` AS staff_id` : "NULL AS staff_id", ...subjectColumns.map((column) => `\`${column}\``)];
+
+  const whereParts: string[] = [];
+  applyArchiveFilter(whereParts, tableInfo.columns);
+
+  const [rows] = await query<RowDataPacket[]>(
+    `SELECT ${selectColumns.join(", ")} FROM \`${tableInfo.name}\`${whereParts.length > 0 ? ` WHERE ${whereParts.join(" AND ")}` : ""}`,
+  );
+
+  const overall = new Set<string>();
+  rows.forEach((row, index) => {
+    const staffId = String(row.staff_id ?? `${tableInfo.name}-${index + 1}`);
+    overall.add(staffId);
+
+    if (subjectColumns.length === 0) {
+      return;
+    }
+
+    const matchedSubjects = new Set<SubjectName>();
+    for (const column of subjectColumns) {
+      for (const subject of normalizeSubjectList(row[column])) {
+        matchedSubjects.add(subject);
+      }
+    }
+
+    for (const subject of matchedSubjects) {
+      bySubject[subject].add(staffId);
+    }
+  });
+
+  return { overall, bySubject };
+}
+
+async function buildStaffRoleDistribution(
+  teacherTable: ResolvedTable | null,
+  masterTeacherTable: ResolvedTable | null
+): Promise<AnalyticsPayload["staffRoleDistribution"]> {
+  const [teacherSets, masterTeacherSets] = await Promise.all([
+    collectRoleSetsBySubject(teacherTable),
+    collectRoleSetsBySubject(masterTeacherTable),
+  ]);
+
+  return {
+    overall: [
+      { role: "Teacher", count: teacherSets.overall.size },
+      { role: "Master Teacher", count: masterTeacherSets.overall.size },
+    ],
+    bySubject: {
+      English: [
+        { role: "Teacher", count: teacherSets.bySubject.English.size },
+        { role: "Master Teacher", count: masterTeacherSets.bySubject.English.size },
+      ],
+      Filipino: [
+        { role: "Teacher", count: teacherSets.bySubject.Filipino.size },
+        { role: "Master Teacher", count: masterTeacherSets.bySubject.Filipino.size },
+      ],
+      Math: [
+        { role: "Teacher", count: teacherSets.bySubject.Math.size },
+        { role: "Master Teacher", count: masterTeacherSets.bySubject.Math.size },
+      ],
+    },
+  };
+}
 
 async function resolveTable(candidates: readonly string[]): Promise<ResolvedTable | null> {
   for (const candidate of candidates) {
@@ -265,8 +429,12 @@ async function fetchReportStats(): Promise<{ monthStats: MonthStat[]; currentMon
 async function fetchPerformanceAnalytics(): Promise<AnalyticsPayload> {
   const empty: AnalyticsPayload = {
     remedialAverageHeatmap: [],
-    performanceTrend: [],
+    performanceTrend: {
+      monthly: [],
+      weekly: [],
+    },
     averageStudentsPerSubject: SUBJECT_NAMES.map((subject) => ({ subject, students: 0, percentage: 0 })),
+    staffRoleDistribution: createEmptyStaffRoleDistribution(),
   };
 
   const [performanceExists, activitiesExists, studentExists, gradeExists, subjectExists, sessionExists] = await Promise.all([
@@ -336,7 +504,8 @@ async function fetchPerformanceAnalytics(): Promise<AnalyticsPayload> {
   );
 
   const heatmapAccumulator = new Map<string, { sum: number; count: number }>();
-  const trendAccumulator = new Map<string, Record<SubjectName | "All", { sum: number; count: number }>>();
+  const monthlyTrendAccumulator = new Map<string, Record<SubjectName | "All", { sum: number; count: number }>>();
+  const weeklyTrendAccumulator = new Map<string, Record<SubjectName | "All", { sum: number; count: number }>>();
 
   for (const row of performanceRows) {
     const subject = normalizeSubject(row.subject_value);
@@ -356,19 +525,39 @@ async function fetchPerformanceAnalytics(): Promise<AnalyticsPayload> {
     existingHeat.count += 1;
     heatmapAccumulator.set(heatKey, existingHeat);
 
+    const completedUtcMs = Date.UTC(
+      completedAt.getUTCFullYear(),
+      completedAt.getUTCMonth(),
+      completedAt.getUTCDate(),
+      completedAt.getUTCHours(),
+      completedAt.getUTCMinutes(),
+      completedAt.getUTCSeconds(),
+      completedAt.getUTCMilliseconds()
+    );
+
+    if (completedUtcMs < FIXED_TREND_START_UTC || completedUtcMs > FIXED_TREND_END_UTC) {
+      continue;
+    }
+
     const key = monthKey(completedAt);
-    const monthBucket = trendAccumulator.get(key) ?? {
-      All: { sum: 0, count: 0 },
-      English: { sum: 0, count: 0 },
-      Filipino: { sum: 0, count: 0 },
-      Math: { sum: 0, count: 0 },
-    };
+    const monthBucket = monthlyTrendAccumulator.get(key) ?? makeTrendBucket();
 
     monthBucket.All.sum += score;
     monthBucket.All.count += 1;
     monthBucket[subject].sum += score;
     monthBucket[subject].count += 1;
-    trendAccumulator.set(key, monthBucket);
+    monthlyTrendAccumulator.set(key, monthBucket);
+
+    const daysFromStart = Math.floor((completedUtcMs - FIXED_TREND_START_UTC) / (24 * 60 * 60 * 1000));
+    const weekIndex = Math.floor(daysFromStart / 7);
+    const weekStartUtc = FIXED_TREND_START_UTC + weekIndex * 7 * 24 * 60 * 60 * 1000;
+    const weekKey = new Date(weekStartUtc).toISOString().slice(0, 10);
+    const weekBucket = weeklyTrendAccumulator.get(weekKey) ?? makeTrendBucket();
+    weekBucket.All.sum += score;
+    weekBucket.All.count += 1;
+    weekBucket[subject].sum += score;
+    weekBucket[subject].count += 1;
+    weeklyTrendAccumulator.set(weekKey, weekBucket);
   }
 
   const gradeLabels = Array.from(
@@ -385,9 +574,28 @@ async function fetchPerformanceAnalytics(): Promise<AnalyticsPayload> {
     }
   }
 
-  const monthKeys = buildRecentMonthKeys(12);
-  const performanceTrend: AnalyticsPayload["performanceTrend"] = monthKeys.map(({ key, label }) => {
-    const bucket = trendAccumulator.get(key);
+  const monthKeys = buildFixedMonthKeys();
+  const monthlyTrend: AnalyticsPayload["performanceTrend"]["monthly"] = monthKeys.map(({ key, label }) => {
+    const bucket = monthlyTrendAccumulator.get(key);
+    const average = (scope: SubjectName | "All") => {
+      if (!bucket) return 0;
+      const item = bucket[scope];
+      if (!item || item.count <= 0) return 0;
+      return Math.round(clamp(item.sum / item.count, 0, 100));
+    };
+
+    return {
+      period: label,
+      allSubjects: average("All"),
+      english: average("English"),
+      filipino: average("Filipino"),
+      math: average("Math"),
+    };
+  });
+
+  const weekKeys = buildFixedWeekKeys();
+  const weeklyTrend: AnalyticsPayload["performanceTrend"]["weekly"] = weekKeys.map(({ key, label }) => {
+    const bucket = weeklyTrendAccumulator.get(key);
     const average = (scope: SubjectName | "All") => {
       if (!bucket) return 0;
       const item = bucket[scope];
@@ -447,14 +655,18 @@ async function fetchPerformanceAnalytics(): Promise<AnalyticsPayload> {
 
   return {
     remedialAverageHeatmap,
-    performanceTrend,
+    performanceTrend: {
+      monthly: monthlyTrend,
+      weekly: weeklyTrend,
+    },
     averageStudentsPerSubject,
+    staffRoleDistribution: createEmptyStaffRoleDistribution(),
   };
 }
 
 export async function GET() {
   try {
-    const [studentTable, teacherTable, masterTeacherTable, reportStats, analytics] = await Promise.all([
+    const [studentTable, teacherTable, masterTeacherTable, reportStats, baseAnalytics] = await Promise.all([
       resolveTable(STUDENT_TABLE_CANDIDATES),
       resolveTable(TEACHER_TABLE_CANDIDATES),
       resolveTable(MASTER_TEACHER_TABLE_CANDIDATES),
@@ -467,6 +679,12 @@ export async function GET() {
       countRows(teacherTable),
       countRows(masterTeacherTable),
     ]);
+
+    const staffRoleDistribution = await buildStaffRoleDistribution(teacherTable, masterTeacherTable);
+    const analytics: AnalyticsPayload = {
+      ...baseAnalytics,
+      staffRoleDistribution,
+    };
 
     return NextResponse.json({
       totals: {

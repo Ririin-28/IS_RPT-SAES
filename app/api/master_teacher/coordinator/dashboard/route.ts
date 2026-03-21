@@ -587,6 +587,34 @@ async function collectTeacherIdsFromUsers(
     .filter((value): value is string => Boolean(value));
 }
 
+async function collectMasterTeacherIds(gradeIds: number[]): Promise<Set<string>> {
+  if (!gradeIds.length) {
+    return new Set<string>();
+  }
+
+  const columns = await safeGetColumns(MT_COORDINATOR_TABLE);
+  if (!columns.size || !columns.has("master_teacher_id") || !columns.has("grade_id")) {
+    return new Set<string>();
+  }
+
+  const placeholders = gradeIds.map(() => "?").join(", ");
+  const sql = `
+    SELECT DISTINCT master_teacher_id
+    FROM \`${MT_COORDINATOR_TABLE}\`
+    WHERE grade_id IN (${placeholders})
+  `;
+
+  const [rows] = await query<RowDataPacket[]>(sql, gradeIds);
+  const identifiers = new Set<string>();
+  for (const row of rows ?? []) {
+    const mtId = normalizeIdValue(row.master_teacher_id);
+    if (mtId) {
+      identifiers.add(mtId);
+    }
+  }
+  return identifiers;
+}
+
 async function collectTeacherIds(context: GradeContext): Promise<Set<string>> {
   const [teacherColumns, teacherHandledColumns, userColumns] = await Promise.all([
     safeGetColumns("teacher"),
@@ -622,13 +650,17 @@ export async function GET(req: NextRequest) {
 
     let studentTotal = 0;
     let teacherIdentifiers = new Set<string>();
+    let masterTeacherIdentifiers = new Set<string>();
 
     if (handledPairs.length > 0) {
       studentTotal = await countStudentsByHandledPairs(handledPairs);
       const gradeIds = Array.from(new Set(handledPairs.map((pair) => pair.gradeId)));
       const gradeContext = gradeIds.length ? buildGradeContextFromIds(gradeIds) : context;
       if (gradeContext) {
-        teacherIdentifiers = await collectTeacherIds(gradeContext);
+        [teacherIdentifiers, masterTeacherIdentifiers] = await Promise.all([
+          collectTeacherIds(gradeContext),
+          collectMasterTeacherIds(gradeIds),
+        ]);
         context = gradeContext;
       }
     } else {
@@ -648,14 +680,19 @@ export async function GET(req: NextRequest) {
 
       const subjectIds = await resolveSubjectIdsByName(subjectParam);
       studentTotal = await countStudentsByGradeAndSubject(context, subjectIds);
-      teacherIdentifiers = await collectTeacherIds(context);
+      [teacherIdentifiers, masterTeacherIdentifiers] = await Promise.all([
+        collectTeacherIds(context),
+        collectMasterTeacherIds(context.gradeIds),
+      ]);
     }
+
+    const totalTeachers = teacherIdentifiers.size + masterTeacherIdentifiers.size;
 
     return NextResponse.json({
       success: true,
       data: {
         students: studentTotal,
-        teachers: teacherIdentifiers.size,
+        teachers: totalTeachers,
       },
       metadata: {
         grade: context?.gradeValue ?? null,

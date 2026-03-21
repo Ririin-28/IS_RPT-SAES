@@ -23,7 +23,7 @@ export default function MasterTeacherTeachers() {
 
       {/*---------------------------------Main Content---------------------------------*/}
       <div className="relative z-10 flex-1 pt-16 flex flex-col overflow-hidden">
-        <Header title="Teacher List" />
+        <Header title="Teachers" />
         <main className="flex-1">
           <div
             className="
@@ -39,7 +39,7 @@ export default function MasterTeacherTeachers() {
             <div className="relative z-10 h-full min-h-100 overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_20px_45px_-28px_rgba(15,23,42,0.45)] backdrop-blur-xl sm:p-5 md:p-6">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
                 <div className="flex items-center gap-0 flex-wrap">
-                  <SecondaryHeader title="Teachers Information List" />
+                  <SecondaryHeader title={gradeLabel ? `Grade ${gradeLabel} Teachers` : "Teachers"} />
                 </div>
                 <div className="flex gap-3 w-full sm:w-auto mt-4 sm:mt-0">
                   <div className="relative flex-1 sm:flex-initial">

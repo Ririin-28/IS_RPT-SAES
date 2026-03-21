@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { RowDataPacket } from "mysql2/promise";
 import {
   deleteStudents,
   fetchStudents as fetchStudentRecords,
@@ -7,9 +8,129 @@ import {
 } from "@/lib/students";
 import type { CreateStudentRecordInput } from "@/lib/students/shared";
 import { resolveStudentSubject, type StudentSubject } from "@/lib/students/shared";
+import { getTableColumns, query } from "@/lib/db";
 
 const SUBJECT_FALLBACK: StudentSubject = "English";
 const DEFAULT_PAGE_SIZE = 100;
+
+const ASSIGNMENT_TABLE = "student_teacher_assignment";
+const MASTER_TEACHER_TABLE = "master_teacher";
+const COORDINATOR_HANDLED_TABLE = "mt_coordinator_handled";
+const SUBJECT_TABLE = "subject";
+
+const safeGetColumns = async (table: string): Promise<Set<string>> => {
+  try {
+    return await getTableColumns(table);
+  } catch {
+    return new Set<string>();
+  }
+};
+
+const resolveMasterTeacherIdByUserId = async (userId: number): Promise<string | null> => {
+  const columns = await safeGetColumns(MASTER_TEACHER_TABLE);
+  if (!columns.has("master_teacher_id") || !columns.has("user_id")) {
+    return null;
+  }
+
+  const [rows] = await query<RowDataPacket[]>(
+    `SELECT master_teacher_id FROM ${MASTER_TEACHER_TABLE} WHERE user_id = ? LIMIT 1`,
+    [userId],
+  );
+
+  const value = rows?.[0]?.master_teacher_id;
+  return value === null || value === undefined ? null : String(value).trim() || null;
+};
+
+const resolveSubjectId = async (subject: StudentSubject): Promise<number | null> => {
+  const columns = await safeGetColumns(SUBJECT_TABLE);
+  if (!columns.has("subject_id")) {
+    return null;
+  }
+  const nameColumn = columns.has("subject_name") ? "subject_name" : columns.has("name") ? "name" : null;
+  if (!nameColumn) {
+    return null;
+  }
+
+  const [rows] = await query<RowDataPacket[]>(
+    `SELECT subject_id FROM ${SUBJECT_TABLE} WHERE LOWER(TRIM(${nameColumn})) = ? LIMIT 1`,
+    [String(subject).toLowerCase()],
+  );
+
+  const parsed = Number(rows?.[0]?.subject_id);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const parseGradeNumber = (value: string | null): number | null => {
+  if (!value) {
+    return null;
+  }
+  const match = value.match(/\d+/);
+  if (!match) {
+    return null;
+  }
+  const parsed = Number.parseInt(match[0], 10);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const isCoordinatorHandledForGradeAndSubject = async (
+  masterTeacherId: string,
+  gradeNumber: number | null,
+  subjectId: number,
+): Promise<boolean> => {
+  const columns = await safeGetColumns(COORDINATOR_HANDLED_TABLE);
+  if (!columns.has("master_teacher_id") || !columns.has("subject_id")) {
+    return false;
+  }
+
+  const whereClauses = ["master_teacher_id = ?", "subject_id = ?"];
+  const params: Array<string | number> = [masterTeacherId, subjectId];
+
+  if (gradeNumber !== null && columns.has("grade_id")) {
+    whereClauses.push("grade_id = ?");
+    params.push(gradeNumber);
+  }
+
+  const [rows] = await query<RowDataPacket[]>(
+    `SELECT 1 AS matched FROM ${COORDINATOR_HANDLED_TABLE} WHERE ${whereClauses.join(" AND ")} LIMIT 1`,
+    params,
+  );
+
+  return Boolean(rows?.length);
+};
+
+const fetchAssignedStudentIdsForCoordinator = async (
+  masterTeacherId: string,
+  subjectId: number,
+  gradeNumber: number | null,
+): Promise<Set<string>> => {
+  const columns = await safeGetColumns(ASSIGNMENT_TABLE);
+  if (!columns.has("student_id") || !columns.has("assigned_by_mt_id") || !columns.has("subject_id")) {
+    return new Set<string>();
+  }
+
+  const whereClauses = ["assigned_by_mt_id = ?", "subject_id = ?"];
+  const params: Array<string | number> = [masterTeacherId, subjectId];
+
+  if (columns.has("is_active")) {
+    whereClauses.push("is_active = 1");
+  }
+
+  if (gradeNumber !== null && columns.has("grade_id")) {
+    whereClauses.push("grade_id = ?");
+    params.push(gradeNumber);
+  }
+
+  const [rows] = await query<RowDataPacket[]>(
+    `SELECT DISTINCT student_id FROM ${ASSIGNMENT_TABLE} WHERE ${whereClauses.join(" AND ")}`,
+    params,
+  );
+
+  return new Set(
+    (rows ?? [])
+      .map((row) => (row.student_id === null || row.student_id === undefined ? "" : String(row.student_id).trim()))
+      .filter((value) => value.length > 0),
+  );
+};
 
 const normalizeOptionalString = (value: unknown): string | null | undefined => {
   if (value === undefined) {
@@ -104,6 +225,7 @@ export async function GET(request: NextRequest) {
   const search = url.searchParams.get("search");
   const gradeLevel = url.searchParams.get("gradeLevel");
   const section = url.searchParams.get("section");
+  const userIdParam = url.searchParams.get("userId");
   const page = parsePositiveInteger(url.searchParams.get("page"), 1);
   const pageSize = parsePositiveInteger(url.searchParams.get("pageSize"), DEFAULT_PAGE_SIZE);
 
@@ -113,17 +235,73 @@ export async function GET(request: NextRequest) {
       search,
       gradeLevel,
       section,
-      page,
-      pageSize,
+      page: 1,
+      pageSize: 5000,
     });
+
+    if (userIdParam) {
+      const parsedUserId = Number.parseInt(userIdParam, 10);
+      if (!Number.isFinite(parsedUserId) || parsedUserId <= 0) {
+        return respondWithError("userId must be a valid number when provided.");
+      }
+
+      const masterTeacherId = await resolveMasterTeacherIdByUserId(parsedUserId);
+      if (!masterTeacherId) {
+        return NextResponse.json({
+          success: true,
+          data: [],
+          pagination: { total: 0, page, pageSize },
+        });
+      }
+
+      const subjectId = await resolveSubjectId(subject);
+      if (subjectId === null) {
+        return NextResponse.json({
+          success: true,
+          data: [],
+          pagination: { total: 0, page, pageSize },
+        });
+      }
+
+      const gradeNumber = parseGradeNumber(gradeLevel);
+      const isHandled = await isCoordinatorHandledForGradeAndSubject(masterTeacherId, gradeNumber, subjectId);
+      if (!isHandled) {
+        return NextResponse.json({
+          success: true,
+          data: [],
+          pagination: { total: 0, page, pageSize },
+        });
+      }
+
+      const allowedIds = await fetchAssignedStudentIdsForCoordinator(masterTeacherId, subjectId, gradeNumber);
+      const scoped = result.data.filter((student) => allowedIds.has(String(student.id)));
+      const total = scoped.length;
+      const start = (page - 1) * pageSize;
+      const end = start + pageSize;
+      const paged = scoped.slice(start, end);
+
+      return NextResponse.json({
+        success: true,
+        data: paged,
+        pagination: {
+          total,
+          page,
+          pageSize,
+        },
+      });
+    }
+
+    const start = (page - 1) * pageSize;
+    const end = start + pageSize;
+    const paged = result.data.slice(start, end);
 
     return NextResponse.json({
       success: true,
-      data: result.data,
+      data: paged,
       pagination: {
         total: result.total,
-        page: result.page,
-        pageSize: result.pageSize,
+        page,
+        pageSize,
       },
     });
   } catch (error) {
