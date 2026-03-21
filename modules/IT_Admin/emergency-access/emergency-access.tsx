@@ -138,15 +138,17 @@ export default function ITAdminEmergencyAccessPage() {
   }, [loadStatus, status]);
 
   return (
-    <div className="relative flex min-h-screen overflow-hidden bg-gradient-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
+    <div className="relative flex min-h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
       <ITAdminSidebar />
       <div className="relative z-10 flex flex-1 flex-col overflow-hidden pt-16">
         <ITAdminHeader title="Emergency Access" />
 
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
-          <div className="rounded-2xl border border-white/70 bg-white/70 p-6 shadow-[0_14px_36px_rgba(15,23,42,0.10)] backdrop-blur-xl">
+        <main className="relative flex-1 overflow-y-auto p-4 sm:p-6">
+          <div className="pointer-events-none absolute -top-16 right-10 h-52 w-52 rounded-full bg-emerald-200/55 blur-3xl" />
+          <div className="pointer-events-none absolute bottom-8 left-8 h-56 w-56 rounded-full bg-emerald-100/45 blur-3xl" />
+          <div className="relative h-full min-h-100 overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.10)] backdrop-blur-xl sm:p-5 md:p-6">
             {status?.active ? (
-              <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 p-4">
+              <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
                 <p className="text-sm font-semibold text-amber-900">Emergency Access Active</p>
                 <p className="mt-2 text-sm text-amber-900">Reason: {status.reason ?? "--"}</p>
                 <p className="mt-1 text-sm text-amber-900">Activated at: {formatDateTime(status.activated_at)}</p>
@@ -155,11 +157,11 @@ export default function ITAdminEmergencyAccessPage() {
             ) : null}
 
             {error ? <p className="mb-3 text-sm font-medium text-red-700">{error}</p> : null}
-            {message ? <p className="mb-3 text-sm font-medium text-emerald-700">{message}</p> : null}
+            {message ? <p className="mb-3 text-sm font-medium text-green-700">{message}</p> : null}
 
             <div className="grid gap-6 lg:grid-cols-2">
-              <section className="rounded-xl border border-emerald-100 bg-white p-4">
-                <h2 className="text-lg font-semibold text-[#013300]">Activate Emergency Access</h2>
+              <section className="rounded-xl border border-slate-200 bg-white p-5">
+                <h2 className="text-lg font-semibold text-[#0f3b2e]">Activate Emergency Access</h2>
                 <p className="mt-1 text-sm text-slate-600">
                   Requires reason. Access is limited to Principal-managed Calendars and Requests.
                 </p>
@@ -172,7 +174,7 @@ export default function ITAdminEmergencyAccessPage() {
                   value={reason}
                   onChange={(event) => setReason(event.target.value)}
                   disabled={!canActivate || submitting || loading}
-                  className="mt-2 min-h-28 w-full rounded-lg border border-emerald-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="mt-2 min-h-28 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100"
                   placeholder="Principal unavailable due to emergency..."
                 />
 
@@ -185,21 +187,21 @@ export default function ITAdminEmergencyAccessPage() {
                   value={expiresAt}
                   onChange={(event) => setExpiresAt(event.target.value)}
                   disabled={!canActivate || submitting || loading}
-                  className="mt-2 w-full rounded-lg border border-emerald-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100"
                 />
 
                 <button
                   type="button"
                   onClick={onActivate}
                   disabled={!canActivate || submitting || loading}
-                  className="mt-4 rounded-lg bg-[#013300] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#0a4a08] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="mt-4 rounded-lg bg-[#013300] px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-900 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {submitting ? "Activating..." : "Activate Emergency Access"}
                 </button>
               </section>
 
-              <section className="rounded-xl border border-emerald-100 bg-white p-4">
-                <h2 className="text-lg font-semibold text-[#013300]">Current Status</h2>
+              <section className="rounded-xl border border-slate-200 bg-white p-5">
+                <h2 className="text-lg font-semibold text-[#0f3b2e]">Current Status</h2>
                 {loading ? <p className="mt-3 text-sm text-slate-600">Loading status...</p> : null}
                 {!loading && !status?.active ? (
                   <p className="mt-3 text-sm text-slate-600">No active emergency access session.</p>
@@ -226,16 +228,16 @@ export default function ITAdminEmergencyAccessPage() {
             <section className="mt-6 grid gap-4 md:grid-cols-2">
               <Link
                 href="/IT_Admin/emergency-access/requests"
-                className="rounded-xl border border-emerald-200 bg-white p-4 shadow-sm transition hover:border-emerald-400"
+                className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300"
               >
-                <p className="text-base font-semibold text-[#013300]">Emergency Requests Access</p>
+                <p className="text-base font-semibold text-[#0f3b2e]">Emergency Requests Access</p>
                 <p className="mt-1 text-sm text-slate-600">Review pending requests and approve/reject during an active emergency session.</p>
               </Link>
               <Link
                 href="/IT_Admin/emergency-access/calendars"
-                className="rounded-xl border border-emerald-200 bg-white p-4 shadow-sm transition hover:border-emerald-400"
+                className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300"
               >
-                <p className="text-base font-semibold text-[#013300]">Emergency Calendar Access</p>
+                <p className="text-base font-semibold text-[#0f3b2e]">Emergency Calendar Access</p>
                 <p className="mt-1 text-sm text-slate-600">Adjust Principal-managed calendar records using the same underlying tables.</p>
               </Link>
             </section>

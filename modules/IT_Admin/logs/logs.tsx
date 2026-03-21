@@ -326,13 +326,15 @@ export default function ITAdminLogs() {
   ];
 
   return (
-    <div className="flex h-screen bg-white overflow-hidden">
+    <div className="relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
       <ITAdminSidebar />
       <div className="flex-1 flex flex-col min-h-screen">
         <ITAdminHeader title="Account Logs" />
         <main className="flex-1 overflow-y-auto pt-16">
-          <div className="p-4 h-full sm:p-5 md:p-6">
-            <div className="bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[400px] overflow-y-auto p-4 sm:p-5 md:p-6">
+          <div className="relative p-4 h-full sm:p-5 md:p-6">
+            <div className="pointer-events-none absolute -top-16 right-10 h-52 w-52 rounded-full bg-emerald-200/55 blur-3xl" />
+            <div className="pointer-events-none absolute bottom-8 left-8 h-56 w-56 rounded-full bg-emerald-100/45 blur-3xl" />
+            <div className="relative h-full min-h-100 overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.10)] backdrop-blur-xl sm:p-5 md:p-6">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center gap-0">

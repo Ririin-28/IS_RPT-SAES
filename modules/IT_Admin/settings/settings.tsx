@@ -102,7 +102,7 @@ export default function SystemConfiguration() {
   const accentColorNote = "Used for secondary buttons and highlights";
 
   const fileTriggerClasses = (disabled: boolean) =>
-    `cursor-pointer rounded-lg border border-green-200 bg-white px-3 py-2 text-sm text-[#013300] transition hover:bg-green-50 focus:outline-none focus:ring-2 focus:ring-[#013300] ${disabled ? "cursor-not-allowed opacity-50" : ""}`;
+    `cursor-pointer rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-[#0f3b2e] transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-200 ${disabled ? "cursor-not-allowed opacity-50" : ""}`;
 
   const liveCarousel = landingEditing ? carouselDraft : publishedLandingAssets.carouselImages;
   const statusLooksLikeError = /unable|failed|could not|error|select/i.test(statusMessage);
@@ -528,23 +528,25 @@ export default function SystemConfiguration() {
   }, [logoPreviewUrl, carouselPreviews]);
 
   return (
-    <div className="flex h-screen bg-white overflow-hidden">
+    <div className="relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
       <ITAdminSidebar />
       <div className="flex-1 pt-16 flex flex-col overflow-hidden">
         <ITAdminHeader title="Settings" />
         <main className="flex-1 overflow-y-auto">
-          <div className="p-4 h-full sm:p-5 md:p-6">
-            <div className="bg-white rounded-lg shadow-md border border-gray-200 h-full min-h-[400px] overflow-y-auto p-4 sm:p-5 md:p-6">
+          <div className="relative p-4 h-full sm:p-5 md:p-6">
+            <div className="pointer-events-none absolute -top-16 right-10 h-52 w-52 rounded-full bg-emerald-200/55 blur-3xl" />
+            <div className="pointer-events-none absolute bottom-8 left-8 h-56 w-56 rounded-full bg-emerald-100/45 blur-3xl" />
+            <div className="relative h-full min-h-100 overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.10)] backdrop-blur-xl sm:p-5 md:p-6">
               <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
                 <SecondaryHeader title="System Configuration" />
               </div>
 
               {statusMessage && (
                 <div
-                  className={`mt-3 rounded-md px-4 py-2 text-sm ${
+                  className={`mt-3 rounded-lg px-4 py-2 text-sm ${
                     statusLooksLikeError
                       ? "border border-red-200 bg-red-50 text-red-700"
-                      : "border border-green-200 bg-green-50 text-[#013300]"
+                      : "border border-emerald-200 bg-emerald-50 text-[#0f3b2e]"
                   }`}
                 >
                   {statusMessage}
@@ -552,7 +554,7 @@ export default function SystemConfiguration() {
               )}
 
               {/*
-              <section className="mt-6 rounded-lg border border-green-100 bg-green-50/60 p-4 sm:p-5">
+              <section className="mt-6 rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <h3 className="text-lg font-semibold text-[#013300]">Database Configuration &amp; Maintenance</h3>
@@ -637,7 +639,7 @@ export default function SystemConfiguration() {
                           schedule: event.target.value as ScheduleOption,
                         }))
                       }
-                      className="rounded-lg border border-green-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#013300]"
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
                       disabled={!backupEditing}
                     >
                       {scheduleOptions.map((option) => (
@@ -658,7 +660,7 @@ export default function SystemConfiguration() {
                           retentionDays: event.target.value as RetentionOption,
                         }))
                       }
-                      className="rounded-lg border border-green-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#013300]"
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
                       disabled={!backupEditing}
                     >
                       {retentionOptions.map((option) => (
@@ -766,25 +768,40 @@ export default function SystemConfiguration() {
               </section>
               */}
 
-              <section className="mt-6 rounded-lg border border-green-100 bg-green-50/60 p-4 sm:p-5">
+              <section className="mt-6 rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <h3 className="text-lg font-semibold text-[#013300]">System Theme Customization</h3>
-                    <p className="text-sm text-gray-600 mt-1">
+                    <h3 className="text-lg font-semibold text-slate-900">System Theme Customization</h3>
+                    <p className="mt-1 text-sm text-slate-600">
                       Adjust the primary brand elements shown on every landing page visit. Changes appear in the preview.
                     </p>
                   </div>
                   <div className="flex gap-2">
                     {!themeEditing ? (
-                      <SecondaryButton type="button" small onClick={handleThemeEdit}>
+                      <SecondaryButton
+                        type="button"
+                        small
+                        onClick={handleThemeEdit}
+                        className="border border-slate-300 text-slate-700 hover:bg-slate-100"
+                      >
                         Edit
                       </SecondaryButton>
                     ) : (
                       <>
-                        <SecondaryButton type="button" small onClick={handleThemeCancel}>
+                        <SecondaryButton
+                          type="button"
+                          small
+                          onClick={handleThemeCancel}
+                          className="border border-slate-300 text-slate-700 hover:bg-slate-100"
+                        >
                           Cancel
                         </SecondaryButton>
-                        <PrimaryButton type="button" small onClick={handleThemeSave}>
+                        <PrimaryButton
+                          type="button"
+                          small
+                          onClick={handleThemeSave}
+                          className="border-0 bg-[#0f3b2e] hover:bg-[#0b2f24]"
+                        >
                           Save changes
                         </PrimaryButton>
                       </>
@@ -793,7 +810,7 @@ export default function SystemConfiguration() {
                 </div>
 
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                  <label className="flex flex-col text-sm text-[#013300] gap-1">
+                  <label className="flex flex-col gap-1 text-sm text-slate-700">
                     System name
                     <input
                       type="text"
@@ -801,12 +818,12 @@ export default function SystemConfiguration() {
                       onChange={(event) =>
                         setThemeSettings((prev) => ({ ...prev, systemName: event.target.value }))
                       }
-                      className="rounded-lg border border-green-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#013300]"
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
                       placeholder="e.g. SAES Portal"
                       disabled={!themeEditing}
                     />
                   </label>
-                  <label className="flex flex-col text-sm text-[#013300] gap-1">
+                  <label className="flex flex-col gap-1 text-sm text-slate-700">
                     Welcome message
                     <input
                       type="text"
@@ -814,13 +831,13 @@ export default function SystemConfiguration() {
                       onChange={(event) =>
                         setThemeSettings((prev) => ({ ...prev, welcomeMessage: event.target.value }))
                       }
-                      className="rounded-lg border border-green-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#013300]"
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
                       placeholder="Short friendly greeting"
                       disabled={!themeEditing}
                     />
                   </label>
 
-                  <label className="flex flex-col text-sm text-[#013300] gap-1">
+                  <label className="flex flex-col gap-1 text-sm text-slate-700">
                     Primary colour
                     <div className="flex items-center gap-3">
                       <input
@@ -829,15 +846,15 @@ export default function SystemConfiguration() {
                         onChange={(event) =>
                           setThemeSettings((prev) => ({ ...prev, primaryColor: event.target.value }))
                         }
-                        className="h-10 w-16 rounded border border-green-200"
+                        className="h-10 w-16 rounded border border-slate-300"
                         aria-label="Primary colour"
                         disabled={!themeEditing}
                       />
-                      <span className="text-xs text-gray-600">{themeSettings.primaryColor}</span>
+                      <span className="text-xs text-slate-600">{themeSettings.primaryColor}</span>
                     </div>
                   </label>
 
-                  <label className="flex flex-col text-sm text-[#013300] gap-1">
+                  <label className="flex flex-col gap-1 text-sm text-slate-700">
                     Accent colour
                     <div className="flex items-center gap-3">
                       <input
@@ -846,16 +863,16 @@ export default function SystemConfiguration() {
                         onChange={(event) =>
                           setThemeSettings((prev) => ({ ...prev, accentColor: event.target.value }))
                         }
-                        className="h-10 w-16 rounded border border-green-200"
+                        className="h-10 w-16 rounded border border-slate-300"
                         aria-label="Accent colour"
                         disabled={!themeEditing}
                       />
-                      <span className="text-xs text-gray-600">{themeSettings.accentColor}</span>
+                      <span className="text-xs text-slate-600">{themeSettings.accentColor}</span>
                     </div>
-                    <span className="text-xs text-gray-500 mt-1">{accentColorNote}</span>
+                    <span className="mt-1 text-xs text-slate-500">{accentColorNote}</span>
                   </label>
 
-                  <label className="flex flex-col text-sm text-[#013300] gap-1">
+                  <label className="flex flex-col gap-1 text-sm text-slate-700">
                     Background colour
                     <div className="flex items-center gap-3">
                       <input
@@ -864,15 +881,15 @@ export default function SystemConfiguration() {
                         onChange={(event) =>
                           setThemeSettings((prev) => ({ ...prev, backgroundColor: event.target.value }))
                         }
-                        className="h-10 w-16 rounded border border-green-200"
+                        className="h-10 w-16 rounded border border-slate-300"
                         aria-label="Background colour"
                         disabled={!themeEditing}
                       />
-                      <span className="text-xs text-gray-600">{themeSettings.backgroundColor}</span>
+                      <span className="text-xs text-slate-600">{themeSettings.backgroundColor}</span>
                     </div>
                   </label>
 
-                  <div className="flex flex-col text-sm text-[#013300] gap-1">
+                  <div className="flex flex-col gap-1 text-sm text-slate-700">
                     <span>Upload logo</span>
                     <div className="flex items-center gap-3">
                       <input
@@ -892,51 +909,51 @@ export default function SystemConfiguration() {
                         Browse image
                       </label>
                       {themeSettings.logoFileName && (
-                        <span className="text-xs text-gray-600 truncate max-w-[160px]">
+                        <span className="max-w-40 truncate text-xs text-slate-600">
                           {themeSettings.logoFileName}
                         </span>
                       )}
                     </div>
                     {!themeSettings.logoFileName && (
-                      <span className="text-xs text-gray-400">No file selected yet.</span>
+                      <span className="text-xs text-slate-400">No file selected yet.</span>
                     )}
                   </div>
                 </div>
 
                 {appliedTheme.logoUrl && (
-                  <div className="mt-4 flex flex-col text-sm text-[#013300] gap-1">
+                  <div className="mt-4 flex flex-col gap-1 text-sm text-slate-700">
                     <span>Currently published logo</span>
                     <div className="flex items-center gap-3">
-                      <div className="h-16 w-16 overflow-hidden rounded-lg border border-green-100 bg-white shadow-sm">
+                      <div className="h-16 w-16 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                         <img src={appliedTheme.logoUrl} alt="Published logo" className="h-full w-full object-contain p-2" />
                       </div>
-                      <span className="text-xs text-gray-500">Visible on the live landing page header.</span>
+                      <span className="text-xs text-slate-500">Visible on the live landing page header.</span>
                     </div>
                   </div>
                 )}
 
                 {logoPreviewUrl && (
-                  <div className="mt-4 flex flex-col text-sm text-[#013300] gap-1">
+                  <div className="mt-4 flex flex-col gap-1 text-sm text-slate-700">
                     <span>Next upload preview</span>
                     <div className="flex items-center gap-3">
-                      <div className="h-16 w-16 overflow-hidden rounded-lg border border-green-100 bg-white shadow-sm">
+                      <div className="h-16 w-16 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                         <img src={logoPreviewUrl} alt="Selected logo" className="h-full w-full object-contain p-2" />
                       </div>
-                      <span className="text-xs text-gray-500">Save changes to push this logo on the next deploy.</span>
+                      <span className="text-xs text-slate-500">Save changes to push this logo on the next deploy.</span>
                     </div>
                   </div>
                 )}
 
                 <div
-                  className="mt-4 rounded-lg border border-green-100 bg-white p-4"
+                  className="mt-4 rounded-xl border border-slate-200 bg-slate-50/70 p-4"
                   style={{ background: themeSettings.backgroundColor }}
                 >
-                  <span className="text-sm font-semibold text-[#013300]">Preview</span>
-                  <p className="text-xs text-gray-600 mt-1">Shows the text and colours rendered on the landing page header.</p>
-                  <div className="mt-4 rounded-lg border border-white/60 bg-white/70 p-4 shadow-sm">
+                  <span className="text-sm font-semibold text-slate-900">Preview</span>
+                  <p className="mt-1 text-xs text-slate-600">Shows the text and colours rendered on the landing page header.</p>
+                  <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
                     <div className="flex items-center gap-3">
                       <div
-                        className="h-12 w-12 rounded-lg border border-green-200 flex items-center justify-center text-xs font-semibold"
+                        className="flex h-12 w-12 items-center justify-center rounded-lg border border-slate-200 text-xs font-semibold"
                         style={{ background: themeSettings.primaryColor, color: "#ffffff" }}
                       >
                         {logoPreviewUrl || appliedTheme.logoUrl ? "Logo" : "SA"}
@@ -954,25 +971,40 @@ export default function SystemConfiguration() {
                 </div>
               </section>
 
-              <section className="mt-6 rounded-lg border border-green-100 bg-green-50/60 p-4 sm:p-5">
+              <section className="mt-6 rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <h3 className="text-lg font-semibold text-[#013300]">Landing Page Configuration</h3>
-                    <p className="text-sm text-gray-600 mt-1">
+                    <h3 className="text-lg font-semibold text-slate-900">Landing Page Configuration</h3>
+                    <p className="mt-1 text-sm text-slate-600">
                       Keep the public site current: refresh carousel photos, contact information, and policy documents.
                     </p>
                   </div>
                   <div className="flex gap-2">
                     {!landingEditing ? (
-                      <SecondaryButton type="button" small onClick={handleLandingEdit}>
+                      <SecondaryButton
+                        type="button"
+                        small
+                        onClick={handleLandingEdit}
+                        className="border border-slate-300 text-slate-700 hover:bg-slate-100"
+                      >
                         Edit
                       </SecondaryButton>
                     ) : (
                       <>
-                        <SecondaryButton type="button" small onClick={handleLandingCancel}>
+                        <SecondaryButton
+                          type="button"
+                          small
+                          onClick={handleLandingCancel}
+                          className="border border-slate-300 text-slate-700 hover:bg-slate-100"
+                        >
                           Cancel
                         </SecondaryButton>
-                        <PrimaryButton type="button" small onClick={handleLandingSave}>
+                        <PrimaryButton
+                          type="button"
+                          small
+                          onClick={handleLandingSave}
+                          className="border-0 bg-[#0f3b2e] hover:bg-[#0b2f24]"
+                        >
                           Save changes
                         </PrimaryButton>
                       </>
@@ -981,13 +1013,13 @@ export default function SystemConfiguration() {
                 </div>
 
                 <div className="mt-4 grid gap-4">
-                  <div className="rounded-lg border border-green-100 bg-white p-4">
-                    <h4 className="text-sm font-semibold text-[#013300]">Carousel images</h4>
-                    <p className="text-xs text-gray-500 mt-1">
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <h4 className="text-sm font-semibold text-slate-900">Carousel images</h4>
+                    <p className="mt-1 text-xs text-slate-500">
                       Recommended size: 1600x900px (16:9). Larger images are automatically scaled but may impact load time.
                     </p>
                     <div className="mt-4">
-                      <span className="text-xs font-semibold uppercase tracking-wide text-[#013300]">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">
                         Live carousel
                       </span>
                       {liveCarousel.length > 0 ? (
@@ -995,14 +1027,14 @@ export default function SystemConfiguration() {
                           {liveCarousel.map((image, index) => (
                             <figure
                               key={image.id}
-                              className="group relative overflow-hidden rounded-2xl border border-green-100 bg-white shadow-md ring-1 ring-transparent transition hover:ring-[#0f766e]/50"
+                              className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-transparent transition hover:ring-slate-300"
                             >
                               <img
                                 src={image.url}
                                 alt={`Carousel slide ${index + 1}`}
                                 className="h-44 w-full object-cover transition duration-300 group-hover:scale-105"
                               />
-                              <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 bg-gradient-to-t from-black/70 via-black/0 to-transparent px-4 pb-4 pt-10 text-white">
+                              <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 bg-linear-to-t from-black/70 via-black/0 to-transparent px-4 pb-4 pt-10 text-white">
                                 <div className="space-y-0.5">
                                   <p className="text-sm font-semibold">
                                     {index === 0 ? "Lead slide" : `Slide ${index + 1}`}
@@ -1014,7 +1046,7 @@ export default function SystemConfiguration() {
                                   <button
                                     type="button"
                                     onClick={() => handleRemovePublishedCarousel(image.id)}
-                                    className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-[#013300] shadow-sm transition hover:bg-white"
+                                    className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-[#0f3b2e] shadow-sm transition hover:bg-white"
                                     aria-label={`Remove ${image.name}`}
                                   >
                                     <svg
@@ -1040,7 +1072,7 @@ export default function SystemConfiguration() {
                           ))}
                         </div>
                       ) : (
-                        <div className="mt-3 rounded-2xl border border-dashed border-green-200 bg-green-50/40 p-6 text-center text-sm text-gray-500">
+                        <div className="mt-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">
                           No carousel images have been published yet.
                         </div>
                       )}
@@ -1065,25 +1097,25 @@ export default function SystemConfiguration() {
                           Upload images
                         </label>
                       </div>
-                      <span className="text-xs text-gray-500">
+                      <span className="text-xs text-slate-500">
                         Select multiple JPG or PNG files; the first image becomes the lead slide.
                       </span>
                     </div>
-                    <span className="mt-2 text-xs text-gray-500">
+                    <span className="mt-2 text-xs text-slate-500">
                       {landingAssets.carouselFiles.length > 0
                         ? `${landingAssets.carouselFiles.length} image${landingAssets.carouselFiles.length > 1 ? "s" : ""} loaded for the carousel.`
                         : "No images selected yet."}
                     </span>
                     {carouselPreviews.length > 0 && (
                       <div className="mt-4">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-[#013300]">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">
                           Pending uploads
                         </span>
                         <div className="mt-3 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                           {carouselPreviews.map((url, index) => (
                             <figure
                               key={`${url}-${index}`}
-                              className="group relative overflow-hidden rounded-2xl border border-dashed border-green-200 bg-white shadow-sm"
+                              className="group relative overflow-hidden rounded-2xl border border-dashed border-slate-300 bg-white shadow-sm"
                             >
                               <div className="relative h-44 w-full">
                                 <Image
@@ -1094,7 +1126,7 @@ export default function SystemConfiguration() {
                                   unoptimized
                                 />
                               </div>
-                              <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 bg-gradient-to-t from-black/70 via-black/0 to-transparent px-4 pb-4 pt-10 text-white">
+                              <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 bg-linear-to-t from-black/70 via-black/0 to-transparent px-4 pb-4 pt-10 text-white">
                                 <div className="space-y-0.5">
                                   <p className="text-sm font-medium text-white">
                                     {landingAssets.carouselFiles[index]?.name ?? `Image ${index + 1}`}
@@ -1104,7 +1136,7 @@ export default function SystemConfiguration() {
                                 <button
                                   type="button"
                                   onClick={() => handleRemovePendingCarousel(index)}
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/95 text-[#013300] shadow-sm transition hover:bg-white"
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/95 text-[#0f3b2e] shadow-sm transition hover:bg-white"
                                   aria-label="Remove pending upload"
                                 >
                                   <svg
@@ -1130,13 +1162,13 @@ export default function SystemConfiguration() {
                     )}
                   </div>
 
-                  <div className="rounded-lg border border-green-100 bg-white p-4">
-                    <h4 className="text-sm font-semibold text-[#013300]">Contact details</h4>
-                    <p className="text-xs text-gray-500 mt-1">
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <h4 className="text-sm font-semibold text-slate-900">Contact details</h4>
+                    <p className="mt-1 text-xs text-slate-500">
                       These values appear in the landing page footer so parents and teachers can reach the school.
                     </p>
                     <div className="mt-3 grid gap-3">
-                      <label className="flex flex-col text-sm text-[#013300] gap-1">
+                      <label className="flex flex-col gap-1 text-sm text-slate-700">
                         Address
                         <textarea
                           value={contactDetails.address}
@@ -1144,11 +1176,11 @@ export default function SystemConfiguration() {
                             setContactDetails((prev) => ({ ...prev, address: event.target.value }))
                           }
                           rows={2}
-                          className="rounded-lg border border-green-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#013300]"
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
                           disabled={!landingEditing}
                         />
                       </label>
-                      <label className="flex flex-col text-sm text-[#013300] gap-1">
+                      <label className="flex flex-col gap-1 text-sm text-slate-700">
                         Phone number
                         <input
                           type="text"
@@ -1156,11 +1188,11 @@ export default function SystemConfiguration() {
                           onChange={(event) =>
                             setContactDetails((prev) => ({ ...prev, phone: event.target.value }))
                           }
-                          className="rounded-lg border border-green-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#013300]"
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
                           disabled={!landingEditing}
                         />
                       </label>
-                      <label className="flex flex-col text-sm text-[#013300] gap-1">
+                      <label className="flex flex-col gap-1 text-sm text-slate-700">
                         Email
                         <input
                           type="email"
@@ -1168,11 +1200,11 @@ export default function SystemConfiguration() {
                           onChange={(event) =>
                             setContactDetails((prev) => ({ ...prev, email: event.target.value }))
                           }
-                          className="rounded-lg border border-green-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#013300]"
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
                           disabled={!landingEditing}
                         />
                       </label>
-                      <label className="flex flex-col text-sm text-[#013300] gap-1">
+                      <label className="flex flex-col gap-1 text-sm text-slate-700">
                         Facebook / Messenger link
                         <input
                           type="url"
@@ -1180,7 +1212,7 @@ export default function SystemConfiguration() {
                           onChange={(event) =>
                             setContactDetails((prev) => ({ ...prev, facebook: event.target.value }))
                           }
-                          className="rounded-lg border border-green-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#013300]"
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
                           placeholder="https://"
                           disabled={!landingEditing}
                         />
@@ -1188,12 +1220,12 @@ export default function SystemConfiguration() {
                     </div>
                   </div>
 
-                  <div className="rounded-lg border border-green-100 bg-white p-4">
-                    <h4 className="text-sm font-semibold text-[#013300]">Privacy policy document</h4>
-                    <p className="text-xs text-gray-500 mt-1">
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <h4 className="text-sm font-semibold text-slate-900">Privacy policy document</h4>
+                    <p className="mt-1 text-xs text-slate-500">
                       Upload a replacement for the public privacy policy (accepts .pdf, .doc, .docx). The previous file is stored in <code>/public/RPT-SAES_Privacy-Policy.docx</code>.
                     </p>
-                    <span className="mt-3 inline-flex items-center gap-2 rounded-full border border-green-100 bg-green-50 px-3 py-1 text-xs text-[#013300]">
+                    <span className="mt-3 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-[#0f3b2e]">
                       Current file: {publishedLandingAssets.privacyPolicyName ?? "Not uploaded"}
                     </span>
                     <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-3">
@@ -1216,7 +1248,7 @@ export default function SystemConfiguration() {
                         </label>
                       </div>
                     </div>
-                    <span className="mt-2 text-xs text-gray-500">
+                    <span className="mt-2 text-xs text-slate-500">
                       {landingAssets.privacyPolicyFile
                         ? `Ready to upload: ${landingAssets.privacyPolicyFile.name}`
                         : "No document selected yet."}
