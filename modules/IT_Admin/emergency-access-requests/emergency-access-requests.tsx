@@ -633,30 +633,48 @@ export default function PrincipalRequests() {
 
         <main className="flex-1 overflow-y-auto">
           <div className="relative h-full p-4 sm:p-5 md:p-6">
-            {emergencyLocked ? (
-              <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
-                <p className="text-sm font-semibold text-amber-900">Emergency Access is inactive</p>
-                <p className="mt-1 text-sm text-amber-900">
-                  Activate Emergency Access first to enable Requests actions.
-                </p>
-                <Link
-                  href="/IT_Admin/emergency-access"
-                  className="mt-3 inline-flex rounded-lg bg-[#013300] px-3 py-1.5 text-xs font-semibold text-white"
-                >
-                  Activate Emergency Access
-                </Link>
-              </div>
-            ) : (
+            {!emergencyLocked ? (
               <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
                 <p className="text-sm font-semibold text-amber-900">Emergency Access Active</p>
                 <p className="mt-1 text-sm text-amber-900">Reason: {emergencyReason ?? "--"}</p>
                 <p className="mt-1 text-sm text-amber-900">Activated: {emergencyActivatedAt ?? "--"}</p>
                 <p className="mt-1 text-sm text-amber-900">Expires: {emergencyExpiresAt ?? "--"}</p>
               </div>
-            )}
+            ) : null}
             <div className="relative h-full min-h-100">
               {emergencyLocked && (
-                <div className="pointer-events-auto absolute inset-0 z-40 rounded-2xl bg-white/65 backdrop-blur-[1px]" />
+                <div className="pointer-events-auto absolute inset-0 z-20 flex items-center justify-center rounded-2xl bg-white/18 p-4 backdrop-blur-[2px]">
+                  <div className="w-full max-w-md rounded-[28px] border border-[#013300]/12 bg-white/95 p-6 text-center shadow-[0_28px_60px_-28px_rgba(1,51,0,0.26)]">
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#013300]/8 text-[#013300]">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-6 w-6"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M12 2 5 5v6c0 5 3.4 9.4 7 11 3.6-1.6 7-6 7-11V5l-7-3Z" />
+                        <path d="M9.5 12.5 11 14l3.5-3.5" />
+                      </svg>
+                    </div>
+                    <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#013300]/70">
+                      Access Required
+                    </p>
+                    <h2 className="mt-2 text-xl font-semibold text-[#013300]">Emergency Access is inactive</h2>
+                    <p className="mt-3 text-sm leading-6 text-slate-600">
+                      Activate Emergency Access first to enable Requests actions.
+                    </p>
+                    <Link
+                      href="/IT_Admin/emergency-access"
+                      className="mt-5 inline-flex rounded-xl bg-[#013300] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#024d00]"
+                    >
+                      Activate Emergency Access
+                    </Link>
+                  </div>
+                </div>
               )}
               <div className="relative h-full overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.10)] backdrop-blur-xl sm:p-5 md:p-6">
 
