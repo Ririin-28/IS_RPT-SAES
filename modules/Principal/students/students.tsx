@@ -79,8 +79,8 @@ export default function PrincipalStudents() {
                 <div className="flex items-center gap-0">
                   <SecondaryHeader title="Students in" />
                   {activeTab !== "All Grades" && (
-                    <div className="ml-2">
-                      <SecondaryHeader title="Grade" />
+                    <div className="ml-0">
+                      <SecondaryHeader title="" />
                     </div>
                   )}
                   <HeaderDropdown

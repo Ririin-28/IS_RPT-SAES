@@ -1,5 +1,5 @@
-import ParentDashboard from "@/modules/Parent/dashboard/dashboard";
+import { redirect } from "next/navigation";
 
 export default function Dashboard() {
-  return <ParentDashboard />;
-} 
+  redirect("/Parent/home");
+}

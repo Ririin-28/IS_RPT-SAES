@@ -135,7 +135,6 @@ export default function ProfileDropdown({
   };
 
   const handleConfirmLogout = () => {
-    setShowLogoutConfirm(false);
     runLogout();
   };
 

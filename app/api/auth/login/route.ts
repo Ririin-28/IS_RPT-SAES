@@ -21,6 +21,7 @@ interface LoginRequestPayload {
   deviceToken?: string | null;
   deviceName?: string | null;
   expectedRole?: string | null;
+  disallowRole?: string | null;
 }
 
 interface UserRow extends RowDataPacket {
@@ -114,6 +115,14 @@ function validateLoginPayload(payload: LoginRequestPayload) {
     !isSafeText(payload.expectedRole, MAX_EXPECTED_ROLE_LENGTH)
   ) {
     return { ok: false, error: "Invalid expected role" };
+  }
+
+  if (
+    payload.disallowRole !== undefined &&
+    payload.disallowRole !== null &&
+    !isSafeText(payload.disallowRole, MAX_EXPECTED_ROLE_LENGTH)
+  ) {
+    return { ok: false, error: "Invalid disallowed role" };
   }
 
   return { ok: true } as const;
@@ -307,7 +316,7 @@ export async function POST(req: Request): Promise<Response> {
       };
 
       try {
-        const { email, password, userId, itAdminId, deviceToken, deviceName, expectedRole } =
+        const { email, password, userId, itAdminId, deviceToken, deviceName, expectedRole, disallowRole } =
           (await req.json()) as LoginRequestPayload;
         const normalizedEmail = typeof email === "string" ? email.trim() : "";
         const normalizedItAdminId = sanitizeItAdminId(itAdminId);
@@ -319,6 +328,7 @@ export async function POST(req: Request): Promise<Response> {
           deviceToken,
           deviceName,
           expectedRole,
+          disallowRole,
         });
         if (!validation.ok) {
           return respond(400, { error: validation.error });
@@ -370,6 +380,20 @@ export async function POST(req: Request): Promise<Response> {
         const expectedCanonicalRole = expectedRole
           ? resolveCanonicalRole(normalizeRoleName(expectedRole))
           : null;
+        const disallowedCanonicalRole = disallowRole
+          ? resolveCanonicalRole(normalizeRoleName(disallowRole))
+          : null;
+
+        if (disallowedCanonicalRole && canonicalRole === disallowedCanonicalRole) {
+          return respond(403, {
+            error:
+              disallowedCanonicalRole === "parent"
+                ? "Parent accounts can only sign in through the RPT Portal PWA."
+                : "This account is not allowed on this login page.",
+            errorCode: "ROLE_BLOCKED_ON_THIS_LOGIN",
+            redirectPath: disallowedCanonicalRole === "parent" ? "/PWA?portal=parent" : undefined,
+          });
+        }
 
         if (expectedCanonicalRole && canonicalRole !== expectedCanonicalRole) {
           return respond(403, {

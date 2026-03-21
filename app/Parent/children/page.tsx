@@ -1,5 +1,5 @@
-import ParentChildren from "@/modules/Parent/children/children";
+import { redirect } from "next/navigation";
 
 export default function Children() {
-  return <ParentChildren />;
+  redirect("/Parent/profile");
 }

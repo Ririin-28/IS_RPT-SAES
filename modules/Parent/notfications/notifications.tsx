@@ -1,11 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import ParentHeader from "@/components/Parent/Header";
 import ParentSidebar from "@/components/Parent/Sidebar";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
-import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
-import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 
 type ParentNotification = {
@@ -18,51 +15,84 @@ type ParentNotification = {
   createdAt: string;
 };
 
+const formatChildName = (firstName?: string | null, middleName?: string | null, lastName?: string | null) => {
+  const safeFirst = typeof firstName === "string" ? firstName.trim() : "";
+  const safeLast = typeof lastName === "string" ? lastName.trim() : "";
+  const middleInitial = typeof middleName === "string" && middleName.trim().length > 0
+    ? `${middleName.trim()[0].toUpperCase()}.`
+    : "";
+
+  return [safeFirst, middleInitial, safeLast].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+};
+
 const formatDisplayDate = (input: string) => {
-  const date = new Date(input);
+  const date = input.includes("T") ? new Date(input) : new Date(`${input}T00:00:00`);
   if (Number.isNaN(date.getTime())) {
     return input;
   }
   return date.toLocaleDateString("en-US", {
     year: "numeric",
-    month: "long",
+    month: "short",
     day: "numeric",
   });
-};
-
-const TAGALOG_WEEKDAYS = [
-  "Linggo",
-  "Lunes",
-  "Martes",
-  "Miyerkules",
-  "Huwebes",
-  "Biyernes",
-  "Sabado",
-];
-
-const formatAbsentDate = (input: string, locale: "en" | "tl") => {
-  const date = new Date(input);
-  if (Number.isNaN(date.getTime())) {
-    return input;
-  }
-  const weekday = locale === "tl"
-    ? TAGALOG_WEEKDAYS[date.getDay()]
-    : date.toLocaleDateString("en-US", { weekday: "long" });
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const year = date.getFullYear();
-  return `${weekday}, ${month}-${day}-${year}`;
 };
 
 const isAbsentNotification = (message: string) =>
   message.toLowerCase().startsWith("dear parent, your child was marked absent on");
 
-const buildAbsentMessage = (date: string, locale: "en" | "tl") => {
-  const dateLabel = formatAbsentDate(date, locale);
-  if (locale === "tl") {
-    return `Mahal na Magulang, ang inyong anak ay minarkahang absent noong ${dateLabel}.`;
+const getNotificationDateValue = (note: ParentNotification) => {
+  const source = note.createdAt || note.date;
+  const parsed = source.includes("T") ? new Date(source) : new Date(`${source}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const getNotificationSectionLabel = (note: ParentNotification) => {
+  const date = getNotificationDateValue(note);
+  if (!date) {
+    return "Earlier";
   }
-  return `Dear Parent, your child was marked absent on ${dateLabel}.`;
+
+  const today = new Date();
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const noteStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.floor((todayStart.getTime() - noteStart.getTime()) / 86400000);
+
+  if (diffDays <= 0) {
+    return "Today";
+  }
+
+  if (diffDays <= 7) {
+    return "This Week";
+  }
+
+  return "Earlier";
+};
+
+const getNotificationPresentation = (note: ParentNotification) => {
+  if (isAbsentNotification(note.message)) {
+    return {
+      title: `Absent in ${note.subject || "Remedial"}`,
+      message: `Marked absent on ${formatDisplayDate(note.date)}.`,
+      toneClasses: "bg-[#C94B4B]",
+      subjectLabel: note.subject || "Absent",
+    };
+  }
+
+  if (note.message.toLowerCase().includes("has been approved")) {
+    return {
+      title: note.subject ? `${note.subject} Schedule Approved` : "Schedule Approved",
+      message: note.message,
+      toneClasses: "bg-[#2C6EA1]",
+      subjectLabel: note.subject || "Schedule",
+    };
+  }
+
+  return {
+    title: note.subject ? `${note.subject} Update` : "School Update",
+    message: note.message,
+    toneClasses: "bg-[#0C6932]",
+    subjectLabel: note.subject || "Update",
+  };
 };
 
 export default function ParentNotifications() {
@@ -70,7 +100,24 @@ export default function ParentNotifications() {
   const [notifications, setNotifications] = useState<ParentNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [translated, setTranslated] = useState<Record<number, boolean>>({});
+  const [studentLabels, setStudentLabels] = useState<Record<string, string>>({});
+  const groupedNotifications = useMemo(() => {
+    const sections: Array<{ label: string; items: ParentNotification[] }> = [];
+
+    for (const notification of notifications) {
+      const label = getNotificationSectionLabel(notification);
+      const previous = sections[sections.length - 1];
+
+      if (!previous || previous.label !== label) {
+        sections.push({ label, items: [notification] });
+        continue;
+      }
+
+      previous.items.push(notification);
+    }
+
+    return sections;
+  }, [notifications]);
 
   const resolveUserId = useMemo(() => {
     const rawUserId = profile?.userId;
@@ -98,19 +145,37 @@ export default function ParentNotifications() {
       }
 
       const ids = new Set<string>();
+      const labels: Record<string, string> = {};
       const addId = (value: unknown) => {
         if (value === null || value === undefined) return;
         const text = String(value).trim();
         if (text) ids.add(text);
       };
+      const addLabel = (child: any) => {
+        const id = String(child?.studentId ?? child?.student_id ?? child?.id ?? "").trim();
+        if (!id) {
+          return;
+        }
+
+        const label = formatChildName(child?.firstName ?? child?.first_name, child?.middleName ?? child?.middle_name, child?.lastName ?? child?.last_name);
+        if (label) {
+          labels[id] = label;
+        }
+      };
 
       if (Array.isArray(payload.children)) {
         payload.children.forEach((child: any) => {
           addId(child.studentId ?? child.student_id ?? child.id);
+          addLabel(child);
         });
       }
       if (payload.child) {
         addId(payload.child.studentId ?? payload.child.student_id ?? payload.child.id);
+        addLabel(payload.child);
+      }
+
+      if (Object.keys(labels).length > 0) {
+        setStudentLabels(labels);
       }
 
       return Array.from(ids);
@@ -155,17 +220,34 @@ export default function ParentNotifications() {
           return;
         }
 
-        setNotifications(
-          payload.notifications.map((notification: any) => ({
-            id: Number(notification.id),
-            studentId: String(notification.studentId ?? notification.student_id ?? "").trim(),
-            subject: notification.subject ?? "",
-            date: notification.date ?? notification.createdAt ?? "",
-            message: notification.message ?? "",
-            status: notification.status === "read" ? "read" : "unread",
-            createdAt: notification.createdAt ?? new Date().toISOString(),
-          }))
+        const mappedNotifications = payload.notifications.map((notification: any) => ({
+          id: Number(notification.id),
+          studentId: String(notification.studentId ?? notification.student_id ?? "").trim(),
+          subject: notification.subject ?? "",
+          date: notification.date ?? notification.createdAt ?? "",
+          message: notification.message ?? "",
+          status: notification.status === "read" ? "read" : "unread",
+          createdAt: notification.createdAt ?? new Date().toISOString(),
+        }));
+
+        const hasUnreadPersistedNotifications = mappedNotifications.some(
+          (notification: ParentNotification) => notification.id > 0 && notification.status === "unread",
         );
+
+        setNotifications(
+          hasUnreadPersistedNotifications
+            ? mappedNotifications.map((notification: ParentNotification) => ({ ...notification, status: "read" as const }))
+            : mappedNotifications,
+        );
+
+        if (hasUnreadPersistedNotifications) {
+          void fetch("/api/parent/notifications", {
+            method: "PATCH",
+            cache: "no-store",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ markAll: true }),
+          });
+        }
       } catch (err) {
         if (isCancelled || (err instanceof DOMException && err.name === "AbortError")) {
           return;
@@ -188,27 +270,22 @@ export default function ParentNotifications() {
     };
   }, [resolveParentStudentIds, resolveUserId]);
 
-  const handleSubmitReason = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    // TODO: Wire to backend endpoint for submitting absence reasons once available.
-  };
-
   return (
-    <div className="relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-24 right-0 h-72 w-72 rounded-full bg-emerald-100/25 blur-3xl" />
-        <div className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-emerald-200/30 blur-3xl" />
-      </div>
+    <div className="relative h-dvh bg-white lg:flex lg:h-screen lg:overflow-hidden">
       <ParentSidebar />
-      <div className="relative z-10 flex-1 pt-16 flex flex-col overflow-hidden">
-        <ParentHeader title="Notifications" />
-        <main className="flex-1 overflow-y-auto">
-          <div className="p-4 h-full sm:p-5 md:p-6">
-            <div className="relative h-full min-h-[400px] overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.10)] backdrop-blur-xl sm:p-5 md:p-6">
-              <SecondaryHeader title="Notifications" />
-              <div className="mt-6">
+      <div className="relative z-10 flex-1 overflow-hidden lg:flex lg:flex-col lg:overflow-hidden">
+        <main className="flex-1 overflow-hidden">
+          <div className="mx-auto h-[calc(100dvh-4.75rem)] w-full max-w-4xl px-3 pb-2 pt-3 sm:px-4 sm:pb-3 sm:pt-4 lg:h-full lg:max-w-7xl lg:p-6">
+            <div className="relative h-full overflow-y-auto rounded-[24px] border border-[#DCE6DD] bg-white p-4 shadow-sm lg:p-8">
+              <div className="mb-4 flex flex-col gap-2 lg:mb-6 lg:gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#6A816F] lg:text-[11px] lg:tracking-[0.28em]">Inbox</p>
+                  <SecondaryHeader title="Notifications" />
+                </div>
+              </div>
+              <div className="mt-3 lg:mt-6">
                 {loading && (
-                  <div className="py-12 text-center text-sm text-gray-500">Loading notifications...</div>
+                  <div className="py-12 text-center text-sm text-[#617561]">Loading notifications...</div>
                 )}
 
                 {!loading && error && (
@@ -216,71 +293,76 @@ export default function ParentNotifications() {
                 )}
 
                 {!loading && !error && notifications.length === 0 && (
-                  <div className="py-12 text-center text-sm text-gray-500">
+                  <div className="py-12 text-center text-sm text-[#617561]">
                     You have no notifications at the moment.
                   </div>
                 )}
 
-                {!loading && !error && notifications.map((note) => (
-                  <div
-                    key={note.id}
-                    className={`mb-4 p-4 rounded shadow flex flex-col gap-2 border ${
-                      note.status === "unread"
-                        ? "bg-green-50 border-green-200"
-                        : "bg-white border-gray-200"
-                    }`}
-                  >
-                    {(() => {
-                      const showTranslation = isAbsentNotification(note.message);
-                      const isTranslated = translated[note.id] ?? false;
-                      const displayMessage = showTranslation
-                        ? buildAbsentMessage(note.date, isTranslated ? "tl" : "en")
-                        : note.message;
-                      return (
-                        <>
-                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                            <TertiaryHeader title={formatDisplayDate(note.date)} />
-                            <span
-                              className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium uppercase tracking-wide ${
-                                note.status === "unread"
-                                  ? "bg-green-600 text-white"
-                                  : "bg-gray-200 text-gray-700"
-                              }`}
-                            >
-                              {note.status}
-                            </span>
-                          </div>
-                          <div className="text-green-900 font-semibold">{displayMessage}</div>
-                          {showTranslation && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setTranslated((prev) => ({
-                                  ...prev,
-                                  [note.id]: !prev[note.id],
-                                }))
-                              }
-                              className="self-start text-xs font-semibold text-green-700 hover:text-green-900 underline"
-                            >
-                              {isTranslated ? "Show English" : "Translate to Tagalog"}
-                            </button>
-                          )}
-                        </>
-                      );
-                    })()}
-                    <div className="text-sm text-gray-500">
-                      Subject: <span className="font-medium text-gray-700">{note.subject}</span>
+                {!loading && !error && groupedNotifications.map((group) => (
+                  <section key={group.label} className="mb-4 last:mb-0">
+                    <div className="mb-2 flex items-center gap-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#6A816F] lg:text-[11px] lg:tracking-[0.22em]">
+                        {group.label}
+                      </p>
+                      <div className="h-px flex-1 bg-[#E3EBE4]" />
                     </div>
-                    <form className="flex flex-col sm:flex-row gap-2 mt-2" onSubmit={handleSubmitReason}>
-                      <input
-                        type="text"
-                        placeholder="Reason for absence..."
-                        className="border-2 border-gray-300 rounded-lg px-4 py-3 flex-1 bg-white text-black placeholder-green-700 focus:outline-none focus:border-gray-500 transition"
-                        aria-label="Reason for absence"
-                      />
-                      <PrimaryButton type="submit">Send</PrimaryButton>
-                    </form>
-                  </div>
+
+                    <div className="space-y-2">
+                      {group.items.map((note) => {
+                        const presentation = getNotificationPresentation(note);
+                        const studentLabel = studentLabels[note.studentId] ?? note.studentId;
+
+                        return (
+                          <div
+                            key={note.id}
+                            className={`rounded-[18px] border px-3.5 py-3 shadow-sm transition lg:px-4 ${
+                              note.status === "unread"
+                                ? "border-[#D0E5D5] bg-[#F4FAF5]"
+                                : "border-[#DFE7E0] bg-white"
+                            }`}
+                          >
+                            <div className="flex gap-2.5">
+                              <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${presentation.toneClasses}`} aria-hidden="true" />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-semibold leading-5 text-[#143120]">
+                                      {presentation.title}
+                                    </p>
+                                  </div>
+                                  <p className="shrink-0 text-[11px] font-medium text-[#6B806D] lg:text-xs">
+                                    {formatDisplayDate(note.date)}
+                                  </p>
+                                </div>
+
+                                <p className="mt-1 text-sm leading-5 text-[#556A58]">
+                                  {presentation.message}
+                                </p>
+
+                                <div className="mt-1.5 flex items-center justify-between gap-3 text-[12px] leading-5 text-[#617561]">
+                                  <div className="min-w-0 space-y-0.5">
+                                    {studentLabel ? (
+                                      <p className="truncate">
+                                        Student: <span className="font-medium text-[#2E4334]">{studentLabel}</span>
+                                      </p>
+                                    ) : null}
+                                    <p className="truncate">
+                                      Subject: <span className="font-medium text-[#2E4334]">{presentation.subjectLabel}</span>
+                                    </p>
+                                  </div>
+                                  {note.status === "unread" ? (
+                                    <span className="shrink-0 font-semibold uppercase tracking-[0.12em] text-[#C94B4B]">
+                                      Unread
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
                 ))}
               </div>
             </div>

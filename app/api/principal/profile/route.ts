@@ -8,7 +8,7 @@ import {
 } from "@/lib/server/profile-image";
 import { parseProfileMutationRequest, resolveAuthorizedProfileUserId } from "@/lib/server/profile-request";
 import { getPrincipalSessionFromCookies } from "@/lib/server/principal-session";
-import { getTableColumns, query, runWithConnection, tableExists } from "@/lib/db";
+import { getTableColumns, query, runWithConnection } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -95,15 +95,17 @@ const pickColumn = (columns: ColumnSet, candidates: readonly string[]): string |
 };
 
 const resolvePrincipalTable = async (): Promise<PrincipalTable | null> => {
-  for (const candidate of PRINCIPAL_TABLE_CANDIDATES) {
-    if (!(await tableExists(candidate))) {
-      continue;
+  const candidates = await Promise.all(
+    PRINCIPAL_TABLE_CANDIDATES.map(async (candidate) => ({
+      name: candidate,
+      columns: await getTableColumns(candidate),
+    })),
+  );
+
+  for (const candidate of candidates) {
+    if (candidate.columns.size) {
+      return candidate;
     }
-    const columns = await getTableColumns(candidate);
-    if (!columns.size) {
-      continue;
-    }
-    return { name: candidate, columns };
   }
   return null;
 };
@@ -138,8 +140,10 @@ export async function PUT(request: NextRequest) {
   let uploadedImageStoragePath: string | null = null;
 
   try {
-    const userColumns = await ensureUserProfileImageColumn();
-    const principalTable = await resolvePrincipalTable();
+    const [userColumns, principalTable] = await Promise.all([
+      ensureUserProfileImageColumn(),
+      resolvePrincipalTable(),
+    ]);
     const body = payload.body;
     const uploadedImage = payload.profileImage ? await uploadProfileImage(payload.profileImage) : null;
     uploadedImageStoragePath = uploadedImage?.storagePath ?? null;
@@ -322,15 +326,16 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const userColumns = await ensureUserProfileImageColumn();
+    const [userColumns, principalTable] = await Promise.all([
+      ensureUserProfileImageColumn(),
+      resolvePrincipalTable(),
+    ]);
     if (!userColumns.size) {
       return NextResponse.json(
         { success: false, error: "Users table is unavailable." },
         { status: 500 },
       );
     }
-
-    const principalTable = await resolvePrincipalTable();
 
     const selectParts: string[] = [
       "u.user_id AS user_id",

@@ -62,7 +62,12 @@ export async function GET() {
   }
 }
 
-export async function PATCH() {
+type PatchPayload = {
+  id?: number | string | null;
+  markAll?: boolean | null;
+};
+
+export async function PATCH(request: Request) {
   try {
     const session = await getPrincipalSessionFromCookies();
     if (!session?.principalId) {
@@ -71,12 +76,32 @@ export async function PATCH() {
 
     await ensureNotificationsTable();
 
+    const payload = (await request.json().catch(() => null)) as PatchPayload | null;
+    const noteId = Number(payload?.id ?? NaN);
+
+    if (Number.isFinite(noteId) && noteId > 0) {
+      await query(
+        `UPDATE ${NOTIFICATIONS_TABLE}
+         SET status = 'read'
+         WHERE id = ?
+           AND status = 'unread'
+           AND (principal_id IS NULL OR principal_id = ?)`,
+        [noteId, session.principalId],
+      );
+
+      return NextResponse.json({ success: true, mode: "single" });
+    }
+
+    if (payload?.markAll === false) {
+      return NextResponse.json({ success: false, error: "Nothing to update." }, { status: 400 });
+    }
+
     await query(
       `UPDATE ${NOTIFICATIONS_TABLE} SET status = 'read' WHERE status = 'unread' AND (principal_id IS NULL OR principal_id = ?)`,
       [session.principalId],
     );
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, mode: "all" });
   } catch (error) {
     console.error("Failed to update principal notifications", error);
     return NextResponse.json({ success: false, error: "Unable to update notifications." }, { status: 500 });

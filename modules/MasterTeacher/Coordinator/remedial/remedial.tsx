@@ -15,6 +15,7 @@ import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import { normalizeMaterialSubject } from "@/lib/materials/shared";
 
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
+import { buildFlashcardContentKey } from "@/lib/utils/flashcards-storage";
 
 import ScheduledActivitiesList, { type CalendarActivity } from "./ScheduledActivitiesList";
 
@@ -669,6 +670,25 @@ export default function MasterTeacherRemedial() {
             tone: "error",
           });
         } else {
+          const rawUserId = getStoredUserProfile()?.userId ?? null;
+          const baseKey = resolvedSubject === "English"
+            ? "MASTER_TEACHER_ENGLISH_FLASHCARDS"
+            : resolvedSubject === "Filipino"
+              ? "MASTER_TEACHER_FILIPINO_FLASHCARDS"
+              : "MASTER_TEACHER_MATH_FLASHCARDS";
+          const contentToStore = resolvedSubject === "Math"
+            ? normalized.map((entry) => ({
+                question: entry.sentence,
+                correctAnswer: entry.answer ?? "",
+              }))
+            : normalized;
+          const storageKey = buildFlashcardContentKey(baseKey, {
+            activityId: activity.id,
+            phonemicId,
+            userId: rawUserId,
+          });
+          window.localStorage.setItem(storageKey, JSON.stringify(contentToStore));
+
           const phonemicParam = phonemicId ? `&phonemicId=${encodeURIComponent(String(phonemicId))}` : "";
           const phonemicNameParam = phonemicLevelName ? `&phonemicName=${encodeURIComponent(phonemicLevelName)}` : "";
           const playPath = `/MasterTeacher/Coordinator/remedial/Flashcards?subject=${encodeURIComponent(resolvedSubject)}&activity=${encodeURIComponent(activity.id)}${phonemicParam}${phonemicNameParam}`;

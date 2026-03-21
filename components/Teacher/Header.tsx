@@ -5,6 +5,7 @@ import ProfileDropdown from "../Common/ProfileDropdown";
 import { performClientLogout } from "@/lib/utils/logout";
 import UserAvatar from "../Common/UserAvatar";
 import { useStoredUserProfile } from "@/lib/hooks/useStoredUserProfile";
+import { useNotifications } from "@/lib/hooks/useNotifications";
 
 interface TeacherHeaderProps {
   title?: string;
@@ -21,9 +22,34 @@ export default function TeacherHeader({ title }: TeacherHeaderProps) {
   const notificationBtnRef = React.useRef<HTMLButtonElement>(null);
   const notificationDropdownRef = React.useRef<HTMLDivElement>(null);
 
+  const {
+    notifications,
+    loading: notificationsLoading,
+    error: notificationsError,
+    unreadCount,
+    loadNotifications,
+    markNotificationRead,
+    markAllRead,
+  } = useNotifications({
+    endpoint: "/api/teacher/notifications",
+    enabled: true,
+    pollIntervalMs: 60000,
+  });
+
+  React.useEffect(() => {
+    if (!showNotifications) {
+      return;
+    }
+    void loadNotifications();
+  }, [loadNotifications, showNotifications]);
+
   // Hide dropdowns when clicking outside
   React.useEffect(() => {
     function handleClick(e: MouseEvent) {
+      const target = e.target;
+      if (target instanceof Element && target.closest("[data-logout-modal-card='true']")) {
+        return;
+      }
       if (!profileBtnRef.current?.contains(e.target as Node) && !dropdownRef.current?.contains(e.target as Node)) {
         setShowDropdown(false);
       }
@@ -75,6 +101,11 @@ export default function TeacherHeader({ title }: TeacherHeaderProps) {
                   <path d="M10.268 21a2 2 0 0 0 3.464 0" />
                   <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" />
                 </svg>
+                {unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold text-white">
+                    {unreadCount > 99 ? "99+" : unreadCount}
+                  </span>
+                )}
               </button>
               
               {showNotifications && (
@@ -90,34 +121,87 @@ export default function TeacherHeader({ title }: TeacherHeaderProps) {
                 >
                   <div className="sticky top-0 bg-white px-4 py-3 border-b border-gray-100 flex justify-between items-center">
                     <h3 className="font-semibold text-gray-800">Notifications</h3>
-                    <button 
-                      className="text-sm text-green-600 hover:text-green-800"
-                      onClick={() => setShowNotifications(false)}
-                    >
-                      Close
-                    </button>
+                    <div className="flex items-center gap-3">
+                      {notifications.length > 0 && unreadCount > 0 && (
+                        <button
+                          className="text-sm text-green-600 hover:text-green-800"
+                          onClick={() => {
+                            void markAllRead();
+                          }}
+                        >
+                          Mark all as read
+                        </button>
+                      )}
+                      <button
+                        className="text-sm text-green-600 hover:text-green-800"
+                        onClick={() => setShowNotifications(false)}
+                      >
+                        Close
+                      </button>
+                    </div>
                   </div>
-                  
-                  {/* Empty state */}
-                  <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="48"
-                      height="48"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="#9CA3AF"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="mb-4"
-                    >
-                      <path d="M10.268 21a2 2 0 0 0 3.464 0" />
-                      <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" />
-                    </svg>
-                    <p className="text-gray-500">No notifications at this time</p>
-                    <p className="text-sm text-gray-400 mt-1">You&apos;ll see notifications here when you get them</p>
-                  </div>
+
+                  {notificationsLoading && (
+                    <div className="px-4 py-6 text-center text-sm text-gray-500">Loading notifications...</div>
+                  )}
+
+                  {!notificationsLoading && notificationsError && (
+                    <div className="px-4 py-6 text-center text-sm text-red-600">{notificationsError}</div>
+                  )}
+
+                  {!notificationsLoading && !notificationsError && notifications.length === 0 && (
+                    <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="48"
+                        height="48"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="#9CA3AF"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="mb-4"
+                      >
+                        <path d="M10.268 21a2 2 0 0 0 3.464 0" />
+                        <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" />
+                      </svg>
+                      <p className="text-gray-500">No notifications at this time</p>
+                      <p className="text-sm text-gray-400 mt-1">You&apos;ll see notifications here when you get them</p>
+                    </div>
+                  )}
+
+                  {!notificationsLoading && !notificationsError && notifications.length > 0 && (
+                    <div className="divide-y divide-gray-100">
+                      {notifications.map((note) => (
+                        <button
+                          type="button"
+                          key={note.id}
+                          className={`w-full px-4 py-3 text-left hover:bg-gray-50 ${
+                            note.status === "unread" ? "bg-green-50/70" : "bg-white"
+                          }`}
+                          onClick={() => {
+                            void markNotificationRead(note.id);
+                            if (note.targetUrl) {
+                              setShowNotifications(false);
+                              router.push(note.targetUrl);
+                            }
+                          }}
+                        >
+                          <p className="text-sm text-gray-700">{note.message}</p>
+                          <p className="mt-1 text-xs text-gray-400">
+                            {new Date(note.createdAt).toLocaleString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

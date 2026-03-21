@@ -136,7 +136,7 @@ export default function ParentProfileModal({ show, onClose, parent }: ParentProf
               size={96}
             />
           </div>
-          <div className="px-4 py-1 bg-white/80 backdrop-blur-sm rounded-full border border-gray-200 shadow-sm">
+          <div className="rounded-full border border-gray-200 bg-white px-4 py-1 shadow-sm">
             <span className="text-sm font-medium text-gray-700">Parent</span>
           </div>
           <div className="text-lg font-semibold text-gray-900">{fullName}</div>

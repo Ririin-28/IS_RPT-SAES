@@ -3,7 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import FilipinoFlashcards from "@/components/Common/FilipinoFlashcards/FilipinoFlashcards";
+import FlashcardsStatusScreen from "@/components/Common/Loaders/FlashcardsStatusScreen";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
+import {
+	buildRemedialRosterKey,
+	readStoredRemedialRosterForCurrentUser,
+	writeStoredRemedialRoster,
+} from "@/lib/utils/remedial-roster-storage";
 
 const PERFORMANCE_HISTORY_KEY = "MASTER_TEACHER_FILIPINO_PERFORMANCE";
 
@@ -51,23 +57,59 @@ const normalizeLevelLabel = (value?: string | null): string => {
 	return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 };
 
+const coerceNumber = (value: unknown): number | null => {
+	if (typeof value === "number" && Number.isFinite(value)) {
+		return value;
+	}
+	if (typeof value === "string" && value.trim().length) {
+		const parsed = Number.parseInt(value, 10);
+		if (Number.isFinite(parsed)) {
+			return parsed;
+		}
+	}
+	return null;
+};
+
+const composeDisplayName = (student: RemedialStudent): string => {
+	const explicitFullName = student.fullName?.trim();
+	if (explicitFullName) return explicitFullName;
+
+	const parts = [student.firstName, student.middleName, student.lastName]
+		.map((part) => (part ?? "").trim())
+		.filter((part) => part.length > 0);
+
+	if (parts.length) return parts.join(" ");
+	return "Unnamed Student";
+};
+
+const toDisplayStudent = (student: RemedialStudent, index: number): StudentRecord => {
+	const numericUserId = coerceNumber(student.userId);
+	const numericRemedialId = coerceNumber(student.remedialId);
+	const rawStudentId = typeof student.studentId === "string" && student.studentId.trim().length
+		? student.studentId.trim()
+		: coerceNumber(student.studentId) !== null
+			? String(coerceNumber(student.studentId))
+			: null;
+
+	const fallbackId = rawStudentId ?? (numericUserId !== null ? `U-${numericUserId}` : (numericRemedialId !== null ? `R-${numericRemedialId}` : String(index + 1)));
+	const trimmedIdentifier = student.studentIdentifier?.trim();
+	const identifier = rawStudentId ?? (trimmedIdentifier?.length ? trimmedIdentifier : fallbackId);
+
+	return {
+		id: fallbackId,
+		studentId: identifier,
+		name: student.fullName ?? composeDisplayName(student),
+		grade: student.grade ?? "",
+		section: student.section ?? "",
+		phonemicLevel: student.filipino ?? "",
+	};
+};
+
 export default function MasterTeacherFilipinoFlashcards() {
 	const router = useRouter();
 	const searchParams = useSearchParams();
 	const selectedStudentId = searchParams?.get("studentId") || null;
 	const phonemicNameParam = searchParams?.get("phonemicName") ?? "";
-	const [students, setStudents] = useState<StudentRecord[]>([]);
-	const expectedPhonemicLevel = useMemo(
-		() => normalizeLevelLabel(phonemicNameParam),
-		[phonemicNameParam],
-	);
-	const filteredStudents = useMemo(() => {
-		if (!expectedPhonemicLevel) return students;
-		return students.filter((student) =>
-			normalizeLevelLabel(student.phonemicLevel) === expectedPhonemicLevel,
-		);
-	}, [expectedPhonemicLevel, students]);
-	const [performances, setPerformances] = useState<StudentPerformanceEntry[]>([]);
 	const userProfile = useMemo(() => getStoredUserProfile(), []);
 	const userId = useMemo(() => {
 		const raw = userProfile?.userId;
@@ -82,65 +124,43 @@ export default function MasterTeacherFilipinoFlashcards() {
 		}
 		return null;
 	}, [userProfile]);
-
-	const coerceNumber = (value: unknown): number | null => {
-		if (typeof value === "number" && Number.isFinite(value)) {
-			return value;
-		}
-		if (typeof value === "string" && value.trim().length) {
-			const parsed = Number.parseInt(value, 10);
-			if (Number.isFinite(parsed)) {
-				return parsed;
-			}
-		}
-		return null;
-	};
-
-	const composeDisplayName = (student: RemedialStudent): string => {
-		const explicitFullName = student.fullName?.trim();
-		if (explicitFullName) return explicitFullName;
-
-		const parts = [student.firstName, student.middleName, student.lastName]
-			.map((part) => (part ?? "").trim())
-			.filter((part) => part.length > 0);
-
-		if (parts.length) return parts.join(" ");
-		return "Unnamed Student";
-	};
-
-	const toDisplayStudent = (student: RemedialStudent, index: number): StudentRecord => {
-		const numericUserId = coerceNumber(student.userId);
-		const numericRemedialId = coerceNumber(student.remedialId);
-		const rawStudentId = typeof student.studentId === "string" && student.studentId.trim().length
-			? student.studentId.trim()
-			: coerceNumber(student.studentId) !== null
-				? String(coerceNumber(student.studentId))
-				: null;
-
-		const fallbackId = rawStudentId ?? (numericUserId !== null ? `U-${numericUserId}` : (numericRemedialId !== null ? `R-${numericRemedialId}` : String(index + 1)));
-		const trimmedIdentifier = student.studentIdentifier?.trim();
-		const identifier = rawStudentId ?? (trimmedIdentifier?.length ? trimmedIdentifier : fallbackId);
-
-		return {
-			id: fallbackId,
-			studentId: identifier,
-			name: student.fullName ?? composeDisplayName(student),
-			grade: student.grade ?? "",
-			section: student.section ?? "",
-			phonemicLevel: student.filipino ?? "",
-		};
-	};
+	const rosterStorageKey = useMemo(
+		() => buildRemedialRosterKey("master-teacher-remedial", "filipino", userId),
+		[userId],
+	);
+	const initialCachedStudents = readStoredRemedialRosterForCurrentUser<RemedialStudent>("master-teacher-remedial", "filipino").map(toDisplayStudent);
+	const [students, setStudents] = useState<StudentRecord[]>(initialCachedStudents);
+	const [isLoadingStudents, setIsLoadingStudents] = useState(initialCachedStudents.length === 0);
+	const [loadError, setLoadError] = useState<string | null>(null);
+	const expectedPhonemicLevel = useMemo(
+		() => normalizeLevelLabel(phonemicNameParam),
+		[phonemicNameParam],
+	);
+	const filteredStudents = useMemo(() => {
+		if (!expectedPhonemicLevel) return students;
+		return students.filter((student) =>
+			normalizeLevelLabel(student.phonemicLevel) === expectedPhonemicLevel,
+		);
+	}, [expectedPhonemicLevel, students]);
+	const [performances, setPerformances] = useState<StudentPerformanceEntry[]>([]);
+	const hasCachedStudents = initialCachedStudents.length > 0;
 
 	useEffect(() => {
 		if (typeof window === "undefined") return;
 
 		if (userId === null) {
 			setStudents([]);
+			if (!hasCachedStudents) {
+				setLoadError("Missing remedial-teacher session. Please sign in again.");
+				setIsLoadingStudents(false);
+			}
 			return;
 		}
 
 		const controller = new AbortController();
 		const loadStudents = async () => {
+			setIsLoadingStudents(!hasCachedStudents);
+			setLoadError(null);
 			try {
 				const params = new URLSearchParams({ userId: String(userId), subject: "filipino" });
 				const response = await fetch(`/api/master_teacher/remedialteacher/students?${params.toString()}`, {
@@ -165,12 +185,19 @@ export default function MasterTeacherFilipinoFlashcards() {
 
 				const studentsData = Array.isArray(payload.students) ? payload.students : [];
 				setStudents(studentsData.map(toDisplayStudent));
+				writeStoredRemedialRoster(rosterStorageKey, studentsData);
+				setLoadError(null);
 			} catch (error) {
 				if (error instanceof DOMException && error.name === "AbortError") {
 					return;
 				}
 				console.warn("Failed to load Filipino remedial roster", error);
-				setStudents([]);
+				if (!hasCachedStudents) {
+					setStudents([]);
+					setLoadError(error instanceof Error ? error.message : "Failed to load remedial roster.");
+				}
+			} finally {
+				setIsLoadingStudents(false);
 			}
 		};
 
@@ -179,7 +206,7 @@ export default function MasterTeacherFilipinoFlashcards() {
 		return () => {
 			controller.abort();
 		};
-	}, [userId]);
+	}, [hasCachedStudents, rosterStorageKey, userId]);
 
 	useEffect(() => {
 		if (typeof window === "undefined") return;
@@ -206,6 +233,39 @@ export default function MasterTeacherFilipinoFlashcards() {
 			return next;
 		});
 	}, []);
+
+	if (isLoadingStudents && students.length === 0) {
+		return (
+			<FlashcardsStatusScreen
+				title="Preparing remedial flashcards"
+				message="Loading the remedial roster for this session."
+			/>
+		);
+	}
+
+	if (loadError && students.length === 0) {
+		return (
+			<FlashcardsStatusScreen
+				tone="error"
+				title="Unable to open remedial flashcards"
+				message={loadError}
+				actionLabel="Back"
+				onAction={() => router.back()}
+			/>
+		);
+	}
+
+	if (!isLoadingStudents && selectedStudentId && filteredStudents.length === 0) {
+		return (
+			<FlashcardsStatusScreen
+				tone="error"
+				title="Unable to start remedial session"
+				message="The selected student is not available for this remedial level."
+				actionLabel="Back"
+				onAction={() => router.back()}
+			/>
+		);
+	}
 
 	return (
 		<FilipinoFlashcards

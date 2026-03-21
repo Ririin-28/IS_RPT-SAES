@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
-import { getTableColumns, query, tableExists } from "@/lib/db";
+import { getTableColumns, query } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -50,15 +50,17 @@ function pickFirst(columns: Set<string>, candidates: readonly string[]): string 
 }
 
 async function resolveRoleTable(role: "teacher" | "master_teacher") {
-  for (const candidate of ROLE_TABLE_CANDIDATES[role]) {
-    if (!(await tableExists(candidate))) {
-      continue;
+  const candidates = await Promise.all(
+    ROLE_TABLE_CANDIDATES[role].map(async (candidate) => ({
+      name: candidate,
+      columns: await getTableColumns(candidate),
+    })),
+  );
+
+  for (const candidate of candidates) {
+    if (candidate.columns.has("user_id")) {
+      return candidate;
     }
-    const columns = await getTableColumns(candidate);
-    if (!columns.has("user_id")) {
-      continue;
-    }
-    return { name: candidate, columns };
   }
   return null;
 }
@@ -118,7 +120,16 @@ async function fetchRoleRecords(role: "teacher" | "master_teacher") {
     return { table: null, records: [] };
   }
 
-  const userColumns = await getTableColumns("users");
+  const [userColumns, gradeColumns, teacherHandledColumns, coordinatorHandledColumns, remedialHandledColumns, subjectColumns] =
+    await Promise.all([
+      getTableColumns("users"),
+      getTableColumns("grade"),
+      role === "teacher" ? getTableColumns("teacher_handled") : Promise.resolve(new Set<string>()),
+      role === "master_teacher" ? getTableColumns("mt_coordinator_handled") : Promise.resolve(new Set<string>()),
+      role === "master_teacher" ? getTableColumns("mt_remedialteacher_handled") : Promise.resolve(new Set<string>()),
+      role === "master_teacher" ? getTableColumns("subject") : Promise.resolve(new Set<string>()),
+    ]);
+
   const identifierColumn =
     pickFirst(tableInfo.columns, IDENTIFIER_COLUMNS) ?? (role === "teacher" ? "teacher_id" : "master_teacher_id");
 
@@ -147,9 +158,9 @@ async function fetchRoleRecords(role: "teacher" | "master_teacher") {
 
   const joinClauses: string[] = ["JOIN users AS u ON u.user_id = t.user_id"];
 
-  const gradeTableExists = await tableExists("grade");
+  const gradeTableExists = gradeColumns.size > 0;
   if (role === "teacher") {
-    const teacherHandledExists = await tableExists("teacher_handled");
+    const teacherHandledExists = teacherHandledColumns.size > 0;
     if (teacherHandledExists && gradeTableExists) {
       joinClauses.push(
         "LEFT JOIN (",
@@ -166,9 +177,9 @@ async function fetchRoleRecords(role: "teacher" | "master_teacher") {
     }
   } else {
     const masterTeacherIdColumn = identifierColumn;
-    const coordinatorHandledExists = await tableExists("mt_coordinator_handled");
-    const remedialHandledExists = await tableExists("mt_remedialteacher_handled");
-    const subjectTableExists = await tableExists("subject");
+    const coordinatorHandledExists = coordinatorHandledColumns.size > 0;
+    const remedialHandledExists = remedialHandledColumns.size > 0;
+    const subjectTableExists = subjectColumns.size > 0;
     if (coordinatorHandledExists && gradeTableExists) {
       joinClauses.push(
         "LEFT JOIN (",

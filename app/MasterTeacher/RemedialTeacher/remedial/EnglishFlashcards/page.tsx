@@ -1,9 +1,17 @@
 import { Suspense } from "react";
 import EnglishFlashcards from "@/modules/MasterTeacher/RemedialTeacher/remedial/EnglishTabs/Flashcards/flashcards";
+import FlashcardsStatusScreen from "@/components/Common/Loaders/FlashcardsStatusScreen";
 
 export default function EnglishFlashcardsPage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense
+      fallback={
+        <FlashcardsStatusScreen
+          title="Preparing remedial flashcards"
+          message="Opening the remedial flashcards screen."
+        />
+      }
+    >
       <EnglishFlashcards />
     </Suspense>
   );

@@ -4,9 +4,10 @@ import { useEffect, useState, type ReactNode } from "react";
 
 type HydrationBoundaryProps = {
   children: ReactNode;
+  fallback?: ReactNode;
 };
 
-export default function HydrationBoundary({ children }: HydrationBoundaryProps) {
+export default function HydrationBoundary({ children, fallback = null }: HydrationBoundaryProps) {
   const [hasHydrated, setHasHydrated] = useState(false);
 
   useEffect(() => {
@@ -14,7 +15,7 @@ export default function HydrationBoundary({ children }: HydrationBoundaryProps) 
   }, []);
 
   if (!hasHydrated) {
-    return null;
+    return <>{fallback}</>;
   }
 
   return <>{children}</>;

@@ -8,6 +8,7 @@ interface CheckCredentialsPayload {
   password: string;
   userId?: string | number | null;
   itAdminId?: string | null;
+  disallowRole?: string | null;
 }
 
 interface UserRow extends RowDataPacket {
@@ -97,7 +98,7 @@ export async function POST(req: Request): Promise<Response> {
       await ensureItAdminPhaseOneMigration(db);
 
       try {
-        const { email, password, userId, itAdminId } = (await req.json()) as CheckCredentialsPayload;
+        const { email, password, userId, itAdminId, disallowRole } = (await req.json()) as CheckCredentialsPayload;
         const normalizedEmail = typeof email === "string" ? email.trim() : "";
 
         let normalizedUserId: number | null = null;
@@ -144,6 +145,23 @@ export async function POST(req: Request): Promise<Response> {
         const roleForLogic = resolvedRole ?? user.role ?? null;
         const normalizedRole = normalizeRoleName(roleForLogic);
         const canonicalRole = resolveCanonicalRole(normalizedRole);
+        const disallowedCanonicalRole = disallowRole
+          ? resolveCanonicalRole(normalizeRoleName(disallowRole))
+          : null;
+
+        if (disallowedCanonicalRole && canonicalRole === disallowedCanonicalRole) {
+          return new Response(
+            JSON.stringify({
+              match: false,
+              blockedRole: canonicalRole,
+              error: canonicalRole === "parent"
+                ? "Parent accounts can only sign in through the RPT Portal PWA."
+                : "This account is not allowed on this login page.",
+              redirectPath: canonicalRole === "parent" ? "/PWA?portal=parent" : undefined,
+            }),
+            { status: 200 },
+          );
+        }
 
         if (requiresItAdminId(normalizedRole)) {
           if (!normalizedItAdminId) {

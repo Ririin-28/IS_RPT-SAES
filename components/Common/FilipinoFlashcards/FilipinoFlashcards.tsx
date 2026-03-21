@@ -11,7 +11,7 @@ import { buildFlashcardContentKey } from "@/lib/utils/flashcards-storage";
 import { getAiInsightsAction } from "@/app/actions/get-ai-insights";
 import { getSlideFeedbackAction } from "@/app/actions/get-slide-feedback";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
-import { composeRuleBasedSlideFeedbackParagraph } from "@/lib/performance/insights";
+import { composeRuleBasedSlideFeedbackParagraph, getReadingSpeedLabel } from "@/lib/performance/insights";
 import { translateTutorText, type TutorLanguage } from "@/lib/performance/tutor-language";
 import { buildFutureScheduleMessage, isScheduleInFuture } from "@/lib/remedial-schedule";
 
@@ -2570,7 +2570,7 @@ export default function FilipinoFlashcards({
                 </p>
                 <p className="flex items-center justify-between gap-2 text-[#013300]">
                   <span className="font-medium">Reading Speed</span>
-                  <span className="font-semibold">{averageReadingSpeedWpm} WPM</span>
+                  <span className="font-semibold">{getReadingSpeedLabel(averageReadingSpeedWpm)}</span>
                 </p>
               </div>
             </div>
@@ -2606,7 +2606,7 @@ export default function FilipinoFlashcards({
                           <tr key={item.cardIndex} className="border-t border-gray-200">
                             <td className="py-2 pr-3 font-semibold text-[#013300]">{item.cardIndex + 1}</td>
                             <td className="py-2 pr-3 font-normal text-[#013300]">{item.correctness}%</td>
-                            <td className="py-2 pr-3 font-normal text-[#013300]">{Math.round(item.readingSpeedWpm)} WPM</td>
+                            <td className="py-2 pr-3 font-normal text-[#013300]">{getReadingSpeedLabel(item.readingSpeedWpm)}</td>
                             <td className="py-2 pr-3 font-bold text-[#013300]">{item.averageScore}%</td>
                             <td className="py-2 pr-3 text-[#013300]">{slideFeedback}</td>
                           </tr>
@@ -2619,7 +2619,7 @@ export default function FilipinoFlashcards({
             </div>
           </div>
 
-          <div className="rounded-3xl border border-emerald-200 bg-white shadow-md shadow-emerald-100 p-6">
+          <div className="rounded-3xl border border-gray-300 bg-white shadow-md shadow-gray-200 p-6">
             <div>
               <h2 className="text-2xl font-bold text-black">System Feedback</h2>
             </div>
@@ -2637,7 +2637,7 @@ export default function FilipinoFlashcards({
           </div>
 
           {sessionLockEnabled && (
-            <div className="rounded-3xl border border-emerald-200 bg-white shadow-md shadow-emerald-100 p-6">
+            <div className="rounded-3xl border border-gray-300 bg-white shadow-md shadow-gray-200 p-6">
               <div>
                 <h2 className="text-2xl font-bold text-black">Teacher Feedback</h2>
               </div>
@@ -2647,7 +2647,7 @@ export default function FilipinoFlashcards({
                   setTeacherFeedback(event.target.value);
                   if (teacherFeedbackError) setTeacherFeedbackError(null);
                 }}
-                className="mt-3 w-full min-h-30 rounded-2xl border border-emerald-200 px-4 py-3 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"
+                className="mt-3 w-full min-h-30 rounded-2xl border border-gray-300 px-4 py-3 text-sm text-slate-700 focus:border-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-200"
                 placeholder="Write your feedback on the student's performance."
                 required
               />

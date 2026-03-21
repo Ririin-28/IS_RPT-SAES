@@ -9,8 +9,6 @@ import { normalizeMaterialSubject, type MaterialSubject } from "@/lib/materials/
 import { buildFlashcardContentKey } from "@/lib/utils/flashcards-storage";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 
-const SUBJECT_FALLBACK: MaterialSubject = "English";
-
 type StudentRecord = {
 	id: string;
 	studentId: string;
@@ -25,15 +23,54 @@ const SUBJECT_FLASHCARD_KEYS: Record<MaterialSubject, string> = {
 	Math: "MASTER_TEACHER_MATH_FLASHCARDS",
 };
 
+const hasRenderableFlashcards = (value: unknown, subject: MaterialSubject): value is unknown[] => {
+	if (!Array.isArray(value) || value.length === 0) {
+		return false;
+	}
+
+	return value.some((entry) => {
+		if (!entry || typeof entry !== "object") {
+			return false;
+		}
+
+		if (subject === "Math") {
+			const question = (entry as { question?: unknown }).question;
+			return typeof question === "string" && question.trim().length > 0;
+		}
+
+		const sentence = (entry as { sentence?: unknown }).sentence;
+		return typeof sentence === "string" && sentence.trim().length > 0;
+	});
+};
+
+const readStoredFlashcards = (storageKey: string | null, subject: MaterialSubject | null): unknown[] | null => {
+	if (typeof window === "undefined" || !storageKey || !subject) {
+		return null;
+	}
+
+	try {
+		const stored = window.localStorage.getItem(storageKey);
+		if (!stored) {
+			return null;
+		}
+
+		const parsed = JSON.parse(stored);
+		return hasRenderableFlashcards(parsed, subject) ? parsed : null;
+	} catch {
+		return null;
+	}
+};
+
 export default function MasterTeacherCoordinatorRemedialFlashcards() {
 	const router = useRouter();
 	const searchParams = useSearchParams();
-	const [subject, setSubject] = useState<MaterialSubject | null>(null);
-	const [loadingContent, setLoadingContent] = useState(false);
+	const urlSubject = normalizeMaterialSubject(searchParams?.get("subject"));
+	const [subject, setSubject] = useState<MaterialSubject | null>(() => urlSubject ?? null);
+	const [isFetchingContent, setIsFetchingContent] = useState(false);
 	const [contentError, setContentError] = useState<string | null>(null);
+	const [contentVersion, setContentVersion] = useState(0);
 
 	// Get subject and phonemic info from URL parameter first
-	const urlSubject = searchParams?.get('subject') as MaterialSubject;
 	const activityId = searchParams?.get("activity");
 	const phonemicId = searchParams?.get("phonemicId");
 	const phonemicName = searchParams?.get("phonemicName") || "";
@@ -48,11 +85,27 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 		}
 		return null;
 	}, [userProfile]);
+	const contentStorageKey = useMemo(() => {
+		if (!subject) {
+			return null;
+		}
+
+		const baseKey = SUBJECT_FLASHCARD_KEYS[subject];
+		return buildFlashcardContentKey(baseKey, {
+			activityId,
+			phonemicId,
+			userId,
+		});
+	}, [activityId, phonemicId, subject, userId]);
+	const storedFlashcards = useMemo(() => {
+		void contentVersion;
+		return readStoredFlashcards(contentStorageKey, subject);
+	}, [contentStorageKey, contentVersion, subject]);
 
 	useEffect(() => {
 		// If subject is in URL, use it immediately
-		if (urlSubject && ["English", "Filipino", "Math"].includes(urlSubject)) {
-			setSubject(urlSubject);
+		if (urlSubject) {
+			setSubject((current) => (current === urlSubject ? current : urlSubject));
 			return;
 		}
 
@@ -98,7 +151,7 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 
 		loadCoordinatorProfile();
 		return () => controller.abort();
-	}, [userId, urlSubject]);
+	}, [urlSubject, userId]);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -110,19 +163,26 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 				const baseKey = SUBJECT_FLASHCARD_KEYS[subject];
 				if (baseKey) {
 					window.localStorage.removeItem(baseKey);
-					const scopedKey = buildFlashcardContentKey(baseKey, {
-						activityId,
-						phonemicId,
-						userId,
-					});
-					window.localStorage.removeItem(scopedKey);
+					if (contentStorageKey) {
+						window.localStorage.removeItem(contentStorageKey);
+					}
 				}
 				if (!cancelled) {
 					setContentError("Missing activity or phonemic level.");
+					setIsFetchingContent(false);
 				}
 				return;
 			}
-			setLoadingContent(true);
+
+			if (storedFlashcards) {
+				if (!cancelled) {
+					setContentError(null);
+					setIsFetchingContent(false);
+				}
+				return;
+			}
+
+			setIsFetchingContent(true);
 			setContentError(null);
 			try {
 				const response = await fetch(
@@ -145,15 +205,6 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 					return;
 				}
 
-				const baseKey = SUBJECT_FLASHCARD_KEYS[subject];
-				const storageKey = baseKey
-					? buildFlashcardContentKey(baseKey, {
-							activityId,
-							phonemicId,
-							userId,
-					  })
-					: null;
-				
 				// Transform data for Math subject to match MathFlashcards expectation
 				let contentToStore = cards;
 				if (subject === "Math") {
@@ -163,8 +214,11 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 					}));
 				}
 				
-				if (storageKey) {
-					window.localStorage.setItem(storageKey, JSON.stringify(contentToStore));
+				if (contentStorageKey) {
+					window.localStorage.setItem(contentStorageKey, JSON.stringify(contentToStore));
+					if (!cancelled) {
+						setContentVersion((version) => version + 1);
+					}
 				}
 			} catch (error) {
 				if (!cancelled) {
@@ -172,7 +226,7 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 				}
 			} finally {
 				if (!cancelled) {
-					setLoadingContent(false);
+					setIsFetchingContent(false);
 				}
 			}
 		};
@@ -181,7 +235,7 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 		return () => {
 			cancelled = true;
 		};
-	}, [activityId, phonemicId, subject, userId]);
+	}, [activityId, contentStorageKey, phonemicId, storedFlashcards, subject]);
 
 
 	// Compose the header label with phonemicName if present
@@ -204,21 +258,17 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 	}, [subject, previewHeaderLabel]);
 
 	const previewStudents = useMemo(() => [previewStudent], [previewStudent]);
-	const noopEnglishSave = useMemo(() => (_entry: unknown) => undefined, []);
-	const noopMathSave = useMemo(() => (_entry: unknown) => undefined, []);
+	const noopEnglishSave = useMemo(() => (() => undefined), []);
+	const noopMathSave = useMemo(() => (() => undefined), []);
 
 	if (!subject) {
 		return (
-			<div className="h-screen flex items-center justify-center text-gray-500">
-				Loading subject...
-			</div>
-		);
-	}
-
-	if (loadingContent) {
-		return (
-			<div className="h-screen flex items-center justify-center text-gray-500">
-				Loading flashcards...
+			<div className="min-h-screen bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec] flex items-center justify-center p-6">
+				<div className="w-full max-w-md rounded-3xl border border-white/80 bg-white/80 shadow-[0_24px_60px_-30px_rgba(1,51,0,0.35)] backdrop-blur-xl px-8 py-10 text-center">
+					<div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-[#013300]/10 border-t-[#013300]" />
+					<p className="text-lg font-semibold text-slate-900">Preparing remedial flashcards</p>
+					<p className="mt-2 text-sm text-slate-600">Loading your assigned subject.</p>
+				</div>
 			</div>
 		);
 	}
@@ -237,19 +287,19 @@ export default function MasterTeacherCoordinatorRemedialFlashcards() {
 		);
 	}
 
-	// Show the phonemic level name as a header above the flashcards
-	const FlashcardsHeader = () => (
-		<div className="w-full text-left px-4 pt-6 pb-2">
-			{phonemicName && (
-				<div className="text-xs font-bold tracking-widest text-green-900 uppercase mb-2">
-					{phonemicName} Level
+	if (!storedFlashcards || isFetchingContent) {
+		return (
+			<div className="min-h-screen bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec] flex items-center justify-center p-6">
+				<div className="w-full max-w-md rounded-3xl border border-white/80 bg-white/80 shadow-[0_24px_60px_-30px_rgba(1,51,0,0.35)] backdrop-blur-xl px-8 py-10 text-center">
+					<div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-[#013300]/10 border-t-[#013300]" />
+					<p className="text-lg font-semibold text-slate-900">Preparing remedial flashcards</p>
+					<p className="mt-2 text-sm text-slate-600">
+						{isFetchingContent ? "Loading the approved flashcards for this session." : "Opening the session."}
+					</p>
 				</div>
-			)}
-			<div className="text-2xl font-bold text-green-900 mb-4">
-				{subject} Preview
 			</div>
-		</div>
-	);
+		);
+	}
 
 	if (subject === "Math") {
 		return (
