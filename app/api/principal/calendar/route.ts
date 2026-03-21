@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { getTableColumns, query } from "@/lib/db";
-import { getPrincipalSessionFromCookies } from "@/lib/server/principal-session";
+import { requirePrincipal } from "@/lib/server/principal-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -76,9 +76,9 @@ const buildRequesterName = (row: ApprovedRow): string | null => {
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getPrincipalSessionFromCookies();
-    if (!session?.principalId) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    const auth = await requirePrincipal(request);
+    if (!auth.ok) {
+      return auth.response;
     }
 
     const gradeFilter = request.nextUrl.searchParams.get("grade");

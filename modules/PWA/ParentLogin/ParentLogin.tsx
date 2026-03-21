@@ -38,16 +38,35 @@ export default function ParentLogin({ onBack }: ParentLoginProps) {
 
     storeParentPortalEntry("pwa");
 
-    const verifyParentSession = async () => {
+    const markLoggedOutFromQuery = () => {
       try {
-        if (window.sessionStorage.getItem("wasLoggedOut") === "true") {
-          if (active) {
-            setIsCheckingSession(false);
-          }
-          return;
+        const url = new URL(window.location.href);
+        if (url.searchParams.get("logout") === "true") {
+          window.sessionStorage.setItem("wasLoggedOut", "true");
+          url.searchParams.delete("logout");
+          window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
         }
       } catch {
-        // Ignore storage access issues and continue with session probe.
+        // Ignore URL/storage errors and continue with session probe.
+      }
+    };
+
+    const isMarkedLoggedOut = () => {
+      try {
+        return window.sessionStorage.getItem("wasLoggedOut") === "true";
+      } catch {
+        return false;
+      }
+    };
+
+    markLoggedOutFromQuery();
+
+    const verifyParentSession = async () => {
+      if (isMarkedLoggedOut()) {
+        if (active) {
+          setIsCheckingSession(false);
+        }
+        return;
       }
 
       try {
@@ -74,10 +93,50 @@ export default function ParentLogin({ onBack }: ParentLoginProps) {
       }
     };
 
+    type PageShowEvent = Event & { persisted?: boolean };
+
+    const handlePageShow = (event: Event) => {
+      const persisted = Boolean((event as PageShowEvent)?.persisted);
+      if (!persisted) {
+        return;
+      }
+
+      if (isMarkedLoggedOut()) {
+        if (active) {
+          setIsCheckingSession(false);
+        }
+        return;
+      }
+
+      if (active) {
+        setIsCheckingSession(true);
+      }
+      void verifyParentSession();
+    };
+
+    const handlePopState = () => {
+      if (isMarkedLoggedOut()) {
+        if (active) {
+          setIsCheckingSession(false);
+        }
+        return;
+      }
+
+      if (active) {
+        setIsCheckingSession(true);
+      }
+      void verifyParentSession();
+    };
+
+    window.addEventListener("pageshow", handlePageShow);
+    window.addEventListener("popstate", handlePopState);
+
     void verifyParentSession();
 
     return () => {
       active = false;
+      window.removeEventListener("pageshow", handlePageShow);
+      window.removeEventListener("popstate", handlePopState);
     };
   }, []);
 
@@ -249,7 +308,7 @@ export default function ParentLogin({ onBack }: ParentLoginProps) {
             <button
               type="submit"
               disabled={isLoading}
-              className="min-h-[52px] w-full rounded-2xl bg-[#013300] px-6 py-3 text-base font-bold text-white transition hover:bg-[#024100] disabled:cursor-not-allowed disabled:opacity-70"
+              className="min-h-13 w-full rounded-2xl bg-[#013300] px-6 py-3 text-base font-bold text-white transition hover:bg-[#024100] disabled:cursor-not-allowed disabled:opacity-70"
             >
               {isLoading ? "Signing in..." : "Login as Parent"}
             </button>

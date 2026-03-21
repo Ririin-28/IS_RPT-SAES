@@ -9,6 +9,8 @@ import type { Connection, PoolConnection, RowDataPacket } from "mysql2/promise";
 const COOKIE_NAME = "principal_session";
 const SESSION_DURATION_HOURS = 24;
 
+export const PRINCIPAL_SESSION_COOKIE_NAME = COOKIE_NAME;
+
 /* ======================
    Types
 ====================== */
@@ -76,6 +78,40 @@ export function buildPrincipalSessionCookie(token: string, expiresAt: Date): str
     .join("; ");
 }
 
+export function buildClearedPrincipalSessionCookie(): string {
+  return [
+    `${COOKIE_NAME}=`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    "Max-Age=0",
+    `Expires=${new Date(0).toUTCString()}`,
+    process.env.NODE_ENV === "production" ? "Secure" : "",
+  ]
+    .filter(Boolean)
+    .join("; ");
+}
+
+export function extractPrincipalSessionToken(cookieHeader: string | null | undefined): string | null {
+  if (!cookieHeader || cookieHeader.trim().length === 0) {
+    return null;
+  }
+
+  const entries = cookieHeader.split(";");
+  for (const entry of entries) {
+    const trimmed = entry.trim();
+    if (!trimmed) {
+      continue;
+    }
+    if (!trimmed.startsWith(`${COOKIE_NAME}=`)) {
+      continue;
+    }
+    return trimmed.slice(COOKIE_NAME.length + 1);
+  }
+
+  return null;
+}
+
 /* ======================
    Read Session (Auth)
 ====================== */
@@ -134,4 +170,36 @@ export async function revokePrincipalSession(sessionId: number): Promise<void> {
     `UPDATE principal_sessions SET revoked_at = NOW() WHERE session_id = ?`,
     [sessionId],
   );
+}
+
+interface PrincipalSessionTokenRow extends RowDataPacket {
+  session_id: number;
+  user_id: number;
+}
+
+export async function revokePrincipalSessionByToken(
+  db: PoolConnection | Connection,
+  token: string,
+): Promise<number | null> {
+  if (!token || token.trim().length === 0) {
+    return null;
+  }
+
+  const tokenHash = sha256(token);
+  const [rows] = await db.execute<PrincipalSessionTokenRow[]>(
+    `SELECT session_id, user_id FROM principal_sessions WHERE token_hash = ? LIMIT 1`,
+    [tokenHash],
+  );
+
+  const row = rows[0];
+  if (!row) {
+    return null;
+  }
+
+  await db.execute(
+    "UPDATE principal_sessions SET revoked_at = NOW() WHERE session_id = ?",
+    [row.session_id],
+  );
+
+  return Number(row.user_id);
 }

@@ -6,6 +6,7 @@ import {
   updateMasterTeacherSessionRole,
   type MasterTeacherRoleContext,
 } from "@/lib/server/master-teacher-session";
+import { requireMasterTeacher } from "@/lib/server/master-teacher-auth";
 
 const COORDINATOR_HANDLED_TABLE = "mt_coordinator_handled" as const;
 const REMEDIAL_HANDLED_TABLE = "mt_remedialteacher_handled" as const;
@@ -62,9 +63,9 @@ const resolveRemedialRoleId = async (masterTeacherId: string): Promise<string | 
 };
 
 export async function POST(request: NextRequest) {
-  const session = await getMasterTeacherSessionFromCookies();
-  if (!session) {
-    return NextResponse.json({ success: false, error: "Master teacher session not found." }, { status: 401 });
+  const auth = await requireMasterTeacher(request);
+  if (!auth.ok) {
+    return auth.response;
   }
 
   const payload = (await request.json().catch(() => null)) as { roleContext?: string | null } | null;
@@ -75,9 +76,14 @@ export async function POST(request: NextRequest) {
   }
 
   const [coordinatorRoleId, remedialRoleId] = await Promise.all([
-    resolveCoordinatorRoleId(session.masterTeacherId, session.userId),
-    resolveRemedialRoleId(session.masterTeacherId),
+    resolveCoordinatorRoleId(auth.masterTeacherId, auth.userId),
+    resolveRemedialRoleId(auth.masterTeacherId),
   ]);
+
+  const session = await getMasterTeacherSessionFromCookies();
+  if (!session) {
+    return NextResponse.json({ success: false, error: "Master teacher session not found." }, { status: 401 });
+  }
 
   await updateMasterTeacherSessionRole(
     session.sessionId,

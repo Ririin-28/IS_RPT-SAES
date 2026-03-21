@@ -1,43 +1,31 @@
 "use client";
+
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, type ReactNode } from "react";
 import { clearStoredUserProfile, storeUserProfile } from "@/lib/utils/user-profile";
 
-type ITAdminSessionGuardProps = {
+type PrincipalSessionGuardProps = {
   children: ReactNode;
 };
 
-const DISABLE_IT_ADMIN_SESSION_GUARD = false;
-const IT_ADMIN_ROLE_SET = new Set(["admin", "it_admin", "itadmin", "super_admin", "superadmin"]);
-
 type AppRouterInstance = ReturnType<typeof useRouter>;
 
-function redirectItAdminToLogin(router: AppRouterInstance) {
+function redirectPrincipalToLogin(router: AppRouterInstance) {
   clearStoredUserProfile();
+  const target = "/auth/login?logout=true";
   if (typeof window !== "undefined") {
-    window.history.replaceState(null, "", "/auth/adminlogin");
-    window.location.replace("/auth/adminlogin");
+    window.history.replaceState(null, "", target);
+    window.location.replace(target);
   } else {
-    router.replace("/auth/adminlogin");
+    router.replace(target);
   }
 }
 
-function normalizeRole(role: string | null | undefined) {
-  if (!role) {
-    return "";
-  }
-  return role.trim().toLowerCase().replace(/[\s/\-]+/g, "_");
-}
-
-export default function ITAdminSessionGuard({ children }: ITAdminSessionGuardProps) {
+export default function PrincipalSessionGuard({ children }: PrincipalSessionGuardProps) {
   const router = useRouter();
   const redirectingRef = useRef(false);
 
   useEffect(() => {
-    if (DISABLE_IT_ADMIN_SESSION_GUARD) {
-      return;
-    }
-
     let active = true;
 
     const redirectToLogin = () => {
@@ -45,12 +33,12 @@ export default function ITAdminSessionGuard({ children }: ITAdminSessionGuardPro
         return;
       }
       redirectingRef.current = true;
-      redirectItAdminToLogin(router);
+      redirectPrincipalToLogin(router);
     };
 
     const verify = async () => {
       try {
-        const response = await fetch("/api/it_admin/session", {
+        const response = await fetch("/api/principal/session", {
           method: "GET",
           credentials: "include",
           cache: "no-store",
@@ -77,10 +65,6 @@ export default function ITAdminSessionGuard({ children }: ITAdminSessionGuardPro
         }
 
         if (data?.user) {
-          const normalizedRole = normalizeRole(data.user.role);
-          if (!IT_ADMIN_ROLE_SET.has(normalizedRole)) {
-            throw new Error("Invalid role");
-          }
           storeUserProfile({
             userId: data.user.userId ?? null,
             email: data.user.email ?? null,
@@ -88,15 +72,8 @@ export default function ITAdminSessionGuard({ children }: ITAdminSessionGuardPro
             middleName: data.user.middleName ?? null,
             lastName: data.user.lastName ?? null,
             profileImageUrl: data.user.profileImageUrl ?? null,
-            role: normalizedRole === "super_admin" || normalizedRole === "admin" || normalizedRole === "itadmin"
-              ? "it_admin"
-              : normalizedRole,
+            role: "principal",
           });
-          try {
-            sessionStorage.setItem("wasLoggedOut", "false");
-          } catch (storageError) {
-            console.warn("Unable to persist logout marker", storageError);
-          }
         }
       } catch {
         if (!active) {

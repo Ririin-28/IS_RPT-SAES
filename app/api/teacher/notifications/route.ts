@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { query } from "@/lib/db";
-import { getTeacherSessionFromCookies } from "@/lib/server/teacher-session";
+import { requireTeacher } from "@/lib/server/teacher-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -42,16 +42,16 @@ const normalizeTeacherIdentifier = (teacherId: string | null, userId: number): s
   return String(userId);
 };
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const session = await getTeacherSessionFromCookies();
-    if (!session) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    const auth = await requireTeacher(request);
+    if (!auth.ok) {
+      return auth.response;
     }
 
     await ensureNotificationsTable();
 
-    const teacherIdentifier = normalizeTeacherIdentifier(session.teacherId, session.userId);
+    const teacherIdentifier = normalizeTeacherIdentifier(auth.teacherId, auth.userId);
 
     const [rows] = await query<RowDataPacket[]>(
       `SELECT id, message, status, created_at FROM ${NOTIFICATIONS_TABLE}
@@ -87,14 +87,14 @@ type PatchPayload = {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const session = await getTeacherSessionFromCookies();
-    if (!session) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    const auth = await requireTeacher(request);
+    if (!auth.ok) {
+      return auth.response;
     }
 
     await ensureNotificationsTable();
 
-    const teacherIdentifier = normalizeTeacherIdentifier(session.teacherId, session.userId);
+    const teacherIdentifier = normalizeTeacherIdentifier(auth.teacherId, auth.userId);
     const payload = (await request.json().catch(() => null)) as PatchPayload | null;
 
     const noteId = Number(payload?.id ?? NaN);

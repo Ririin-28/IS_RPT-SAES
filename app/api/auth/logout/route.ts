@@ -10,6 +10,21 @@ import {
   extractAdminSessionToken,
   revokeAdminSession,
 } from "@/lib/server/admin-session";
+import {
+  buildClearedPrincipalSessionCookie,
+  extractPrincipalSessionToken,
+  revokePrincipalSessionByToken,
+} from "@/lib/server/principal-session";
+import {
+  buildClearedMasterTeacherSessionCookie,
+  extractMasterTeacherSessionToken,
+  revokeMasterTeacherSessionByToken,
+} from "@/lib/server/master-teacher-session";
+import {
+  buildClearedTeacherSessionCookie,
+  extractTeacherSessionToken,
+  revokeTeacherSessionByToken,
+} from "@/lib/server/teacher-session";
 
 interface LogoutPayload {
   userId?: number | string | null;
@@ -54,18 +69,29 @@ export async function POST(req: Request): Promise<Response> {
     const cookieHeader = req.headers.get("cookie");
     const parentSessionToken = extractParentSessionToken(cookieHeader);
     const adminSessionToken = extractAdminSessionToken(cookieHeader);
+    const principalSessionToken = extractPrincipalSessionToken(cookieHeader);
+    const masterTeacherSessionToken = extractMasterTeacherSessionToken(cookieHeader);
+    const teacherSessionToken = extractTeacherSessionToken(cookieHeader);
     const numericUserId = Number(userId);
     const hasValidBodyUserId = Number.isFinite(numericUserId) && numericUserId > 0;
 
-    if (!parentSessionToken && !adminSessionToken && !hasValidBodyUserId) {
+    if (
+      !parentSessionToken &&
+      !adminSessionToken &&
+      !principalSessionToken &&
+      !masterTeacherSessionToken &&
+      !teacherSessionToken &&
+      !hasValidBodyUserId
+    ) {
       return respond(400, { error: "Invalid user id" });
     }
 
     db = await mysql.createConnection({
-      host: "localhost",
-      user: "root",
-      password: "RIANA28@eg564",
-      database: "rpt-saes_db",
+      host: process.env.DB_HOST,
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_NAME,
+      port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 3306,
     });
 
     let resolvedUserId: number | null = null;
@@ -85,6 +111,30 @@ export async function POST(req: Request): Promise<Response> {
         resolvedUserId = sessionUserId;
       }
       responseCookies.push(buildClearedAdminSessionCookie());
+    }
+
+    if (principalSessionToken) {
+      const sessionUserId = await revokePrincipalSessionByToken(db, principalSessionToken);
+      if (sessionUserId != null) {
+        resolvedUserId = sessionUserId;
+      }
+      responseCookies.push(buildClearedPrincipalSessionCookie());
+    }
+
+    if (masterTeacherSessionToken) {
+      const sessionUserId = await revokeMasterTeacherSessionByToken(db, masterTeacherSessionToken);
+      if (sessionUserId != null) {
+        resolvedUserId = sessionUserId;
+      }
+      responseCookies.push(buildClearedMasterTeacherSessionCookie());
+    }
+
+    if (teacherSessionToken) {
+      const sessionUserId = await revokeTeacherSessionByToken(db, teacherSessionToken);
+      if (sessionUserId != null) {
+        resolvedUserId = sessionUserId;
+      }
+      responseCookies.push(buildClearedTeacherSessionCookie());
     }
 
     if (resolvedUserId == null && hasValidBodyUserId) {

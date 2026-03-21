@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { getTableColumns, query } from "@/lib/db";
-import { getTeacherSessionFromCookies } from "@/lib/server/teacher-session";
+import { requireTeacher } from "@/lib/server/teacher-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -83,10 +83,14 @@ const toNullableString = (value: unknown): string | null => {
 
 export async function GET(request: NextRequest) {
   try {
+    const auth = await requireTeacher(request);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
     const gradeFilter = toNullableString(request.nextUrl.searchParams.get("grade"));
     const gradeId = gradeFilter ? Number(gradeFilter.match(/(\d+)/)?.[1]) : null;
-    const session = await getTeacherSessionFromCookies();
-    const sessionGrade = gradeId ? { gradeId, gradeLabel: gradeFilter } : await resolveGradeFromTeacherId(session?.teacherId ?? null);
+    const sessionGrade = gradeId ? { gradeId, gradeLabel: gradeFilter } : await resolveGradeFromTeacherId(auth.teacherId ?? null);
     const effectiveGradeId = sessionGrade.gradeId ?? gradeId ?? null;
     const effectiveGradeLabel = sessionGrade.gradeLabel ?? gradeFilter ?? null;
 

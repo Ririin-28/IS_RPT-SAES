@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { query } from "@/lib/db";
-import { getPrincipalSessionFromCookies } from "@/lib/server/principal-session";
+import { requirePrincipal } from "@/lib/server/principal-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -31,11 +31,11 @@ const ensureNotificationsTable = async () => {
   await ensureTablePromise;
 };
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const session = await getPrincipalSessionFromCookies();
-    if (!session?.principalId) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    const auth = await requirePrincipal(request);
+    if (!auth.ok) {
+      return auth.response;
     }
 
     await ensureNotificationsTable();
@@ -45,7 +45,7 @@ export async function GET() {
        WHERE principal_id IS NULL OR principal_id = ?
        ORDER BY created_at DESC
        LIMIT 100`,
-      [session.principalId],
+      [auth.principalId],
     );
 
     const notifications = rows.map((row) => ({
@@ -69,9 +69,9 @@ type PatchPayload = {
 
 export async function PATCH(request: Request) {
   try {
-    const session = await getPrincipalSessionFromCookies();
-    if (!session?.principalId) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    const auth = await requirePrincipal(request);
+    if (!auth.ok) {
+      return auth.response;
     }
 
     await ensureNotificationsTable();
@@ -86,7 +86,7 @@ export async function PATCH(request: Request) {
          WHERE id = ?
            AND status = 'unread'
            AND (principal_id IS NULL OR principal_id = ?)`,
-        [noteId, session.principalId],
+        [noteId, auth.principalId],
       );
 
       return NextResponse.json({ success: true, mode: "single" });
@@ -98,7 +98,7 @@ export async function PATCH(request: Request) {
 
     await query(
       `UPDATE ${NOTIFICATIONS_TABLE} SET status = 'read' WHERE status = 'unread' AND (principal_id IS NULL OR principal_id = ?)`,
-      [session.principalId],
+      [auth.principalId],
     );
 
     return NextResponse.json({ success: true, mode: "all" });

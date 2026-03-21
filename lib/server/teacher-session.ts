@@ -6,6 +6,8 @@ const COOKIE_NAME = "rpt_teacher_session";
 const SESSION_DURATION_HOURS = 24;
 const SESSION_TABLE = "teacher_sessions";
 
+export const TEACHER_SESSION_COOKIE_NAME = COOKIE_NAME;
+
 export type TeacherSession = {
   sessionId: number;
   teacherId: string | null;
@@ -57,6 +59,40 @@ export function buildTeacherSessionCookie(token: string, expiresAt: Date): strin
     .join("; ");
 }
 
+export function buildClearedTeacherSessionCookie(): string {
+  return [
+    `${COOKIE_NAME}=`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    "Max-Age=0",
+    `Expires=${new Date(0).toUTCString()}`,
+    process.env.NODE_ENV === "production" ? "Secure" : "",
+  ]
+    .filter(Boolean)
+    .join("; ");
+}
+
+export function extractTeacherSessionToken(cookieHeader: string | null | undefined): string | null {
+  if (!cookieHeader || cookieHeader.trim().length === 0) {
+    return null;
+  }
+
+  const entries = cookieHeader.split(";");
+  for (const entry of entries) {
+    const trimmed = entry.trim();
+    if (!trimmed) {
+      continue;
+    }
+    if (!trimmed.startsWith(`${COOKIE_NAME}=`)) {
+      continue;
+    }
+    return trimmed.slice(COOKIE_NAME.length + 1);
+  }
+
+  return null;
+}
+
 export async function getTeacherSessionFromCookies(): Promise<TeacherSession | null> {
   const cookieStore = await cookies();
   const rawToken = cookieStore.get(COOKIE_NAME)?.value;
@@ -102,4 +138,36 @@ export async function getTeacherSessionFromCookies(): Promise<TeacherSession | n
 export async function revokeTeacherSession(sessionId: number): Promise<void> {
   const { query } = await import("@/lib/db");
   await query(`UPDATE ${SESSION_TABLE} SET revoked_at = NOW() WHERE session_id = ?`, [sessionId]);
+}
+
+interface TeacherSessionTokenRow extends RowDataPacket {
+  session_id: number;
+  user_id: number;
+}
+
+export async function revokeTeacherSessionByToken(
+  db: PoolConnection | Connection,
+  token: string,
+): Promise<number | null> {
+  if (!token || token.trim().length === 0) {
+    return null;
+  }
+
+  const tokenHash = sha256(token);
+  const [rows] = await db.execute<TeacherSessionTokenRow[]>(
+    `SELECT session_id, user_id FROM ${SESSION_TABLE} WHERE token_hash = ? LIMIT 1`,
+    [tokenHash],
+  );
+
+  const row = rows[0];
+  if (!row) {
+    return null;
+  }
+
+  await db.execute(
+    `UPDATE ${SESSION_TABLE} SET revoked_at = NOW() WHERE session_id = ?`,
+    [row.session_id],
+  );
+
+  return Number(row.user_id);
 }
