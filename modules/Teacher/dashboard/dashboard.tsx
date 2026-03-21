@@ -406,7 +406,7 @@ export default function TeacherDashboard() {
   const monthlyLevelProgressData = useMemo(
     () =>
       filteredMonthIndices.map((index) => {
-        const monthLabel = periodLabels[index] ?? "";
+        const monthLabel = monthOptions[index] ?? "";
         const monthKey = trendData?.months?.[index]?.key;
         const values = monthKey ? subjectTrend?.levelDistributionByMonth?.[monthKey] : undefined;
         const row: Record<string, number | string> = { month: monthLabel.slice(0, 3) };
@@ -415,7 +415,7 @@ export default function TeacherDashboard() {
         });
         return row;
       }),
-    [filteredMonthIndices, levelKeyByIndex, periodLabels, subjectTrend?.levelDistributionByMonth, trendData?.months]
+    [filteredMonthIndices, levelKeyByIndex, monthOptions, subjectTrend?.levelDistributionByMonth, trendData?.months]
   );
 
   const interventionLevelData = useMemo(() => {
@@ -1307,6 +1307,7 @@ export default function TeacherDashboard() {
           }
         }
       `}</style>
+    </div>
     </div>
   );
 }
