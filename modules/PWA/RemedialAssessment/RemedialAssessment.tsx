@@ -2,7 +2,6 @@
 
 import React, { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import UtilityButton from "@/components/Common/Buttons/UtilityButton";
 
 type AssessmentChoice = {
   id: number;
@@ -40,7 +39,6 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
   const [shortAnswer, setShortAnswer] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedChoiceId, setSelectedChoiceId] = useState<number | null>(null);
   const [streak, setStreak] = useState(0);
   const [bestStreak, setBestStreak] = useState(0);
   const [points, setPoints] = useState(0);
@@ -50,11 +48,8 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
   const item = questions[current];
   const normalizedSubject = String(assessment.subjectName ?? "").trim().toLowerCase();
   const isFilipinoAssessment = normalizedSubject === "filipino";
-  const activeSectionTitle = item?.sectionTitle?.trim() ?? "";
-  const activeSectionDescription = item?.sectionDescription?.trim() ?? "";
   const isLast = current === questions.length - 1;
   const progress = questions.length > 0 ? ((current + 1) / questions.length) * 100 : 0;
-  const optionLabels = ["A", "B", "C", "D", "E", "F"];
   const optionColors = [
     "bg-[#eb103b]", // Red
     "bg-[#1176d3]", // Blue
@@ -91,12 +86,6 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
         feedbackGreatJob: "Magaling!",
         feedbackTryAgain: "Subukan muli!",
         bestStreak: "Pinakamahabang sunod-sunod",
-        typeLabel: "Uri ng Tanong",
-        questionTypes: {
-          multiple_choice: "Maramihang Pagpipilian",
-          true_false: "Tama o Mali",
-          short_answer: "Maikling Sagot",
-        },
         streakMilestone3Title: "Tatlong Sunod! 🔥",
         streakMilestone3Subtext: "Tatlong sunod na tama! Ang galing mo!",
         streakMilestone5Title: "Hindi Ka Matitinag! ⚡",
@@ -123,12 +112,6 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
         feedbackGreatJob: "Great job!",
         feedbackTryAgain: "Try again!",
         bestStreak: "Best Streak",
-        typeLabel: "Question Type",
-        questionTypes: {
-          multiple_choice: "Multiple Choice",
-          true_false: "True / False",
-          short_answer: "Short Answer",
-        },
         streakMilestone3Title: "Triple Threat! 🔥",
         streakMilestone3Subtext: "3 in a row! You're on fire!",
         streakMilestone5Title: "Unstoppable! ⚡",
@@ -142,8 +125,6 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
         incorrectFeedback: "Nice try! You'll get it next time! 💪",
         shortAnswerIncorrectFeedback: "Don't give up! Try another one! 🚀",
       };
-
-  const questionTypeLabel = item ? uiText.questionTypes[item.type] : "";
 
   const speak = (text: string) => {
     if ("speechSynthesis" in window) {
@@ -172,7 +153,6 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
   const handleChoiceSelect = async (choiceId: number) => {
     if (!item || isSaving) return;
     setIsSaving(true);
-    setSelectedChoiceId(choiceId);
     try {
       const result = await saveAnswer({ questionId: item.id, selectedChoiceId: choiceId });
       
@@ -184,7 +164,7 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
       });
 
       if (result.isCorrect) {
-        setPoints((prev) => prev + 100 + (streak * 10)); // Bonus for streaks
+        setPoints((prev) => prev + result.score);
         
         // Streak milestones
         if (nextStreak === 3) {
@@ -210,7 +190,6 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
         if (isLast) {
           await handleSubmit();
         } else {
-          setSelectedChoiceId(null);
           setCurrent((prev) => Math.min(prev + 1, questions.length - 1));
         }
       }, 1500);
@@ -235,7 +214,7 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
       });
 
       if (result.isCorrect) {
-        setPoints((prev) => prev + 100 + (streak * 10)); // Bonus for streaks
+        setPoints((prev) => prev + result.score);
         
         // Streak milestones
         if (nextStreak === 3) {
@@ -356,16 +335,6 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
                 >
                   {/* Question Section with Speaker */}
                   <div className="relative py-2 text-center sm:py-4">
-                    {(activeSectionTitle || activeSectionDescription) && (
-                      <div className="mb-5 rounded-2xl border border-green-100 bg-green-50/70 px-4 py-3 text-left shadow-sm">
-                        {activeSectionTitle ? (
-                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#013300]/60">{activeSectionTitle}</p>
-                        ) : null}
-                        {activeSectionDescription ? (
-                          <p className="mt-1 text-sm leading-6 text-[#013300]/75">{activeSectionDescription}</p>
-                        ) : null}
-                      </div>
-                    )}
                     <div className="flex items-center justify-center gap-3 mb-2">
                       <h2 className="text-xl font-black tracking-tight text-[#222] sm:text-2xl md:text-[1.8rem]">
                         {item.questionText}
@@ -379,10 +348,6 @@ export default function RemedialAssessment({ assessment, attemptId, onComplete }
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
                         </svg>
                       </button>
-                    </div>
-                    
-                    <div className="mt-2 inline-flex items-center rounded-full border border-[#013300]/12 bg-green-50 px-3 py-1 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[#013300]/70">
-                      {uiText.typeLabel}: {questionTypeLabel}
                     </div>
 
                     {/* Streak Badge */}

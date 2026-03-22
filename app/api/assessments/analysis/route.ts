@@ -63,6 +63,13 @@ export async function GET(request: Request) {
 
         const assignmentColumn = isRemedial ? 'remedial_role_id' : 'teacher_id';
         const assignmentColumns = await getColumnNames('student_teacher_assignment').catch(() => new Set<string>());
+        const subjectAssessmentColumns = await getColumnNames('student_subject_assessment').catch(() => new Set<string>());
+        const canScopeBySubjectLevel =
+            assessment.subject_id != null
+            && subjectAssessmentColumns.has('student_id')
+            && subjectAssessmentColumns.has('subject_id');
+        const canScopeByLatestAssessment = canScopeBySubjectLevel && subjectAssessmentColumns.has('assessed_at');
+        const canScopeByPhonemic = canScopeBySubjectLevel && subjectAssessmentColumns.has('phonemic_id');
         const assignmentFilters = [`sta.${assignmentColumn} = ?`, 'sta.is_active = 1'];
         const assignmentParams: Array<number | string> = [resolvedId];
 
@@ -76,23 +83,41 @@ export async function GET(request: Request) {
             assignmentParams.push(Number(assessment.grade_id));
         }
 
-        if (assignmentColumns.has('phonemic_id') && assessment.phonemic_id != null) {
-            assignmentFilters.push('sta.phonemic_id = ?');
-            assignmentParams.push(Number(assessment.phonemic_id));
+        if (canScopeBySubjectLevel) {
+            assignmentFilters.push(`EXISTS (
+                SELECT 1
+                FROM student_subject_assessment ssa_scope
+                WHERE ssa_scope.student_id = sta.student_id
+                  AND ssa_scope.subject_id = ?
+                  ${canScopeByLatestAssessment ? `AND ssa_scope.assessed_at = (
+                    SELECT MAX(ssa_latest.assessed_at)
+                    FROM student_subject_assessment ssa_latest
+                    WHERE ssa_latest.student_id = sta.student_id
+                      AND ssa_latest.subject_id = ?
+                  )` : ''}
+                  ${canScopeByPhonemic && assessment.phonemic_id != null ? 'AND ssa_scope.phonemic_id = ?' : ''}
+            )`);
+            assignmentParams.push(Number(assessment.subject_id));
+            if (canScopeByLatestAssessment) {
+                assignmentParams.push(Number(assessment.subject_id));
+            }
+            if (canScopeByPhonemic && assessment.phonemic_id != null) {
+                assignmentParams.push(Number(assessment.phonemic_id));
+            }
         }
 
         // 2. Get Assigned Students (Active only)
         // We only care about students assigned to this assessment's actual subject / level scope.
         const [assignedStudents] = await pool.query<RowDataPacket[]>(
-            `SELECT sta.student_id, s.lrn
+            `SELECT DISTINCT sta.student_id, s.lrn
              FROM student_teacher_assignment sta
              JOIN student s ON s.student_id = sta.student_id
              WHERE ${assignmentFilters.join(' AND ')}`,
             assignmentParams
         );
 
-        const assignedStudentIds = assignedStudents.map((s: any) => s.student_id).filter(Boolean);
-        const assignedStudentLrns = assignedStudents.map((s: any) => s.lrn).filter(Boolean);
+        const assignedStudentIds = Array.from(new Set(assignedStudents.map((s: any) => s.student_id).filter(Boolean)));
+        const assignedStudentLrns = Array.from(new Set(assignedStudents.map((s: any) => s.lrn).filter(Boolean)));
 
         // If no students are assigned, we return empty stats but valid success
         if (assignedStudentIds.length === 0) {

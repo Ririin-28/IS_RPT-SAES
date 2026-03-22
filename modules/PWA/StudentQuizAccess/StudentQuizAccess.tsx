@@ -335,7 +335,7 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
         className="relative mt-[calc(env(safe-area-inset-top)+3rem)] flex min-h-[calc(100dvh-env(safe-area-inset-top)-3rem)] w-full flex-col justify-center overflow-y-auto rounded-t-[30px] bg-[#f7f8f7] px-4 pt-6 pb-7"
       >
         {completedSummary ? (
-          <div className="mx-auto w-full max-w-[36rem] rounded-[28px] border border-green-100/70 bg-white p-4 shadow-xl sm:p-6 md:p-7">
+          <div className="mx-auto w-full max-w-[36rem] p-4 sm:p-6 md:p-7">
             <div className="flex flex-col items-center mb-7 mt-2">
               <Image
                 src="/RPT-SAES/RPTLogo.png"
@@ -385,7 +385,7 @@ export default function StudentQuizAccess({ onBack }: StudentQuizAccessProps) {
             </PrimaryButton>
           </div>
         ) : showQuizIntro && assessment && attemptId ? (
-          <div className="mx-auto w-full max-w-[36rem] rounded-[28px] border border-green-100/70 bg-white p-4 shadow-xl sm:p-6 md:p-7">
+          <div className="mx-auto w-full max-w-[36rem] p-4 sm:p-6 md:p-7">
             <div className="flex flex-col items-center text-center mb-6 mt-1">
               <Image
                 src="/RPT-SAES/RPTLogo.png"

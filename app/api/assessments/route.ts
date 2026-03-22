@@ -340,14 +340,32 @@ export async function GET(request: NextRequest) {
       const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
       const escapedAssigneeId = assigneeId ? connection.escape(assigneeId) : "''";
       const assignmentColumns = await getColumnNames(connection, "student_teacher_assignment").catch(() => new Set<string>());
+      const subjectAssessmentColumns = await getColumnNames(connection, "student_subject_assessment").catch(() => new Set<string>());
+      const canScopeBySubjectLevel =
+        subjectAssessmentColumns.has("student_id") &&
+        subjectAssessmentColumns.has("subject_id");
+      const canScopeByLatestAssessment = canScopeBySubjectLevel && subjectAssessmentColumns.has("assessed_at");
+      const canScopeByPhonemic = canScopeBySubjectLevel && subjectAssessmentColumns.has("phonemic_id");
       const subjectAssignmentFilter = assignmentColumns.has("subject_id")
         ? " AND sta.subject_id = a.subject_id"
         : "";
       const gradeAssignmentFilter = assignmentColumns.has("grade_id")
         ? " AND (a.grade_id IS NULL OR sta.grade_id = a.grade_id)"
         : "";
-      const phonemicAssignmentFilter = assignmentColumns.has("phonemic_id")
-        ? " AND (a.phonemic_id IS NULL OR sta.phonemic_id = a.phonemic_id)"
+      const phonemicScopeFilter = canScopeBySubjectLevel
+        ? ` AND (a.subject_id IS NULL OR EXISTS (
+              SELECT 1
+              FROM student_subject_assessment ssa_scope
+              WHERE ssa_scope.student_id = sta.student_id
+                AND ssa_scope.subject_id = a.subject_id
+                ${canScopeByLatestAssessment ? `AND ssa_scope.assessed_at = (
+                  SELECT MAX(ssa_latest.assessed_at)
+                  FROM student_subject_assessment ssa_latest
+                  WHERE ssa_latest.student_id = sta.student_id
+                    AND ssa_latest.subject_id = a.subject_id
+                )` : ""}
+                ${canScopeByPhonemic ? "AND (a.phonemic_id IS NULL OR ssa_scope.phonemic_id = a.phonemic_id)" : ""}
+            ))`
         : "";
 
       const submittedCountQuery = assigneeId && assignmentColumn
@@ -362,7 +380,7 @@ export async function GET(request: NextRequest) {
               AND sta.is_active = 1
               ${subjectAssignmentFilter}
               ${gradeAssignmentFilter}
-              ${phonemicAssignmentFilter}
+              ${phonemicScopeFilter}
               AND (aa.student_id = sta.student_id OR (aa.lrn IS NOT NULL AND aa.lrn = s.lrn))
            )`
         : `(
@@ -374,13 +392,13 @@ export async function GET(request: NextRequest) {
 
       const assignedCountQuery = assigneeId && assignmentColumn
         ? `(
-            SELECT COUNT(*)
+            SELECT COUNT(DISTINCT sta.student_id)
             FROM student_teacher_assignment sta
             WHERE sta.${assignmentColumn} = ${escapedAssigneeId}
               AND sta.is_active = 1
               ${subjectAssignmentFilter}
               ${gradeAssignmentFilter}
-              ${phonemicAssignmentFilter}
+              ${phonemicScopeFilter}
           )`
         : `0`;
 
