@@ -7,7 +7,7 @@ import DangerButton from "@/components/Common/Buttons/DangerButton";
 import PrimaryButton from "@/components/Common/Buttons/PrimaryButton";
 import LogoutConfirmationModal from "@/components/Common/Modals/LogoutConfirmationModal";
 import UserAvatar from "@/components/Common/UserAvatar";
-import { getStoredUserProfile } from "@/lib/utils/user-profile";
+import { resolveParentUserId } from "@/lib/utils/parent-session-client";
 import { performClientLogout } from "@/lib/utils/logout";
 
 type ParentProfileData = {
@@ -65,22 +65,21 @@ export default function ParentProfile() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   useEffect(() => {
-    const profile = getStoredUserProfile();
-    const userId = Number(profile?.userId);
-
-    if (!Number.isFinite(userId)) {
-      setIsProfileLoading(false);
-      setIsChildrenLoading(false);
-      setError("Unable to determine the signed-in parent. Please sign in again.");
-      return;
-    }
-
     const controller = new AbortController();
 
     const loadProfile = async () => {
       setIsProfileLoading(true);
       setError(null);
       try {
+        const userId = await resolveParentUserId();
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        if (userId === null) {
+          throw new Error("Unable to determine the signed-in parent. Please sign in again.");
+        }
+
         const query = new URLSearchParams({ userId: String(userId) });
         const response = await fetch(`/api/parent/profile?${query.toString()}`, {
           method: "GET",
@@ -135,19 +134,16 @@ export default function ParentProfile() {
   }, []);
 
   useEffect(() => {
-    const profile = getStoredUserProfile();
-    const userId = Number(profile?.userId);
-
-    if (!Number.isFinite(userId)) {
-      setIsChildrenLoading(false);
-      return;
-    }
-
     const controller = new AbortController();
 
     const loadChildren = async () => {
       setIsChildrenLoading(true);
       try {
+        const userId = await resolveParentUserId();
+        if (controller.signal.aborted || userId === null) {
+          return;
+        }
+
         const query = new URLSearchParams({ userId: String(userId) });
         const response = await fetch(`/api/parent/dashboard?${query.toString()}`, {
           method: "GET",

@@ -4,6 +4,7 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: ['172.18.112.1'],
   async redirects() {
     return [
+      { source: "/Parent/welcome", destination: "/Parent/home", permanent: false },
       { source: "/Super_Admin", destination: "/IT_Admin", permanent: false },
       { source: "/Super_Admin/:path*", destination: "/IT_Admin/:path*", permanent: false },
       { source: "/super-admin", destination: "/IT_Admin", permanent: false },

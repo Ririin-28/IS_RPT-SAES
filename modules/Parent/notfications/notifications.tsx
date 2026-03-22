@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import ParentSidebar from "@/components/Parent/Sidebar";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
-import { getStoredUserProfile } from "@/lib/utils/user-profile";
+import { resolveParentUserId } from "@/lib/utils/parent-session-client";
 
 type ParentNotification = {
   id: number;
@@ -96,7 +96,6 @@ const getNotificationPresentation = (note: ParentNotification) => {
 };
 
 export default function ParentNotifications() {
-  const profile = useMemo(() => getStoredUserProfile(), []);
   const [notifications, setNotifications] = useState<ParentNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -118,18 +117,6 @@ export default function ParentNotifications() {
 
     return sections;
   }, [notifications]);
-
-  const resolveUserId = useMemo(() => {
-    const rawUserId = profile?.userId;
-    if (typeof rawUserId === "number" && Number.isFinite(rawUserId)) {
-      return rawUserId;
-    }
-    if (typeof rawUserId === "string" && rawUserId.trim()) {
-      const parsed = Number(rawUserId.trim());
-      return Number.isFinite(parsed) ? parsed : null;
-    }
-    return null;
-  }, [profile?.userId]);
 
   const resolveParentStudentIds = useMemo(() => {
     return async (userId: number, signal: AbortSignal) => {
@@ -192,11 +179,12 @@ export default function ParentNotifications() {
 
       try {
         const params = new URLSearchParams();
-        if (!resolveUserId) {
+        const userId = await resolveParentUserId();
+        if (!userId) {
           throw new Error("Unable to determine the signed-in parent. Please sign in again.");
         }
 
-        const studentIds = await resolveParentStudentIds(resolveUserId, controller.signal);
+        const studentIds = await resolveParentStudentIds(userId, controller.signal);
         if (studentIds.length === 0) {
           throw new Error("No linked students were found for this parent.");
         }
@@ -268,7 +256,7 @@ export default function ParentNotifications() {
       isCancelled = true;
       controller.abort();
     };
-  }, [resolveParentStudentIds, resolveUserId]);
+  }, [resolveParentStudentIds]);
 
   return (
     <div className="relative h-dvh bg-white lg:flex lg:h-screen lg:overflow-hidden">

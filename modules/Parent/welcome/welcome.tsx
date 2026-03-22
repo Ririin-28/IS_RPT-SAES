@@ -1,136 +1,24 @@
 "use client";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import {
-  formatFullNameWithMiddleInitial,
-  getStoredUserProfile,
-  storeUserProfile,
-} from "@/lib/utils/user-profile";
-
-const PARENT_FALLBACK_NAME = "Parent";
+import { useEffect } from "react";
 
 type ParentWelcomeProps = {
   initialDisplayName?: string;
 };
 
-export default function ParentWelcome({ initialDisplayName = PARENT_FALLBACK_NAME }: ParentWelcomeProps) {
-  const router = useRouter();
-  const [displayName, setDisplayName] = useState(initialDisplayName);
+export default function ParentWelcome({ initialDisplayName: _initialDisplayName = "Parent" }: ParentWelcomeProps) {
 
   useEffect(() => {
-    router.replace("/Parent/home");
-  }, [router]);
-
-  useEffect(() => {
-    let active = true;
-
-    const hydrateDisplayName = async () => {
-      if (initialDisplayName && initialDisplayName !== PARENT_FALLBACK_NAME) {
-        if (active) {
-          setDisplayName(initialDisplayName);
-        }
-        return;
-      }
-
-      const storedProfile = getStoredUserProfile();
-      const storedDisplayName = formatFullNameWithMiddleInitial(storedProfile);
-      if (storedDisplayName) {
-        if (active) {
-          setDisplayName(storedDisplayName);
-        }
-        return;
-      }
-
-      try {
-        const response = await fetch("/api/parent/session", {
-          method: "GET",
-          credentials: "include",
-          cache: "no-store",
-        });
-
-        const payload = (await response.json().catch(() => null)) as {
-          success?: boolean;
-          user?: {
-            userId?: number | null;
-            email?: string | null;
-            firstName?: string | null;
-            middleName?: string | null;
-            lastName?: string | null;
-          };
-        } | null;
-
-        if (!active || !response.ok || !payload?.success || !payload.user) {
-          return;
-        }
-
-        const nextProfile = {
-          userId: payload.user.userId ?? null,
-          email: payload.user.email ?? null,
-          firstName: payload.user.firstName ?? null,
-          middleName: payload.user.middleName ?? null,
-          lastName: payload.user.lastName ?? null,
-          role: "parent",
-        } as const;
-
-        storeUserProfile(nextProfile);
-
-        const resolvedDisplayName = formatFullNameWithMiddleInitial(nextProfile);
-        if (resolvedDisplayName) {
-          setDisplayName(resolvedDisplayName);
-        }
-      } catch {
-        // Keep the generic fallback when session hydration fails.
-      }
-    };
-
-    void hydrateDisplayName();
-
-    return () => {
-      active = false;
-    };
-  }, [initialDisplayName]);
+    window.location.replace("/Parent/home");
+  }, []);
 
   return (
-    <div className="relative min-h-dvh flex items-center justify-center overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-24 right-0 h-72 w-72 rounded-full bg-emerald-100/40" />
-        <div className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-emerald-200/40" />
-      </div>
-
-      {/* Content */}
-      <div className="relative z-10 flex flex-col items-center justify-center w-full px-4">
-        <h2 className="text-xl md:text-2xl font-semibold text-green-900 mb-4 text-center pb-12">
-          Welcome,
-          <br />
-          Parent!
-        </h2>
-    <h1 className="text-2xl md:text-6xl font-bold text-green-900 text-center mb-8">{displayName}</h1>
-  <div className="text-xl md:text-2xl text-green-800 font-semibold text-center flex items-center justify-center">
-    Redirecting to home
-    <span className="ml-2 flex gap-1">
-      <span className="inline-block animate-dot1">.</span>
-      <span className="inline-block animate-dot2">.</span>
-      <span className="inline-block animate-dot3">.</span>
-    </span>
-  </div>
-  <style jsx>{`
-    .animate-dot1 {
-      animation: bounceDot 1.2s infinite;
-      animation-delay: 0s;
-    }
-    .animate-dot2 {
-      animation: bounceDot 1.2s infinite;
-      animation-delay: 0.3s;
-    }
-    .animate-dot3 {
-      animation: bounceDot 1.2s infinite;
-      animation-delay: 0.6s;
-    }
-    @keyframes bounceDot {
-      0%, 80%, 100% { transform: translateY(0); }
-      40% { transform: translateY(-10px); }
-    }
-  `}</style>
+    <div className="flex min-h-dvh items-center justify-center bg-white px-4">
+      <div className="flex flex-col items-center gap-3 text-center">
+        <span
+          className="h-8 w-8 animate-spin rounded-full border-4 border-[#D7E9DB] border-t-[#0C6932]"
+          aria-hidden="true"
+        />
+        <p className="text-sm font-medium text-[#58705D]">Redirecting to home...</p>
       </div>
     </div>
   );

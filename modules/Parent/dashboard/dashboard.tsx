@@ -6,7 +6,7 @@ import ParentSidebar from "@/components/Parent/Sidebar";
 import BaseModal, { ModalSection } from "@/components/Common/Modals/BaseModal";
 import SecondaryButton from "@/components/Common/Buttons/SecondaryButton";
 import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
-import { getStoredUserProfile } from "@/lib/utils/user-profile";
+import { getStoredParentUserId, resolveParentUserId } from "@/lib/utils/parent-session-client";
 import { composeRuleBasedSlideFeedbackParagraph, getReadingSpeedLabel } from "@/lib/performance/insights";
 
 const SUPPORTED_SUBJECTS = ["English", "Filipino", "Math"] as const;
@@ -891,9 +891,7 @@ export default function ParentDashboard({ view = "home" }: ParentDashboardProps)
   }, []);
 
   const getSignedInParentUserId = useCallback(() => {
-    const profile = getStoredUserProfile();
-    const userId = Number(profile?.userId);
-    return Number.isFinite(userId) ? userId : null;
+    return getStoredParentUserId();
   }, []);
 
   const createDashboardCacheKey = useCallback(
@@ -1018,20 +1016,23 @@ export default function ParentDashboard({ view = "home" }: ParentDashboardProps)
   );
 
   useEffect(() => {
-    const userId = getSignedInParentUserId();
-
-    if (userId === null) {
-      setState((previous) => ({
-        ...previous,
-        isLoading: false,
-        error: "Unable to determine the signed-in parent. Please sign in again.",
-      }));
-      return;
-    }
-
     let cancelled = false;
 
     const loadDashboard = async () => {
+      const userId = await resolveParentUserId();
+      if (cancelled) {
+        return;
+      }
+
+      if (userId === null) {
+        setState((previous) => ({
+          ...previous,
+          isLoading: false,
+          error: "Unable to determine the signed-in parent. Please sign in again.",
+        }));
+        return;
+      }
+
       const request: DashboardRequestParams = {
         userId,
         view,

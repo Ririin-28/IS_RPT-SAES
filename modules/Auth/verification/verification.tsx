@@ -105,7 +105,7 @@ function VerificationContent() {
 			case "principal":
 				return "/Principal/welcome";
 			case "parent":
-				return "/Parent/welcome";
+				return "/Parent/home";
 			case "teacher":
 				return "/Teacher/welcome";
 			case "master_teacher":

@@ -1,6 +1,6 @@
-const STATIC_CACHE = 'rpt-portal-static-v4';
-const RUNTIME_CACHE = 'rpt-portal-runtime-v4';
-const API_CACHE = 'rpt-portal-api-v4';
+const STATIC_CACHE = 'rpt-portal-static-v5';
+const RUNTIME_CACHE = 'rpt-portal-runtime-v5';
+const API_CACHE = 'rpt-portal-api-v5';
 
 const STATIC_ASSETS = [
   '/',
@@ -51,6 +51,7 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(STATIC_CACHE).then((cache) => cache.addAll(STATIC_ASSETS))
   );
+  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
@@ -98,9 +99,13 @@ self.addEventListener('fetch', (event) => {
   if (
     url.pathname.startsWith('/_next/') ||
     request.destination === 'script' ||
-    request.destination === 'style' ||
-    request.destination === 'image'
+    request.destination === 'style'
   ) {
+    event.respondWith(networkFirst(request, RUNTIME_CACHE));
+    return;
+  }
+
+  if (request.destination === 'image') {
     event.respondWith(staleWhileRevalidate(request, RUNTIME_CACHE));
     return;
   }

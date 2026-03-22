@@ -31,7 +31,7 @@ const PORTAL_PATH_BY_ROLE: Record<string, string> = {
   super_admin: "/IT_Admin/welcome",
   itadmin: "/IT_Admin/welcome",
   principal: "/Principal/welcome",
-  parent: "/Parent/welcome",
+  parent: "/Parent/home",
   teacher: "/Teacher/welcome",
   master_teacher: "/MasterTeacher/welcome",
   masterteacher: "/MasterTeacher/welcome",

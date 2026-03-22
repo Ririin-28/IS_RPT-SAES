@@ -81,7 +81,7 @@ export default function ParentLogin({ onBack }: ParentLoginProps) {
         }
 
         if (response.ok) {
-          window.location.replace("/Parent/welcome");
+          window.location.replace("/Parent/home");
           return;
         }
       } catch {
@@ -177,7 +177,7 @@ export default function ParentLogin({ onBack }: ParentLoginProps) {
         throw new Error("This entry is only for parent accounts.");
       }
 
-      const redirectPath = data?.redirectPath || "/Parent/welcome";
+      const redirectPath = data?.redirectPath || "/Parent/home";
 
       if (data?.skipOtp) {
         storeUserProfile({
