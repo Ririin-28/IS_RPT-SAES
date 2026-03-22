@@ -2833,16 +2833,18 @@ export default function MasterTeacherCalendar() {
           message={toast.message}
           tone={toast.tone}
           className="max-w-md"
+          timeoutMs={2000}
         />
       )}
       {activityToast && (
-        <ToastActivity message={activityToast.message} tone={activityToast.tone} />
+        <ToastActivity message={activityToast.message} tone={activityToast.tone} timeoutMs={2400} />
       )}
       {importActionToast && pendingImportIds.length > 0 && (
         <ToastActivity
           title="Imported activities"
           message={importActionToast}
           tone="info"
+          timeoutMs={null}
           actions={
             <>
               <button

@@ -14,26 +14,30 @@ type ToastProps = {
   expandable?: boolean;
   defaultExpanded?: boolean;
   onClose?: () => void;
+  timeoutMs?: number | null;
 };
 
-const TONE_STYLES: Record<ToastTone, { container: string; icon: string; dot: string; ring: string }> = {
+const TONE_STYLES: Record<ToastTone, { container: string; icon: string; dot: string; ring: string; progress: string }> = {
   success: {
     container: "border-white/50 bg-white/70 text-emerald-900",
     icon: "text-emerald-600",
     dot: "bg-emerald-400",
     ring: "ring-gray-200/60",
+    progress: "bg-[#013300]",
   },
   info: {
     container: "border-gray-200/70 bg-gray-50/80 text-sky-900",
     icon: "text-sky-600",
     dot: "bg-sky-400",
     ring: "ring-gray-200/60",
+    progress: "bg-[#013300]",
   },
   error: {
     container: "border-gray-200/70 bg-gray-50/80 text-rose-900",
     icon: "text-rose-600",
     dot: "bg-rose-400",
     ring: "ring-gray-200/60",
+    progress: "bg-[#013300]",
   },
 };
 
@@ -47,10 +51,12 @@ const Toast: React.FC<ToastProps> = ({
   expandable = false,
   defaultExpanded = false,
   onClose,
+  timeoutMs = null,
 }) => {
   const styles = TONE_STYLES[tone];
   const [expanded, setExpanded] = useState(defaultExpanded);
   const canExpand = useMemo(() => expandable || Boolean(details) || Boolean(actions), [expandable, details, actions]);
+  const hasTimeoutProgress = typeof timeoutMs === "number" && timeoutMs > 0;
   const iconPath =
     tone === "success"
       ? "M20 6 9 17l-5-5"
@@ -62,7 +68,7 @@ const Toast: React.FC<ToastProps> = ({
     <div
       role="status"
       aria-live="assertive"
-      className={`pointer-events-auto flex w-full items-start gap-3 rounded-2xl border px-4 py-3 text-sm shadow-xl shadow-black/20 ring-1 backdrop-blur-md backdrop-saturate-150 ${
+      className={`pointer-events-auto relative flex w-full items-start gap-3 overflow-hidden rounded-2xl border px-4 py-3 text-sm shadow-xl shadow-black/20 ring-1 backdrop-blur-md backdrop-saturate-150 ${
         styles.container
       } ${styles.ring} ${className}`}
     >
@@ -115,6 +121,28 @@ const Toast: React.FC<ToastProps> = ({
         {expanded && details && <div className="mt-2 text-xs text-gray-500">{details}</div>}
         {expanded && actions && <div className="mt-3 flex flex-wrap gap-2">{actions}</div>}
       </div>
+      {hasTimeoutProgress && (
+        <>
+          <div aria-hidden="true" className="absolute inset-x-0 bottom-0 h-1 bg-black/5" />
+          <div
+            key={`${title ?? ""}-${message}-${timeoutMs}`}
+            aria-hidden="true"
+            className={`absolute inset-x-0 bottom-0 h-1 origin-left ${styles.progress}`}
+            style={{ animation: `toast-timeout-progress ${timeoutMs}ms linear forwards` }}
+          />
+        </>
+      )}
+      <style jsx>{`
+        @keyframes toast-timeout-progress {
+          from {
+            transform: scaleX(1);
+          }
+
+          to {
+            transform: scaleX(0);
+          }
+        }
+      `}</style>
     </div>
   );
 };

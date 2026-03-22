@@ -13,12 +13,14 @@ type ToastActivityProps = {
   defaultExpanded?: boolean;
   onClose?: () => void;
   className?: string;
+  timeoutMs?: number | null;
 };
 
-const ToastActivity: React.FC<ToastActivityProps> = ({ className = "", ...props }) => (
+const ToastActivity: React.FC<ToastActivityProps> = ({ className = "", timeoutMs = 3200, ...props }) => (
   <div className="fixed bottom-6 right-6 z-50 flex items-end justify-end pointer-events-none">
     <Toast
       {...props}
+      timeoutMs={timeoutMs}
       className={`pointer-events-auto w-auto max-w-sm ${className}`}
     />
   </div>

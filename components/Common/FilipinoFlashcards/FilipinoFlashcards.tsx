@@ -2423,6 +2423,7 @@ export default function FilipinoFlashcards({
             message={blockedSessionMessage}
             tone="info"
             onClose={() => setBlockedSessionMessage(null)}
+            timeoutMs={5000}
           />
         )}
       </div>

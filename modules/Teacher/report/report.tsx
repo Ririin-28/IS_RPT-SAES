@@ -960,6 +960,7 @@ export default function MasterTeacherReport({ subjectSlug }: MasterTeacherReport
             title="Saving changes"
             message="Saving monthly changes..."
             tone="info"
+            timeoutMs={null}
           />
         ) : saveFeedback ? (
           <ToastActivity
@@ -973,6 +974,7 @@ export default function MasterTeacherReport({ subjectSlug }: MasterTeacherReport
             message={saveFeedback.message}
             tone={saveFeedback.tone}
             onClose={() => setSaveFeedback(null)}
+            timeoutMs={saveFeedback.tone === "error" ? null : 3500}
           />
         ) : null}
       </div>

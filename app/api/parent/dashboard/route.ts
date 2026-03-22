@@ -16,6 +16,8 @@ const STUDENT_TEACHER_ASSIGNMENT_TABLE = "student_teacher_assignment" as const;
 const PERFORMANCE_RECORDS_TABLE = "performance_records" as const;
 const REMARKS_TABLE = "remarks" as const;
 const TEACHER_TABLE = "teacher" as const;
+const MASTER_TEACHER_TABLE = "master_teacher" as const;
+const MT_REMEDIAL_HANDLED_TABLE = "mt_remedialteacher_handled" as const;
 const USERS_TABLE = "users" as const;
 
 // const SCHEDULE_DAYS = [
@@ -217,6 +219,10 @@ const normalizeSubjectName = (value: string | null | undefined): string | null =
   if (lower === "filipino") return "Filipino";
   if (lower === "math" || lower === "mathematics") return "Math";
   return trimmed;
+};
+
+const resolveDashboardSubjectName = (subjectMap: Map<number, string>, subjectId: number): string => {
+  return normalizeSubjectName(subjectMap.get(subjectId) ?? null) ?? `Subject ${subjectId}`;
 };
 
 const buildName = (first?: unknown, middle?: unknown, last?: unknown): string | null => {
@@ -519,6 +525,81 @@ async function fetchTeacherNames(
   return resolved;
 }
 
+async function fetchRemedialRoleTeacherNames(
+  remedialRoleIds: string[],
+  userColumns: Set<string>,
+): Promise<Map<string, string>> {
+  const resolved = new Map<string, string>();
+  const uniqueRoleIds = Array.from(new Set(remedialRoleIds.map((value) => value.trim()).filter(Boolean)));
+  if (!uniqueRoleIds.length) return resolved;
+
+  const handledColumns = await safeGetColumns(MT_REMEDIAL_HANDLED_TABLE);
+  const masterTeacherColumns = await safeGetColumns(MASTER_TEACHER_TABLE);
+  if (
+    !handledColumns.has("remedial_role_id") ||
+    !handledColumns.has("master_teacher_id") ||
+    !masterTeacherColumns.size
+  ) {
+    return resolved;
+  }
+
+  const masterTeacherIdColumn = masterTeacherColumns.has("master_teacher_id")
+    ? "master_teacher_id"
+    : masterTeacherColumns.has("masterteacher_id")
+      ? "masterteacher_id"
+      : null;
+  const userIdColumn = masterTeacherColumns.has("user_id") ? "user_id" : null;
+  if (!masterTeacherIdColumn) return resolved;
+
+  const userNameColumn = pickColumn(userColumns, USER_NAME_COLUMNS);
+  const userFirstColumn = pickColumn(userColumns, USER_FIRST_COLUMNS);
+  const userMiddleColumn = pickColumn(userColumns, USER_MIDDLE_COLUMNS);
+  const userLastColumn = pickColumn(userColumns, USER_LAST_COLUMNS);
+  const userEmailColumn = pickColumn(userColumns, USER_EMAIL_COLUMNS);
+  const joinUsers = Boolean(userIdColumn && userColumns.has("user_id"));
+
+  const selectParts = [
+    "mrh.remedial_role_id AS remedial_role_id",
+    "mrh.master_teacher_id AS master_teacher_id",
+  ];
+
+  if (joinUsers) {
+    selectParts.push(
+      userNameColumn ? `u.${userNameColumn} AS user_name` : "NULL AS user_name",
+      userFirstColumn ? `u.${userFirstColumn} AS user_first_name` : "NULL AS user_first_name",
+      userMiddleColumn ? `u.${userMiddleColumn} AS user_middle_name` : "NULL AS user_middle_name",
+      userLastColumn ? `u.${userLastColumn} AS user_last_name` : "NULL AS user_last_name",
+      userEmailColumn ? `u.${userEmailColumn} AS user_email` : "NULL AS user_email",
+    );
+  }
+
+  const placeholders = uniqueRoleIds.map(() => "?").join(", ");
+  const sql = `
+    SELECT ${selectParts.join(", ")}
+    FROM ${MT_REMEDIAL_HANDLED_TABLE} mrh
+    LEFT JOIN ${MASTER_TEACHER_TABLE} mt ON mt.${masterTeacherIdColumn} = mrh.master_teacher_id
+    ${joinUsers ? `LEFT JOIN ${USERS_TABLE} u ON u.user_id = mt.${userIdColumn}` : ""}
+    WHERE mrh.remedial_role_id IN (${placeholders})
+  `;
+
+  const [rows] = await query<RowDataPacket[]>(sql, uniqueRoleIds);
+  for (const row of rows ?? []) {
+    const remedialRoleId = sanitizeText(row.remedial_role_id);
+    if (!remedialRoleId) continue;
+
+    const masterTeacherId = sanitizeText(row.master_teacher_id);
+    const teacherName =
+      buildName(row.user_first_name, row.user_middle_name, row.user_last_name) ??
+      sanitizeText(row.user_name) ??
+      sanitizeText(row.user_email) ??
+      `Teacher ${masterTeacherId ?? remedialRoleId}`;
+
+    resolved.set(remedialRoleId, teacherName);
+  }
+
+  return resolved;
+}
+
 async function countApprovedScheduledActivitiesForSubject(
   subjectId: number,
   gradeId: number | null,
@@ -751,7 +832,8 @@ export async function GET(request: Request) {
     const requestedSubjectName = normalizeSubjectName(selectedSubjectParam);
     const supportedRequestedSubjectName =
       requestedSubjectName && TIMELINE_SUBJECTS.has(requestedSubjectName) ? requestedSubjectName : null;
-    const subjectFilterName = requestedView === "home" ? null : supportedRequestedSubjectName;
+    const attendanceSubjectFilterName = supportedRequestedSubjectName;
+    const scheduleSubjectFilterName = requestedView === "attendance" ? supportedRequestedSubjectName : null;
 
     const attendanceRows = dedupeAttendanceByDate(
       filterAttendanceRowsBySubject(
@@ -771,7 +853,7 @@ export async function GET(request: Request) {
               : null,
           })),
         ] as AttendanceRow[],
-        subjectFilterName,
+        attendanceSubjectFilterName,
       ),
     );
 
@@ -780,16 +862,17 @@ export async function GET(request: Request) {
        FROM weekly_subject_schedule`,
     );
 
-    const schedule = buildSchedule(scheduleRows, subjectMap, subjectFilterName);
+    const schedule = buildSchedule(scheduleRows, subjectMap, scheduleSubjectFilterName);
+    const attendanceSchedule = buildSchedule(scheduleRows, subjectMap, attendanceSubjectFilterName);
 
     let scheduledActivityDates: ScheduledActivityDateInfo = {
       totalCount: null,
       pastCount: null,
       dates: [],
     };
-    if (subjectFilterName) {
+    if (attendanceSubjectFilterName) {
       const subjectIdForAttendance = Array.from(subjectMap.entries()).find(
-        ([, name]) => normalizeSubjectName(name) === subjectFilterName,
+        ([, name]) => normalizeSubjectName(name) === attendanceSubjectFilterName,
       )?.[0];
 
       if (Number.isFinite(subjectIdForAttendance)) {
@@ -801,11 +884,11 @@ export async function GET(request: Request) {
     }
 
     const attendanceRowsWithScheduledAbsences =
-      subjectFilterName && scheduledActivityDates.dates.length > 0
+      attendanceSubjectFilterName && scheduledActivityDates.dates.length > 0
         ? mergeScheduledAbsencesIntoAttendanceRows(
             attendanceRows,
             scheduledActivityDates.dates.filter((date) => date < getSchoolTodayDateKey()),
-            subjectFilterName,
+            attendanceSubjectFilterName,
           )
         : attendanceRows;
 
@@ -813,7 +896,7 @@ export async function GET(request: Request) {
       attendanceRowsWithScheduledAbsences,
       scheduledActivityDates.totalCount && scheduledActivityDates.totalCount > 0
         ? scheduledActivityDates.totalCount
-        : schedule.length,
+        : attendanceSchedule.length,
       scheduledActivityDates.pastCount ?? undefined,
     );
 
@@ -947,6 +1030,7 @@ export async function GET(request: Request) {
     const assignmentRows: RowDataPacket[] = [];
     if (assignmentColumns.has("student_id") && assignmentColumns.has("subject_id")) {
       const teacherIdColumn = assignmentColumns.has("teacher_id") ? "teacher_id" : null;
+      const remedialRoleColumn = assignmentColumns.has("remedial_role_id") ? "remedial_role_id" : null;
       const isActiveColumn = assignmentColumns.has("is_active") ? "is_active" : null;
       const assignedDateColumn = assignmentColumns.has("assigned_date")
         ? "assigned_date"
@@ -958,6 +1042,7 @@ export async function GET(request: Request) {
       const selectParts = [
         "subject_id",
         teacherIdColumn ? `${teacherIdColumn} AS teacher_id` : "NULL AS teacher_id",
+        remedialRoleColumn ? `${remedialRoleColumn} AS remedial_role_id` : "NULL AS remedial_role_id",
         assignedDateColumn ? `${assignedDateColumn} AS assigned_date` : "NULL AS assigned_date",
       ];
       const [rows] = await query<RowDataPacket[]>(
@@ -978,25 +1063,46 @@ export async function GET(request: Request) {
     }
 
     const orderedSubjectIds = Array.from(subjectIds).filter(Number.isFinite).sort((a, b) => a - b);
-    const subjects = orderedSubjectIds.map((subjectId) => subjectMap.get(subjectId) ?? `Subject ${subjectId}`);
-
-    const assignmentBySubject = new Map<number, string>();
-    for (const row of assignmentRows) {
-      const subjectId = Number(row.subject_id);
-      const teacherId = sanitizeText(row.teacher_id);
-      if (!Number.isFinite(subjectId) || !teacherId) continue;
-      if (!assignmentBySubject.has(subjectId)) {
-        assignmentBySubject.set(subjectId, teacherId);
-      }
-    }
+    const subjects = orderedSubjectIds.map((subjectId) => resolveDashboardSubjectName(subjectMap, subjectId));
 
     const teacherNames = shouldIncludeProgressData
       ? await fetchTeacherNames(
-          Array.from(new Set(Array.from(assignmentBySubject.values()))),
+          Array.from(
+            new Set(
+              assignmentRows
+                .map((row) => sanitizeText(row.teacher_id))
+                .filter((value): value is string => Boolean(value)),
+            ),
+          ),
           teacherColumns,
           userColumns,
         )
       : new Map<string, string>();
+    const remedialRoleNames = shouldIncludeProgressData
+      ? await fetchRemedialRoleTeacherNames(
+          assignmentRows
+            .map((row) => sanitizeText(row.remedial_role_id))
+            .filter((value): value is string => Boolean(value)),
+          userColumns,
+        )
+      : new Map<string, string>();
+    remedialRoleNames.forEach((name, roleId) => {
+      teacherNames.set(roleId, name);
+    });
+
+    const assignmentBySubject = new Map<number, string>();
+    for (const row of assignmentRows) {
+      const subjectId = Number(row.subject_id);
+      if (!Number.isFinite(subjectId) || assignmentBySubject.has(subjectId)) continue;
+
+      const teacherId = sanitizeText(row.teacher_id);
+      const remedialRoleId = sanitizeText(row.remedial_role_id);
+      const resolvedTeacherIdentifier = teacherId ?? remedialRoleId;
+
+      if (resolvedTeacherIdentifier) {
+        assignmentBySubject.set(subjectId, resolvedTeacherIdentifier);
+      }
+    }
 
     const selectedSubjectId = supportedRequestedSubjectName
       ? Array.from(subjectMap.entries()).find(([, name]) => normalizeSubjectName(name) === supportedRequestedSubjectName)?.[0] ?? null
@@ -1069,7 +1175,11 @@ export async function GET(request: Request) {
     }
 
     const childTeacherByStudent = new Map<string, string>();
-    if (assignmentColumns.has("student_id") && assignmentColumns.has("teacher_id") && childRows.length > 0) {
+    if (
+      assignmentColumns.has("student_id") &&
+      (assignmentColumns.has("teacher_id") || assignmentColumns.has("remedial_role_id")) &&
+      childRows.length > 0
+    ) {
       const isActiveColumn = assignmentColumns.has("is_active") ? "is_active" : null;
       const assignedDateColumn = assignmentColumns.has("assigned_date")
         ? "assigned_date"
@@ -1083,7 +1193,9 @@ export async function GET(request: Request) {
       if (childIds.length > 0) {
         const placeholders = childIds.map(() => "?").join(", ");
         const [childAssignmentRows] = await query<RowDataPacket[]>(
-          `SELECT student_id, teacher_id,
+          `SELECT student_id,
+                  ${assignmentColumns.has("teacher_id") ? "teacher_id" : "NULL AS teacher_id"},
+                  ${assignmentColumns.has("remedial_role_id") ? "remedial_role_id" : "NULL AS remedial_role_id"},
                   ${assignedDateColumn ? `${assignedDateColumn} AS assigned_date` : "NULL AS assigned_date"}
            FROM ${STUDENT_TEACHER_ASSIGNMENT_TABLE}
            WHERE student_id IN (${placeholders})
@@ -1099,16 +1211,36 @@ export async function GET(request: Request) {
               .filter((value): value is string => Boolean(value)),
           ),
         );
+        const remedialRoleIds = Array.from(
+          new Set(
+            childAssignmentRows
+              .map((row) => sanitizeText(row.remedial_role_id))
+              .filter((value): value is string => Boolean(value)),
+          ),
+        );
 
         const teacherNamesById = await fetchTeacherNames(teacherIds, teacherColumns, userColumns);
+        const teacherNamesByRemedialRole = await fetchRemedialRoleTeacherNames(remedialRoleIds, userColumns);
 
         for (const row of childAssignmentRows) {
           const studentId = sanitizeText(row.student_id);
           const teacherId = sanitizeText(row.teacher_id);
-          if (!studentId || !teacherId || childTeacherByStudent.has(studentId)) {
+          const remedialRoleId = sanitizeText(row.remedial_role_id);
+          if (!studentId || childTeacherByStudent.has(studentId)) {
             continue;
           }
-          childTeacherByStudent.set(studentId, teacherNamesById.get(teacherId) ?? `Teacher ${teacherId}`);
+
+          const teacherName = teacherId
+            ? teacherNamesById.get(teacherId) ?? `Teacher ${teacherId}`
+            : remedialRoleId
+              ? teacherNamesByRemedialRole.get(remedialRoleId) ?? `Teacher ${remedialRoleId}`
+              : null;
+
+          if (!teacherName) {
+            continue;
+          }
+
+          childTeacherByStudent.set(studentId, teacherName);
         }
       }
     }
@@ -1172,8 +1304,7 @@ export async function GET(request: Request) {
     const currentLevelBySubject: Record<string, string> = {};
 
     for (const subjectId of orderedSubjectIds) {
-      const subjectName = subjectMap.get(subjectId) ?? `Subject ${subjectId}`;
-      if (!subjectName) continue;
+      const subjectName = resolveDashboardSubjectName(subjectMap, subjectId);
 
       const history = historyBySubject.get(subjectId) ?? [];
       const assessments = assessmentBySubject.get(subjectId) ?? [];

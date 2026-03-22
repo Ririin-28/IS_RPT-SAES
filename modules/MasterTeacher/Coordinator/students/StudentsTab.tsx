@@ -1594,6 +1594,7 @@ export default function StudentTab({
           message={statusToast.message}
           tone={statusToast.tone}
           onClose={() => setStatusToast(null)}
+          timeoutMs={3000}
         />
       )}
     </div>

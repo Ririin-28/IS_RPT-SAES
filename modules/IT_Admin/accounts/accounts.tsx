@@ -481,6 +481,7 @@ export default function ITAdminAccounts() {
           message={feedbackToast.message}
           tone={feedbackToast.tone}
           onClose={() => setFeedbackToast(null)}
+          timeoutMs={3500}
         />
       )}
     </div>

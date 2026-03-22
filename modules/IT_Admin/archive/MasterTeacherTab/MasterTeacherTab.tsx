@@ -561,6 +561,7 @@ export default function MasterTeacherTab({
           message={feedbackToast.message}
           tone={feedbackToast.tone}
           onClose={() => setFeedbackToast(null)}
+          timeoutMs={4000}
         />
       )}
     </div>

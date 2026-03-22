@@ -620,6 +620,7 @@ export default function MasterTeacherStudents() {
           message={assignmentToast.message}
           tone={assignmentToast.tone}
           onClose={() => setAssignmentToast(null)}
+          timeoutMs={3000}
         />
       )}
     </div>

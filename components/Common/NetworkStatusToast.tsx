@@ -27,6 +27,8 @@ type NetworkToastState =
       tone: ToastTone;
     };
 
+const SLOW_TOAST_TIMEOUT_MS = 3500;
+
 const getConnection = () => {
   const currentNavigator = navigator as NavigatorWithConnection;
   return currentNavigator.connection ?? currentNavigator.mozConnection ?? currentNavigator.webkitConnection;
@@ -103,6 +105,20 @@ export default function NetworkStatusToast() {
     };
   }, []);
 
+  useEffect(() => {
+    if (state.kind !== "slow") {
+      return;
+    }
+
+    const timerId = window.setTimeout(() => {
+      setState((current) => (current.kind === "slow" ? { kind: "online" } : current));
+    }, SLOW_TOAST_TIMEOUT_MS);
+
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [state.kind]);
+
   if (state.kind === "online") {
     return null;
   }
@@ -113,6 +129,7 @@ export default function NetworkStatusToast() {
         title={state.title}
         message={state.message}
         tone={state.tone}
+        timeoutMs={state.kind === "slow" ? SLOW_TOAST_TIMEOUT_MS : null}
         className="pointer-events-auto w-full max-w-lg border border-white/70 bg-white/95 shadow-2xl shadow-slate-900/15"
       />
     </div>

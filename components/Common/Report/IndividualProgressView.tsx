@@ -63,14 +63,8 @@ type DetailChipProps = {
   label: string;
   value: string;
   emphasized?: boolean;
-};
-
-type RecordBadgeProps = {
-  kind: "assessment" | "session";
-};
-
-type StatusBadgeProps = {
-  value: string;
+  emphasisTone?: "emerald" | "amber";
+  tone?: "neutral" | "all" | "assessment" | "session";
 };
 
 type NoteCardProps = {
@@ -158,6 +152,9 @@ const formatInteger = (value: number | null | undefined) => {
   return String(Math.round(value));
 };
 
+const formatScoreNumber = (value: number) =>
+  Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
+
 const formatStatusLabel = (value: string | null | undefined) => {
   const trimmed = (value ?? "").trim();
   if (!trimmed) return EMPTY_VALUE;
@@ -173,19 +170,26 @@ const formatAssessmentScore = (assessment: StudentAssessmentRecord) => {
   const totalPoints = assessment.total_points;
 
   if (typeof score !== "number") {
-    return { value: EMPTY_VALUE, hint: null as string | null };
+    return {
+      compactValue: EMPTY_VALUE,
+      detailedValue: EMPTY_VALUE,
+      hint: null as string | null,
+    };
   }
 
   if (typeof totalPoints === "number" && totalPoints > 0) {
     const percent = Math.round((score / totalPoints) * 100);
     return {
-      value: `${percent}%`,
-      hint: `${Math.round(score)} / ${Math.round(totalPoints)} points`,
+      compactValue: `${percent}%`,
+      detailedValue: `${formatScoreNumber(score)}/${formatScoreNumber(totalPoints)} points (${percent}%)`,
+      hint: null as string | null,
     };
   }
 
+  const fallbackValue = formatInteger(score);
   return {
-    value: formatInteger(score),
+    compactValue: fallbackValue,
+    detailedValue: fallbackValue,
     hint: null as string | null,
   };
 };
@@ -218,41 +222,56 @@ function InfoCard({ label, value, hint }: InfoCardProps) {
     <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
       <p className="mt-1 text-base font-semibold text-slate-900">{value}</p>
-      {hint ? <p className="mt-1 text-xs text-slate-500">{hint}</p> : null}
+      {hint ? <p className="mt-1.5 text-sm font-medium text-slate-600">{hint}</p> : null}
     </div>
   );
 }
 
-function DetailChip({ label, value, emphasized = false }: DetailChipProps) {
+function DetailChip({ label, value, emphasized = false, emphasisTone = "emerald", tone = "neutral" }: DetailChipProps) {
+  const toneClassName = "border-slate-200 bg-slate-50 text-slate-700";
+  const legendToneClassName =
+    tone === "assessment"
+      ? "border-amber-200 bg-amber-50 text-amber-700"
+      : tone === "session"
+        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+        : tone === "all"
+          ? "border-slate-200 bg-slate-50 text-slate-700"
+          : null;
+  const indicatorClassName =
+    tone === "assessment"
+      ? "bg-amber-500"
+      : tone === "session"
+        ? "bg-emerald-500"
+        : tone === "all"
+          ? "bg-slate-400"
+          : null;
+
+  if (!emphasized && legendToneClassName && indicatorClassName) {
+    return (
+      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${legendToneClassName}`}>
+        <span className={`h-2 w-2 rounded-full ${indicatorClassName}`} />
+        <span>{label} {value}</span>
+      </span>
+    );
+  }
+
+  const emphasizedClassName =
+    emphasisTone === "amber"
+      ? "border-amber-200 bg-amber-50 text-amber-800"
+      : "border-emerald-200 bg-emerald-50 text-[#013300]";
+  const emphasizedLabelClassName = emphasisTone === "amber" ? "text-amber-700/80" : "text-emerald-700/75";
+
   return (
     <span
       className={[
-        "inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium",
-        emphasized ? "border-emerald-200 bg-emerald-50 text-[#013300]" : "border-slate-200 bg-slate-50 text-slate-700",
+        "inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium",
+        emphasized ? emphasizedClassName : toneClassName,
       ].join(" ")}
     >
-      <span className="text-slate-500">{label}</span>
+      <span className={emphasized ? emphasizedLabelClassName : tone === "neutral" ? "text-slate-500" : "text-current/75"}>{label}</span>
       <span className="ml-1 font-semibold">{value}</span>
     </span>
   );
-}
-
-function RecordBadge({ kind }: RecordBadgeProps) {
-  const classes = kind === "assessment" ? "border-sky-200 bg-sky-50 text-sky-700" : "border-emerald-200 bg-emerald-50 text-[#013300]";
-
-  return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${classes}`}>
-      {kind === "assessment" ? "Assessment" : "Session"}
-    </span>
-  );
-}
-
-function StatusBadge({ value }: StatusBadgeProps) {
-  const normalized = value.toLowerCase();
-  const classes =
-    normalized === "graded" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700";
-
-  return <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${classes}`}>{value}</span>;
 }
 
 function NoteCard({ label, value }: NoteCardProps) {
@@ -317,17 +336,22 @@ export default function IndividualProgressView({
 
   const firstSessionKey = useMemo(() => timelineEntries.find((entry) => entry.kind === "session")?.key ?? null, [timelineEntries]);
 
-  const [expandedSessionKey, setExpandedSessionKey] = useState<string | null>(firstSessionKey);
+  const [expandedEntryKey, setExpandedEntryKey] = useState<string | null>(firstSessionKey);
 
   useEffect(() => {
     if (!firstSessionKey) {
-      setExpandedSessionKey(null);
+      setExpandedEntryKey((current) => {
+        if (current && timelineEntries.some((entry) => entry.key === current)) {
+          return current;
+        }
+        return null;
+      });
       return;
     }
 
-    setExpandedSessionKey((current) => {
+    setExpandedEntryKey((current) => {
       if (!current) return firstSessionKey;
-      return timelineEntries.some((entry) => entry.kind === "session" && entry.key === current) ? current : firstSessionKey;
+      return timelineEntries.some((entry) => entry.key === current) ? current : firstSessionKey;
     });
   }, [firstSessionKey, timelineEntries]);
 
@@ -403,9 +427,9 @@ export default function IndividualProgressView({
                         </div>
 
                         <div className="flex flex-wrap gap-2 text-xs">
-                          <DetailChip label="All" value={String(timelineEntries.length)} />
-                          <DetailChip label="Assessments" value={String(assessmentCount)} />
-                          <DetailChip label="Sessions" value={String(sessionCount)} />
+                          <DetailChip label="All" value={String(timelineEntries.length)} tone="all" />
+                          <DetailChip label="Assessments" value={String(assessmentCount)} tone="assessment" />
+                          <DetailChip label="Sessions" value={String(sessionCount)} tone="session" />
                         </div>
                       </div>
                     </div>
@@ -417,45 +441,138 @@ export default function IndividualProgressView({
                         {timelineEntries.map((entry) => {
                           if (entry.kind === "assessment") {
                             const assessment = entry.assessment;
+                            const isExpanded = expandedEntryKey === entry.key;
                             const title = (assessment.title ?? "").trim() || "Untitled Assessment";
-                            const description = (assessment.description ?? "").trim();
                             const phonemicLabel = (assessment.phonemic_level ?? "").trim() || EMPTY_VALUE;
                             const statusLabel = formatStatusLabel(assessment.status);
+                            const visibleStatusLabel =
+                              statusLabel !== EMPTY_VALUE && statusLabel.toLowerCase() !== "submitted" ? statusLabel : null;
                             const score = formatAssessmentScore(assessment);
+                            const assessmentCardClassName = [
+                              "overflow-hidden rounded-xl border transition-all duration-300",
+                              isExpanded
+                                ? "border-[#a14f03]/20 bg-white shadow-[0_16px_36px_-24px_rgba(161,79,3,0.24)]"
+                                : "border-gray-200 bg-white hover:border-[#a14f03]/30 hover:shadow-lg",
+                            ].join(" ");
+                            const assessmentHeaderClassName = [
+                              "group flex w-full flex-col gap-3 px-4 py-4 text-left sm:flex-row sm:items-center sm:justify-between",
+                              isExpanded ? "bg-[#a14f03]" : "bg-white",
+                            ].join(" ");
+                            const assessmentDateBoxClassName = [
+                              "shrink-0 flex h-14 w-12 flex-col items-center justify-center rounded-lg border",
+                              isExpanded
+                                ? "border-white/15 bg-white/10 text-white"
+                                : "border-amber-300 bg-amber-50 text-amber-800",
+                            ].join(" ");
+                            const assessmentMetaClassName = [
+                              "text-[0.65rem] font-medium uppercase",
+                              isExpanded ? "text-white/70" : "text-slate-400",
+                            ].join(" ");
+                            const assessmentSubjectChipClassName = [
+                              "inline-flex items-center rounded px-1.5 py-0.5 text-[0.6rem] font-bold uppercase tracking-wider",
+                              isExpanded ? "bg-white/12 text-white" : "bg-gray-100 text-gray-600",
+                            ].join(" ");
+                            const assessmentTitleClassName = [
+                              "text-sm font-bold leading-tight transition-colors",
+                              isExpanded ? "text-white" : "text-gray-900",
+                            ].join(" ");
+                            const assessmentToggleClassName = [
+                              "flex shrink-0 items-center gap-2 text-sm font-semibold transition-colors",
+                              isExpanded ? "text-white" : "text-amber-800",
+                            ].join(" ");
 
                             return (
                               <section key={entry.key} className="relative pl-12">
-                                <span className="absolute left-1.5 top-5 h-5 w-5 rounded-full border-4 border-sky-600 bg-sky-100" />
+                                <span className="absolute left-1.5 top-5 h-5 w-5 rounded-full border-4 border-amber-600 bg-amber-100" />
 
-                                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-                                  <div className="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
-                                    <div className="space-y-3">
-                                      <div className="flex flex-wrap items-center gap-2">
-                                        <RecordBadge kind="assessment" />
-                                        <span className="text-sm text-slate-500">{formatDate(assessment.submitted_at)}</span>
+                                <div className={assessmentCardClassName}>
+                                  <button
+                                    type="button"
+                                    aria-expanded={isExpanded}
+                                    onClick={() => setExpandedEntryKey((current) => (current === entry.key ? null : entry.key))}
+                                    className={assessmentHeaderClassName}
+                                  >
+                                    <div className="flex min-w-0 items-center gap-4">
+                                      <div
+                                        className={assessmentDateBoxClassName}
+                                        title={formatDate(assessment.submitted_at) !== EMPTY_VALUE ? formatDate(assessment.submitted_at) : undefined}
+                                      >
+                                        <span className="text-[0.65rem] font-bold leading-none uppercase tracking-wide">
+                                          {formatShortMonth(assessment.submitted_at)}
+                                        </span>
+                                        <span className="mt-0.5 text-xl font-extrabold leading-none">
+                                          {formatDayOfMonth(assessment.submitted_at)}
+                                        </span>
                                       </div>
 
-                                      <div>
-                                        <p className="text-base font-semibold text-slate-900">{title}</p>
-                                        {description ? <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p> : null}
+                                      <div className="min-w-0 flex-1">
+                                        <div className="mb-1 flex flex-wrap items-center gap-2">
+                                          <span className={assessmentSubjectChipClassName}>
+                                            {normalizeSessionSubjectLabel(subjectLabel)}
+                                          </span>
+                                          <span className={assessmentMetaClassName}>{formatDate(assessment.submitted_at)}</span>
+                                        </div>
+
+                                        <p className={assessmentTitleClassName}>{title}</p>
+
+                                        {isExpanded ? (
+                                          <div className="mt-3 flex flex-wrap gap-2">
+                                            <DetailChip
+                                              label="Score"
+                                              value={score.compactValue}
+                                              emphasized={score.compactValue !== EMPTY_VALUE}
+                                              emphasisTone="amber"
+                                            />
+                                            <DetailChip label="Phonemic" value={phonemicLabel} />
+                                            {visibleStatusLabel ? <DetailChip label="Status" value={visibleStatusLabel} /> : null}
+                                          </div>
+                                        ) : null}
                                       </div>
                                     </div>
 
-                                    {statusLabel !== EMPTY_VALUE ? <StatusBadge value={statusLabel} /> : null}
-                                  </div>
+                                    <div className={assessmentToggleClassName}>
+                                      <span>{isExpanded ? "Hide" : "View"} details</span>
+                                      <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        width="18"
+                                        height="18"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        className={isExpanded ? "rotate-180 transition" : "transition"}
+                                      >
+                                        <path d="m6 9 6 6 6-6" />
+                                      </svg>
+                                    </div>
+                                  </button>
 
-                                  <div className="grid gap-3 border-t border-slate-200 px-4 py-4 md:grid-cols-3">
-                                    <InfoCard label="Score" value={score.value} hint={score.hint} />
-                                    <InfoCard label="Status" value={statusLabel} />
-                                    <InfoCard label="Phonemic" value={phonemicLabel} />
-                                  </div>
+                                  {isExpanded ? (
+                                    <div className="border-t border-slate-200 bg-white px-4 pb-4 pt-4">
+                                      <section className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+                                        <div className="mb-3">
+                                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                            Assessment Summary
+                                          </p>
+                                        </div>
+
+                                        <div className={`grid gap-3 ${visibleStatusLabel ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
+                                          <InfoCard label="Score" value={score.detailedValue} hint={score.hint} />
+                                          <InfoCard label="Phonemic" value={phonemicLabel} />
+                                          {visibleStatusLabel ? <InfoCard label="Status" value={visibleStatusLabel} /> : null}
+                                        </div>
+                                      </section>
+                                    </div>
+                                  ) : null}
                                 </div>
                               </section>
                             );
                           }
 
                           const { key, session, summary } = entry;
-                          const isExpanded = expandedSessionKey === key;
+                          const isExpanded = expandedEntryKey === key;
                           const slideRows = session.slides.map((slide) => {
                             const storedFeedback = (slide.reading_tutor_feedback ?? "").trim();
                             const slideFeedback =
@@ -519,7 +636,7 @@ export default function IndividualProgressView({
                                 <button
                                   type="button"
                                   aria-expanded={isExpanded}
-                                  onClick={() => setExpandedSessionKey((current) => (current === key ? null : key))}
+                                  onClick={() => setExpandedEntryKey((current) => (current === key ? null : key))}
                                   className={sessionHeaderClassName}
                                 >
                                   <div className="flex min-w-0 items-center gap-4">

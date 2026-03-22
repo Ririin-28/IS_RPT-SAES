@@ -581,6 +581,7 @@ export default function TeacherProfile() {
           message={saveToast.message}
           tone={saveToast.tone}
           onClose={() => setSaveToast(null)}
+          timeoutMs={3500}
         />
       )}
     </div>

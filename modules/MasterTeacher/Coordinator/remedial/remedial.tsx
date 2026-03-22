@@ -953,6 +953,7 @@ export default function MasterTeacherRemedial() {
           message={saveToast.message}
           tone={saveToast.tone}
           onClose={() => setSaveToast(null)}
+          timeoutMs={3500}
          />
        )}
 

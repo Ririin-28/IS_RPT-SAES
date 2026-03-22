@@ -684,14 +684,15 @@ export default function MasterTeacherProfile() {
         onClose={() => setCropModalFile(null)}
         onConfirm={handleCropConfirm}
       />
-      {saveToast && (
-        <ToastActivity
+       {saveToast && (
+         <ToastActivity
           title={saveToast.title}
           message={saveToast.message}
           tone={saveToast.tone}
           onClose={() => setSaveToast(null)}
-        />
-      )}
+          timeoutMs={3500}
+         />
+       )}
     </div>
   );
 }

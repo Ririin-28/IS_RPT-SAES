@@ -166,6 +166,7 @@ type ChildProfile = {
   lrn: string | null;
   grade: string | null;
   section: string | null;
+  teacherName?: string | null;
   relationship: string | null;
   subjects: string[];
   currentLevel?: Record<SupportedSubject, string>;
@@ -989,10 +990,6 @@ export default function ParentDashboard({ view = "home" }: ParentDashboardProps)
 
   const hydrateDashboardFromCache = useCallback(
     (subject: SupportedSubject) => {
-      if (view !== "attendance" && view !== "progress") {
-        return false;
-      }
-
       const userId = getSignedInParentUserId();
       if (userId === null) {
         return false;
@@ -1084,10 +1081,6 @@ export default function ParentDashboard({ view = "home" }: ParentDashboardProps)
   }, [getCachedDashboardState, getSignedInParentUserId, requestDashboardData, selectedChildId, selectedSubject, view]);
 
   useEffect(() => {
-    if (view !== "attendance" && view !== "progress") {
-      return;
-    }
-
     const userId = getSignedInParentUserId();
     if (userId === null) {
       return;
@@ -1124,11 +1117,23 @@ export default function ParentDashboard({ view = "home" }: ParentDashboardProps)
 
   const handleAttendanceCardClick = useCallback(() => {
     if (view === "home" || view === "progress") {
-      router.push("/Parent/attendance");
+      router.push(`/Parent/attendance?subject=${encodeURIComponent(selectedSubject)}`);
       return;
     }
     scrollToSection(attendanceSectionRef);
-  }, [router, scrollToSection, view]);
+  }, [router, scrollToSection, selectedSubject, view]);
+
+  const handleHomeAttendanceSubjectSelect = useCallback(
+    (subject: SupportedSubject) => {
+      if (subject === selectedSubject) {
+        return;
+      }
+
+      hydrateDashboardFromCache(subject);
+      setSelectedSubject(subject);
+    },
+    [hydrateDashboardFromCache, selectedSubject],
+  );
 
   // Get current day for highlighting
   const getCurrentDay = () => {
@@ -1176,6 +1181,7 @@ export default function ParentDashboard({ view = "home" }: ParentDashboardProps)
       lrn: state.child.lrn ?? FALLBACK_CHILD_VIEW.lrn,
       grade: state.child.grade ?? FALLBACK_CHILD_VIEW.grade,
       section: state.child.section ?? FALLBACK_CHILD_VIEW.section,
+      teacher: state.child.teacherName ?? FALLBACK_CHILD_VIEW.teacher,
       relationship: state.child.relationship ?? FALLBACK_CHILD_VIEW.relationship,
       subjects: subjectsFromApi,
       attendance: attendanceSummary.attendanceRate ?? FALLBACK_CHILD_VIEW.attendance,
@@ -1192,6 +1198,8 @@ export default function ParentDashboard({ view = "home" }: ParentDashboardProps)
     () => ((state.child?.subjects ?? []).filter(isSupportedSubject)),
     [state.child?.subjects],
   );
+  const homeSubjectOptions = FALLBACK_SUBJECTS;
+  const homeAttendanceSubjectNavColumns = "grid-cols-3";
 
   const childOptions = state.children.length > 0 ? state.children : state.child ? [state.child] : [];
 
@@ -1203,14 +1211,11 @@ export default function ParentDashboard({ view = "home" }: ParentDashboardProps)
     if (view === "attendance" || view === "progress") {
       return;
     }
-    if (subjects.length === 0) {
-      return;
-    }
-    setSelectedSubject((current) => (subjects.includes(current) ? current : subjects[0]));
-  }, [subjects, view]);
+    setSelectedSubject((current) => (isSupportedSubject(current) ? current : FALLBACK_SUBJECTS[0]));
+  }, [view]);
 
   useEffect(() => {
-    if (view !== "progress") {
+    if (view !== "progress" && view !== "attendance") {
       return;
     }
     const requestedSubject = searchParams.get("subject");
@@ -1322,6 +1327,26 @@ export default function ParentDashboard({ view = "home" }: ParentDashboardProps)
     { label: "Absent", value: isAttendanceSelectionPending ? "Loading..." : isSelectedSubjectRemedial ? formatInteger(attendanceSummary.absentSessions) : EMPTY_VALUE },
     { label: "Total Days", value: isAttendanceSelectionPending ? "Loading..." : isSelectedSubjectRemedial ? formatInteger(attendanceSummary.totalSessions) : EMPTY_VALUE },
   ];
+  const selectedSubjectProgress = currentChild.progressDetails[selectedSubject] ?? FALLBACK_CHILD_VIEW.progressDetails[selectedSubject];
+  const homeTeacherName = isSelectedSubjectRemedial ? selectedSubjectProgress.teacher : EMPTY_VALUE;
+  const homeAttendanceSummaryCards = [
+    {
+      label: "Present",
+      value: isSelectedSubjectRemedial ? formatInteger(attendanceSummary.presentSessions) : EMPTY_VALUE,
+    },
+    {
+      label: "Absent",
+      value: isSelectedSubjectRemedial ? formatInteger(attendanceSummary.absentSessions) : EMPTY_VALUE,
+    },
+    {
+      label: "Sessions",
+      value: isSelectedSubjectRemedial ? formatInteger(attendanceSummary.totalSessions) : EMPTY_VALUE,
+    },
+    {
+      label: "Rate",
+      value: isSelectedSubjectRemedial && attendanceRate != null ? `${attendanceRate}%` : EMPTY_VALUE,
+    },
+  ];
   const dashboardTitle =
     view === "progress" ? "Progress Overview" : view === "attendance" ? "Attendance Overview" : "Home Overview";
   const dashboardDescription = "";
@@ -1415,7 +1440,7 @@ export default function ParentDashboard({ view = "home" }: ParentDashboardProps)
                             </p>
                           </div>
 
-                          <div className="grid gap-3 pt-3 sm:grid-cols-3">
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-3 pt-3">
                             <div className="min-w-0">
                               <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#6A816F]">LRN</p>
                               <p className="mt-1 text-sm font-semibold leading-6 tracking-tight text-[#0C3B1F] lg:text-base">
@@ -1498,6 +1523,54 @@ export default function ParentDashboard({ view = "home" }: ParentDashboardProps)
                           />
                         );
                       })}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-4">
+                    <div className="rounded-[20px] border border-[#DFE7E0] bg-white px-4 py-4 lg:rounded-[24px] lg:px-5 lg:py-5">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#6A816F]">Teacher</p>
+                      <p className="mt-2 text-xl font-semibold tracking-tight text-[#0C3B1F] lg:text-2xl">{homeTeacherName || EMPTY_VALUE}</p>
+                      <p className="mt-1 text-sm text-[#617561]">
+                        {selectedSubject} remedial teacher
+                      </p>
+                    </div>
+
+                    <div className="w-full rounded-[20px] border border-[#DFE7E0] bg-white px-4 py-4 lg:rounded-[24px] lg:px-5 lg:py-5">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#6A816F]">Attendance Overview</p>
+
+                      <nav className="mt-3 rounded-[18px] border border-[#DCE6DD] bg-[#F7FAF7] p-1">
+                        <div className={`grid gap-1 ${homeAttendanceSubjectNavColumns}`}>
+                          {homeSubjectOptions.map((subject) => {
+                            const isActive = selectedSubject === subject;
+
+                            return (
+                              <button
+                                key={`home-attendance-subject-${subject}`}
+                                type="button"
+                                disabled={state.isLoading}
+                                onClick={() => handleHomeAttendanceSubjectSelect(subject)}
+                                className={`flex min-w-0 items-center justify-center rounded-[14px] px-2 py-2 text-center text-sm font-semibold tracking-tight transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                                  isActive ? "bg-[#0C3B1F] text-white shadow-sm" : "text-[#546958]"
+                                }`}
+                              >
+                                <span className="truncate">{subject}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </nav>
+
+                      <div className="mt-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+                        {homeAttendanceSummaryCards.map((card) => (
+                          <div
+                            key={`home-attendance-${card.label}`}
+                            className="rounded-[16px] border border-[#E1E9E2] bg-[#F9FCF9] px-3 py-3"
+                          >
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#708672]">{card.label}</p>
+                            <p className="mt-2 text-sm font-semibold text-[#0C3B1F] lg:text-base">{card.value}</p>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
 

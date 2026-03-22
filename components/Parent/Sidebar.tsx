@@ -2,6 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { FiBarChart2, FiCalendar, FiHome, FiLogOut, FiUser } from "react-icons/fi";
 import { performClientLogout } from "@/lib/utils/logout";
@@ -19,12 +20,21 @@ export default function ParentSidebar() {
 
   return (
     <aside className="hidden h-screen w-[19rem] flex-col gap-5 px-4 py-5 lg:flex">
-      <div className="rounded-[24px] border border-[#DCE6DD] bg-white p-6 shadow-sm">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#6A816F]">Parent Portal</p>
-        <h2 className="mt-2 text-2xl font-semibold tracking-tight text-[#0C3B1F]">Family Dashboard</h2>
-        <p className="mt-2 text-sm leading-6 text-[#57705C]">
-          Progress, attendance, and school updates in one place.
-        </p>
+      <div className="overflow-hidden rounded-[24px] border border-[#DCE6DD] bg-white p-6 shadow-sm">
+        <div className="relative flex items-center gap-4">
+          <Image
+            src="/RPT-SAES/RPTLogo.png"
+            alt="RPT Portal logo"
+            width={64}
+            height={64}
+            className="h-14 w-14 object-contain"
+            priority
+          />
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#6A816F]">Parent Access</p>
+            <h2 className="mt-1 text-[1.60rem] font-bold leading-none tracking-tight text-[#013300]">RPT Portal</h2>
+          </div>
+        </div>
       </div>
 
       <nav className="flex-1 rounded-[24px] border border-[#DCE6DD] bg-white p-3 shadow-sm">
