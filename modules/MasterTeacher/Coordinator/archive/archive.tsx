@@ -135,7 +135,7 @@ export default function MasterTeacherArchive() {
       setScheduleLoading(true);
       setScheduleError(null);
       try {
-        const response = await fetch("/api/teacher/calendar", { cache: "no-store" });
+        const response = await fetch("/api/master_teacher/calendar", { cache: "no-store" });
         const payload = (await response.json().catch(() => null)) as {
           success?: boolean;
           activities?: Array<{
