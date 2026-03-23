@@ -9,6 +9,13 @@ export interface StudentTrainingData {
   label: number;      // NextScorePrediction
 }
 
+export type StudentHistorySnapshot = {
+  sessions: number;
+  phonemicLevel: number;
+  recentScores: number[];
+  avgScore: number;
+};
+
 /**
  * Fetches recent performance history and remedial session counts for training.
  * Simplified for demonstration:
@@ -97,6 +104,12 @@ export async function fetchStudentTrainingData(): Promise<StudentTrainingData[]>
 }
 
 export async function getStudentFeatures(studentId: string): Promise<number[] | null> {
+    const snapshot = await getStudentHistorySnapshot(studentId);
+    if (!snapshot) return null;
+    return [snapshot.sessions, snapshot.phonemicLevel, snapshot.avgScore];
+}
+
+export async function getStudentHistorySnapshot(studentId: string): Promise<StudentHistorySnapshot | null> {
     // 1. Count Remedial Sessions
     const [remedialCount] = await query<RowDataPacket[]>(
       `SELECT COUNT(*) as count FROM student_remedial_session WHERE student_id = ?`,
@@ -116,8 +129,7 @@ export async function getStudentFeatures(studentId: string): Promise<number[] | 
     );
     const phonemicLevel = studentInfo[0]?.phonemic_id || 1;
 
-    // 3. Get Recent Performance Average
-    // Take top 5 recent activities
+    // 3. Get recent score sequence for sequence-aware features
     const [history] = await query<RowDataPacket[]>(
       `SELECT pr.score 
        FROM performance_records pr 
@@ -128,12 +140,22 @@ export async function getStudentFeatures(studentId: string): Promise<number[] | 
       [studentId]
     );
 
-    if (history.length === 0) return null; // Not enough data for prediction
+    if (history.length === 0) return null;
 
-    const scores = history.map(r => parseFloat(r.score));
-    const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+    const recentScores = history
+      .map((row) => Number.parseFloat(row.score))
+      .filter((score) => Number.isFinite(score));
 
-    return [sessions, phonemicLevel, avgScore];
+    if (!recentScores.length) return null;
+
+    const avgScore = recentScores.reduce((sum, score) => sum + score, 0) / recentScores.length;
+
+    return {
+      sessions,
+      phonemicLevel,
+      recentScores,
+      avgScore,
+    };
 }
 
 function generateSyntheticData(): StudentTrainingData[] {

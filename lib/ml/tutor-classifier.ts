@@ -10,6 +10,8 @@ export enum TutorFeedbackCategory {
   PERFECT_FLOW = 4         // Excellent performance
 }
 
+const lastTutorTemplateByKey = new Map<string, number>();
+
 // 2. Synthetic Data Generator
 // Create ground truth data based on expert heuristics for immediate feedback
 function generateTutorTrainingData(samplesPerClass = 200) {
@@ -172,5 +174,16 @@ export function getTutorTemplate(category: TutorFeedbackCategory, studentName: s
   };
 
   const options = templates[category];
-  return options[Math.floor(Math.random() * options.length)];
+  if (!options.length) return `Good effort, ${name}. Keep practicing and try the next one.`;
+
+  const key = `${category}:${name.toLowerCase()}`;
+  let selectedIndex = Math.floor(Math.random() * options.length);
+  const previousIndex = lastTutorTemplateByKey.get(key);
+
+  if (typeof previousIndex === "number" && selectedIndex === previousIndex && options.length > 1) {
+    selectedIndex = (selectedIndex + 1) % options.length;
+  }
+
+  lastTutorTemplateByKey.set(key, selectedIndex);
+  return options[selectedIndex];
 }

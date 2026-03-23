@@ -1155,6 +1155,13 @@ export default function EnglishFlashcards({
     return tokenInfo;
   }, []);
 
+  useEffect(() => {
+    // Warm token fetch to reduce delay before first microphone session.
+    void getSpeechToken().catch(() => {
+      // Ignore warm-up errors; regular flow will show actionable feedback.
+    });
+  }, [getSpeechToken]);
+
   const applyOmissionsToWordFeedback = useCallback((
     mapped: WordFeedback[],
     expectedText: string,
@@ -2048,10 +2055,9 @@ export default function EnglishFlashcards({
     recognizerClosedRef.current = false;
     const isActiveSession = () =>
       sessionId === recognizerSessionRef.current && !recognizerClosedRef.current;
-    setIsListening(true);
     setIsProcessing(true);
     setFeedback("");
-    setStatusMessage("Connecting to Azure Speech...");
+    setStatusMessage("Preparing microphone...");
     setRecognizedText("");
     setLiveTranscription("");
     setWordFeedback([]);
@@ -2182,7 +2188,8 @@ export default function EnglishFlashcards({
         recognizer.startContinuousRecognitionAsync(
           () => {
             if (isActiveSession()) {
-              setStatusMessage("Listening... 🎧");
+              setIsListening(true);
+              setStatusMessage("Listening... 🎧 Start speaking now.");
             }
           },
           (error) => {
@@ -2803,21 +2810,21 @@ export default function EnglishFlashcards({
                 <button
                   onClick={handleMicrophone}
                   className={`group flex items-center gap-3 rounded-full px-6 py-3 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600 active:scale-95 ${
-                    isListening
+                    isListening || isProcessing
                       ? "bg-[#013300] text-white shadow-md shadow-gray-200"
                       : "border border-[#013300] bg-white text-[#013300] hover:border-[#013300] hover:bg-[#013300] hover:text-white"
                   } w-full md:w-auto`}
                 >
                   <span
                     className={`grid h-10 w-10 place-items-center rounded-full transition-colors ${
-                      isListening
+                      isListening || isProcessing
                         ? "bg-white/10 text-white animate-pulse"
                         : "bg-white text-[#013300] group-hover:bg-[#013300] group-hover:text-white group-focus-visible:bg-[#013300] group-focus-visible:text-white"
                     }`}
                   >
                     <MicIcon />
                   </span>
-                  {isListening ? "Stop" : "Speak"}
+                  {isListening ? "Stop" : isProcessing ? "Preparing..." : "Speak"}
                 </button>
               </div>
               </div>
