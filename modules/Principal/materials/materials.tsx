@@ -70,7 +70,7 @@ export default function PrincipalMaterials({ subjectSlug }: PrincipalMaterialsPr
           params.set("grade", selectedGrade);
         }
         const query = params.toString();
-        const response = await fetch(`/api/teacher/calendar${query ? `?${query}` : ""}`, { cache: "no-store" });
+        const response = await fetch(`/api/principal/calendar${query ? `?${query}` : ""}`, { cache: "no-store" });
         const payload = (await response.json().catch(() => null));
 
         if (!response.ok || !payload?.success) {

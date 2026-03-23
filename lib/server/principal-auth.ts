@@ -49,7 +49,7 @@ export async function requirePrincipal(request: Request): Promise<PrincipalAuthR
   try {
     return await runWithConnection(async (connection) => {
       const [rows] = await connection.execute<RowDataPacket[]>(
-        "SELECT user_id, role_id, user_code, principal_id FROM users WHERE user_id = ? LIMIT 1",
+        "SELECT * FROM users WHERE user_id = ? LIMIT 1",
         [session.userId],
       );
 

@@ -15,7 +15,7 @@ const TITLE_COLUMN_CANDIDATES = ["title", "activity_title", "name"] as const;
 const SUBJECT_ID_COLUMN_CANDIDATES = ["subject_id", "subject"] as const;
 const GRADE_COLUMN_CANDIDATES = ["grade_id", "grade", "grade_level"] as const;
 const DAY_COLUMN_CANDIDATES = ["day", "day_of_week"] as const;
-const ID_COLUMN_CANDIDATES = ["request_id", "id"] as const;
+const ID_COLUMN_CANDIDATES = ["request_id", "activity_id", "id"] as const;
 const SUBMITTED_BY_COLUMN_CANDIDATES = ["submitted_by", "submittedBy"] as const;
 const MASTER_TEACHER_ID_COLUMN_CANDIDATES = ["master_teacher_id", "masterTeacherId"] as const;
 
@@ -36,7 +36,16 @@ const parseDateValue = (value: unknown): Date | null => {
   if (typeof value === "string") {
     const trimmed = value.trim();
     if (!trimmed) return null;
-    const parsed = new Date(trimmed.includes("T") ? trimmed : `${trimmed}T00:00:00`);
+    const direct = new Date(trimmed);
+    if (!Number.isNaN(direct.getTime())) {
+      return direct;
+    }
+
+    const withIsoSeparator = trimmed.includes("T") ? trimmed : trimmed.replace(" ", "T");
+    const normalized = /^\d{4}-\d{2}-\d{2}$/.test(withIsoSeparator)
+      ? `${withIsoSeparator}T00:00:00`
+      : withIsoSeparator;
+    const parsed = new Date(normalized);
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
   const parsed = new Date(String(value));
@@ -99,10 +108,6 @@ export async function GET(request: NextRequest) {
     const masterTeacherIdColumn = pickColumn(columns, MASTER_TEACHER_ID_COLUMN_CANDIDATES);
     const hasArchiveColumn = columns.has("is_archived");
 
-    if (gradeId && !gradeColumn) {
-      return NextResponse.json({ success: true, activities: [] });
-    }
-
     const selectParts = [
       `r.${idColumn} AS request_id`,
       titleColumn ? `r.${titleColumn} AS title` : "NULL AS title",
@@ -137,19 +142,21 @@ export async function GET(request: NextRequest) {
     const subjectJoin = subjectIdColumn
       ? `LEFT JOIN ${SUBJECT_TABLE} s ON s.subject_id = r.${subjectIdColumn}`
       : "";
-     const submitterColumn = submittedByColumn ?? masterTeacherIdColumn ?? null;
-     const userJoin = userColumns.has("user_code") && submitterColumn
+    const submitterColumn = submittedByColumn ?? masterTeacherIdColumn ?? null;
+    const mtHandledColumns = await getTableColumns(MT_HANDLED_TABLE).catch(() => new Set<string>());
+    const canJoinHandled = mtHandledColumns.has("master_teacher_id");
+    const userJoin = userColumns.has("user_code") && submitterColumn && canJoinHandled
       ? `LEFT JOIN (SELECT DISTINCT master_teacher_id FROM ${MT_HANDLED_TABLE}) mch ON mch.master_teacher_id = r.${submitterColumn}
         LEFT JOIN ${USERS_TABLE} u ON u.user_code = mch.master_teacher_id`
       : "";
     const whereParts: string[] = [];
-    const params: Array<number> = [];
+    const params: Array<number | string> = [];
     if (hasArchiveColumn) {
       whereParts.push("COALESCE(r.is_archived, 0) = 0");
     }
     if (gradeId && gradeColumn) {
-      whereParts.push(`r.${gradeColumn} = ?`);
-      params.push(gradeId);
+      whereParts.push(`(r.${gradeColumn} = ? OR r.${gradeColumn} = ? OR r.${gradeColumn} = ?)`);
+      params.push(gradeId, `Grade ${gradeId}`, String(gradeId));
     }
     const whereClause = whereParts.length > 0 ? `WHERE ${whereParts.join(" AND ")}` : "";
 
@@ -165,49 +172,30 @@ export async function GET(request: NextRequest) {
 
     const [rows] = await query<ApprovedRow[]>(sql, params);
 
-    const uniqueByDate = new Map<
-      string,
-      {
-        id: string;
-        title: string;
-        submittedBy: string | null;
-        date: string;
-        end: string;
-        type: string;
-        subject: string | null;
-        gradeLevel: string | null;
-        day: string | null;
-      }
-    >();
-
-    for (const row of rows) {
-      const dateValue = parseDateValue(row.schedule_date);
-      if (!dateValue) {
-        continue;
-      }
-      const dateKey = dateValue.toISOString().slice(0, 10);
-      if (uniqueByDate.has(dateKey)) {
-        continue;
-      }
-      const submittedByValue = row.submitted_by ?? row.master_teacher_id ?? null;
-      const requesterName = buildRequesterName(row) ?? (submittedByValue ? `MT ${submittedByValue}` : null);
-      uniqueByDate.set(dateKey, {
-        id: String(row.request_id),
-        title: row.title ? String(row.title) : row.subject_name ? String(row.subject_name) : "Remedial Activity",
-        submittedBy: requesterName,
-        date: dateValue.toISOString(),
-        end: new Date(dateValue.getTime() + 60 * 60 * 1000).toISOString(),
-        type: "remedial",
-        subject: row.subject_name ? String(row.subject_name) : null,
-        gradeLevel:
-          row.grade_id !== null && row.grade_id !== undefined && Number.isFinite(Number(row.grade_id))
-            ? `Grade ${Number(row.grade_id)}`
-            : null,
-        day: row.day ? String(row.day) : null,
-      });
-    }
-
-    const activities = Array.from(uniqueByDate.values());
+    const activities = rows
+      .map((row) => {
+        const dateValue = parseDateValue(row.schedule_date);
+        if (!dateValue) {
+          return null;
+        }
+        const submittedByValue = row.submitted_by ?? row.master_teacher_id ?? null;
+        const requesterName = buildRequesterName(row) ?? (submittedByValue ? `MT ${submittedByValue}` : null);
+        return {
+          id: String(row.request_id),
+          title: row.title ? String(row.title) : row.subject_name ? String(row.subject_name) : "Remedial Activity",
+          submittedBy: requesterName,
+          date: dateValue.toISOString(),
+          end: new Date(dateValue.getTime() + 60 * 60 * 1000).toISOString(),
+          type: "remedial",
+          subject: row.subject_name ? String(row.subject_name) : null,
+          gradeLevel:
+            row.grade_id !== null && row.grade_id !== undefined && Number.isFinite(Number(row.grade_id))
+              ? `Grade ${Number(row.grade_id)}`
+              : null,
+          day: row.day ? String(row.day) : null,
+        };
+      })
+      .filter((activity): activity is NonNullable<typeof activity> => activity !== null);
 
     return NextResponse.json({ success: true, activities });
   } catch (error) {
