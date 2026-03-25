@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { getTableColumns, query } from "@/lib/db";
 import {
-  getMasterTeacherSessionFromCookies,
   updateMasterTeacherSessionRole,
   type MasterTeacherRoleContext,
 } from "@/lib/server/master-teacher-session";
@@ -75,15 +74,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Invalid role context." }, { status: 400 });
   }
 
+  const session = auth.session;
+  if (session.roleContext === roleContext) {
+    return NextResponse.json({
+      success: true,
+      roleContext,
+      coordinatorRoleId: session.coordinatorRoleId,
+      remedialRoleId: session.remedialRoleId,
+    });
+  }
+
   const [coordinatorRoleId, remedialRoleId] = await Promise.all([
     resolveCoordinatorRoleId(auth.masterTeacherId, auth.userId),
     resolveRemedialRoleId(auth.masterTeacherId),
   ]);
-
-  const session = await getMasterTeacherSessionFromCookies();
-  if (!session) {
-    return NextResponse.json({ success: false, error: "Master teacher session not found." }, { status: 401 });
-  }
 
   await updateMasterTeacherSessionRole(
     session.sessionId,

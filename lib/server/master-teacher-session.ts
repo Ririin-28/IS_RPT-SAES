@@ -5,6 +5,8 @@ import type { Connection, PoolConnection, RowDataPacket } from "mysql2/promise";
 const COOKIE_NAME = "mt_session";
 const SESSION_DURATION_HOURS = 24;
 const SESSION_TABLE = "mt_sessions";
+const defaultSessionActivityTouchIntervalMs = 5 * 60 * 1000;
+const sessionActivityTouchCache = new Map<number, number>();
 
 export const MASTER_TEACHER_SESSION_COOKIE_NAME = COOKIE_NAME;
 
@@ -25,6 +27,30 @@ function sha256(value: string): string {
 
 function generateToken(): string {
   return crypto.randomBytes(32).toString("hex");
+}
+
+function getSessionActivityTouchIntervalMs(): number {
+  const raw = Number(process.env.MT_SESSION_ACTIVITY_TOUCH_INTERVAL_MS ?? defaultSessionActivityTouchIntervalMs);
+  if (!Number.isFinite(raw)) {
+    return defaultSessionActivityTouchIntervalMs;
+  }
+  return Math.max(0, raw);
+}
+
+function shouldTouchSessionActivity(sessionId: number): boolean {
+  const intervalMs = getSessionActivityTouchIntervalMs();
+  if (intervalMs === 0) {
+    return true;
+  }
+
+  const now = Date.now();
+  const lastTouchedAt = sessionActivityTouchCache.get(sessionId) ?? 0;
+  if (now - lastTouchedAt < intervalMs) {
+    return false;
+  }
+
+  sessionActivityTouchCache.set(sessionId, now);
+  return true;
 }
 
 export async function createMasterTeacherSession(
@@ -136,10 +162,12 @@ export async function getMasterTeacherSessionFromCookies(): Promise<MasterTeache
 
   const session = rows[0];
 
-  await query(
-    `UPDATE ${SESSION_TABLE} SET last_active_at = NOW() WHERE session_id = ?`,
-    [session.session_id],
-  );
+  if (shouldTouchSessionActivity(Number(session.session_id))) {
+    await query(
+      `UPDATE ${SESSION_TABLE} SET last_active_at = NOW() WHERE session_id = ?`,
+      [session.session_id],
+    );
+  }
 
   return {
     sessionId: session.session_id,
@@ -158,6 +186,7 @@ export async function updateMasterTeacherSessionRole(
   remedialRoleId: string | null,
 ): Promise<void> {
   const { query } = await import("@/lib/db");
+  sessionActivityTouchCache.set(sessionId, Date.now());
   await query(
     `UPDATE ${SESSION_TABLE}
      SET role_context = ?, coordinator_role_id = ?, remedial_role_id = ?, last_active_at = NOW()
@@ -168,6 +197,7 @@ export async function updateMasterTeacherSessionRole(
 
 export async function revokeMasterTeacherSession(sessionId: number): Promise<void> {
   const { query } = await import("@/lib/db");
+  sessionActivityTouchCache.delete(sessionId);
   await query(`UPDATE ${SESSION_TABLE} SET revoked_at = NOW() WHERE session_id = ?`, [sessionId]);
 }
 
@@ -199,6 +229,7 @@ export async function revokeMasterTeacherSessionByToken(
     `UPDATE ${SESSION_TABLE} SET revoked_at = NOW() WHERE session_id = ?`,
     [row.session_id],
   );
+  sessionActivityTouchCache.delete(Number(row.session_id));
 
   return Number(row.user_id);
 }

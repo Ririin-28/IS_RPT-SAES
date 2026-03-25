@@ -1,5 +1,5 @@
-import mysql from "mysql2/promise";
 import nodemailer from "nodemailer";
+import { query } from "@/lib/db";
 
 export async function POST(req) {
   try {
@@ -7,16 +7,8 @@ export async function POST(req) {
     // Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString().padStart(6, '0');
     // Store OTP and expiry in DB
-    const db = await mysql.createConnection({
-      host: process.env.DB_HOST,
-      user: process.env.DB_USER,
-      password: process.env.DB_PASSWORD,
-      database: process.env.DB_NAME,
-      port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 3306,
-    });
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
-    await db.execute("UPDATE users SET otp_code = ?, otp_expires_at = ? WHERE user_id = ?", [otp, expiresAt, user_id]);
-    await db.end();
+    await query("UPDATE users SET otp_code = ?, otp_expires_at = ? WHERE user_id = ?", [otp, expiresAt, user_id]);
     // Send OTP via email
     const transporter = nodemailer.createTransport({
       service: process.env.SMTP_SERVICE || "gmail",

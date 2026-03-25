@@ -1,4 +1,4 @@
-import mysql, { type Connection } from "mysql2/promise";
+import { runWithConnection } from "@/lib/db";
 import { recordAccountLogout } from "@/lib/server/account-logs";
 import {
   buildClearedParentSessionCookie,
@@ -31,18 +31,11 @@ interface LogoutPayload {
 }
 
 export async function POST(req: Request): Promise<Response> {
-  let db: Connection | null = null;
-
   const respond = async (
     status: number,
     payload: Record<string, unknown>,
     extraHeaders?: Record<string, string | string[]>,
   ): Promise<Response> => {
-    if (db) {
-      await db.end();
-      db = null;
-    }
-
     const headers = new Headers({
       "Content-Type": "application/json",
       "Cache-Control": "no-store",
@@ -86,72 +79,62 @@ export async function POST(req: Request): Promise<Response> {
       return respond(400, { error: "Invalid user id" });
     }
 
-    db = await mysql.createConnection({
-      host: process.env.DB_HOST,
-      user: process.env.DB_USER,
-      password: process.env.DB_PASSWORD,
-      database: process.env.DB_NAME,
-      port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 3306,
+    return await runWithConnection(async (db) => {
+      let resolvedUserId: number | null = null;
+      const responseCookies: string[] = [];
+
+      if (parentSessionToken) {
+        const sessionUserId = await revokeParentSession(db, parentSessionToken);
+        if (sessionUserId != null) {
+          resolvedUserId = sessionUserId;
+        }
+        responseCookies.push(buildClearedParentSessionCookie());
+      }
+
+      if (adminSessionToken) {
+        const sessionUserId = await revokeAdminSession(db, adminSessionToken);
+        if (sessionUserId != null) {
+          resolvedUserId = sessionUserId;
+        }
+        responseCookies.push(buildClearedAdminSessionCookie());
+      }
+
+      if (principalSessionToken) {
+        const sessionUserId = await revokePrincipalSessionByToken(db, principalSessionToken);
+        if (sessionUserId != null) {
+          resolvedUserId = sessionUserId;
+        }
+        responseCookies.push(buildClearedPrincipalSessionCookie());
+      }
+
+      if (masterTeacherSessionToken) {
+        const sessionUserId = await revokeMasterTeacherSessionByToken(db, masterTeacherSessionToken);
+        if (sessionUserId != null) {
+          resolvedUserId = sessionUserId;
+        }
+        responseCookies.push(buildClearedMasterTeacherSessionCookie());
+      }
+
+      if (teacherSessionToken) {
+        const sessionUserId = await revokeTeacherSessionByToken(db, teacherSessionToken);
+        if (sessionUserId != null) {
+          resolvedUserId = sessionUserId;
+        }
+        responseCookies.push(buildClearedTeacherSessionCookie());
+      }
+
+      if (resolvedUserId == null && hasValidBodyUserId) {
+        resolvedUserId = numericUserId;
+      }
+
+      if (resolvedUserId != null) {
+        await recordAccountLogout(db, resolvedUserId);
+      }
+
+      return respond(200, { success: true }, responseCookies.length > 0 ? { "Set-Cookie": responseCookies } : undefined);
     });
-
-    let resolvedUserId: number | null = null;
-    const responseCookies: string[] = [];
-
-    if (parentSessionToken) {
-      const sessionUserId = await revokeParentSession(db, parentSessionToken);
-      if (sessionUserId != null) {
-        resolvedUserId = sessionUserId;
-      }
-      responseCookies.push(buildClearedParentSessionCookie());
-    }
-
-    if (adminSessionToken) {
-      const sessionUserId = await revokeAdminSession(db, adminSessionToken);
-      if (sessionUserId != null) {
-        resolvedUserId = sessionUserId;
-      }
-      responseCookies.push(buildClearedAdminSessionCookie());
-    }
-
-    if (principalSessionToken) {
-      const sessionUserId = await revokePrincipalSessionByToken(db, principalSessionToken);
-      if (sessionUserId != null) {
-        resolvedUserId = sessionUserId;
-      }
-      responseCookies.push(buildClearedPrincipalSessionCookie());
-    }
-
-    if (masterTeacherSessionToken) {
-      const sessionUserId = await revokeMasterTeacherSessionByToken(db, masterTeacherSessionToken);
-      if (sessionUserId != null) {
-        resolvedUserId = sessionUserId;
-      }
-      responseCookies.push(buildClearedMasterTeacherSessionCookie());
-    }
-
-    if (teacherSessionToken) {
-      const sessionUserId = await revokeTeacherSessionByToken(db, teacherSessionToken);
-      if (sessionUserId != null) {
-        resolvedUserId = sessionUserId;
-      }
-      responseCookies.push(buildClearedTeacherSessionCookie());
-    }
-
-    if (resolvedUserId == null && hasValidBodyUserId) {
-      resolvedUserId = numericUserId;
-    }
-
-    if (resolvedUserId != null) {
-      await recordAccountLogout(db, resolvedUserId);
-    }
-
-    return respond(200, { success: true }, responseCookies.length > 0 ? { "Set-Cookie": responseCookies } : undefined);
   } catch (error) {
     console.error("Logout request failed", error);
     return respond(500, { error: "Server error" });
-  } finally {
-    if (db) {
-      await db.end();
-    }
   }
 }

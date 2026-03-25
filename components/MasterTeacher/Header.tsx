@@ -41,15 +41,25 @@ export default function MasterTeacherHeader({ title }: HeaderProps) {
   const pathname = usePathname();
   const router = useRouter();
   const isCoordinatorView = Boolean(pathname?.startsWith("/MasterTeacher/Coordinator"));
+  const lastSyncedRoleRef = React.useRef<"coordinator" | "remedial" | null>(null);
 
   const syncRoleContext = React.useCallback(async (roleContext: "coordinator" | "remedial") => {
+    if (lastSyncedRoleRef.current === roleContext) {
+      return;
+    }
+
+    lastSyncedRoleRef.current = roleContext;
     try {
-      await fetch("/api/master_teacher/session/role", {
+      const response = await fetch("/api/master_teacher/session/role", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ roleContext }),
       });
+      if (!response.ok) {
+        lastSyncedRoleRef.current = null;
+      }
     } catch {
+      lastSyncedRoleRef.current = null;
       // ignore sync failures
     }
   }, []);
@@ -58,12 +68,10 @@ export default function MasterTeacherHeader({ title }: HeaderProps) {
     (targetPath: string) => {
       setShowDropdown(false);
       if (pathname !== targetPath) {
-        const nextRole = targetPath.startsWith("/MasterTeacher/Coordinator") ? "coordinator" : "remedial";
-        void syncRoleContext(nextRole);
         router.push(targetPath);
       }
     },
-    [pathname, router, syncRoleContext]
+    [pathname, router]
   );
 
   const roleOptions = React.useMemo(() => {
@@ -95,6 +103,8 @@ export default function MasterTeacherHeader({ title }: HeaderProps) {
       void syncRoleContext("coordinator");
     } else if (pathname.startsWith("/MasterTeacher/RemedialTeacher")) {
       void syncRoleContext("remedial");
+    } else {
+      lastSyncedRoleRef.current = null;
     }
   }, [pathname, syncRoleContext]);
 

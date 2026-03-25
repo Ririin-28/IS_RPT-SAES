@@ -47,6 +47,10 @@ const ROLE_ALIASES: Record<string, string> = {
   mt_coordinator: "master_teacher",
   master_teacher_coordinator: "master_teacher",
   masterteacher_coordinator: "master_teacher",
+  remedial_teacher: "master_teacher",
+  remedialteacher: "master_teacher",
+  master_teacher_remedial: "master_teacher",
+  masterteacher_remedial: "master_teacher",
 };
 
 let roleTableAvailable: boolean | null = null;

@@ -5,6 +5,7 @@ import {
   MASTER_TEACHER_SESSION_COOKIE_NAME,
   extractMasterTeacherSessionToken,
   getMasterTeacherSessionFromCookies,
+  type MasterTeacherSession,
 } from "@/lib/server/master-teacher-session";
 import { normalizeRoleName, resolveCanonicalRole, resolveUserRole } from "@/lib/server/role-resolution";
 
@@ -15,6 +16,7 @@ export type MasterTeacherAuthResult =
       masterTeacherId: string;
       role: string | null;
       canonicalRole: string;
+      session: MasterTeacherSession;
     }
   | { ok: false; response: Response };
 
@@ -91,6 +93,7 @@ export async function requireMasterTeacher(request: Request): Promise<MasterTeac
         masterTeacherId: String(session.masterTeacherId),
         role: roleForLogic,
         canonicalRole: canonicalRole === "masterteacher" ? "master_teacher" : canonicalRole,
+        session,
       } as MasterTeacherAuthResult;
     });
   } catch (error) {
