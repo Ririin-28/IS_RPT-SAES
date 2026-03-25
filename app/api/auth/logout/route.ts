@@ -30,6 +30,16 @@ interface LogoutPayload {
   userId?: number | string | null;
 }
 
+function buildLogoutCookieHeaders(): string[] {
+  return [
+    buildClearedParentSessionCookie(),
+    buildClearedAdminSessionCookie(),
+    buildClearedPrincipalSessionCookie(),
+    buildClearedMasterTeacherSessionCookie(),
+    buildClearedTeacherSessionCookie(),
+  ];
+}
+
 export async function POST(req: Request): Promise<Response> {
   const respond = async (
     status: number,
@@ -135,6 +145,6 @@ export async function POST(req: Request): Promise<Response> {
     });
   } catch (error) {
     console.error("Logout request failed", error);
-    return respond(500, { error: "Server error" });
+    return respond(500, { error: "Server error" }, { "Set-Cookie": buildLogoutCookieHeaders() });
   }
 }

@@ -44,30 +44,49 @@ function hideProtectedUiDuringLogout() {
 
 async function notifyBackendLogout(userId: string) {
   if (typeof fetch !== "function") {
-    return;
+    return false;
   }
 
-  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-  const timeoutId = controller
-    ? window.setTimeout(() => controller.abort(), 2500)
-    : null;
+  const maxAttempts = 2;
+  let lastError: unknown = null;
 
-  try {
-    await fetch("/api/auth/logout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ userId }),
-      cache: "no-store",
-      signal: controller?.signal,
-    });
-  } catch (error) {
-    console.warn("Failed to notify backend about logout", error);
-  } finally {
-    if (timeoutId != null) {
-      window.clearTimeout(timeoutId);
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timeoutId = controller
+      ? window.setTimeout(() => controller.abort(), 8000)
+      : null;
+
+    try {
+      const response = await fetch("/api/auth/logout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ userId }),
+        cache: "no-store",
+        keepalive: true,
+        signal: controller?.signal,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        throw new Error(errorText || `Logout request failed with status ${response.status}`);
+      }
+
+      return true;
+    } catch (error) {
+      lastError = error;
+      if (attempt < maxAttempts - 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 400));
+      }
+    } finally {
+      if (timeoutId != null) {
+        window.clearTimeout(timeoutId);
+      }
     }
   }
+
+  console.warn("Failed to notify backend about logout", lastError);
+  return false;
 }
 
 /**

@@ -1,6 +1,10 @@
 import mysql from "mysql2/promise";
 
-let pool: mysql.Pool | null = null;
+const globalDbState = globalThis as typeof globalThis & {
+  __rptSaesMysqlPool?: mysql.Pool | null;
+};
+
+let pool: mysql.Pool | null = globalDbState.__rptSaesMysqlPool ?? null;
 const tableExistsCache = new Map<string, { expiresAt: number; promise: Promise<boolean> }>();
 const tableColumnsCache = new Map<string, { expiresAt: number; promise: Promise<string[]> }>();
 const connectionTimeoutCacheKey = "__rptSaesMaxExecutionTime";
@@ -32,12 +36,23 @@ const DB_CONFIG = {
     : undefined,
 } as const;
 
+function setPool(nextPool: mysql.Pool | null): void {
+  pool = nextPool;
+  globalDbState.__rptSaesMysqlPool = nextPool;
+}
+
 function ensurePool(): mysql.Pool {
   if (pool) {
     return pool;
   }
 
-  pool = mysql.createPool({
+  const existingGlobalPool = globalDbState.__rptSaesMysqlPool;
+  if (existingGlobalPool) {
+    pool = existingGlobalPool;
+    return existingGlobalPool;
+  }
+
+  const createdPool = mysql.createPool({
     ...DB_CONFIG,
     waitForConnections: true,
     queueLimit: 0,
@@ -53,7 +68,9 @@ function ensurePool(): mysql.Pool {
     maxIdle: Math.max(1, Math.floor(DB_CONFIG.connectionLimit / 2)), // Half of connection limit
   });
 
-  return pool;
+  setPool(createdPool);
+
+  return createdPool;
 }
 
 export function getPool(): mysql.Pool {
@@ -211,7 +228,7 @@ export async function query<T extends mysql.RowDataPacket[] | mysql.ResultSetHea
           } catch {
             // Ignore errors during pool cleanup
           }
-          pool = null;
+          setPool(null);
         }
         
         // Wait before retrying (with exponential backoff)
@@ -257,7 +274,7 @@ export async function withRetry<T>(
             } catch {
               // Ignore cleanup errors
             }
-            pool = null;
+            setPool(null);
           }
           
           await new Promise(resolve => setTimeout(resolve, delayMs * (i + 1)));
@@ -381,7 +398,7 @@ export async function runWithConnection<T>(
           } catch {
             // Ignore cleanup errors
           }
-          pool = null;
+          setPool(null);
         }
         
         await new Promise(resolve => setTimeout(resolve, retryDelay * Math.pow(2, attempt)));
@@ -400,7 +417,7 @@ export async function runWithConnection<T>(
 export async function closePool(): Promise<void> {
   if (pool) {
     await pool.end();
-    pool = null;
+    setPool(null);
   }
   invalidateMetadataCaches();
 }
