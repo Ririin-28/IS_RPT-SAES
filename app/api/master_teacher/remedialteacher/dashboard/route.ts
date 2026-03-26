@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { getTableColumns, query } from "@/lib/db";
 import { getMasterTeacherSessionFromCookies } from "@/lib/server/master-teacher-session";
+import { comparePhonemicLevelsForSubject } from "@/lib/phonemic-levels";
 
 export const dynamic = "force-dynamic";
 
@@ -644,6 +645,14 @@ async function loadRemedialTeacherTrends(
     return { ...DEFAULT_TRENDS, months };
   }
 
+  const subjectLookup = new Map<number, SubjectName>();
+  SUBJECT_NAMES.forEach((name) => {
+    const id = subjectMap.get(name.toLowerCase());
+    if (Number.isFinite(id)) {
+      subjectLookup.set(Number(id), name);
+    }
+  });
+
   const placeholders = subjectIds.map(() => "?").join(", ");
   const [levelRows] = await query<RowDataPacket[]>(
     `SELECT phonemic_id, subject_id, level_name
@@ -653,9 +662,25 @@ async function loadRemedialTeacherTrends(
     subjectIds,
   );
 
+  const orderedLevelRows = [...(levelRows ?? [])].sort((left, right) => {
+    const leftSubjectId = Number(left.subject_id);
+    const rightSubjectId = Number(right.subject_id);
+    if (leftSubjectId !== rightSubjectId) {
+      return leftSubjectId - rightSubjectId;
+    }
+
+    return comparePhonemicLevelsForSubject(
+      subjectLookup.get(leftSubjectId),
+      left.level_name,
+      left.phonemic_id,
+      right.level_name,
+      right.phonemic_id,
+    );
+  });
+
   const levelLabelsBySubject = new Map<number, string[]>();
   const levelIndexByPhonemic = new Map<number, number>();
-  for (const row of levelRows ?? []) {
+  for (const row of orderedLevelRows) {
     const subjectId = Number(row.subject_id);
     const phonemicId = Number(row.phonemic_id);
     const levelName = typeof row.level_name === "string" ? row.level_name.trim() : "";
@@ -692,14 +717,6 @@ async function loadRemedialTeacherTrends(
     Filipino: { weekly: [0, 0, 0, 0], monthly: months.map(() => 0), levelLabels: [], levelDistributionByMonth: {} },
     Math: { weekly: [0, 0, 0, 0], monthly: months.map(() => 0), levelLabels: [], levelDistributionByMonth: {} },
   };
-
-  const subjectLookup = new Map<number, SubjectName>();
-  SUBJECT_NAMES.forEach((name) => {
-    const id = subjectMap.get(name.toLowerCase());
-    if (Number.isFinite(id)) {
-      subjectLookup.set(Number(id), name);
-    }
-  });
 
   const sumsBySubjectMonth = new Map<SubjectName, number[]>();
   const countsBySubjectMonth = new Map<SubjectName, number[]>();

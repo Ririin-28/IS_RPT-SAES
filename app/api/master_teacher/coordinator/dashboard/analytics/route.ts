@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { getTableColumns, query } from "@/lib/db";
+import { comparePhonemicLevelsForSubject, toPhonemicSubjectName } from "@/lib/phonemic-levels";
 
 export const dynamic = "force-dynamic";
 
@@ -250,10 +251,20 @@ export async function GET(request: NextRequest) {
         [subjectIds[0]],
       );
 
-      levelIds = (levelRows ?? [])
+      const orderedLevelRows = [...(levelRows ?? [])].sort((left, right) =>
+        comparePhonemicLevelsForSubject(
+          toPhonemicSubjectName(chartScopes[0]?.subjectName),
+          left.levelName,
+          left.phonemicId,
+          right.levelName,
+          right.phonemicId,
+        ),
+      );
+
+      levelIds = orderedLevelRows
         .map((row) => Number(row.phonemicId))
         .filter((value) => Number.isFinite(value));
-      levelLabels = (levelRows ?? []).map((row) => String(row.levelName ?? "").trim()).filter((value) => value.length > 0);
+      levelLabels = orderedLevelRows.map((row) => String(row.levelName ?? "").trim()).filter((value) => value.length > 0);
     }
 
     const monthlyLevelCounts: Record<string, number[]> = {};
