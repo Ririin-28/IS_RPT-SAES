@@ -18,6 +18,7 @@ import {
 } from "recharts";
 import TeacherSidebar from "@/components/Teacher/Sidebar";
 import TeacherHeader from "@/components/Teacher/Header";
+import TeacherPageSkeleton from "@/components/Teacher/TeacherPageSkeleton";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import BodyText from "@/components/Common/Texts/BodyText";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
@@ -199,6 +200,7 @@ export default function TeacherDashboard() {
   const [countsError, setCountsError] = useState<string | null>(null);
   const [trendData, setTrendData] = useState<TrendPayload | null>(null);
   const [studentsLoadError, setStudentsLoadError] = useState<string | null>(null);
+  const [isLoadingStudents, setIsLoadingStudents] = useState(true);
 
   const [dashboardUserId, setDashboardUserId] = useState<string | number | null>(null);
   const [selectedSubject, setSelectedSubject] = useState("English");
@@ -438,7 +440,12 @@ export default function TeacherDashboard() {
     let cancelled = false;
 
     const loadStudents = async () => {
-      if (!dashboardUserId) return;
+      if (!dashboardUserId) {
+        setIsLoadingStudents(false);
+        return;
+      }
+
+      setIsLoadingStudents(true);
       try {
         setStudentsLoadError(null);
         const response = await fetch(
@@ -463,6 +470,10 @@ export default function TeacherDashboard() {
         if (!cancelled) {
           setStudentsLoadError(error instanceof Error ? error.message : "Failed to load student list for dashboard filters.");
           setStudentRows([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingStudents(false);
         }
       }
     };
@@ -578,6 +589,15 @@ export default function TeacherDashboard() {
       window.removeEventListener("beforeprint", handleBeforePrint);
     };
   }, []);
+
+  const showInitialSkeleton =
+    (isLoadingProfile && !teacherProfile && !profileError) ||
+    (isLoadingCounts && !countsError && trendData === null) ||
+    (dashboardUserId !== null && isLoadingStudents && studentRows.length === 0 && !studentsLoadError);
+
+  if (showInitialSkeleton) {
+    return <TeacherPageSkeleton title="Dashboard" />;
+  }
 
   return (
     <div className="dashboard-page">

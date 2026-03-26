@@ -1,6 +1,7 @@
 ﻿"use client";
 import Sidebar from "@/components/Teacher/Sidebar";
 import Header from "@/components/Teacher/Header";
+import TeacherPageSkeleton from "@/components/Teacher/TeacherPageSkeleton";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Printer } from "lucide-react";
 // Text Components
@@ -1000,6 +1001,14 @@ export default function TeacherCalendar() {
     }
 
     return renderMonthView();
+  }
+
+  const showInitialSkeleton =
+    (profileLoading && !profileError) ||
+    (loading && activities.length === 0 && !error);
+
+  if (showInitialSkeleton) {
+    return <TeacherPageSkeleton title="Calendar" />;
   }
 
   return (

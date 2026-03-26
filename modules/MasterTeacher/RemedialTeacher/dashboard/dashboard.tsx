@@ -17,6 +17,7 @@ import {
 } from "recharts";
 import RemedialTeacherSidebar from "@/components/MasterTeacher/RemedialTeacher/Sidebar";
 import MasterTeacherHeader from "@/components/MasterTeacher/Header";
+import MasterTeacherPageSkeleton from "@/components/MasterTeacher/MasterTeacherPageSkeleton";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import BodyText from "@/components/Common/Texts/BodyText";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
@@ -245,6 +246,7 @@ export default function TeacherDashboard() {
   const [subjectFilter, setSubjectFilter] = useState<SubjectFilter>("English");
   const [selectedSections, setSelectedSections] = useState<string[]>([]);
   const [studentRows, setStudentRows] = useState<DashboardStudentRow[]>([]);
+  const [isLoadingStudents, setIsLoadingStudents] = useState(true);
   const [studentsLoadError, setStudentsLoadError] = useState<string | null>(null);
   const [isPreparingPrint, setIsPreparingPrint] = useState(false);
   const [isPrintReady, setIsPrintReady] = useState(false);
@@ -477,6 +479,7 @@ export default function TeacherDashboard() {
     const loadStudents = async () => {
       if (!dashboardUserId) return;
       try {
+        setIsLoadingStudents(true);
         setStudentsLoadError(null);
         const response = await fetch(
           `/api/master_teacher/remedialteacher/students?userId=${encodeURIComponent(String(dashboardUserId))}&subject=${encodeURIComponent(selectedSubject.toLowerCase())}`,
@@ -500,6 +503,10 @@ export default function TeacherDashboard() {
           setStudentsLoadError(error instanceof Error ? error.message : "Failed to load student list for dashboard filters.");
           setStudentRows([]);
         }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingStudents(false);
+        }
       }
     };
 
@@ -513,6 +520,15 @@ export default function TeacherDashboard() {
   useEffect(() => {
     setSelectedSections((prev) => prev.filter((section) => sectionOptions.includes(section)));
   }, [sectionOptions]);
+
+  const showInitialSkeleton =
+    (isLoadingProfile && !teacherProfile && !profileError) ||
+    (isLoadingCounts && !countsError && trendData === null) ||
+    (dashboardUserId !== null && isLoadingStudents && studentRows.length === 0 && !studentsLoadError);
+
+  if (showInitialSkeleton) {
+    return <MasterTeacherPageSkeleton title="Dashboard" variant="remedial" />;
+  }
 
   const filteredStudentRows = useMemo(() => {
     return studentRows.filter((row) => {

@@ -1,6 +1,7 @@
 ﻿"use client";
 import Sidebar from "@/components/MasterTeacher/RemedialTeacher/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
+import MasterTeacherPageSkeleton from "@/components/MasterTeacher/MasterTeacherPageSkeleton";
 import { getStoredUserProfile } from "@/lib/utils/user-profile";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Printer } from "lucide-react";
@@ -160,8 +161,12 @@ export default function MasterTeacherCalendar() {
   const [weeklySubjectSchedule, setWeeklySubjectSchedule] = useState<WeeklySubjectSchedule | null>(null);
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
   const [remedialSchedule, setRemedialSchedule] = useState<RemedialQuarterSchedule | null>(null);
+  const [activitiesLoading, setActivitiesLoading] = useState(true);
+  const [weeklyScheduleLoading, setWeeklyScheduleLoading] = useState(true);
+  const [remedialScheduleLoading, setRemedialScheduleLoading] = useState(true);
 
   const loadApprovedActivities = useCallback(async () => {
+    setActivitiesLoading(true);
     try {
       const response = await fetch("/api/master_teacher/calendar", { cache: "no-store" });
       const payload = (await response.json().catch(() => null)) as {
@@ -206,6 +211,8 @@ export default function MasterTeacherCalendar() {
     } catch (error) {
       console.warn("Failed to load approved activities", error);
       setActivities([]);
+    } finally {
+      setActivitiesLoading(false);
     }
   }, []);
 
@@ -214,6 +221,7 @@ export default function MasterTeacherCalendar() {
   }, [loadApprovedActivities]);
 
   const loadWeeklySubjectSchedule = useCallback(async () => {
+    setWeeklyScheduleLoading(true);
     try {
       const response = await fetch("/api/principal/weekly-subject-schedule", { cache: "no-store" });
       if (!response.ok) {
@@ -231,6 +239,8 @@ export default function MasterTeacherCalendar() {
     } catch (error) {
       console.warn("Failed to load weekly subject schedule", error);
       setWeeklySubjectSchedule(null);
+    } finally {
+      setWeeklyScheduleLoading(false);
     }
   }, []);
 
@@ -240,6 +250,7 @@ export default function MasterTeacherCalendar() {
 
   useEffect(() => {
     const loadRemedialSchedule = async () => {
+      setRemedialScheduleLoading(true);
       try {
         const response = await fetch("/api/master_teacher/coordinator/calendar/remedial-schedule", { cache: "no-store" });
         if (!response.ok) {
@@ -262,6 +273,8 @@ export default function MasterTeacherCalendar() {
         });
       } catch {
         setRemedialSchedule(null);
+      } finally {
+        setRemedialScheduleLoading(false);
       }
     };
 
@@ -720,6 +733,12 @@ export default function MasterTeacherCalendar() {
 
     return <div className="divide-y">{days}</div>;
   };
+
+  const showInitialSkeleton = activitiesLoading || weeklyScheduleLoading || remedialScheduleLoading;
+
+  if (showInitialSkeleton) {
+    return <MasterTeacherPageSkeleton title="Calendar" variant="remedial" />;
+  }
 
   return (
     <div className="remedial-calendar-page relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">

@@ -1,6 +1,7 @@
 "use client";
 import Sidebar from "@/components/MasterTeacher/Coordinator/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
+import MasterTeacherPageSkeleton from "@/components/MasterTeacher/MasterTeacherPageSkeleton";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useForm } from "react-hook-form";
@@ -2490,6 +2491,10 @@ export default function MasterTeacherCalendar() {
   const importButtonDisabled = !canPlanActivities || importing;
   const hasConfiguredRemedialWindow = Boolean(remedialWindow?.startDate && remedialWindow?.endDate);
   const templateButtonDisabled = templateDownloading || !hasConfiguredRemedialWindow;
+
+  if (profileLoading && !profileError) {
+    return <MasterTeacherPageSkeleton title="Calendar" variant="coordinator" />;
+  }
 
   return (
     <div className="relative flex h-screen overflow-hidden bg-[#f2f7f4]">

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import TeacherSidebar from "@/components/Teacher/Sidebar";
 import TeacherHeader from "@/components/Teacher/Header";
+import { TeacherMainContainerSkeletonContent } from "@/components/Teacher/TeacherPageSkeleton";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import EnglishAssessmentTab, { ENGLISH_ASSESSMENT_LEVELS, type EnglishAssessmentLevel } from "./EnglishTabs/EnglishAssessmentTab";
@@ -57,6 +58,7 @@ export default function TeacherAssessment({ language }: TeacherAssessmentProps) 
       ? FILIPINO_ASSESSMENT_LEVELS[0]
       : MATH_ASSESSMENT_LEVELS[0]
   );
+  const [showInitialSkeleton, setShowInitialSkeleton] = useState(true);
 
   useEffect(() => {
     const nextSubject = normalizeSubjectFromLanguage(language) ?? normalizeSubjectFromPath(pathname) ?? "English";
@@ -71,6 +73,10 @@ export default function TeacherAssessment({ language }: TeacherAssessmentProps) 
     } else {
       setActiveTab(MATH_ASSESSMENT_LEVELS[0]);
     }
+  }, [subject]);
+
+  useEffect(() => {
+    setShowInitialSkeleton(true);
   }, [subject]);
 
   const currentTabOptions = useMemo(() => {
@@ -97,41 +103,68 @@ export default function TeacherAssessment({ language }: TeacherAssessmentProps) 
           <div className="p-4 h-full sm:p-5 md:p-6">
             {/*---------------------------------Main Container---------------------------------*/}
             <div className="relative z-10 h-full min-h-100 overflow-hidden rounded-2xl border border-white/70 bg-white/45 shadow-[0_20px_45px_-28px_rgba(15,23,42,0.45)] backdrop-blur-xl flex flex-col">
-              <div className="p-4 sm:p-5 border-b border-gray-100 shrink-0">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
-                  <div className="flex items-center gap-0">
-                    <SecondaryHeader title={subjectHeader} />
-                    <HeaderDropdown
-                      options={[...currentTabOptions]}
-                      value={activeTab}
-                      onChange={(value) => {
-                        if (subject === "English") {
-                          setActiveTab(value as EnglishAssessmentLevel);
-                        } else if (subject === "Filipino") {
-                          setActiveTab(value as FilipinoAssessmentLevel);
-                        } else {
-                          setActiveTab(value as MathAssessmentLevel);
-                        }
-                      }}
-                      className="pl-2"
-                    />
+              <div
+                className={
+                  showInitialSkeleton
+                    ? "absolute inset-0 flex flex-col invisible pointer-events-none"
+                    : "flex h-full flex-col"
+                }
+              >
+                <div className="p-4 sm:p-5 border-b border-gray-100 shrink-0">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
+                    <div className="flex items-center gap-0">
+                      <SecondaryHeader title={subjectHeader} />
+                      <HeaderDropdown
+                        options={[...currentTabOptions]}
+                        value={activeTab}
+                        onChange={(value) => {
+                          if (subject === "English") {
+                            setActiveTab(value as EnglishAssessmentLevel);
+                          } else if (subject === "Filipino") {
+                            setActiveTab(value as FilipinoAssessmentLevel);
+                          } else {
+                            setActiveTab(value as MathAssessmentLevel);
+                          }
+                        }}
+                        className="pl-2"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/*---------------------------------Tab Content---------------------------------*/}
+                <div className="flex-1 min-h-0 overflow-hidden flex flex-col relative custom-scrollbar overflow-y-auto">
+                  <div className="flex-1 min-h-0">
+                    {/* English Assessment */}
+                    {subject === "English" && (
+                      <EnglishAssessmentTab
+                        level={activeTab as EnglishAssessmentLevel}
+                        onInitialLoadStateChange={setShowInitialSkeleton}
+                      />
+                    )}
+                    {/* Filipino Assessment */}
+                    {subject === "Filipino" && (
+                      <FilipinoAssessmentTab
+                        level={activeTab as FilipinoAssessmentLevel}
+                        onInitialLoadStateChange={setShowInitialSkeleton}
+                      />
+                    )}
+                    {/* Math Assessment */}
+                    {subject === "Math" && (
+                      <MathAssessmentTab
+                        level={activeTab as MathAssessmentLevel}
+                        onInitialLoadStateChange={setShowInitialSkeleton}
+                      />
+                    )}
                   </div>
                 </div>
               </div>
 
-              {/*---------------------------------Tab Content---------------------------------*/}
-              <div className="flex-1 min-h-0 overflow-hidden flex flex-col relative custom-scrollbar overflow-y-auto">
-                <div className="flex-1 min-h-0">
-                  {/* English Assessment */}
-                  {subject === "English" && (
-                    <EnglishAssessmentTab level={activeTab as EnglishAssessmentLevel} />
-                  )}
-                  {/* Filipino Assessment */}
-                  {subject === "Filipino" && <FilipinoAssessmentTab level={activeTab as FilipinoAssessmentLevel} />}
-                  {/* Math Assessment */}
-                  {subject === "Math" && <MathAssessmentTab level={activeTab as MathAssessmentLevel} />}
+              {showInitialSkeleton ? (
+                <div className="absolute inset-0 z-10 rounded-2xl bg-white p-4 sm:p-5 md:p-6">
+                  <TeacherMainContainerSkeletonContent />
                 </div>
-              </div>
+              ) : null}
             </div>
           </div>
         </main>

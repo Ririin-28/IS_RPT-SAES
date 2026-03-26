@@ -1,6 +1,7 @@
 "use client";
 import Sidebar from "@/components/MasterTeacher/RemedialTeacher/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
+import MasterTeacherPageSkeleton from "@/components/MasterTeacher/MasterTeacherPageSkeleton";
 import ToastActivity from "@/components/ToastActivity";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -832,6 +833,12 @@ export default function MasterTeacherReport({ subjectSlug }: MasterTeacherReport
   );
 
   const disableActions = isLoading || isSaving || Boolean(loadError) || activeRows.length === 0;
+
+  const showInitialSkeleton = isLoading && activeRows.length === 0 && !loadError;
+
+  if (showInitialSkeleton) {
+    return <MasterTeacherPageSkeleton title="Report" variant="remedial" />;
+  }
 
   return (
     <div className="remedial-report-page relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">

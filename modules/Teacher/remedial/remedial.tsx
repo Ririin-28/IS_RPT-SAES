@@ -1,6 +1,7 @@
 "use client";
 import TeacherSidebar from "@/components/Teacher/Sidebar";
 import TeacherHeader from "@/components/Teacher/Header";
+import TeacherPageSkeleton from "@/components/Teacher/TeacherPageSkeleton";
 import { useState, useEffect, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
@@ -328,6 +329,12 @@ export default function TeacherRemedial() {
       setValidatingActivityId(null);
     }
   };
+
+  const showInitialSkeleton = scheduleLoading && scheduleActivities.length === 0 && !scheduleError;
+
+  if (showInitialSkeleton) {
+    return <TeacherPageSkeleton title="Remedial" />;
+  }
 
   return (
     <div className="relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">

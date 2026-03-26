@@ -1,6 +1,7 @@
 "use client";
 import Sidebar from "@/components/MasterTeacher/RemedialTeacher/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
+import MasterTeacherPageSkeleton from "@/components/MasterTeacher/MasterTeacherPageSkeleton";
 import { useState, useEffect, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
@@ -343,6 +344,12 @@ export default function MasterTeacherRemedial() {
   };
 
   const subjectHeader = subject === "Assessment" ? "Assessment Center" : `${subject} Remedial`;
+
+  const showInitialSkeleton = scheduleLoading && scheduleActivities.length === 0 && !scheduleError;
+
+  if (showInitialSkeleton) {
+    return <MasterTeacherPageSkeleton title="Remedial" variant="remedial" />;
+  }
 
   return (
     <div className="relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">

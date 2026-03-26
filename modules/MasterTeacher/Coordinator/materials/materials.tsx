@@ -1,6 +1,7 @@
 "use client";
 import Sidebar from "@/components/MasterTeacher/Coordinator/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
+import MasterTeacherPageSkeleton from "@/components/MasterTeacher/MasterTeacherPageSkeleton";
 import { useEffect, useMemo, useState } from "react";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
@@ -270,6 +271,14 @@ export default function MasterTeacherMaterials() {
     () => currentTabOptions.find((tab) => tab.label === activeTab) ?? currentTabOptions[0],
     [activeTab, currentTabOptions],
   );
+
+  const showInitialSkeleton =
+    (loadingSubject && subject === null && !subjectError) ||
+    (scheduleLoading && scheduleActivities.length === 0 && !scheduleError);
+
+  if (showInitialSkeleton) {
+    return <MasterTeacherPageSkeleton title="Materials" variant="coordinator" />;
+  }
 
   const handleReviewClick = (activity: CalendarActivity) => {
     setSelectedActivity(activity);

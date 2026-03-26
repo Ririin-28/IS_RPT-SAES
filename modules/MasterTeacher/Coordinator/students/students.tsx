@@ -1,6 +1,7 @@
 "use client";
 import Sidebar from "@/components/MasterTeacher/Coordinator/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
+import { MasterTeacherMainContainerSkeletonContent } from "@/components/MasterTeacher/MasterTeacherPageSkeleton";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import BaseModal from "@/components/Common/Modals/BaseModal";
 import ConfirmationModal from "@/components/Common/Modals/ConfirmationModal";
@@ -68,6 +69,7 @@ export default function MasterTeacherStudents() {
   const [assignmentPreview, setAssignmentPreview] = useState<AssignmentGroup[]>([]);
   const [remedialTeachers, setRemedialTeachers] = useState<CoordinatorTeacher[]>([]);
   const [assignmentSaving, setAssignmentSaving] = useState(false);
+  const [studentTabLoading, setStudentTabLoading] = useState(true);
   const [assignmentToast, setAssignmentToast] = useState<{
     title: string;
     message: string;
@@ -218,6 +220,7 @@ export default function MasterTeacherStudents() {
   const assignedStudentIdSet = useMemo(() => (
     new Set(assignmentStatus.assignedStudentIds.map((id) => String(id)))
   ), [assignmentStatus.assignedStudentIds]);
+  const showInitialSkeleton = teachersLoading || studentTabLoading;
 
   const unassignedStudents = useMemo(() => (
     studentMeta.students.filter((student) => {
@@ -487,45 +490,54 @@ export default function MasterTeacherStudents() {
           "
           >
             {/*---------------------------------Main Container---------------------------------*/}
-            <div className="relative z-10 h-full min-h-100 overflow-y-auto rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_20px_45px_-28px_rgba(15,23,42,0.45)] backdrop-blur-xl sm:p-5 md:p-6">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
-                <SecondaryHeader title={headerTitle} />
-                <div className="flex flex-col gap-3 w-full sm:w-auto mt-4 sm:mt-0 sm:flex-row sm:items-center">
-                  <div className="relative flex-1 sm:flex-initial">
-                    <input
-                      type="text"
-                      placeholder="Search students..."
-                      className="w-full border border-gray-300 rounded-lg px-4 py-2 pr-10 text-black"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                    />
-                    {searchTerm && (
-                      <button
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                        onClick={() => setSearchTerm("")}
-                      >
-                        <FaTimes />
-                      </button>
-                    )}
+            <div className="relative z-10 h-full min-h-100 overflow-hidden rounded-2xl border border-white/70 bg-white/45 p-4 shadow-[0_20px_45px_-28px_rgba(15,23,42,0.45)] backdrop-blur-xl sm:p-5 md:p-6">
+              <div className={showInitialSkeleton ? "h-full invisible pointer-events-none overflow-y-auto" : "h-full overflow-y-auto"}>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
+                  <SecondaryHeader title={headerTitle} />
+                  <div className="flex flex-col gap-3 w-full sm:w-auto mt-4 sm:mt-0 sm:flex-row sm:items-center">
+                    <div className="relative flex-1 sm:flex-initial">
+                      <input
+                        type="text"
+                        placeholder="Search students..."
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2 pr-10 text-black"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                      />
+                      {searchTerm && (
+                        <button
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                          onClick={() => setSearchTerm("")}
+                        >
+                          <FaTimes />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
+
+                {/*---------------------------------Tab Content---------------------------------*/}
+                <div className="mt-4 sm:mt-6">
+                  <StudentTab
+                    searchTerm={searchTerm}
+                    onMetaChange={handleMetaChange}
+                    onAssignStudents={handleOpenAssignmentModal}
+                    onInitialLoadStateChange={setStudentTabLoading}
+                    handlersByStudentId={assignmentStatus.handlersByStudentId}
+                    assignStudentsDisabled={
+                      teachersLoading
+                      || assignmentStatus.loading
+                      || totalTeachers === 0
+                      || totalStudents === 0
+                    }
+                  />
+                </div>
               </div>
-              
-              {/*---------------------------------Tab Content---------------------------------*/}
-              <div className="mt-4 sm:mt-6">
-                <StudentTab
-                  searchTerm={searchTerm}
-                  onMetaChange={handleMetaChange}
-                  onAssignStudents={handleOpenAssignmentModal}
-                  handlersByStudentId={assignmentStatus.handlersByStudentId}
-                  assignStudentsDisabled={
-                    teachersLoading
-                    || assignmentStatus.loading
-                    || totalTeachers === 0
-                    || totalStudents === 0
-                  }
-                />
-              </div>
+
+              {showInitialSkeleton ? (
+                <div className="absolute inset-0 z-10 rounded-2xl bg-white p-4 sm:p-5 md:p-6">
+                  <MasterTeacherMainContainerSkeletonContent />
+                </div>
+              ) : null}
             </div>
           </div>
         </main>

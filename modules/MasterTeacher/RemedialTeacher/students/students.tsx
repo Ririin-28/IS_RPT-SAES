@@ -1,6 +1,7 @@
 "use client";
 import Sidebar from "@/components/MasterTeacher/RemedialTeacher/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
+import MasterTeacherPageSkeleton from "@/components/MasterTeacher/MasterTeacherPageSkeleton";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import { FaTimes } from "react-icons/fa";
@@ -371,6 +372,12 @@ export default function MasterTeacherStudents({ subjectSlug }: MasterTeacherStud
   }, [userId]);
 
   const students = subjectStudents[subject];
+
+  const showInitialSkeleton = isLoading && students.length === 0 && !loadError;
+
+  if (showInitialSkeleton) {
+    return <MasterTeacherPageSkeleton title="Student List" variant="remedial" />;
+  }
 
   const setStudents = useCallback(
     (value: SetStateAction<any[]>) => {

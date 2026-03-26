@@ -3,6 +3,7 @@
 import Sidebar from "@/components/MasterTeacher/Coordinator/Sidebar";
 
 import Header from "@/components/MasterTeacher/Header";
+import MasterTeacherPageSkeleton from "@/components/MasterTeacher/MasterTeacherPageSkeleton";
 
 import { useEffect, useMemo, useState } from "react";
 
@@ -794,6 +795,14 @@ export default function MasterTeacherRemedial() {
       window.clearTimeout(timerId);
     };
   }, [saveToast]);
+
+  const showInitialSkeleton =
+    (loadingSubject && subject === null && !subjectError) ||
+    (scheduleLoading && scheduleActivities.length === 0 && !scheduleError);
+
+  if (showInitialSkeleton) {
+    return <MasterTeacherPageSkeleton title="Remedial" variant="coordinator" />;
+  }
 
 
 

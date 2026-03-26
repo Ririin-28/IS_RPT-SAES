@@ -485,9 +485,10 @@ const mapQuizDataToQuiz = (
 
 interface EnglishAssessmentTabProps {
   level: EnglishAssessmentLevel;
+  onInitialLoadStateChange?: (loading: boolean) => void;
 }
 
-export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProps) {
+export default function EnglishAssessmentTab({ level, onInitialLoadStateChange }: EnglishAssessmentTabProps) {
   const [quizzesByLevel, setQuizzesByLevel] = useState<QuizzesByLevel>(() => cloneInitialQuizzes());
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingQuiz, setEditingQuiz] = useState<Quiz | null>(null);
@@ -496,6 +497,7 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
   const [selectMode, setSelectMode] = useState(false);
   const [selectedQuizzes, setSelectedQuizzes] = useState<Set<number>>(new Set());
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [assessmentsLoading, setAssessmentsLoading] = useState(true);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isUpdateConfirmOpen, setIsUpdateConfirmOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -530,21 +532,38 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
     return profile?.userId ? String(profile.userId) : "";
   };
 
-  const loadAssessments = async (teacherUserId: string) => {
-    const assessments = await fetchAssessments({
-      creatorId: teacherUserId,
-      creatorRole: "teacher",
-      subjectName: "English",
-    });
-    setQuizzesByLevel(groupAssessmentsByLevel(assessments));
+  const loadAssessments = async (
+    teacherUserId: string,
+    options?: {
+      showInitialLoading?: boolean;
+    },
+  ) => {
+    if (options?.showInitialLoading) {
+      setAssessmentsLoading(true);
+    }
+
+    try {
+      const assessments = await fetchAssessments({
+        creatorId: teacherUserId,
+        creatorRole: "teacher",
+        subjectName: "English",
+      });
+      setQuizzesByLevel(groupAssessmentsByLevel(assessments));
+    } finally {
+      if (options?.showInitialLoading) {
+        setAssessmentsLoading(false);
+      }
+    }
   };
 
   useEffect(() => {
     const profile = getStoredUserProfile();
     if (profile?.userId) {
       setCurrentUserId(String(profile.userId));
-      void loadAssessments(String(profile.userId));
+      void loadAssessments(String(profile.userId), { showInitialLoading: true });
+      return;
     }
+    setAssessmentsLoading(false);
   }, []);
 
   useEffect(() => {
@@ -575,6 +594,10 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    onInitialLoadStateChange?.(assessmentsLoading || scheduleLoading);
+  }, [assessmentsLoading, onInitialLoadStateChange, scheduleLoading]);
 
   const saveQuizzes = (newQuizzes: QuizzesByLevel) => {
     setQuizzesByLevel(newQuizzes);

@@ -495,9 +495,10 @@ const mapQuizToModalData = (quiz: MathQuiz): QuizData => {
 
 interface MathAssessmentTabProps {
   level: MathAssessmentLevel;
+  onInitialLoadStateChange?: (loading: boolean) => void;
 }
 
-export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
+export default function MathAssessmentTab({ level, onInitialLoadStateChange }: MathAssessmentTabProps) {
   const [quizzesByLevel, setQuizzesByLevel] = useState<MathQuizzesByLevel>(() => cloneInitialMathQuizzes());
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingQuiz, setEditingQuiz] = useState<MathQuiz | null>(null);
@@ -523,6 +524,7 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
   const [responsesQuiz, setResponsesQuiz] = useState<MathQuiz | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [assessmentsLoading, setAssessmentsLoading] = useState(true);
   const [statusToast, setStatusToast] = useState<{
     title: string;
     message: string;
@@ -540,20 +542,37 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
     return profile?.userId ? String(profile.userId) : "";
   };
 
-  const loadAssessments = async (userId: string) => {
-    const assessments = await fetchAssessments({
-      creatorId: userId,
-      creatorRole: "remedial_teacher",
-      subjectName: "Math",
-    });
-    setQuizzesByLevel(groupAssessmentsByLevel(assessments));
+  const loadAssessments = async (
+    userId: string,
+    options?: {
+      showInitialLoading?: boolean;
+    },
+  ) => {
+    if (options?.showInitialLoading) {
+      setAssessmentsLoading(true);
+    }
+
+    try {
+      const assessments = await fetchAssessments({
+        creatorId: userId,
+        creatorRole: "remedial_teacher",
+        subjectName: "Math",
+      });
+      setQuizzesByLevel(groupAssessmentsByLevel(assessments));
+    } finally {
+      if (options?.showInitialLoading) {
+        setAssessmentsLoading(false);
+      }
+    }
   };
 
   useEffect(() => {
     const userId = getRemedialUserId();
     if (userId) {
-      void loadAssessments(userId);
+      void loadAssessments(userId, { showInitialLoading: true });
+      return;
     }
+    setAssessmentsLoading(false);
   }, []);
 
   useEffect(() => {
@@ -593,6 +612,10 @@ export default function MathAssessmentTab({ level }: MathAssessmentTabProps) {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    onInitialLoadStateChange?.(assessmentsLoading || scheduleLoading);
+  }, [assessmentsLoading, onInitialLoadStateChange, scheduleLoading]);
 
   const saveQuizzes = (newQuizzes: MathQuizzesByLevel) => {
     setQuizzesByLevel(newQuizzes);

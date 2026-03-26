@@ -1,6 +1,7 @@
 "use client";
 import Sidebar from "@/components/MasterTeacher/Coordinator/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
+import MasterTeacherPageSkeleton from "@/components/MasterTeacher/MasterTeacherPageSkeleton";
 import { useState } from "react";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import { FaTimes } from "react-icons/fa";
@@ -11,6 +12,11 @@ import { useCoordinatorTeachers } from "./useCoordinatorTeachers";
 export default function MasterTeacherTeachers() {
   const [searchTerm, setSearchTerm] = useState("");
   const { teachers, gradeLabel, loading, error } = useCoordinatorTeachers();
+  const showInitialSkeleton = loading && teachers.length === 0 && !error;
+
+  if (showInitialSkeleton) {
+    return <MasterTeacherPageSkeleton title="Teachers" variant="coordinator" />;
+  }
 
   return (
     <div className="relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">

@@ -1,6 +1,7 @@
 "use client";
 import TeacherSidebar from "@/components/Teacher/Sidebar";
 import TeacherHeader from "@/components/Teacher/Header";
+import TeacherPageSkeleton from "@/components/Teacher/TeacherPageSkeleton";
 import { useEffect, useMemo, useState, useRef, type ChangeEvent } from "react";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
@@ -125,6 +126,12 @@ export default function MasterTeacherMaterials() {
     setTargetActivity(activity);
     setShowGridModal(true);
   };
+
+  const showInitialSkeleton = scheduleLoading && scheduleActivities.length === 0 && !scheduleError;
+
+  if (showInitialSkeleton) {
+    return <TeacherPageSkeleton title="Materials" />;
+  }
 
 
   return (

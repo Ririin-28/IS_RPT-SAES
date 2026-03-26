@@ -3,6 +3,7 @@ import { useState, useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/MasterTeacher/Coordinator/Sidebar";
 import Header from "@/components/MasterTeacher/Header";
+import MasterTeacherPageSkeleton from "@/components/MasterTeacher/MasterTeacherPageSkeleton";
 // Text Components
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import TertiaryHeader from "@/components/Common/Texts/TertiaryHeader";
@@ -310,8 +311,8 @@ export default function MasterTeacherDashboard() {
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [students, setStudents] = useState<StudentRecordDto[]>([]);
-  const [, setIsLoadingStudents] = useState(true);
-  const [, setStudentsError] = useState<string | null>(null);
+  const [isLoadingStudents, setIsLoadingStudents] = useState(true);
+  const [studentsError, setStudentsError] = useState<string | null>(null);
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number | null>(null);
   const [approvedMaterialsCount, setApprovedMaterialsCount] = useState<number | null>(null);
   const [isLoadingApprovals, setIsLoadingApprovals] = useState(false);
@@ -320,7 +321,7 @@ export default function MasterTeacherDashboard() {
   const [isLoadingGradeCounts, setIsLoadingGradeCounts] = useState(false);
   const [gradeCountsError, setGradeCountsError] = useState<string | null>(null);
   const [analyticsData, setAnalyticsData] = useState<CoordinatorAnalyticsResponse["data"] | null>(null);
-  const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(false);
+  const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(true);
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
   const [selectedSubject, setSelectedSubject] = useState<CoordinatorSubject>("Math");
   const [selectedSection, setSelectedSection] = useState<string>("All Sections");
@@ -614,6 +615,7 @@ export default function MasterTeacherDashboard() {
       if (userId === null) {
         setAnalyticsData(null);
         setAnalyticsError("Missing user information. Please log in again.");
+        setIsLoadingAnalytics(false);
         return;
       }
 
@@ -815,6 +817,15 @@ export default function MasterTeacherDashboard() {
       .filter((item) => item.value > 0);
   }, [analyticsData?.phonemicDistribution, resolvedLevelLabels]);
   const hasPhonemicLevelPieData = useMemo(() => phonemicLevelPieData.some((item) => item.value > 0), [phonemicLevelPieData]);
+
+  const showInitialSkeleton =
+    (isLoadingProfile && !coordinatorProfile && !profileError) ||
+    (isLoadingAnalytics && analyticsData === null && !analyticsError) ||
+    (userId !== null && isLoadingStudents && students.length === 0 && !studentsError);
+
+  if (showInitialSkeleton) {
+    return <MasterTeacherPageSkeleton title="Dashboard" variant="coordinator" />;
+  }
 
   return (
     <div className="dashboard-page">

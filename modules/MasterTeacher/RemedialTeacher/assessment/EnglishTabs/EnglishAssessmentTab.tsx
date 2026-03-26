@@ -488,9 +488,10 @@ const mapQuizToModalData = (quiz: Quiz): QuizData => {
 
 interface EnglishAssessmentTabProps {
   level: EnglishAssessmentLevel;
+  onInitialLoadStateChange?: (loading: boolean) => void;
 }
 
-export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProps) {
+export default function EnglishAssessmentTab({ level, onInitialLoadStateChange }: EnglishAssessmentTabProps) {
   const [quizzesByLevel, setQuizzesByLevel] = useState<QuizzesByLevel>(() => cloneInitialQuizzes());
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingQuiz, setEditingQuiz] = useState<Quiz | null>(null);
@@ -504,6 +505,7 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
   const [isUpdateConfirmOpen, setIsUpdateConfirmOpen] = useState(false);
   const [pendingUpdateData, setPendingUpdateData] = useState<QuizData | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [assessmentsLoading, setAssessmentsLoading] = useState(true);
   const [statusToast, setStatusToast] = useState<{
     title: string;
     message: string;
@@ -530,20 +532,37 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
     return profile?.userId ? String(profile.userId) : "";
   };
 
-  const loadAssessments = async (userId: string) => {
-    const assessments = await fetchAssessments({
-      creatorId: userId,
-      creatorRole: "remedial_teacher",
-      subjectName: "English",
-    });
-    setQuizzesByLevel(groupAssessmentsByLevel(assessments));
+  const loadAssessments = async (
+    userId: string,
+    options?: {
+      showInitialLoading?: boolean;
+    },
+  ) => {
+    if (options?.showInitialLoading) {
+      setAssessmentsLoading(true);
+    }
+
+    try {
+      const assessments = await fetchAssessments({
+        creatorId: userId,
+        creatorRole: "remedial_teacher",
+        subjectName: "English",
+      });
+      setQuizzesByLevel(groupAssessmentsByLevel(assessments));
+    } finally {
+      if (options?.showInitialLoading) {
+        setAssessmentsLoading(false);
+      }
+    }
   };
 
   useEffect(() => {
     const userId = getRemedialUserId();
     if (userId) {
-      void loadAssessments(userId);
+      void loadAssessments(userId, { showInitialLoading: true });
+      return;
     }
+    setAssessmentsLoading(false);
   }, []);
 
   useEffect(() => {
@@ -574,6 +593,10 @@ export default function EnglishAssessmentTab({ level }: EnglishAssessmentTabProp
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    onInitialLoadStateChange?.(assessmentsLoading || scheduleLoading);
+  }, [assessmentsLoading, onInitialLoadStateChange, scheduleLoading]);
 
   const saveQuizzes = (newQuizzes: QuizzesByLevel) => {
     setQuizzesByLevel(newQuizzes);

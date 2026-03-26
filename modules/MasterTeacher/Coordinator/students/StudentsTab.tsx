@@ -311,6 +311,7 @@ interface StudentTabProps {
   searchTerm: string;
   onMetaChange?: (meta: { subject: MaterialSubject; gradeLevel: string | null; students: CoordinatorStudent[] }) => void;
   onAssignStudents?: () => void;
+  onInitialLoadStateChange?: (loading: boolean) => void;
   handlersByStudentId?: Record<string, CoordinatorStudentHandler[]>;
   assignStudentsDisabled?: boolean;
 }
@@ -321,6 +322,7 @@ export default function StudentTab({
   searchTerm,
   onMetaChange,
   onAssignStudents,
+  onInitialLoadStateChange,
   handlersByStudentId = {},
   assignStudentsDisabled = false,
 }: StudentTabProps) {
@@ -328,6 +330,7 @@ export default function StudentTab({
   const [gradeLevel, setGradeLevel] = useState<string | null>(null);
   const [students, setStudents] = useState<CoordinatorStudent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -521,8 +524,12 @@ export default function StudentTab({
 
   useEffect(() => {
     (async () => {
-      const assignment = await fetchSubject();
-      await fetchStudents(assignment.subject, assignment.gradeLevel);
+      try {
+        const assignment = await fetchSubject();
+        await fetchStudents(assignment.subject, assignment.gradeLevel);
+      } finally {
+        setInitialLoading(false);
+      }
     })();
   }, [fetchSubject, fetchStudents]);
 
@@ -537,6 +544,10 @@ export default function StudentTab({
       onMetaChange?.(meta);
     }
   }, [meta, onMetaChange]);
+
+  useEffect(() => {
+    onInitialLoadStateChange?.(initialLoading);
+  }, [initialLoading, onInitialLoadStateChange]);
 
   const persistStudents = useCallback(
     async (studentsPayload: CreateStudentPayload[]) => {

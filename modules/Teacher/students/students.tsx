@@ -1,6 +1,7 @@
 "use client";
 import TeacherSidebar from "@/components/Teacher/Sidebar";
 import TeacherHeader from "@/components/Teacher/Header";
+import TeacherPageSkeleton from "@/components/Teacher/TeacherPageSkeleton";
 import SecondaryHeader from "@/components/Common/Texts/SecondaryHeader";
 import HeaderDropdown from "@/components/Common/GradeNavigation/HeaderDropdown";
 import { FaTimes } from "react-icons/fa";
@@ -180,6 +181,12 @@ export default function TeacherStudents({ subjectSlug }: TeacherStudentsProps = 
       cancelled = true;
     };
   }, [subject]);
+
+  const showInitialSkeleton = isLoading && students.length === 0 && !loadError;
+
+  if (showInitialSkeleton) {
+    return <TeacherPageSkeleton title="Student List" />;
+  }
 
   return (
     <div className="relative flex h-screen overflow-hidden bg-linear-to-br from-[#edf9f1] via-[#f5fbf7] to-[#e7f4ec]">

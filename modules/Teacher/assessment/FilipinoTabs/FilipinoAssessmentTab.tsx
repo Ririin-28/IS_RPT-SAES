@@ -506,9 +506,10 @@ const mapQuizToModalData = (quiz: FilipinoQuiz): QuizData => {
 
 interface FilipinoAssessmentTabProps {
   level: FilipinoAssessmentLevel;
+  onInitialLoadStateChange?: (loading: boolean) => void;
 }
 
-export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabProps) {
+export default function FilipinoAssessmentTab({ level, onInitialLoadStateChange }: FilipinoAssessmentTabProps) {
   const [quizzesByLevel, setQuizzesByLevel] = useState<FilipinoQuizzesByLevel>(() => cloneInitialFilipinoQuizzes());
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingQuiz, setEditingQuiz] = useState<FilipinoQuiz | null>(null);
@@ -520,6 +521,7 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
   const [isUpdateConfirmOpen, setIsUpdateConfirmOpen] = useState(false);
   const [pendingUpdateData, setPendingUpdateData] = useState<QuizData | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [assessmentsLoading, setAssessmentsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [statusToast, setStatusToast] = useState<{
     title: string;
@@ -545,21 +547,38 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
     return () => window.clearTimeout(timeoutId);
   }, [statusToast]);
 
-  const loadAssessments = async (teacherUserId: string) => {
-    const assessments = await fetchAssessments({
-      creatorId: teacherUserId,
-      creatorRole: "teacher",
-      subjectName: "Filipino",
-    });
-    setQuizzesByLevel(groupAssessmentsByLevel(assessments));
+  const loadAssessments = async (
+    teacherUserId: string,
+    options?: {
+      showInitialLoading?: boolean;
+    },
+  ) => {
+    if (options?.showInitialLoading) {
+      setAssessmentsLoading(true);
+    }
+
+    try {
+      const assessments = await fetchAssessments({
+        creatorId: teacherUserId,
+        creatorRole: "teacher",
+        subjectName: "Filipino",
+      });
+      setQuizzesByLevel(groupAssessmentsByLevel(assessments));
+    } finally {
+      if (options?.showInitialLoading) {
+        setAssessmentsLoading(false);
+      }
+    }
   };
 
   useEffect(() => {
     const profile = getStoredUserProfile();
     if (profile?.userId) {
       setCurrentUserId(String(profile.userId));
-      void loadAssessments(String(profile.userId));
+      void loadAssessments(String(profile.userId), { showInitialLoading: true });
+      return;
     }
+    setAssessmentsLoading(false);
   }, []);
 
   useEffect(() => {
@@ -590,6 +609,10 @@ export default function FilipinoAssessmentTab({ level }: FilipinoAssessmentTabPr
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    onInitialLoadStateChange?.(assessmentsLoading || scheduleLoading);
+  }, [assessmentsLoading, onInitialLoadStateChange, scheduleLoading]);
 
   const saveQuizzes = (newQuizzes: FilipinoQuizzesByLevel) => {
     setQuizzesByLevel(newQuizzes);
