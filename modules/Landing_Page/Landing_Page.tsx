@@ -980,7 +980,7 @@ export default function Home() {
                       d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4"
                     />
                   </svg>
-                  Install RPT-SAES
+                  Install in Mobile
                 </Link>
               </div>
             </div>
